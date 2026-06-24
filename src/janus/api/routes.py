@@ -115,6 +115,20 @@ async def _handle(
                 raise HTTPException(status_code=502, detail="Empty upstream response")
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
+
+            from janus.storage.usage import record_usage
+
+            db_path = request.app.state.db_path
+            await record_usage(
+                db_path,
+                provider_id=target.provider_config.id,
+                model=target.model,
+                account_id=target.account_id,
+                input_tokens=canonical_resp.usage.input_tokens,
+                output_tokens=canonical_resp.usage.output_tokens,
+                status=result.status_code,
+            )
+
             return JSONResponse(content=client_payload)
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:

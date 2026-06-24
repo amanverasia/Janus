@@ -409,3 +409,55 @@ async def test_rtk_compresses_tool_result_before_provider():
         assert r.status_code == 200
         tool_msg = captured["messages"][-1]
         assert len(tool_msg["content"]) < len(long_diff)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_usage_recorded_after_request(tmp_path):
+    """Usage should be recorded to DB after a successful non-streaming request."""
+    from janus.storage.database import init_db
+    from janus.storage.usage import get_usage_stats
+
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderConfig(
+            id="t",
+            prefix="t",
+            api_type="openai_compat",
+            base_url="https://fake.local/v1",
+            api_key="k",
+            models=["m"],
+        )
+    )
+    cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
+    app = create_app(reg, cfg)
+    await init_db(app.state.db_path)
+
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r",
+                "object": "chat.completion",
+                "model": "m",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post(
+            "/v1/chat/completions",
+            json={"model": "t/m", "messages": [{"role": "user", "content": "hi"}]},
+        )
+
+    stats = await get_usage_stats(app.state.db_path)
+    assert stats["total_requests"] == 1
+    assert stats["total_input_tokens"] == 10
+    assert stats["total_output_tokens"] == 5
