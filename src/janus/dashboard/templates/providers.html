@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Providers - Janus{% endblock %}
+{% block providers_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-6">Providers</h1>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    {% for prefix, accounts in providers.items() %}
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h2 class="text-lg font-bold text-white">{{ prefix }}/</h2>
+                <p class="text-gray-400 text-sm">{{ accounts[0].api_type }}</p>
+            </div>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-700 text-gray-300">
+                {{ accounts|length }} account{{ '' if accounts|length == 1 else 's' }}
+            </span>
+        </div>
+        <div class="space-y-3">
+            <div>
+                <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Base URL</p>
+                <p class="text-gray-300 text-sm font-mono break-all">{{ accounts[0].base_url }}</p>
+            </div>
+            <div>
+                <p class="text-gray-500 text-xs uppercase tracking-wide mb-2">Models</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for model in accounts[0].models %}
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-900 text-indigo-200">{{ model }}</span>
+                    {% endfor %}
+                    {% if not accounts[0].models %}
+                    <span class="text-gray-500 text-sm">No models configured</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not providers %}
+<div class="bg-gray-800 rounded-xl p-8 border border-gray-700 text-center">
+    <p class="text-gray-400">No providers configured.</p>
+</div>
+{% endif %}
+{% endblock %}
