@@ -38,3 +38,21 @@ providers:
     finally:
         os.unlink(path)
         del os.environ["TEST_KEY"]
+
+
+def test_load_config_with_none_providers():
+    """Config with providers key but no entries (all commented out) should not crash."""
+    yaml_text = """
+server:
+  port: 20128
+providers:
+"""
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        f.write(yaml_text)
+        path = f.name
+    try:
+        config = load_config(path)
+        assert config.server.port == 20128
+        assert config.providers == []
+    finally:
+        os.unlink(path)

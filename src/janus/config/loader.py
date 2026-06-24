@@ -34,4 +34,6 @@ def load_config(path: str | Path) -> JanusConfig:
     with open(path) as f:
         raw = yaml.safe_load(f) or {}
     resolved = resolve_vars(raw)
-    return JanusConfig(**resolved)
+    if isinstance(resolved, dict):
+        resolved = {k: v for k, v in resolved.items() if v is not None}
+    return JanusConfig(**(resolved if isinstance(resolved, dict) else {}))
