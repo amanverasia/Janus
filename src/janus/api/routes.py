@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -19,6 +21,7 @@ from janus.providers.opencode_free import OpenCodeFreeProvider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import FallbackHandler
+from janus.storage.budgets import get_budget_status
 from janus.streaming.translator import translate_stream
 from janus.tokensavers.pipeline import SaverPipeline
 
@@ -51,12 +54,59 @@ def _build_provider(config: ProviderConfig) -> Provider:
     raise ValueError(f"Unknown api_type: {config.api_type}")
 
 
+async def _check_budgets(
+    db_path: str | Path,
+    client_key_id: int | None,
+) -> Response | None:
+    try:
+        statuses: list[dict[str, Any]] = []
+        key_status = await get_budget_status(db_path, key_id=client_key_id)
+        if key_status is not None:
+            statuses.append(key_status)
+        global_status = await get_budget_status(db_path, key_id=None)
+        if global_status is not None:
+            statuses.append(global_status)
+        for s in statuses:
+            if s["status"] == "exceeded":
+                now = datetime.datetime.now()
+                midnight = now.replace(hour=23, minute=59, second=59, microsecond=0)
+                retry_after = int((midnight - now).total_seconds()) + 1
+                error_body: dict[str, Any] = {
+                    "error": {
+                        "message": (
+                            f"Daily budget exceeded. "
+                            f"Spent ${s['today_spend']:.2f} of ${s['daily_limit']:.2f} limit. "
+                            f"Resets at midnight."
+                        ),
+                        "type": "budget_exceeded",
+                        "today_spend": round(s["today_spend"], 4),
+                        "daily_limit": s["daily_limit"],
+                    }
+                }
+                return JSONResponse(
+                    content=error_body,
+                    status_code=429,
+                    headers={"Retry-After": str(max(retry_after, 1))},
+                )
+    except Exception:
+        pass
+    return None
+
+
 async def _handle(
     client_format: str,
     body: dict[str, Any],
     request: Request,
 ) -> Response:
     handler: FallbackHandler = request.app.state.fallback_handler
+    db_path = request.app.state.db_path
+    pricing_registry = request.app.state.pricing_registry
+
+    client_key_id = getattr(request.state, "client_key_id", None)
+
+    blocked_response = await _check_budgets(db_path, client_key_id)
+    if blocked_response is not None:
+        return blocked_response
 
     client_adapter = FORMATS[client_format]
     canonical_req = client_adapter.parse_request(body)
@@ -116,9 +166,10 @@ async def _handle(
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
 
+            from janus.pricing.calculator import compute_cost
             from janus.storage.usage import record_usage
 
-            db_path = request.app.state.db_path
+            cost = compute_cost(canonical_resp.usage, target.model, pricing_registry)
             await record_usage(
                 db_path,
                 provider_id=target.provider_config.id,
@@ -126,7 +177,11 @@ async def _handle(
                 account_id=target.account_id,
                 input_tokens=canonical_resp.usage.input_tokens,
                 output_tokens=canonical_resp.usage.output_tokens,
+                cache_creation_tokens=canonical_resp.usage.cache_creation_input_tokens,
+                cache_read_tokens=canonical_resp.usage.cache_read_input_tokens,
                 status=result.status_code,
+                client_key_id=client_key_id,
+                cost=cost,
             )
 
             return JSONResponse(content=client_payload)

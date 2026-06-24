@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from janus.api.routes import router
 from janus.config.schema import JanusConfig
+from janus.pricing.registry import PricingRegistry
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.storage.database import init_db
@@ -51,6 +52,7 @@ def create_app(
     if config.token_savers.ponytail.enabled:
         savers.append(PonytailSaver(level=config.token_savers.ponytail.level))
     app.state.saver_pipeline = SaverPipeline(savers)
+    app.state.pricing_registry = PricingRegistry(config.pricing)
     app.include_router(router, prefix="/v1")
 
     from janus.dashboard.routes import router as dashboard_router
