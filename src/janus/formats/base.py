@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+from janus.canonical.events import CanonicalEvent
+from janus.canonical.models import CanonicalRequest, CanonicalResponse
+
+
+@runtime_checkable
+class StreamParser(Protocol):
+    def feed(self, line: str) -> list[CanonicalEvent]: ...
+    def finish(self) -> list[CanonicalEvent]: ...
+
+
+@runtime_checkable
+class StreamEmitter(Protocol):
+    def feed(self, event: CanonicalEvent) -> list[bytes]: ...
+    def finish(self) -> list[bytes]: ...
+
+
+@runtime_checkable
+class FormatAdapter(Protocol):
+    name: str
+
+    def parse_request(self, raw: dict[str, object]) -> CanonicalRequest: ...
+    def build_upstream_request(
+        self, req: CanonicalRequest, model: str
+    ) -> dict[str, object]: ...
+    def parse_upstream_response(
+        self, raw: dict[str, object]
+    ) -> CanonicalResponse: ...
+    def emit_response(self, resp: CanonicalResponse) -> dict[str, object]: ...
+    def stream_parser(self) -> StreamParser: ...
+    def stream_emitter(self) -> StreamEmitter: ...
