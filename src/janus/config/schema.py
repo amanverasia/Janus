@@ -21,7 +21,13 @@ class ProviderConfig(BaseModel):
     models: list[str] = Field(default_factory=list)
 
 
+class ComboConfig(BaseModel):
+    name: str
+    models: list[str]
+
+
 class JanusConfig(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     providers: list[ProviderConfig] = Field(default_factory=list)
+    combos: list[ComboConfig] = Field(default_factory=list)
     api_keys: list[str] = Field(default_factory=list)

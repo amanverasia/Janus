@@ -4,17 +4,23 @@ import respx
 from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
-from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
+from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
 from janus.providers.registry import ProviderRegistry
 
 
 @pytest.fixture
 def registry():
     reg = ProviderRegistry()
-    reg.register(ProviderConfig(
-        id="test", prefix="test", api_type="openai_compat",
-        base_url="https://fake.local/v1", api_key="sk-test", models=["test-m1"],
-    ))
+    reg.register(
+        ProviderConfig(
+            id="test",
+            prefix="test",
+            api_type="openai_compat",
+            base_url="https://fake.local/v1",
+            api_key="sk-test",
+            models=["test-m1"],
+        )
+    )
     return reg
 
 
@@ -30,8 +36,7 @@ def app(registry, config):
 
 @pytest.mark.asyncio
 async def test_models_endpoint(app):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/v1/models")
         assert r.status_code == 200
         data = r.json()
@@ -41,8 +46,7 @@ async def test_models_endpoint(app):
 
 @pytest.mark.asyncio
 async def test_health(app):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/v1/health")
         assert r.status_code == 200
         assert r.json()["status"] == "ok"
@@ -52,22 +56,28 @@ async def test_health(app):
 @respx.mock
 async def test_chat_completions_nonstream(app):
     respx.post("https://fake.local/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json={
-            "id": "r1",
-            "object": "chat.completion",
-            "model": "test-m1",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Hello!"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Hello!"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 5,
+                    "completion_tokens": 2,
+                    "total_tokens": 7,
+                },
+            },
+        )
     )
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         payload = {
             "model": "test/test-m1",
             "messages": [{"role": "user", "content": "hi"}],
@@ -82,24 +92,29 @@ async def test_chat_completions_nonstream(app):
 @pytest.mark.asyncio
 @respx.mock
 async def test_messages_endpoint_nonstream(app):
-    """Anthropic format inbound, OpenAI-compat upstream — cross-format translation."""
     respx.post("https://fake.local/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json={
-            "id": "r1",
-            "object": "chat.completion",
-            "model": "test-m1",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": "Bonjour!"},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Bonjour!"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 1,
+                    "total_tokens": 4,
+                },
+            },
+        )
     )
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         payload = {
             "model": "test/test-m1",
             "max_tokens": 1024,
@@ -116,19 +131,18 @@ async def test_messages_endpoint_nonstream(app):
 @pytest.mark.asyncio
 @respx.mock
 async def test_chat_completions_stream(app):
-    sse_lines = [
+    sse_body = (
         'data: {"id":"r1","object":"chat.completion.chunk",'
         '"choices":[{"index":0,"delta":{"role":"assistant"},'
-        '"finish_reason":null}]}\n\n',
+        '"finish_reason":null}]}\n\n'
         'data: {"id":"r1","object":"chat.completion.chunk",'
         '"choices":[{"index":0,"delta":{"content":"Hello"},'
-        '"finish_reason":null}]}\n\n',
+        '"finish_reason":null}]}\n\n'
         'data: {"id":"r1","object":"chat.completion.chunk",'
         '"choices":[{"index":0,"delta":{},'
-        '"finish_reason":"stop"}]}\n\n',
-        "data: [DONE]\n\n",
-    ]
-    sse_body = "".join(sse_lines)
+        '"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
     respx.post("https://fake.local/v1/chat/completions").mock(
         return_value=httpx.Response(
             200,
@@ -136,8 +150,7 @@ async def test_chat_completions_stream(app):
             headers={"content-type": "text/event-stream"},
         )
     )
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         payload = {
             "model": "test/test-m1",
             "messages": [{"role": "user", "content": "hi"}],
@@ -154,11 +167,172 @@ async def test_chat_completions_stream(app):
 
 @pytest.mark.asyncio
 async def test_unknown_model_error(app):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         payload = {
             "model": "no/such-model",
             "messages": [{"role": "user", "content": "hi"}],
         }
         r = await client.post("/v1/chat/completions", json=payload)
         assert r.status_code == 400
+
+
+# --- Phase 2 tests ---
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fallback_on_429():
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderConfig(
+            id="t1",
+            prefix="test",
+            api_type="openai_compat",
+            base_url="https://fake.local/v1",
+            api_key="k1",
+            models=["m1"],
+        )
+    )
+    reg.register(
+        ProviderConfig(
+            id="t2",
+            prefix="test",
+            api_type="openai_compat",
+            base_url="https://fake2.local/v1",
+            api_key="k2",
+            models=["m1"],
+        )
+    )
+    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(429, json={"error": "rate limited"})
+    )
+    respx.post("https://fake2.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r",
+                "object": "chat.completion",
+                "model": "m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+        assert r.json()["choices"][0]["message"]["content"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_all_providers_exhaustured_returns_503():
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderConfig(
+            id="t1",
+            prefix="test",
+            api_type="openai_compat",
+            base_url="https://fake.local/v1",
+            api_key="k1",
+            models=["m1"],
+        )
+    )
+    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+
+    with respx.mock:
+        respx.post("https://fake.local/v1/chat/completions").mock(
+            return_value=httpx.Response(500, json={"error": "down"})
+        )
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            payload = {
+                "model": "test/m1",
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+            r = await client.post("/v1/chat/completions", json=payload)
+            assert r.status_code == 503
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_combo_expansion():
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderConfig(
+            id="a",
+            prefix="a",
+            api_type="openai_compat",
+            base_url="https://a.local/v1",
+            api_key="k",
+            models=["b"],
+        )
+    )
+    reg.register_combo(ComboConfig(name="stk", models=["a/b"]))
+    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+
+    respx.post("https://a.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r",
+                "object": "chat.completion",
+                "model": "b",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "combo works",
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "stk", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+        assert r.json()["choices"][0]["message"]["content"] == "combo works"
+
+
+@pytest.mark.asyncio
+async def test_models_lists_combos():
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderConfig(
+            id="a",
+            prefix="a",
+            api_type="openai_compat",
+            base_url="https://a.local/v1",
+            api_key="k",
+            models=["b"],
+        )
+    )
+    reg.register_combo(ComboConfig(name="stk", models=["a/b"]))
+    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/v1/models")
+        assert r.status_code == 200
+        ids = [m["id"] for m in r.json()["data"]]
+        assert "a/b" in ids
+        assert "stk" in ids

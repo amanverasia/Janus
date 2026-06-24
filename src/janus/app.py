@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from janus.api.routes import router
 from janus.config.schema import JanusConfig
 from janus.providers.registry import ProviderRegistry
+from janus.routing.fallback import FallbackHandler
 
 
 def create_app(
@@ -21,5 +22,9 @@ def create_app(
     if config.providers:
         for pc in config.providers:
             registry.register(pc)
+    if config.combos:
+        for combo in config.combos:
+            registry.register_combo(combo)
+    app.state.fallback_handler = FallbackHandler(registry)
     app.include_router(router, prefix="/v1")
     return app

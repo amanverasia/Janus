@@ -40,6 +40,33 @@ providers:
         del os.environ["TEST_KEY"]
 
 
+def test_load_config_with_combos():
+    yaml_text = """
+server:
+  port: 3000
+providers:
+  - id: glm
+    prefix: glm
+    api_type: openai_compat
+    base_url: https://test.com/v1
+    api_key: key
+    models: [glm-4.7]
+combos:
+  - name: stack
+    models: [glm/glm-4.7]
+"""
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        f.write(yaml_text)
+        path = f.name
+    try:
+        config = load_config(path)
+        assert len(config.combos) == 1
+        assert config.combos[0].name == "stack"
+        assert config.combos[0].models == ["glm/glm-4.7"]
+    finally:
+        os.unlink(path)
+
+
 def test_load_config_with_none_providers():
     """Config with providers key but no entries (all commented out) should not crash."""
     yaml_text = """

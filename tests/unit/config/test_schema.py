@@ -1,4 +1,4 @@
-from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
+from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
 
 
 def test_server_defaults():
@@ -37,3 +37,15 @@ def test_full_config():
     )
     assert config.server.port == 8080
     assert len(config.providers) == 1
+
+
+def test_combo_config():
+    c = ComboConfig(name="my-stack", models=["glm/glm-4.7", "an/claude-sonnet-4-20250514"])
+    assert c.name == "my-stack"
+    assert len(c.models) == 2
+
+
+def test_janus_config_has_combos():
+    config = JanusConfig(combos=[ComboConfig(name="test", models=["a/b"])])
+    assert len(config.combos) == 1
+    assert config.combos[0].name == "test"
