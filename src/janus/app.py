@@ -52,4 +52,8 @@ def create_app(
         savers.append(PonytailSaver(level=config.token_savers.ponytail.level))
     app.state.saver_pipeline = SaverPipeline(savers)
     app.include_router(router, prefix="/v1")
+
+    from janus.dashboard.routes import router as dashboard_router
+
+    app.include_router(dashboard_router, prefix="/dashboard")
     return app

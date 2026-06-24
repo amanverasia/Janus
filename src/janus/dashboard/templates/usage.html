@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Usage - Janus{% endblock %}
+{% block usage_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-6">Usage</h1>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Total Requests</p>
+        <p class="text-3xl font-bold text-white">{{ stats.total_requests }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Input Tokens</p>
+        <p class="text-3xl font-bold text-white">{{ "{:,}".format(stats.total_input_tokens) }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Output Tokens</p>
+        <p class="text-3xl font-bold text-white">{{ "{:,}".format(stats.total_output_tokens) }}</p>
+    </div>
+</div>
+
+<!-- Usage by Model -->
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-700">
+        <h2 class="text-lg font-semibold text-white">Usage by Model</h2>
+    </div>
+    {% if stats.by_model %}
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-900 border-b border-gray-700">
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Model</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Requests</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Input Tokens</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Output Tokens</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700">
+            {% for row in stats.by_model %}
+            <tr class="hover:bg-gray-750">
+                <td class="px-4 py-3 text-sm text-white font-mono">{{ row.model or '—' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ row.requests }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.input_tokens) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.output_tokens) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-12 text-center">
+        <p class="text-gray-400">No usage data yet.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
