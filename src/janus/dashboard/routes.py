@@ -128,9 +128,7 @@ async def analytics_page(
         dimension = "model"
     try:
         summary = await get_spend_summary(db_path, days=days)
-        breakdown = await get_breakdown(
-            db_path, dimension=cast(Dimension, dimension), days=days
-        )
+        breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
         success = await get_success_rate(db_path, days=days)
     except Exception:
         summary = {

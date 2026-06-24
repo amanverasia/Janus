@@ -32,12 +32,30 @@ async def test_get_spend_summary_with_data(tmp_path):
     await seed_usage(
         db_path,
         [
-            {"timestamp": _ts(0), "model": "gpt-4o", "input_tokens": 1000,
-             "output_tokens": 500, "cost": 0.01, "status": 200},
-            {"timestamp": _ts(1), "model": "gpt-4o", "input_tokens": 2000,
-             "output_tokens": 1000, "cost": 0.02, "status": 200},
-            {"timestamp": _ts(0), "model": "claude-sonnet-4-20250514", "input_tokens": 500,
-             "output_tokens": 250, "cost": 0.005, "status": 500},
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(1),
+                "model": "gpt-4o",
+                "input_tokens": 2000,
+                "output_tokens": 1000,
+                "cost": 0.02,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "model": "claude-sonnet-4-20250514",
+                "input_tokens": 500,
+                "output_tokens": 250,
+                "cost": 0.005,
+                "status": 500,
+            },
         ],
     )
     result = await get_spend_summary(db_path, days=30)
@@ -55,12 +73,30 @@ async def test_get_breakdown_by_model(tmp_path):
     await seed_usage(
         db_path,
         [
-            {"timestamp": _ts(0), "model": "gpt-4o", "input_tokens": 1000,
-             "output_tokens": 500, "cost": 0.01, "status": 200},
-            {"timestamp": _ts(0), "model": "gpt-4o", "input_tokens": 500,
-             "output_tokens": 250, "cost": 0.005, "status": 200},
-            {"timestamp": _ts(0), "model": "claude", "input_tokens": 300,
-             "output_tokens": 100, "cost": 0.003, "status": 200},
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "input_tokens": 500,
+                "output_tokens": 250,
+                "cost": 0.005,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "model": "claude",
+                "input_tokens": 300,
+                "output_tokens": 100,
+                "cost": 0.003,
+                "status": 200,
+            },
         ],
     )
     result = await get_breakdown(db_path, dimension="model", days=30)
@@ -77,10 +113,20 @@ async def test_get_breakdown_by_provider(tmp_path):
     await seed_usage(
         db_path,
         [
-            {"timestamp": _ts(0), "provider_id": "openai", "model": "gpt-4o",
-             "cost": 0.01, "status": 200},
-            {"timestamp": _ts(0), "provider_id": "anthropic", "model": "claude",
-             "cost": 0.02, "status": 200},
+            {
+                "timestamp": _ts(0),
+                "provider_id": "openai",
+                "model": "gpt-4o",
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "provider_id": "anthropic",
+                "model": "claude",
+                "cost": 0.02,
+                "status": 200,
+            },
         ],
     )
     result = await get_breakdown(db_path, dimension="provider", days=30)

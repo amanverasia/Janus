@@ -85,6 +85,7 @@ async def test_per_key_budget(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)
     from janus.storage.api_keys import create_key
+
     _, key_record = await create_key(db_path, name="test-key")
     key_id = key_record["id"]
     await create_or_update_budget(db_path, key_id=key_id, daily_limit=2.0, warn_pct=80)

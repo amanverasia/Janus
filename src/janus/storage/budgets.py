@@ -53,9 +53,7 @@ async def get_budgets(db_path: str | Path) -> list[dict[str, Any]]:
 
 async def delete_budget(db_path: str | Path, budget_id: int) -> bool:
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "DELETE FROM budgets WHERE id = ?", (budget_id,)
-        )
+        cursor = await db.execute("DELETE FROM budgets WHERE id = ?", (budget_id,))
         await db.commit()
         return cursor.rowcount > 0
 
