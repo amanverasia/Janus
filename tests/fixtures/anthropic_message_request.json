@@ -1,0 +1,14 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "max_tokens": 1024,
+  "system": [{"type": "text", "text": "You are helpful."}],
+  "messages": [
+    {"role": "user", "content": "Hello"},
+    {"role": "assistant", "content": [
+      {"type": "tool_use", "id": "t1", "name": "read", "input": {"path": "x.py"}}
+    ]},
+    {"role": "user", "content": [
+      {"type": "tool_result", "tool_use_id": "t1", "content": "print('hello')"}
+    ]}
+  ]
+}
