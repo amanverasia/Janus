@@ -49,3 +49,13 @@ def test_janus_config_has_combos():
     config = JanusConfig(combos=[ComboConfig(name="test", models=["a/b"])])
     assert len(config.combos) == 1
     assert config.combos[0].name == "test"
+
+
+def test_token_saver_config_defaults():
+    from janus.config.schema import TokenSaverConfig
+
+    cfg = TokenSaverConfig()
+    assert cfg.rtk.enabled is True
+    assert cfg.caveman.enabled is False
+    assert cfg.ponytail.enabled is False
+    assert cfg.ponytail.level == "full"
