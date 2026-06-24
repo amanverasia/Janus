@@ -1,0 +1,7 @@
+{
+  "system_instruction": {"parts": [{"text": "You are helpful."}]},
+  "contents": [
+    {"role": "user", "parts": [{"text": "Hello"}]}
+  ],
+  "tools": [{"functionDeclarations": [{"name": "read", "parameters": {"type": "object"}}]}]
+}
