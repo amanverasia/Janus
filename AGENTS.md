@@ -64,8 +64,31 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → `Fall
 - Integration tests use FastAPI ASGI transport (`httpx.ASGITransport`) in-process.
 - Test fixtures (sample API payloads) live in `tests/fixtures/`.
 
+## Token savers
+
+The `tokensavers/` package runs on the canonical request after parsing, before provider routing. Each saver is a pure `transform(req) -> CanonicalRequest`. The pipeline (`tokensavers/pipeline.py`) runs enabled savers in sequence and is fail-safe — exceptions are caught and logged, never breaking the request.
+
+- **RTK** (default ON) — compresses `tool_result` content parts (git diff, ls, grep, logs). Auto-detects format, strips ANSI/diff-mode/permissions, deduplicates, smart-truncates.
+- **Caveman** — prepends a terse-output system prompt.
+- **Ponytail** — prepends a lazy-dev system prompt (3 levels: lite/full/ultra).
+- Config: `token_savers:` section in YAML. Savers stack (all enabled ones run in order).
+- To add a new saver: implement `TokenSaver` protocol in `tokensavers/`, add to pipeline construction in `app.py`.
+
+## SQLite storage
+
+The `storage/` package manages runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup via FastAPI lifespan (`app.py`).
+
+- `storage/database.py` — `init_db()` + `get_connection()` (async context manager using `aiosqlite`).
+- `storage/api_keys.py` — keys are `sk-janus-{32hex}`, stored as SHA256 hash. The API-key gate (`api/deps.py`) checks both config `api_keys` (static list) AND DB keys.
+- `storage/usage.py` — records per-request token usage (fire-and-forget, non-streaming only). CLI: `janus usage stats`.
+- CLI key management: `janus keys create/list/revoke`.
+
+## Dashboard
+
+The `dashboard/` package serves an HTMX + Jinja2 UI at `/dashboard`. No npm, no build step — Tailwind and HTMX via CDN. Templates are in `dashboard/templates/`. Management API endpoints (`POST /dashboard/api/keys`, `DELETE /dashboard/api/keys/{id}`) return HTMX partials, not JSON.
+
 ## Config
 
-Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. The `providers:` and `combos:` keys can be null (all commented out) — the loader handles this. Generate a template with `janus config-init`.
+Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. The `providers:`, `combos:`, and `token_savers:` keys can be null (all commented out) — the loader filters None values. Generate a template with `janus config-init`.
 
 Combos are named ordered model sequences. A client sends `"model": "combo-name"` and Janus tries each model in order with all its accounts.
