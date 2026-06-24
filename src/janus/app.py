@@ -6,6 +6,11 @@ from janus.api.routes import router
 from janus.config.schema import JanusConfig
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
+from janus.tokensavers.base import TokenSaver
+from janus.tokensavers.caveman import CavemanSaver
+from janus.tokensavers.pipeline import SaverPipeline
+from janus.tokensavers.ponytail import PonytailSaver
+from janus.tokensavers.rtk import RTKSaver
 
 
 def create_app(
@@ -26,5 +31,13 @@ def create_app(
         for combo in config.combos:
             registry.register_combo(combo)
     app.state.fallback_handler = FallbackHandler(registry)
+    savers: list[TokenSaver] = []
+    if config.token_savers.rtk.enabled:
+        savers.append(RTKSaver())
+    if config.token_savers.caveman.enabled:
+        savers.append(CavemanSaver())
+    if config.token_savers.ponytail.enabled:
+        savers.append(PonytailSaver(level=config.token_savers.ponytail.level))
+    app.state.saver_pipeline = SaverPipeline(savers)
     app.include_router(router, prefix="/v1")
     return app

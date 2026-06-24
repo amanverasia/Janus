@@ -26,8 +26,20 @@ class ComboConfig(BaseModel):
     models: list[str]
 
 
+class TokenSaverSettings(BaseModel):
+    enabled: bool = False
+    level: str = "full"
+
+
+class TokenSaverConfig(BaseModel):
+    rtk: TokenSaverSettings = Field(default_factory=lambda: TokenSaverSettings(enabled=True))
+    caveman: TokenSaverSettings = Field(default_factory=TokenSaverSettings)
+    ponytail: TokenSaverSettings = Field(default_factory=TokenSaverSettings)
+
+
 class JanusConfig(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     providers: list[ProviderConfig] = Field(default_factory=list)
     combos: list[ComboConfig] = Field(default_factory=list)
     api_keys: list[str] = Field(default_factory=list)
+    token_savers: TokenSaverConfig = Field(default_factory=TokenSaverConfig)

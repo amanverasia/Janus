@@ -30,8 +30,9 @@ The router embodies that same duality:
 
 ## Status
 
-**Phase 1 — Core Router** (in design). See the
-[design spec](./docs/superpowers/specs/2026-06-24-janus-phase1-core-router-design.md).
+**Phase 1 — Core Router** ✅ · **Phase 2 — Fallback & Combos** ✅
+
+See specs in [`docs/superpowers/specs/`](./docs/superpowers/specs/).
 
 ## Tech stack
 
@@ -43,13 +44,13 @@ The router embodies that same duality:
 
 ## Roadmap
 
-1. **Core Router** — gateway, format translation (canonical model), streaming, provider executors.
-2. **Fallback & Combos** — multi-account rotation, 3-tier fallback (Subscription → Cheap → Free).
-3. **Persistence & Auth** — SQLite store, dashboard auth, API-key auth, OAuth + token refresh.
-4. **Token Savers** — RTK tool-output compression, Caveman/Ponytail prompt injection.
+1. ✅ **Core Router** — gateway, format translation (canonical model), streaming, provider executors.
+2. ✅ **Fallback & Combos** — multi-account rotation, ordered model sequences with cooldown.
+3. **Token Savers** — RTK tool-output compression (−20-40% input tokens), Caveman terse-output prompt, Ponytail lazy-dev prompt.
+4. **SQLite Persistence** — migrate config to database for runtime state, API-key management, usage history.
 5. **Dashboard UI** — provider/combo/usage/logs management.
-6. **Quota & Usage Analytics.**
-7. **Cloud sync, CLI helpers, Docker, remaining providers.**
+6. **Quota & Usage Analytics** — token tracking, cost estimation per provider/model.
+7. **Deployment** — Docker, remaining API providers, CLI helpers.
 
 ## License
 

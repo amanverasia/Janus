@@ -336,3 +336,76 @@ async def test_models_lists_combos():
         ids = [m["id"] for m in r.json()["data"]]
         assert "a/b" in ids
         assert "stk" in ids
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rtk_compresses_tool_result_before_provider():
+    """RTK should compress tool_result content before it reaches the provider."""
+    from janus.config.schema import TokenSaverConfig, TokenSaverSettings
+
+    reg = ProviderRegistry()
+    reg.register(
+        ProviderConfig(
+            id="t",
+            prefix="t",
+            api_type="openai_compat",
+            base_url="https://fake.local/v1",
+            api_key="k",
+            models=["m"],
+        )
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0),
+        token_savers=TokenSaverConfig(rtk=TokenSaverSettings(enabled=True)),
+    )
+    app = create_app(reg, cfg)
+
+    long_diff = "diff --git a/f.py b/f.py\nindex 111..222 100644\n" + "line\n" * 300
+    captured: dict = {}
+
+    def capture(request):
+        import json
+
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "r",
+                "object": "chat.completion",
+                "model": "m",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    respx.post("https://fake.local/v1/chat/completions").mock(side_effect=capture)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "model": "t/m",
+            "messages": [
+                {"role": "user", "content": "fix"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "c1",
+                            "type": "function",
+                            "function": {"name": "diff", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": long_diff},
+            ],
+        }
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+        tool_msg = captured["messages"][-1]
+        assert len(tool_msg["content"]) < len(long_diff)

@@ -20,6 +20,7 @@ from janus.providers.registry import ProviderRegistry
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import FallbackHandler
 from janus.streaming.translator import translate_stream
+from janus.tokensavers.pipeline import SaverPipeline
 
 from .deps import require_api_key
 
@@ -59,6 +60,9 @@ async def _handle(
 
     client_adapter = FORMATS[client_format]
     canonical_req = client_adapter.parse_request(body)
+
+    saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
+    canonical_req = saver_pipeline.apply(canonical_req)
 
     try:
         attempts = handler.resolve_attempts(canonical_req.model)
