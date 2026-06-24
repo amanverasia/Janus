@@ -89,3 +89,40 @@ async def test_usage_stats_by_model(tmp_path):
     assert by_model["glm-4.7"]["requests"] == 2
     assert by_model["glm-4.7"]["input_tokens"] == 300
     assert by_model["claude"]["requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_record_usage_with_cost_and_cache(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="an",
+        model="claude-sonnet-4-20250514",
+        account_id="an-0",
+        input_tokens=1000,
+        output_tokens=500,
+        cache_creation_tokens=200,
+        cache_read_tokens=800,
+        status=200,
+        client_key_id=1,
+        cost=0.015,
+    )
+    stats = await get_usage_stats(db_path)
+    assert stats["total_requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_record_usage_defaults_backward_compatible(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="glm",
+        model="glm-4.7",
+        input_tokens=100,
+        output_tokens=50,
+        status=200,
+    )
+    stats = await get_usage_stats(db_path)
+    assert stats["total_requests"] == 1

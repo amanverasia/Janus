@@ -27,9 +27,39 @@ CREATE TABLE IF NOT EXISTS usage (
     status INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key_id INTEGER,
+    daily_limit REAL NOT NULL,
+    warn_pct REAL DEFAULT 80,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (key_id) REFERENCES api_keys(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
+CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
 """
+
+_NEW_USAGE_COLUMNS = [
+    ("cost", "REAL DEFAULT 0.0"),
+    ("cache_creation_tokens", "INTEGER DEFAULT 0"),
+    ("cache_read_tokens", "INTEGER DEFAULT 0"),
+    ("client_key_id", "INTEGER"),
+]
+
+
+async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(usage)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    for col, col_type in _NEW_USAGE_COLUMNS:
+        if col not in existing:
+            await db.execute(f"ALTER TABLE usage ADD COLUMN {col} {col_type}")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_usage_cost_key ON usage(client_key_id, date(timestamp))"
+    )
 
 
 async def init_db(db_path: str | Path) -> None:
@@ -37,6 +67,7 @@ async def init_db(db_path: str | Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     async with aiosqlite.connect(str(db_path)) as db:
         await db.executescript(_SCHEMA)
+        await _migrate_usage_columns(db)
         await db.commit()
 
 
