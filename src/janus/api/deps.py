@@ -14,6 +14,8 @@ async def require_api_key(request: Request, authorization: str = Header(default=
         from janus.storage.api_keys import verify_key
 
         db_path = request.app.state.db_path
-        if await verify_key(db_path, key):
+        key_id = await verify_key(db_path, key)
+        if key_id is not None:
+            request.state.client_key_id = key_id
             return
     raise HTTPException(status_code=401, detail="Invalid API key")

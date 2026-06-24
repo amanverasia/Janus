@@ -27,17 +27,19 @@ async def create_key(db_path: str | Path, name: str) -> tuple[str, dict[str, Any
     return key, {"id": record_id, "name": name, "prefix": prefix}
 
 
-async def verify_key(db_path: str | Path, key: str) -> bool:
+async def verify_key(db_path: str | Path, key: str) -> int | None:
     if not key.startswith("sk-janus-"):
-        return False
+        return None
     key_hash = _hash_key(key)
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT 1 FROM api_keys WHERE key_hash = ? AND is_active = 1",
+            "SELECT id FROM api_keys WHERE key_hash = ? AND is_active = 1",
             (key_hash,),
         ) as cur:
             row = await cur.fetchone()
-    return row is not None
+    if row is None:
+        return None
+    return int(row["id"])
 
 
 async def list_keys(db_path: str | Path) -> list[dict[str, Any]]:
