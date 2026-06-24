@@ -29,7 +29,15 @@
 
 Janus uses a **canonical intermediate model**. The rule: `formats/` and `providers/` never import or call each other — they only talk to `canonical/`. This is intentional (2N adapters instead of N² translators). Do not break this boundary.
 
-Request flow: client format → `parse_request` → `CanonicalRequest` → provider's `build_upstream_request` → upstream call → provider's `parse_upstream_response` → `CanonicalResponse` → client's `emit_response`.
+Request flow: client format → `parse_request` → `CanonicalRequest` → `FallbackHandler.resolve_attempts` → per-attempt: `build_upstream_request` → upstream call → `parse_upstream_response` → `CanonicalResponse` → `emit_response`. On 429/5xx/auth/network errors, the account is cooled down and the next attempt is tried.
+
+## Routing & fallback layer
+
+- `ProviderRegistry` stores `list[ProviderConfig]` per prefix (multi-account). `lookup()` returns `list[ResolvedTarget]`, not a single target.
+- `FallbackHandler` (`routing/fallback.py`) expands combos → models → available accounts, filtering out cooled-down accounts. Cooldown durations: 429→60s, 5xx→30s, auth→300s, network→15s. State is in-memory (`time.monotonic()`).
+- `routing/errors.py` has `classify_error(status_code)` and `is_fallback_eligible(error)` — these drive fallback decisions in `_handle()`.
+- The retry loop lives in `api/routes.py::_handle()`. Streaming requests do NOT retry mid-stream (can't replay partial output).
+- Adding multi-account: register multiple `ProviderConfig` entries with the same `prefix` but different `id`/`api_key`.
 
 ## Adding a new format adapter
 
@@ -58,4 +66,6 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → provi
 
 ## Config
 
-Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. The `providers:` key can be null (all commented out) — the loader handles this. Generate a template with `janus config-init`.
+Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. The `providers:` and `combos:` keys can be null (all commented out) — the loader handles this. Generate a template with `janus config-init`.
+
+Combos are named ordered model sequences. A client sends `"model": "combo-name"` and Janus tries each model in order with all its accounts.
