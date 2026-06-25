@@ -37,6 +37,39 @@ CREATE TABLE IF NOT EXISTS budgets (
     FOREIGN KEY (key_id) REFERENCES api_keys(id)
 );
 
+CREATE TABLE IF NOT EXISTS providers (
+    id TEXT PRIMARY KEY,
+    prefix TEXT NOT NULL,
+    api_type TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT,
+    models TEXT NOT NULL DEFAULT '[]',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS combos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    models TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pricing_overrides (
+    model TEXT PRIMARY KEY,
+    input_per_mtok REAL NOT NULL,
+    output_per_mtok REAL NOT NULL,
+    cache_creation_per_mtok REAL NOT NULL DEFAULT 0.0,
+    cache_read_per_mtok REAL NOT NULL DEFAULT 0.0
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
