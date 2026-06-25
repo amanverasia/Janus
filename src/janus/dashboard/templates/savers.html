@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Token Savers - Janus{% endblock %}
+{% block savers_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-2">Token Savers</h1>
+<p class="text-gray-400 text-sm mb-6">Reduce token usage before requests are sent upstream. Savers run in order; enable only what you need.</p>
+
+<div class="space-y-4">
+    <!-- RTK -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between">
+            <div class="flex-1">
+                <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">RTK</h2>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200">Recommended</span>
+                </div>
+                <p class="text-gray-400 text-sm">Recursive Token Kompression — compresses conversation history to reduce input tokens. No quality loss for long conversations.</p>
+            </div>
+            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
+                    hx-vals='js:{key: "saver_rtk_enabled", value: saverRtkEnabled ? "false" : "true"}'
+                    onclick="saverRtkEnabled = !saverRtkEnabled; this.className = saverToggleClass(saverRtkEnabled)"
+                    class="saver-rtk-btn {{ 'bg-green-600 text-white' if settings.saver_rtk_enabled != 'false' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                {{ 'Enabled' if settings.saver_rtk_enabled != 'false' else 'Disabled' }}
+            </button>
+        </div>
+    </div>
+
+    <!-- Caveman -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between">
+            <div class="flex-1">
+                <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">Caveman</h2>
+                </div>
+                <p class="text-gray-400 text-sm">Strips filler words, pleasantries, and verbose phrasing from requests. Aggressive token savings, may affect nuance.</p>
+            </div>
+            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
+                    hx-vals='js:{key: "saver_caveman_enabled", value: saverCavemanEnabled ? "false" : "true"}'
+                    onclick="saverCavemanEnabled = !saverCavemanEnabled; this.className = saverToggleClass(saverCavemanEnabled)"
+                    class="{{ 'bg-green-600 text-white' if settings.saver_caveman_enabled == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                {{ 'Enabled' if settings.saver_caveman_enabled == 'true' else 'Disabled' }}
+            </button>
+        </div>
+    </div>
+
+    <!-- Ponytail -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-start justify-between">
+            <div class="flex-1">
+                <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">Ponytail</h2>
+                </div>
+                <p class="text-gray-400 text-sm mb-3">Summarizes older messages into a compact summary. Choose compression level:</p>
+                <div class="inline-flex rounded-lg border border-gray-700 overflow-hidden">
+                    {% set pl = settings.saver_ponytail_level or 'full' %}
+                    {% for level in ['lite', 'full', 'ultra'] %}
+                    <button hx-post="/dashboard/api/settings" hx-swap="none"
+                            hx-vals='js:{key: "saver_ponytail_level", value: "{{ level }}"}'
+                            class="px-4 py-1.5 text-sm font-medium transition-colors
+                            {% if pl == level %}bg-blue-600 text-white{% else %}bg-gray-900 text-gray-400 hover:text-white{% endif %}">
+                        {{ level | capitalize }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
+                    hx-vals='js:{key: "saver_ponytail_enabled", value: saverPonytailEnabled ? "false" : "true"}'
+                    onclick="saverPonytailEnabled = !saverPonytailEnabled; this.className = saverToggleClass(saverPonytailEnabled)"
+                    class="{{ 'bg-green-600 text-white' if settings.saver_ponytail_enabled == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                {{ 'Enabled' if settings.saver_ponytail_enabled == 'true' else 'Disabled' }}
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+var saverRtkEnabled = {{ 'true' if settings.saver_rtk_enabled != 'false' else 'false' }};
+var saverCavemanEnabled = {{ 'true' if settings.saver_caveman_enabled == 'true' else 'false' }};
+var saverPonytailEnabled = {{ 'true' if settings.saver_ponytail_enabled == 'true' else 'false' }};
+
+function saverToggleClass(on) {
+    return on
+        ? 'bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors'
+        : 'bg-gray-700 text-gray-400 rounded-lg px-4 py-2 text-sm font-medium transition-colors';
+}
+</script>
+{% endblock %}

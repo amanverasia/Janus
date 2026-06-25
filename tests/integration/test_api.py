@@ -5,33 +5,43 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
-from janus.providers.registry import ProviderRegistry
 
 
-@pytest.fixture
-def registry():
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="test",
-            prefix="test",
-            api_type="openai_compat",
-            base_url="https://fake.local/v1",
-            api_key="sk-test",
-            models=["test-m1"],
-        )
+async def _seed_and_reload(app) -> None:
+    from janus.dashboard.reload import (
+        reload_combos,
+        reload_pricing,
+        reload_providers,
+        reload_savers,
     )
-    return reg
+    from janus.storage.database import init_db, seed_from_config
+
+    db_path = app.state.db_path
+    await init_db(db_path)
+    await seed_from_config(db_path, app.state.config)
+    await reload_providers(app)
+    await reload_combos(app)
+    await reload_savers(app)
+    await reload_pricing(app)
 
 
 @pytest.fixture
-def config():
-    return JanusConfig(server=ServerSettings(port=0, require_api_key=False))
-
-
-@pytest.fixture
-def app(registry, config):
-    return create_app(registry, config)
+async def app(tmp_path):
+    provider = ProviderConfig(
+        id="test",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="sk-test",
+        models=["test-m1"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    return app
 
 
 @pytest.mark.asyncio
@@ -181,29 +191,29 @@ async def test_unknown_model_error(app):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fallback_on_429():
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="t1",
-            prefix="test",
-            api_type="openai_compat",
-            base_url="https://fake.local/v1",
-            api_key="k1",
-            models=["m1"],
-        )
+async def test_fallback_on_429(tmp_path):
+    provider1 = ProviderConfig(
+        id="t1",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="k1",
+        models=["m1"],
     )
-    reg.register(
-        ProviderConfig(
-            id="t2",
-            prefix="test",
-            api_type="openai_compat",
-            base_url="https://fake2.local/v1",
-            api_key="k2",
-            models=["m1"],
-        )
+    provider2 = ProviderConfig(
+        id="t2",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake2.local/v1",
+        api_key="k2",
+        models=["m1"],
     )
-    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[provider1, provider2],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
 
     respx.post("https://fake.local/v1/chat/completions").mock(
         return_value=httpx.Response(429, json={"error": "rate limited"})
@@ -238,19 +248,21 @@ async def test_fallback_on_429():
 
 
 @pytest.mark.asyncio
-async def test_all_providers_exhaustured_returns_503():
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="t1",
-            prefix="test",
-            api_type="openai_compat",
-            base_url="https://fake.local/v1",
-            api_key="k1",
-            models=["m1"],
-        )
+async def test_all_providers_exhaustured_returns_503(tmp_path):
+    provider = ProviderConfig(
+        id="t1",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="k1",
+        models=["m1"],
     )
-    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
 
     with respx.mock:
         respx.post("https://fake.local/v1/chat/completions").mock(
@@ -267,20 +279,22 @@ async def test_all_providers_exhaustured_returns_503():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_combo_expansion():
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="a",
-            prefix="a",
-            api_type="openai_compat",
-            base_url="https://a.local/v1",
-            api_key="k",
-            models=["b"],
-        )
+async def test_combo_expansion(tmp_path):
+    provider = ProviderConfig(
+        id="a",
+        prefix="a",
+        api_type="openai_compat",
+        base_url="https://a.local/v1",
+        api_key="k",
+        models=["b"],
     )
-    reg.register_combo(ComboConfig(name="stk", models=["a/b"]))
-    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[provider],
+        combos=[ComboConfig(name="stk", models=["a/b"])],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
 
     respx.post("https://a.local/v1/chat/completions").mock(
         return_value=httpx.Response(
@@ -315,20 +329,22 @@ async def test_combo_expansion():
 
 
 @pytest.mark.asyncio
-async def test_models_lists_combos():
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="a",
-            prefix="a",
-            api_type="openai_compat",
-            base_url="https://a.local/v1",
-            api_key="k",
-            models=["b"],
-        )
+async def test_models_lists_combos(tmp_path):
+    provider = ProviderConfig(
+        id="a",
+        prefix="a",
+        api_type="openai_compat",
+        base_url="https://a.local/v1",
+        api_key="k",
+        models=["b"],
     )
-    reg.register_combo(ComboConfig(name="stk", models=["a/b"]))
-    app = create_app(reg, JanusConfig(server=ServerSettings(port=0)))
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[provider],
+        combos=[ComboConfig(name="stk", models=["a/b"])],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/v1/models")
@@ -340,26 +356,25 @@ async def test_models_lists_combos():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_rtk_compresses_tool_result_before_provider():
+async def test_rtk_compresses_tool_result_before_provider(tmp_path):
     """RTK should compress tool_result content before it reaches the provider."""
     from janus.config.schema import TokenSaverConfig, TokenSaverSettings
 
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="t",
-            prefix="t",
-            api_type="openai_compat",
-            base_url="https://fake.local/v1",
-            api_key="k",
-            models=["m"],
-        )
+    provider = ProviderConfig(
+        id="t",
+        prefix="t",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="k",
+        models=["m"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0),
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[provider],
         token_savers=TokenSaverConfig(rtk=TokenSaverSettings(enabled=True)),
     )
-    app = create_app(reg, cfg)
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
 
     long_diff = "diff --git a/f.py b/f.py\nindex 111..222 100644\n" + "line\n" * 300
     captured: dict = {}
@@ -415,23 +430,22 @@ async def test_rtk_compresses_tool_result_before_provider():
 @respx.mock
 async def test_usage_recorded_after_request(tmp_path):
     """Usage should be recorded to DB after a successful non-streaming request."""
-    from janus.storage.database import init_db
     from janus.storage.usage import get_usage_stats
 
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="t",
-            prefix="t",
-            api_type="openai_compat",
-            base_url="https://fake.local/v1",
-            api_key="k",
-            models=["m"],
-        )
+    provider = ProviderConfig(
+        id="t",
+        prefix="t",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="k",
+        models=["m"],
     )
-    cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
-    app = create_app(reg, cfg)
-    await init_db(app.state.db_path)
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
 
     respx.post("https://fake.local/v1/chat/completions").mock(
         return_value=httpx.Response(

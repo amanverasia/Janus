@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, cast
 
@@ -32,6 +33,21 @@ async def _ensure_db(request: Request) -> Path:
     db_path = Path(request.app.state.db_path)
     if not getattr(request.app.state, "_dashboard_db_ready", False):
         await init_db(db_path)
+        from janus.storage.database import seed_from_config
+
+        await seed_from_config(db_path, request.app.state.config)
+
+        from janus.dashboard.reload import (
+            reload_combos,
+            reload_pricing,
+            reload_providers,
+            reload_savers,
+        )
+
+        await reload_providers(request.app)
+        await reload_combos(request.app)
+        await reload_savers(request.app)
+        await reload_pricing(request.app)
         request.app.state._dashboard_db_ready = True
     return db_path
 
@@ -75,20 +91,39 @@ async def overview(request: Request) -> HTMLResponse:
 
 @router.get("/providers", response_class=HTMLResponse)
 async def providers_page(request: Request) -> HTMLResponse:
-    registry = request.app.state.registry
+    db_path = await _ensure_db(request)
+    from janus.dashboard.catalog import get_catalog
+    from janus.storage.providers_db import list_providers
+
+    providers_raw = await list_providers(db_path)
+    providers = []
+    for p in providers_raw:
+        parsed = dict(p)
+        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        providers.append(parsed)
+    catalog = get_catalog()
     context: dict[str, Any] = {
         "request": request,
-        "providers": registry.providers,
+        "providers": providers,
+        "catalog": catalog,
     }
     return _templates.TemplateResponse(request, "providers.html", context)
 
 
 @router.get("/combos", response_class=HTMLResponse)
 async def combos_page(request: Request) -> HTMLResponse:
-    registry = request.app.state.registry
+    db_path = await _ensure_db(request)
+    from janus.storage.combos_db import list_combos
+
+    combos_raw = await list_combos(db_path)
+    combos = []
+    for c in combos_raw:
+        parsed = dict(c)
+        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        combos.append(parsed)
     context: dict[str, Any] = {
         "request": request,
-        "combos": registry.combos,
+        "combos": combos,
     }
     return _templates.TemplateResponse(request, "combos.html", context)
 
@@ -247,3 +282,305 @@ async def revoke_api_key(request: Request, key_id: int) -> HTMLResponse:
         "new_key": None,
     }
     return _templates.TemplateResponse(request, "keys_partial.html", context)
+
+
+# ---- Provider CRUD ----
+
+
+@router.post("/api/providers", response_class=HTMLResponse)
+async def api_create_provider(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.providers_db import create_provider
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    models_str = params.get("models", [""])[0]
+    models = [m.strip() for m in models_str.split(",") if m.strip()]
+    await create_provider(
+        db_path,
+        {
+            "id": params["id"][0],
+            "prefix": params["prefix"][0],
+            "api_type": params["api_type"][0],
+            "base_url": params["base_url"][0],
+            "api_key": params.get("api_key", [""])[0] or None,
+            "models": models,
+        },
+    )
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await _providers_partial(request, db_path)
+
+
+@router.put("/api/providers/{provider_id}", response_class=HTMLResponse)
+async def api_update_provider(request: Request, provider_id: str) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.providers_db import update_provider
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    models_str = params.get("models", [""])[0]
+    models = [m.strip() for m in models_str.split(",") if m.strip()]
+    await update_provider(
+        db_path,
+        provider_id,
+        {
+            "prefix": params["prefix"][0],
+            "api_type": params["api_type"][0],
+            "base_url": params["base_url"][0],
+            "api_key": params.get("api_key", [""])[0] or None,
+            "models": models,
+        },
+    )
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await _providers_partial(request, db_path)
+
+
+@router.patch("/api/providers/{provider_id}/toggle", response_class=HTMLResponse)
+async def api_toggle_provider(request: Request, provider_id: str) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.providers_db import toggle_provider
+
+    await toggle_provider(db_path, provider_id)
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await _providers_partial(request, db_path)
+
+
+@router.delete("/api/providers/{provider_id}", response_class=HTMLResponse)
+async def api_delete_provider(request: Request, provider_id: str) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.providers_db import delete_provider
+
+    await delete_provider(db_path, provider_id)
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await _providers_partial(request, db_path)
+
+
+async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
+    from janus.storage.providers_db import list_providers
+
+    providers_raw = await list_providers(db_path)
+    providers = []
+    for p in providers_raw:
+        parsed = dict(p)
+        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        providers.append(parsed)
+    context: dict[str, Any] = {
+        "request": request,
+        "providers": providers,
+    }
+    return _templates.TemplateResponse(request, "providers_partial.html", context)
+
+
+# ---- Combo CRUD ----
+
+
+@router.post("/api/combos", response_class=HTMLResponse)
+async def api_create_combo(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.combos_db import create_combo
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    models_str = params.get("models", [""])[0]
+    models = [m.strip() for m in models_str.split(",") if m.strip()]
+    await create_combo(db_path, {"name": params["name"][0], "models": models})
+    from janus.dashboard.reload import reload_combos
+
+    await reload_combos(request.app)
+    return await _combos_partial(request, db_path)
+
+
+@router.put("/api/combos/{combo_id}", response_class=HTMLResponse)
+async def api_update_combo(request: Request, combo_id: int) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.combos_db import update_combo
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    models_str = params.get("models", [""])[0]
+    models = [m.strip() for m in models_str.split(",") if m.strip()]
+    await update_combo(db_path, combo_id, {"name": params["name"][0], "models": models})
+    from janus.dashboard.reload import reload_combos
+
+    await reload_combos(request.app)
+    return await _combos_partial(request, db_path)
+
+
+@router.delete("/api/combos/{combo_id}", response_class=HTMLResponse)
+async def api_delete_combo(request: Request, combo_id: int) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.combos_db import delete_combo
+
+    await delete_combo(db_path, combo_id)
+    from janus.dashboard.reload import reload_combos
+
+    await reload_combos(request.app)
+    return await _combos_partial(request, db_path)
+
+
+async def _combos_partial(request: Request, db_path: Path) -> HTMLResponse:
+    from janus.storage.combos_db import list_combos
+
+    combos_raw = await list_combos(db_path)
+    combos = []
+    for c in combos_raw:
+        parsed = dict(c)
+        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        combos.append(parsed)
+    context: dict[str, Any] = {
+        "request": request,
+        "combos": combos,
+    }
+    return _templates.TemplateResponse(request, "combos_partial.html", context)
+
+
+# ---- Token Savers ----
+
+
+@router.get("/savers", response_class=HTMLResponse)
+async def savers_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.settings import get_all_settings
+
+    settings = await get_all_settings(db_path)
+    context: dict[str, Any] = {
+        "request": request,
+        "settings": settings,
+    }
+    return _templates.TemplateResponse(request, "savers.html", context)
+
+
+@router.post("/api/settings", response_class=HTMLResponse)
+async def api_update_setting(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.settings import set_setting
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    key = params["key"][0]
+    value = params["value"][0]
+    await set_setting(db_path, key, value)
+    if key.startswith("saver_"):
+        from janus.dashboard.reload import reload_savers
+
+        await reload_savers(request.app)
+    return HTMLResponse(content="", status_code=200)
+
+
+# ---- Tool Setup ----
+
+
+@router.get("/tools", response_class=HTMLResponse)
+async def tools_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.settings import get_all_settings
+
+    settings = await get_all_settings(db_path)
+    require_key = settings.get("server_require_api_key", "false") == "true"
+    base_url = f"http://localhost:{request.app.state.config.server.port}/v1"
+    context: dict[str, Any] = {
+        "request": request,
+        "base_url": base_url,
+        "require_key": require_key,
+    }
+    return _templates.TemplateResponse(request, "tools.html", context)
+
+
+# ---- Pricing ----
+
+
+@router.get("/pricing", response_class=HTMLResponse)
+async def pricing_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.pricing.builtin import BUILTIN_PRICING
+    from janus.storage.pricing_db import list_pricing_overrides
+
+    overrides = await list_pricing_overrides(db_path)
+    builtin_list = [
+        {
+            "model": k,
+            "input_per_mtok": p.input_per_mtok,
+            "output_per_mtok": p.output_per_mtok,
+            "cache_creation_per_mtok": p.cache_creation_per_mtok,
+            "cache_read_per_mtok": p.cache_read_per_mtok,
+        }
+        for k, p in sorted(BUILTIN_PRICING.items())
+    ]
+    context: dict[str, Any] = {
+        "request": request,
+        "builtin": builtin_list,
+        "overrides": overrides,
+    }
+    return _templates.TemplateResponse(request, "pricing.html", context)
+
+
+@router.post("/api/pricing", response_class=HTMLResponse)
+async def api_create_pricing(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.pricing_db import create_or_update_pricing_override
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    await create_or_update_pricing_override(
+        db_path,
+        {
+            "model": params["model"][0],
+            "input_per_mtok": float(params["input_per_mtok"][0]),
+            "output_per_mtok": float(params["output_per_mtok"][0]),
+            "cache_creation_per_mtok": float(params.get("cache_creation_per_mtok", ["0"])[0]),
+            "cache_read_per_mtok": float(params.get("cache_read_per_mtok", ["0"])[0]),
+        },
+    )
+    from janus.dashboard.reload import reload_pricing
+
+    await reload_pricing(request.app)
+    return HTMLResponse(content="", status_code=200)
+
+
+@router.delete("/api/pricing/{model}", response_class=HTMLResponse)
+async def api_delete_pricing(request: Request, model: str) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.pricing_db import delete_pricing_override
+
+    await delete_pricing_override(db_path, model)
+    from janus.dashboard.reload import reload_pricing
+
+    await reload_pricing(request.app)
+    return HTMLResponse(content="", status_code=200)
+
+
+# ---- Settings ----
+
+
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.settings import get_all_settings
+
+    settings = await get_all_settings(db_path)
+    context: dict[str, Any] = {
+        "request": request,
+        "settings": settings,
+        "config": request.app.state.config,
+    }
+    return _templates.TemplateResponse(request, "settings.html", context)

@@ -3,27 +3,80 @@
 {% block combos_active %}bg-gray-700 text-white{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-bold text-white mb-6">Combos</h1>
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white">Combos</h1>
+    <button onclick="document.getElementById('combo-modal').classList.remove('hidden')"
+            class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+        + Add Combo
+    </button>
+</div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-    {% for name, models in combos.items() %}
-    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <h2 class="text-lg font-bold text-white mb-4">{{ name }}</h2>
-        <div class="flex flex-wrap items-center gap-2">
-            {% for model in models %}
-            <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-900 text-blue-200">{{ model }}</span>
-            {% if not loop.last %}
-            <span class="text-gray-500 text-lg">→</span>
-            {% endif %}
-            {% endfor %}
+<div id="combos-list">
+    {% include "combos_partial.html" %}
+</div>
+
+<!-- Add/Edit Combo Modal -->
+<div id="combo-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="bg-gray-800 rounded-xl border border-gray-700 p-6 max-w-md w-full mx-4">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-bold text-white" id="combo-modal-title">Add Combo</h2>
+            <button onclick="document.getElementById('combo-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-white text-xl">&times;</button>
         </div>
+        <form id="combo-form" class="space-y-4"
+              onsubmit="setTimeout(() => document.getElementById('combo-modal').classList.add('hidden'), 100)">
+            <div>
+                <label class="block text-gray-400 text-sm mb-1">Name</label>
+                <input type="text" name="name" id="c-name" required
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+            </div>
+            <div>
+                <label class="block text-gray-400 text-sm mb-1">Models (comma-separated, e.g. openai/gpt-4o, anthropic/claude-sonnet-4-20250514)</label>
+                <input type="text" name="models" id="c-models" required
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                Create Combo
+            </button>
+        </form>
     </div>
-    {% endfor %}
 </div>
 
-{% if not combos %}
-<div class="bg-gray-800 rounded-xl p-8 border border-gray-700 text-center">
-    <p class="text-gray-400">No combos configured.</p>
-</div>
-{% endif %}
+<script>
+function editCombo(id, name, models) {
+    document.getElementById('combo-modal-title').textContent = 'Edit Combo';
+    document.getElementById('c-name').value = name;
+    document.getElementById('c-models').value = models;
+    var form = document.getElementById('combo-form');
+    form.onsubmit = function(e) {
+        e.preventDefault();
+        var formData = new URLSearchParams(new FormData(form));
+        fetch('/dashboard/api/combos/' + id, {
+            method: 'PUT',
+            body: formData,
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+        }).then(r => r.text()).then(html => {
+            document.getElementById('combos-list').innerHTML = html;
+            document.getElementById('combo-modal').classList.add('hidden');
+            document.getElementById('combo-modal-title').textContent = 'Add Combo';
+            form.onsubmit = null;
+            form.reset();
+        });
+    };
+    document.getElementById('combo-modal').classList.remove('hidden');
+}
+
+(function() {
+    var form = document.getElementById('combo-form');
+    var orig = form.onsubmit;
+    form.addEventListener('submit', function() {
+        if (!form.onsubmit || form.onsubmit === orig) {
+            form.action = '';
+            form.method = '';
+            form.setAttribute('hx-post', '/dashboard/api/combos');
+            form.setAttribute('hx-target', '#combos-list');
+        }
+    });
+})();
+</script>
 {% endblock %}

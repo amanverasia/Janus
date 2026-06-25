@@ -15,12 +15,8 @@ from janus.providers.openai_compat import OpenAICompatProvider
 from janus.providers.opencode_free import OpenCodeFreeProvider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
-from janus.storage.database import init_db
-from janus.tokensavers.base import TokenSaver
-from janus.tokensavers.caveman import CavemanSaver
+from janus.storage.database import init_db, seed_from_config
 from janus.tokensavers.pipeline import SaverPipeline
-from janus.tokensavers.ponytail import PonytailSaver
-from janus.tokensavers.rtk import RTKSaver
 
 
 def _build_provider(config: ProviderConfig) -> Provider:
@@ -39,6 +35,21 @@ def _build_provider(config: ProviderConfig) -> Provider:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_path = app.state.db_path
     await init_db(db_path)
+    config: JanusConfig = app.state.config
+    await seed_from_config(db_path, config)
+
+    from janus.dashboard.reload import (
+        reload_combos,
+        reload_pricing,
+        reload_providers,
+        reload_savers,
+    )
+
+    await reload_providers(app)
+    await reload_combos(app)
+    await reload_savers(app)
+    await reload_pricing(app)
+
     yield
     for provider in app.state.providers.values():
         await provider.close()
@@ -56,27 +67,10 @@ def create_app(
     app.state.registry = registry
     app.state.config = config
     app.state.db_path = config.server.data_dir / "janus.db"
-    if config.providers:
-        for pc in config.providers:
-            registry.register(pc)
-    if config.combos:
-        for combo in config.combos:
-            registry.register_combo(combo)
     app.state.fallback_handler = FallbackHandler(registry)
-    savers: list[TokenSaver] = []
-    if config.token_savers.rtk.enabled:
-        savers.append(RTKSaver())
-    if config.token_savers.caveman.enabled:
-        savers.append(CavemanSaver())
-    if config.token_savers.ponytail.enabled:
-        savers.append(PonytailSaver(level=config.token_savers.ponytail.level))
-    app.state.saver_pipeline = SaverPipeline(savers)
+    app.state.saver_pipeline = SaverPipeline([])
     app.state.pricing_registry = PricingRegistry(config.pricing)
-    providers: dict[str, Provider] = {}
-    for configs in registry.providers.values():
-        for pc in configs:
-            providers[pc.id] = _build_provider(pc)
-    app.state.providers = providers
+    app.state.providers = {}
     app.include_router(router, prefix="/v1")
 
     from janus.dashboard.routes import router as dashboard_router
