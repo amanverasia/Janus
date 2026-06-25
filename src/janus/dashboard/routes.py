@@ -32,6 +32,21 @@ async def _ensure_db(request: Request) -> Path:
     db_path = Path(request.app.state.db_path)
     if not getattr(request.app.state, "_dashboard_db_ready", False):
         await init_db(db_path)
+        from janus.storage.database import seed_from_config
+
+        await seed_from_config(db_path, request.app.state.config)
+
+        from janus.dashboard.reload import (
+            reload_combos,
+            reload_pricing,
+            reload_providers,
+            reload_savers,
+        )
+
+        await reload_providers(request.app)
+        await reload_combos(request.app)
+        await reload_savers(request.app)
+        await reload_pricing(request.app)
         request.app.state._dashboard_db_ready = True
     return db_path
 
@@ -75,6 +90,7 @@ async def overview(request: Request) -> HTMLResponse:
 
 @router.get("/providers", response_class=HTMLResponse)
 async def providers_page(request: Request) -> HTMLResponse:
+    await _ensure_db(request)
     registry = request.app.state.registry
     context: dict[str, Any] = {
         "request": request,
@@ -85,6 +101,7 @@ async def providers_page(request: Request) -> HTMLResponse:
 
 @router.get("/combos", response_class=HTMLResponse)
 async def combos_page(request: Request) -> HTMLResponse:
+    await _ensure_db(request)
     registry = request.app.state.registry
     context: dict[str, Any] = {
         "request": request,

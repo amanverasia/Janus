@@ -3,25 +3,25 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
-from janus.providers.registry import ProviderRegistry
 
 
 @pytest.fixture
 def app(tmp_path):
-    reg = ProviderRegistry()
-    reg.register(
-        ProviderConfig(
-            id="t",
-            prefix="t",
-            api_type="openai_compat",
-            base_url="https://test.local/v1",
-            api_key="k",
-            models=["m1"],
-        )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="t",
+                prefix="t",
+                api_type="openai_compat",
+                base_url="https://test.local/v1",
+                api_key="k",
+                models=["m1"],
+            )
+        ],
+        combos=[ComboConfig(name="stk", models=["t/m1"])],
     )
-    reg.register_combo(ComboConfig(name="stk", models=["t/m1"]))
-    cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
-    return create_app(reg, cfg)
+    return create_app(config=cfg)
 
 
 @pytest.mark.asyncio

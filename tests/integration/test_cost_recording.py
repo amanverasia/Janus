@@ -5,16 +5,30 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
-from janus.providers.registry import ProviderRegistry
-from janus.storage.database import init_db
+
+
+async def _seed_and_reload(app) -> None:
+    from janus.dashboard.reload import (
+        reload_combos,
+        reload_pricing,
+        reload_providers,
+        reload_savers,
+    )
+    from janus.storage.database import init_db, seed_from_config
+
+    db_path = app.state.db_path
+    await init_db(db_path)
+    await seed_from_config(db_path, app.state.config)
+    await reload_providers(app)
+    await reload_combos(app)
+    await reload_savers(app)
+    await reload_pricing(app)
 
 
 @pytest.mark.asyncio
 async def test_cost_recorded_for_non_streaming(tmp_path):
     db_path = tmp_path / "test.db"
-    await init_db(db_path)
 
-    registry = ProviderRegistry()
     provider = ProviderConfig(
         id="test-openai",
         prefix="test",
@@ -23,13 +37,13 @@ async def test_cost_recorded_for_non_streaming(tmp_path):
         api_key="sk-test",
         models=["gpt-4o"],
     )
-    registry.register(provider)
     config = JanusConfig(
         server=ServerSettings(data_dir=tmp_path),
         providers=[provider],
     )
-    app = create_app(registry=registry, config=config)
+    app = create_app(config=config)
     app.state.db_path = db_path
+    await _seed_and_reload(app)
 
     mock_response = {
         "id": "chatcmpl-123",
