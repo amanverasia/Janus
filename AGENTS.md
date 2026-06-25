@@ -81,6 +81,10 @@ Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup
 
 - `storage/api_keys.py` — keys are `sk-janus-{32hex}`, stored as SHA256 hash. `verify_key()` returns `int | None` (DB row ID). The API-key gate (`api/deps.py`) checks both config `api_keys` (static list) AND DB keys. When a DB key is used, `request.state.client_key_id` is set.
 - `storage/usage.py` — `record_usage()` records per-request token usage (fire-and-forget, non-streaming only). Params include `cost`, `cache_creation_tokens`, `cache_read_tokens`, `client_key_id`.
+- `storage/settings.py` — key-value settings store (`get_setting`, `set_setting`, `get_all_settings`).
+- `storage/providers_db.py` — provider CRUD (create, update, delete, toggle, list).
+- `storage/combos_db.py` — combo CRUD.
+- `storage/pricing_db.py` — pricing override CRUD.
 - CLI commands call `init_db()` inline before DB operations (see pattern in `cli.py`). Follow this if adding CLI subcommands that touch the DB.
 
 ## Pricing & budget enforcement
@@ -100,3 +104,12 @@ Combos are named ordered model sequences. A client sends `"model": "combo-name"`
 Docs site uses MkDocs Material. Config in `mkdocs.yml`, pages in `docs/`. Internal design specs in `docs/superpowers/` are excluded from the site nav via `exclude_docs`. Preview with `mkdocs serve`, verify with `mkdocs build --strict`.
 
 Build backend is hatchling. Wheel + sdist via `python -m build`. PyPI publishing is automated via `.github/workflows/publish.yml` (OIDC trusted publisher, triggered on `v*` tag push). GitHub Pages deployment via `.github/workflows/docs.yml` (triggered on push to `main` when `docs/`, `mkdocs.yml`, or `README.md` change).
+
+## Dashboard CRUD & DB-driven config (Phase 9)
+
+- **Dashboard is now full CRUD** — providers, combos, token savers, pricing overrides, and settings are managed from SQLite, not YAML. The dashboard UI calls REST routes that read/write DB tables directly.
+- **YAML config is a seed file.** It is loaded on first startup via `seed_from_config()` (in `database.py`), which does a one-time YAML → DB migration. After seeding, the **DB is the source of truth** — editing the YAML and restarting will NOT re-seed (idempotent: existing rows are skipped).
+- `dashboard/reload.py` provides hot-reload helpers that re-read DB state into the live app without restart: `reload_providers`, `reload_combos`, `reload_savers`, `reload_pricing`. Dashboard mutation routes call these after writing to the DB so changes take effect immediately.
+- `dashboard/catalog.py` holds the **provider catalog** — the list of known upstream providers (display names, default API types, base URLs) that the "Add Provider" form draws from.
+- Dashboard `_ensure_db()` (the lazy-init guard used by ASGITransport tests) now also triggers `seed_from_config()` + reload functions, so tests that hit dashboard routes get a fully seeded + warmed app without the lifespan handler.
+- **New DB tables:** `providers`, `combos`, `settings`, `pricing_overrides`. All created idempotently by `init_db()`.

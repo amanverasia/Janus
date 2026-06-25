@@ -7,9 +7,7 @@ from typing import Any
 from .database import get_connection
 
 
-async def list_providers(
-    db_path: str | Path, enabled_only: bool = False
-) -> list[dict[str, Any]]:
+async def list_providers(db_path: str | Path, enabled_only: bool = False) -> list[dict[str, Any]]:
     query = "SELECT * FROM providers"
     if enabled_only:
         query += " WHERE is_enabled = 1"
@@ -22,9 +20,7 @@ async def list_providers(
 
 async def get_provider(db_path: str | Path, provider_id: str) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
-        async with db.execute(
-            "SELECT * FROM providers WHERE id = ?", (provider_id,)
-        ) as cur:
+        async with db.execute("SELECT * FROM providers WHERE id = ?", (provider_id,)) as cur:
             row = await cur.fetchone()
     return dict(row) if row else None
 

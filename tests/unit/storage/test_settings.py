@@ -1,6 +1,6 @@
 import pytest
 
-from janus.storage.database import get_connection, init_db
+from janus.storage.database import init_db
 from janus.storage.settings import get_all_settings, get_setting, set_setting
 
 

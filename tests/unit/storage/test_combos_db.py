@@ -20,11 +20,17 @@ async def db(tmp_path):
 
 
 async def test_create_and_list_combo(db):
-    await create_combo(db, {"name": "best-effort", "models": ["openai/gpt-4o", "anthropic/claude-sonnet-4-20250514"]})
+    await create_combo(
+        db,
+        {"name": "best-effort", "models": ["openai/gpt-4o", "anthropic/claude-sonnet-4-20250514"]},
+    )
     combos = await list_combos(db)
     assert len(combos) == 1
     assert combos[0]["name"] == "best-effort"
-    assert json.loads(combos[0]["models"]) == ["openai/gpt-4o", "anthropic/claude-sonnet-4-20250514"]
+    assert json.loads(combos[0]["models"]) == [
+        "openai/gpt-4o",
+        "anthropic/claude-sonnet-4-20250514",
+    ]
 
 
 async def test_get_combo(db):
