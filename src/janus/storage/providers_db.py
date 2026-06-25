@@ -67,7 +67,8 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
 async def toggle_provider(db_path: str | Path, provider_id: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE providers SET is_enabled = 1 - is_enabled, updated_at = datetime('now') WHERE id = ?",
+            "UPDATE providers SET is_enabled = 1 - is_enabled,"
+            " updated_at = datetime('now') WHERE id = ?",
             (provider_id,),
         )
         await db.commit()

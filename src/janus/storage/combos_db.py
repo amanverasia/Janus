@@ -28,7 +28,8 @@ async def create_combo(db_path: str | Path, data: dict[str, Any]) -> int:
             (data["name"], json.dumps(data["models"])),
         )
         await db.commit()
-        return int(cursor.lastrowid)
+        last_id = cursor.lastrowid
+        return last_id if last_id is not None else 0
 
 
 async def update_combo(db_path: str | Path, combo_id: int, data: dict[str, Any]) -> None:
