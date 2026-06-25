@@ -6,7 +6,17 @@ build-backend = "hatchling.build"
 name = "janus"
 version = "0.1.0"
 description = "The two-faced AI routing gateway"
+license = "GPL-3.0-only"
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: Proxy Servers",
+]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
@@ -20,6 +30,12 @@ dependencies = [
     "python-multipart>=0.0.12",
 ]
 
+[project.urls]
+Homepage = "https://github.com/amanverasia/Janus"
+Documentation = "https://amanverasia.github.io/Janus/"
+Repository = "https://github.com/amanverasia/Janus"
+Issues = "https://github.com/amanverasia/Janus/issues"
+
 [project.scripts]
 janus = "janus.cli:app"
 
@@ -31,6 +47,8 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "pytest-cov>=5.0",
+    "mkdocs-material>=9.5",
+    "build>=1.2",
 ]
 
 [tool.ruff]

@@ -27,6 +27,15 @@
 
 # Docker
 docker compose up -d      # builds, starts, persists data in ./janus-data/
+
+# Preview docs site locally
+.venv/bin/mkdocs serve
+
+# Verify docs build (strict mode)
+.venv/bin/mkdocs build --strict
+
+# Build wheel + sdist
+.venv/bin/python -m build
 ```
 
 ## Architecture constraint
@@ -129,3 +138,15 @@ The `dashboard/` package serves an HTMX + Jinja2 UI at `/dashboard`. No npm, no 
 Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. The `providers:`, `combos:`, and `token_savers:` keys can be null (all commented out) — the loader filters None values. Generate a template with `janus config-init`.
 
 Combos are named ordered model sequences. A client sends `"model": "combo-name"` and Janus tries each model in order with all its accounts.
+
+## Documentation & Packaging
+
+Docs site uses MkDocs Material. Config in `mkdocs.yml`, pages in `docs/`. Internal design specs in `docs/superpowers/` are excluded from the site nav via `exclude_docs`. Preview with `mkdocs serve`, verify with `mkdocs build --strict`.
+
+Build backend is hatchling. Wheel + sdist via `python -m build`. PyPI publishing is automated via `.github/workflows/publish.yml` (OIDC trusted publisher, triggered on `v*` tag push). GitHub Pages deployment via `.github/workflows/docs.yml` (triggered on push to `main` when `docs/`, `mkdocs.yml`, or `README.md` change).
+
+Dev dependencies (`mkdocs-material`, `build`) are in the `[dev]` extras.
+
+Manual prerequisites (one-time):
+- PyPI: Add GitHub as trusted publisher with environment `pypi`
+- GitHub Pages: Set source to `gh-pages` branch in repo Settings > Pages
