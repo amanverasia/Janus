@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+from typing import Any
+
+CATALOG: dict[str, dict[str, Any]] = {
+    "openai": {
+        "name": "OpenAI",
+        "icon": "🟢",
+        "api_type": "openai_compat",
+        "base_url": "https://api.openai.com/v1",
+        "prefix": "openai",
+        "default_models": ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+    },
+    "anthropic": {
+        "name": "Anthropic",
+        "icon": "🟠",
+        "api_type": "anthropic",
+        "base_url": "https://api.anthropic.com",
+        "prefix": "anthropic",
+        "default_models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+    },
+    "gemini": {
+        "name": "Google Gemini",
+        "icon": "🔵",
+        "api_type": "gemini",
+        "base_url": "https://generativelanguage.googleapis.com",
+        "prefix": "gemini",
+        "default_models": ["gemini-2.5-pro", "gemini-2.0-flash"],
+    },
+    "groq": {
+        "name": "Groq",
+        "icon": "⚡",
+        "api_type": "openai_compat",
+        "base_url": "https://api.groq.com/openai/v1",
+        "prefix": "groq",
+        "default_models": ["llama-3.3-70b-instruct"],
+    },
+    "together": {
+        "name": "Together AI",
+        "icon": "🤝",
+        "api_type": "openai_compat",
+        "base_url": "https://api.together.xyz/v1",
+        "prefix": "together",
+        "default_models": [],
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "icon": "🔬",
+        "api_type": "openai_compat",
+        "base_url": "https://api.deepseek.com/v1",
+        "prefix": "deepseek",
+        "default_models": ["deepseek-chat", "deepseek-reasoner"],
+    },
+    "openrouter": {
+        "name": "OpenRouter",
+        "icon": "🔀",
+        "api_type": "openai_compat",
+        "base_url": "https://openrouter.ai/api/v1",
+        "prefix": "openrouter",
+        "default_models": [],
+    },
+    "mistral": {
+        "name": "Mistral",
+        "icon": "🌬️",
+        "api_type": "openai_compat",
+        "base_url": "https://api.mistral.ai/v1",
+        "prefix": "mistral",
+        "default_models": ["mistral-large-2411"],
+    },
+    "fireworks": {
+        "name": "Fireworks",
+        "icon": "🎆",
+        "api_type": "openai_compat",
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "prefix": "fireworks",
+        "default_models": [],
+    },
+    "perplexity": {
+        "name": "Perplexity",
+        "icon": "🔍",
+        "api_type": "openai_compat",
+        "base_url": "https://api.perplexity.ai",
+        "prefix": "perplexity",
+        "default_models": [],
+    },
+    "xai": {
+        "name": "xAI (Grok)",
+        "icon": "❌",
+        "api_type": "openai_compat",
+        "base_url": "https://api.x.ai/v1",
+        "prefix": "xai",
+        "default_models": [],
+    },
+    "qwen": {
+        "name": "Qwen/DashScope",
+        "icon": "🌐",
+        "api_type": "openai_compat",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "prefix": "qwen",
+        "default_models": ["qwen-max", "qwen-plus", "qwen-turbo"],
+    },
+    "opencode_free": {
+        "name": "OpenCode Zen (Free)",
+        "icon": "🆓",
+        "api_type": "opencode_free",
+        "base_url": "",
+        "prefix": "opencode",
+        "default_models": [],
+    },
+    "custom": {
+        "name": "Custom Provider",
+        "icon": "⚙️",
+        "api_type": "openai_compat",
+        "base_url": "",
+        "prefix": "",
+        "default_models": [],
+    },
+}
+
+
+def get_catalog() -> dict[str, dict[str, Any]]:
+    return CATALOG
