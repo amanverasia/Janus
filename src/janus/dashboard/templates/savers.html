@@ -19,7 +19,7 @@
             </div>
             <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
                     hx-vals='js:{key: "saver_rtk_enabled", value: saverRtkEnabled ? "false" : "true"}'
-                    onclick="saverRtkEnabled = !saverRtkEnabled; this.className = saverToggleClass(saverRtkEnabled)"
+                    onclick="var newVal = !saverRtkEnabled; saverRtkEnabled = newVal; saverToggleUpdate(this, newVal)"
                     class="saver-rtk-btn {{ 'bg-green-600 text-white' if settings.saver_rtk_enabled != 'false' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
                 {{ 'Enabled' if settings.saver_rtk_enabled != 'false' else 'Disabled' }}
             </button>
@@ -37,7 +37,7 @@
             </div>
             <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
                     hx-vals='js:{key: "saver_caveman_enabled", value: saverCavemanEnabled ? "false" : "true"}'
-                    onclick="saverCavemanEnabled = !saverCavemanEnabled; this.className = saverToggleClass(saverCavemanEnabled)"
+                    onclick="var newVal = !saverCavemanEnabled; saverCavemanEnabled = newVal; saverToggleUpdate(this, newVal)"
                     class="{{ 'bg-green-600 text-white' if settings.saver_caveman_enabled == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
                 {{ 'Enabled' if settings.saver_caveman_enabled == 'true' else 'Disabled' }}
             </button>
@@ -52,12 +52,13 @@
                     <h2 class="text-lg font-bold text-white">Ponytail</h2>
                 </div>
                 <p class="text-gray-400 text-sm mb-3">Summarizes older messages into a compact summary. Choose compression level:</p>
-                <div class="inline-flex rounded-lg border border-gray-700 overflow-hidden">
+                <div class="inline-flex rounded-lg border border-gray-700 overflow-hidden" id="ponytail-levels">
                     {% set pl = settings.saver_ponytail_level or 'full' %}
                     {% for level in ['lite', 'full', 'ultra'] %}
                     <button hx-post="/dashboard/api/settings" hx-swap="none"
                             hx-vals='js:{key: "saver_ponytail_level", value: "{{ level }}"}'
-                            class="px-4 py-1.5 text-sm font-medium transition-colors
+                            onclick="ponytailLevelSelect(this, '{{ level }}')"
+                            class="px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn
                             {% if pl == level %}bg-blue-600 text-white{% else %}bg-gray-900 text-gray-400 hover:text-white{% endif %}">
                         {{ level | capitalize }}
                     </button>
@@ -66,7 +67,7 @@
             </div>
             <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
                     hx-vals='js:{key: "saver_ponytail_enabled", value: saverPonytailEnabled ? "false" : "true"}'
-                    onclick="saverPonytailEnabled = !saverPonytailEnabled; this.className = saverToggleClass(saverPonytailEnabled)"
+                    onclick="var newVal = !saverPonytailEnabled; saverPonytailEnabled = newVal; saverToggleUpdate(this, newVal)"
                     class="{{ 'bg-green-600 text-white' if settings.saver_ponytail_enabled == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
                 {{ 'Enabled' if settings.saver_ponytail_enabled == 'true' else 'Disabled' }}
             </button>
@@ -79,10 +80,20 @@ var saverRtkEnabled = {{ 'true' if settings.saver_rtk_enabled != 'false' else 'f
 var saverCavemanEnabled = {{ 'true' if settings.saver_caveman_enabled == 'true' else 'false' }};
 var saverPonytailEnabled = {{ 'true' if settings.saver_ponytail_enabled == 'true' else 'false' }};
 
-function saverToggleClass(on) {
-    return on
+function saverToggleUpdate(btn, on) {
+    btn.className = on
         ? 'bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors'
         : 'bg-gray-700 text-gray-400 rounded-lg px-4 py-2 text-sm font-medium transition-colors';
+    btn.textContent = on ? 'Enabled' : 'Disabled';
+}
+
+function ponytailLevelSelect(btn, level) {
+    var container = document.getElementById('ponytail-levels');
+    var buttons = container.querySelectorAll('.ponytail-btn');
+    buttons.forEach(function(b) {
+        b.className = 'px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn bg-gray-900 text-gray-400 hover:text-white';
+    });
+    btn.className = 'px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn bg-blue-600 text-white';
 }
 </script>
 {% endblock %}

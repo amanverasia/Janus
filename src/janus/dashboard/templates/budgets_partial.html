@@ -13,7 +13,7 @@
         </thead>
         <tbody class="divide-y divide-gray-700">
             {% for b in budgets %}
-            <tr class="hover:bg-gray-750">
+            <tr class="hover:bg-gray-700">
                 <td class="px-4 py-3 text-sm text-white font-medium">{{ b.key_name }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">${{ "%.2f"|format(b.daily_limit) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">

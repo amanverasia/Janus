@@ -27,6 +27,9 @@ class ProviderRegistry:
     def register_combo(self, combo: ComboConfig) -> None:
         self._combos[combo.name] = combo.models
 
+    def clear_combos(self) -> None:
+        self._combos = {}
+
     def lookup(self, model_str: str) -> list[ResolvedTarget] | None:
         if "/" not in model_str:
             return None

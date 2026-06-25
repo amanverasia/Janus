@@ -69,7 +69,7 @@ async def overview(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     stats = await _get_usage_stats_safe(db_path)
     registry = request.app.state.registry
-    provider_count = len(registry.providers)
+    provider_count = sum(len(configs) for configs in registry.providers.values())
     today_cost = 0.0
     global_budget = None
     try:
@@ -161,6 +161,7 @@ async def analytics_page(
     valid_dims = ("model", "provider", "account", "client_key")
     if dimension not in valid_dims:
         dimension = "model"
+    days = max(1, min(days, 365))
     try:
         summary = await get_spend_summary(db_path, days=days)
         breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
@@ -190,18 +191,7 @@ async def analytics_page(
 async def budgets_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     try:
-        budgets = await get_budgets(db_path)
-        keys = await list_keys(db_path)
-        budget_statuses: list[dict[str, Any]] = []
-        for b in budgets:
-            status = await get_budget_status(db_path, key_id=b["key_id"])
-            key_name = "Global"
-            if b["key_id"] is not None:
-                key_name = next(
-                    (k["name"] for k in keys if k["id"] == b["key_id"]),
-                    f"Key #{b['key_id']}",
-                )
-            budget_statuses.append({**b, "status": status, "key_name": key_name})
+        budget_statuses, keys = await _build_budget_statuses(db_path)
     except Exception:
         budget_statuses = []
         keys = []
@@ -237,7 +227,9 @@ async def delete_budget_endpoint(request: Request, budget_id: int) -> HTMLRespon
     return await _budgets_partial(request, db_path)
 
 
-async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
+async def _build_budget_statuses(
+    db_path: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     budgets = await get_budgets(db_path)
     keys = await list_keys(db_path)
     budget_statuses: list[dict[str, Any]] = []
@@ -250,6 +242,15 @@ async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
                 f"Key #{b['key_id']}",
             )
         budget_statuses.append({**b, "status": status, "key_name": key_name})
+    return budget_statuses, keys
+
+
+async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
+    try:
+        budget_statuses, keys = await _build_budget_statuses(db_path)
+    except Exception:
+        budget_statuses = []
+        keys = []
     context: dict[str, Any] = {
         "request": request,
         "budgets": budget_statuses,
@@ -298,17 +299,22 @@ async def api_create_provider(request: Request) -> HTMLResponse:
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
-    await create_provider(
-        db_path,
-        {
-            "id": params["id"][0],
-            "prefix": params["prefix"][0],
-            "api_type": params["api_type"][0],
-            "base_url": params["base_url"][0],
-            "api_key": params.get("api_key", [""])[0] or None,
-            "models": models,
-        },
-    )
+    try:
+        await create_provider(
+            db_path,
+            {
+                "id": params["id"][0],
+                "prefix": params["prefix"][0],
+                "api_type": params["api_type"][0],
+                "base_url": params.get("base_url", [""])[0],
+                "api_key": params.get("api_key", [""])[0] or None,
+                "models": models,
+            },
+        )
+    except KeyError:
+        return HTMLResponse(content="Missing required field", status_code=400)
+    except Exception as e:
+        return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
 
     await reload_providers(request.app)
@@ -332,17 +338,22 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
 
         existing = await get_provider(db_path, provider_id)
         new_key = existing["api_key"] if existing else None
-    await update_provider(
-        db_path,
-        provider_id,
-        {
-            "prefix": params["prefix"][0],
-            "api_type": params["api_type"][0],
-            "base_url": params["base_url"][0],
-            "api_key": new_key,
-            "models": models,
-        },
-    )
+    try:
+        await update_provider(
+            db_path,
+            provider_id,
+            {
+                "prefix": params["prefix"][0],
+                "api_type": params["api_type"][0],
+                "base_url": params.get("base_url", [""])[0],
+                "api_key": new_key,
+                "models": models,
+            },
+        )
+    except KeyError:
+        return HTMLResponse(content="Missing required field", status_code=400)
+    except Exception as e:
+        return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
 
     await reload_providers(request.app)
@@ -395,11 +406,36 @@ async def api_fetch_models(request: Request) -> JSONResponse:
 
     import httpx
 
+    await _ensure_db(request)
     body = await request.body()
     params = parse_qs(body.decode())
     api_type = params.get("api_type", [""])[0]
     base_url = params.get("base_url", [""])[0].rstrip("/")
     api_key = params.get("api_key", [""])[0]
+
+    allowed_schemes = ("http", "https")
+    try:
+        parsed = httpx.URL(base_url)
+    except Exception:
+        return JSONResponse({"error": "Invalid URL"}, status_code=400)
+    if parsed.scheme not in allowed_schemes:
+        return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
+    import ipaddress
+    import socket
+
+    try:
+        hostname = parsed.host
+        if hostname:
+            addr_info = socket.getaddrinfo(hostname, None)
+            for family, _, _, _, sockaddr in addr_info:
+                ip = ipaddress.ip_address(sockaddr[0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    return JSONResponse(
+                        {"error": "URLs pointing to internal/private addresses are not allowed"},
+                        status_code=400,
+                    )
+    except (socket.gaierror, ValueError):
+        pass
 
     try:
         if api_type == "openai_compat":
@@ -471,7 +507,12 @@ async def api_create_combo(request: Request) -> HTMLResponse:
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
-    await create_combo(db_path, {"name": params["name"][0], "models": models})
+    try:
+        await create_combo(db_path, {"name": params["name"][0], "models": models})
+    except KeyError:
+        return HTMLResponse(content="Missing required field", status_code=400)
+    except Exception as e:
+        return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
@@ -489,7 +530,12 @@ async def api_update_combo(request: Request, combo_id: int) -> HTMLResponse:
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
-    await update_combo(db_path, combo_id, {"name": params["name"][0], "models": models})
+    try:
+        await update_combo(db_path, combo_id, {"name": params["name"][0], "models": models})
+    except KeyError:
+        return HTMLResponse(content="Missing required field", status_code=400)
+    except Exception as e:
+        return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
@@ -549,8 +595,11 @@ async def api_update_setting(request: Request) -> HTMLResponse:
 
     body = await request.body()
     params = parse_qs(body.decode())
-    key = params["key"][0]
-    value = params["value"][0]
+    try:
+        key = params["key"][0]
+        value = params["value"][0]
+    except KeyError:
+        return HTMLResponse(content="Missing key or value", status_code=400)
     await set_setting(db_path, key, value)
     if key.startswith("saver_"):
         from janus.dashboard.reload import reload_savers
@@ -615,20 +664,23 @@ async def api_create_pricing(request: Request) -> HTMLResponse:
 
     body = await request.body()
     params = parse_qs(body.decode())
-    await create_or_update_pricing_override(
-        db_path,
-        {
-            "model": params["model"][0],
-            "input_per_mtok": float(params["input_per_mtok"][0]),
-            "output_per_mtok": float(params["output_per_mtok"][0]),
-            "cache_creation_per_mtok": float(params.get("cache_creation_per_mtok", ["0"])[0]),
-            "cache_read_per_mtok": float(params.get("cache_read_per_mtok", ["0"])[0]),
-        },
-    )
+    try:
+        await create_or_update_pricing_override(
+            db_path,
+            {
+                "model": params["model"][0],
+                "input_per_mtok": float(params["input_per_mtok"][0]),
+                "output_per_mtok": float(params["output_per_mtok"][0]),
+                "cache_creation_per_mtok": float(params.get("cache_creation_per_mtok", ["0"])[0]),
+                "cache_read_per_mtok": float(params.get("cache_read_per_mtok", ["0"])[0]),
+            },
+        )
+    except (KeyError, ValueError) as e:
+        return HTMLResponse(content=f"Invalid input: {e}", status_code=400)
     from janus.dashboard.reload import reload_pricing
 
     await reload_pricing(request.app)
-    return HTMLResponse(content="", status_code=200)
+    return await _pricing_partial(request, db_path)
 
 
 @router.delete("/api/pricing/{model}", response_class=HTMLResponse)
@@ -640,7 +692,30 @@ async def api_delete_pricing(request: Request, model: str) -> HTMLResponse:
     from janus.dashboard.reload import reload_pricing
 
     await reload_pricing(request.app)
-    return HTMLResponse(content="", status_code=200)
+    return await _pricing_partial(request, db_path)
+
+
+async def _pricing_partial(request: Request, db_path: Path) -> HTMLResponse:
+    from janus.pricing.builtin import BUILTIN_PRICING
+    from janus.storage.pricing_db import list_pricing_overrides
+
+    overrides = await list_pricing_overrides(db_path)
+    builtin_list = [
+        {
+            "model": k,
+            "input_per_mtok": p.input_per_mtok,
+            "output_per_mtok": p.output_per_mtok,
+            "cache_creation_per_mtok": p.cache_creation_per_mtok,
+            "cache_read_per_mtok": p.cache_read_per_mtok,
+        }
+        for k, p in sorted(BUILTIN_PRICING.items())
+    ]
+    context: dict[str, Any] = {
+        "request": request,
+        "builtin": builtin_list,
+        "overrides": overrides,
+    }
+    return _templates.TemplateResponse(request, "pricing_partial.html", context)
 
 
 # ---- Settings ----

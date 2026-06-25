@@ -38,7 +38,7 @@
         </thead>
         <tbody class="divide-y divide-gray-700">
             {% for row in stats.by_model %}
-            <tr class="hover:bg-gray-750">
+            <tr class="hover:bg-gray-700">
                 <td class="px-4 py-3 text-sm text-white font-mono">{{ row.model or '—' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ row.requests }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.input_tokens) }}</td>

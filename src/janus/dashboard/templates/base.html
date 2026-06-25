@@ -9,12 +9,21 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         body { background-color: #111827; }
+        @media (max-width: 768px) {
+            #sidebar { position: fixed; left: -100%; transition: left 0.3s ease; z-index: 50; height: 100vh; }
+            #sidebar.open { left: 0; }
+            #sidebar-overlay { display: none; }
+            #sidebar-overlay.open { display: block; }
+        }
     </style>
 </head>
 <body class="h-full">
     <div class="min-h-full flex">
+        <!-- Mobile overlay -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40" onclick="document.getElementById('sidebar').classList.remove('open'); this.classList.remove('open')"></div>
+
         <!-- Sidebar -->
-        <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
+        <aside id="sidebar" class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
             <div class="px-6 py-5 border-b border-gray-800">
                 <div class="flex items-center space-x-2">
                     <span class="text-3xl">🏛️</span>
@@ -80,13 +89,21 @@
                 </div>
             </nav>
             <div class="px-6 py-4 border-t border-gray-800">
-                <p class="text-xs text-gray-500">Janus v0.2.2</p>
+                <p class="text-xs text-gray-500">Janus v0.2.3</p>
             </div>
         </aside>
 
         <!-- Main content -->
         <main class="flex-1 overflow-y-auto">
-            <div class="max-w-7xl mx-auto px-8 py-8">
+            <!-- Mobile header -->
+            <div class="md:hidden sticky top-0 bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center z-30">
+                <button onclick="document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebar-overlay').classList.add('open')"
+                        class="text-gray-400 hover:text-white mr-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <span class="text-lg font-bold text-white">Janus</span>
+            </div>
+            <div class="max-w-7xl mx-auto px-4 md:px-8 py-8">
                 {% block content %}{% endblock %}
             </div>
         </main>

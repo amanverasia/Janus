@@ -16,7 +16,7 @@
             {% set rak = settings.server_require_api_key or ('true' if config.server.require_api_key else 'false') %}
             <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
                     hx-vals='js:{key: "server_require_api_key", value: settingsApiKeyRequired ? "false" : "true"}'
-                    onclick="settingsApiKeyRequired = !settingsApiKeyRequired; this.className = this.className.includes('green') ? 'bg-gray-700 text-gray-400 rounded-lg px-4 py-2 text-sm font-medium transition-colors' : 'bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors'; this.textContent = settingsApiKeyRequired ? 'Required' : 'Not Required'"
+                    onclick="var newVal = !settingsApiKeyRequired; settingsApiKeyRequired = newVal; settingsApiKeyToggleUpdate(this, newVal)"
                     class="{{ 'bg-green-600 text-white' if rak == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
                 {{ 'Required' if rak == 'true' else 'Not Required' }}
             </button>
@@ -61,6 +61,13 @@
 </div>
 
 <script>
-var settingsApiKeyRequired = {{ 'true' if settings.server_require_api_key == 'true' else ('true' if config.server.require_api_key else 'false') }};
+var settingsApiKeyRequired = {{ 'true' if rak == 'true' else 'false' }};
+
+function settingsApiKeyToggleUpdate(btn, on) {
+    btn.className = on
+        ? 'bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors'
+        : 'bg-gray-700 text-gray-400 rounded-lg px-4 py-2 text-sm font-medium transition-colors';
+    btn.textContent = on ? 'Required' : 'Not Required';
+}
 </script>
 {% endblock %}

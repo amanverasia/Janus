@@ -24,6 +24,7 @@
                     class="text-gray-400 hover:text-white text-xl">&times;</button>
         </div>
         <form id="combo-form" class="space-y-4"
+              hx-post="/dashboard/api/combos" hx-target="#combos-list"
               onsubmit="setTimeout(() => document.getElementById('combo-modal').classList.add('hidden'), 100)">
             <div>
                 <label class="block text-gray-400 text-sm mb-1">Name</label>
@@ -61,22 +62,24 @@ function editCombo(id, name, models) {
             document.getElementById('combo-modal-title').textContent = 'Add Combo';
             form.onsubmit = null;
             form.reset();
+        }).catch(err => {
+            alert('Failed to update combo: ' + err.message);
         });
     };
     document.getElementById('combo-modal').classList.remove('hidden');
 }
 
-(function() {
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.edit-combo-btn');
+    if (!btn) return;
+    editCombo(btn.dataset.id, btn.dataset.name, btn.dataset.models);
+});
+
+function resetComboForm() {
     var form = document.getElementById('combo-form');
-    var orig = form.onsubmit;
-    form.addEventListener('submit', function() {
-        if (!form.onsubmit || form.onsubmit === orig) {
-            form.action = '';
-            form.method = '';
-            form.setAttribute('hx-post', '/dashboard/api/combos');
-            form.setAttribute('hx-target', '#combos-list');
-        }
-    });
-})();
+    form.onsubmit = null;
+    form.reset();
+    document.getElementById('combo-modal-title').textContent = 'Add Combo';
+}
 </script>
 {% endblock %}

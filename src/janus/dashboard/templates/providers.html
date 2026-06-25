@@ -72,7 +72,7 @@
                 </div>
                 <div>
                     <label class="block text-gray-400 text-sm mb-1">Base URL</label>
-                    <input type="text" name="base_url" id="f-base_url" required
+                    <input type="text" name="base_url" id="f-base_url"
                            class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
                 </div>
             </div>
@@ -129,8 +129,8 @@
             </div>
             <div>
                 <label class="block text-gray-400 text-sm mb-1">Base URL</label>
-                <input type="text" name="base_url" id="e-base_url" required
-                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                    <input type="text" name="base_url" id="e-base_url"
+                           class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
             </div>
             <div>
                 <label class="block text-gray-400 text-sm mb-1">API Key</label>
@@ -240,16 +240,31 @@ function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey) {
     form.onsubmit = function(e) {
         e.preventDefault();
         var formData = new URLSearchParams(new FormData(form));
-        fetch('/dashboard/api/providers/' + id, {
+        fetch('/dashboard/api/providers/' + encodeURIComponent(id), {
             method: 'PUT',
             body: formData,
             headers: {'Content-Type': 'application/x-www-form-urlencoded'}
         }).then(r => r.text()).then(html => {
             document.getElementById('providers-grid').innerHTML = html;
             document.getElementById('edit-modal').classList.add('hidden');
+        }).catch(err => {
+            alert('Failed to update provider: ' + err.message);
         });
     };
     document.getElementById('edit-modal').classList.remove('hidden');
 }
+
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.edit-provider-btn');
+    if (!btn) return;
+    editProvider(
+        btn.dataset.id,
+        btn.dataset.prefix,
+        btn.dataset.apiType,
+        btn.dataset.baseUrl,
+        btn.dataset.models,
+        btn.dataset.hasKey === 'true'
+    );
+});
 </script>
 {% endblock %}

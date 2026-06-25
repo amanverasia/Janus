@@ -14,8 +14,10 @@
             {% endif %}
         </div>
         <div class="flex items-center space-x-3 pt-4 border-t border-gray-700">
-            <button onclick="editCombo('{{ combo.id }}', '{{ combo.name }}', '{{ combo.models_list | join(', ') }}')"
-                    class="text-blue-400 hover:text-blue-300 text-sm font-medium">Edit</button>
+            <button class="text-blue-400 hover:text-blue-300 text-sm font-medium edit-combo-btn"
+                    data-id="{{ combo.id }}"
+                    data-name="{{ combo.name }}"
+                    data-models="{{ combo.models_list | join(', ') }}">Edit</button>
             <button hx-delete="/dashboard/api/combos/{{ combo.id }}" hx-target="#combos-list"
                     hx-confirm="Delete combo '{{ combo.name }}'?"
                     class="text-red-400 hover:text-red-300 text-sm font-medium">Delete</button>

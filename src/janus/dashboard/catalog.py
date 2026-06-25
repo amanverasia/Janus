@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 CATALOG: dict[str, dict[str, Any]] = {
@@ -133,4 +134,4 @@ CATALOG: dict[str, dict[str, Any]] = {
 
 
 def get_catalog() -> dict[str, dict[str, Any]]:
-    return CATALOG
+    return copy.deepcopy(CATALOG)

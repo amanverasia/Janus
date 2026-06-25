@@ -44,6 +44,11 @@ async def reload_providers(app: FastAPI) -> None:
         registry.register(pc)
         new_providers[row["id"]] = _build_provider(pc)
 
+    combo_rows = await list_combos(db_path)
+    for row in combo_rows:
+        models = json.loads(row["models"]) if row["models"] else []
+        registry.register_combo(ComboConfig(name=row["name"], models=models))
+
     for old_id, old_provider in old_providers.items():
         if old_id not in new_providers:
             await old_provider.close()
@@ -57,7 +62,7 @@ async def reload_combos(app: FastAPI) -> None:
     db_path: Path = app.state.db_path
     rows = await list_combos(db_path)
     registry: ProviderRegistry = app.state.registry
-    registry._combos = {}
+    registry.clear_combos()
     for row in rows:
         models = json.loads(row["models"]) if row["models"] else []
         registry.register_combo(ComboConfig(name=row["name"], models=models))
