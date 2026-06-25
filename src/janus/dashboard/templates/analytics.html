@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Analytics - Janus{% endblock %}
+{% block analytics_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-6">Analytics</h1>
+
+<!-- Date Range Selector -->
+<div class="flex space-x-2 mb-6">
+    {% for d in [7, 30, 90] %}
+    <a href="/dashboard/analytics?days={{ d }}&dimension={{ dimension }}"
+       class="px-4 py-2 rounded-lg text-sm font-medium {% if days == d %}bg-blue-600 text-white{% else %}bg-gray-800 text-gray-400 hover:text-white{% endif %} transition-colors">
+        {{ d }}d
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Stats Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Total Cost</p>
+        <p class="text-3xl font-bold text-white">${{ "%.4f"|format(summary.total_cost) }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Total Requests</p>
+        <p class="text-3xl font-bold text-white">{{ summary.total_requests }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Input Tokens</p>
+        <p class="text-3xl font-bold text-white">{{ "{:,}".format(summary.total_input_tokens) }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
+        <p class="text-gray-400 text-sm font-medium mb-1">Output Tokens</p>
+        <p class="text-3xl font-bold text-white">{{ "{:,}".format(summary.total_output_tokens) }}</p>
+    </div>
+</div>
+
+<!-- Spend Chart -->
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
+    <h2 class="text-lg font-semibold text-white mb-4">Spend Over Time</h2>
+    <canvas id="spendChart" height="80"></canvas>
+</div>
+
+<!-- Breakdown -->
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden mb-8">
+    <div class="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-white">Breakdown</h2>
+        <div class="flex space-x-1">
+            {% for dim, label in [("model", "Model"), ("provider", "Provider"), ("account", "Account"), ("client_key", "Key")] %}
+            <a href="/dashboard/analytics?days={{ days }}&dimension={{ dim }}"
+               class="px-3 py-1 rounded-md text-xs font-medium {% if dimension == dim %}bg-blue-600 text-white{% else %}bg-gray-700 text-gray-400 hover:text-white{% endif %} transition-colors">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% if breakdown %}
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-900 border-b border-gray-700">
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{{ dimension }}</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Requests</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Input</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Output</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Cost</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700">
+            {% for row in breakdown %}
+            <tr class="hover:bg-gray-750">
+                <td class="px-4 py-3 text-sm text-white font-mono">{{ row[dimension] or '—' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ row.requests }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.input_tokens) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.output_tokens) }}</td>
+                <td class="px-4 py-3 text-sm text-green-400 text-right">${{ "%.4f"|format(row.cost) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-12 text-center"><p class="text-gray-400">No data for this range.</p></div>
+    {% endif %}
+</div>
+
+<!-- Success Rate -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 class="text-lg font-semibold text-white mb-4">Success Rate</h2>
+        <canvas id="successChart" height="120"></canvas>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 class="text-lg font-semibold text-white mb-4">Status Breakdown</h2>
+        <div class="space-y-3">
+            <div class="flex items-center justify-between">
+                <span class="text-green-400 text-sm">2xx Success</span>
+                <span class="text-white font-bold">{{ success.success_2xx }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-yellow-400 text-sm">4xx Client Error</span>
+                <span class="text-white font-bold">{{ success.client_4xx }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-red-400 text-sm">5xx Server Error</span>
+                <span class="text-white font-bold">{{ success.server_5xx }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const dailyData = {{ summary.daily | tojson }};
+new Chart(document.getElementById('spendChart'), {
+    type: 'line',
+    data: {
+        labels: dailyData.map(d => d.date),
+        datasets: [{
+            label: 'Daily Cost ($)',
+            data: dailyData.map(d => d.cost),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: true,
+            tension: 0.3,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#9ca3af' } } },
+        scales: {
+            x: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } },
+            y: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } }
+        }
+    }
+});
+
+const successData = {{ success | tojson }};
+new Chart(document.getElementById('successChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['2xx Success', '4xx Client Error', '5xx Server Error'],
+        datasets: [{
+            data: [successData.success_2xx, successData.client_4xx, successData.server_5xx],
+            backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { labels: { color: '#9ca3af' } } }
+    }
+});
+</script>
+{% endblock %}

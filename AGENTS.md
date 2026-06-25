@@ -80,12 +80,38 @@ The `storage/` package manages runtime state in SQLite (`~/.janus/janus.db`). DB
 
 - `storage/database.py` — `init_db()` + `get_connection()` (async context manager using `aiosqlite`).
 - `storage/api_keys.py` — keys are `sk-janus-{32hex}`, stored as SHA256 hash. The API-key gate (`api/deps.py`) checks both config `api_keys` (static list) AND DB keys.
-- `storage/usage.py` — records per-request token usage (fire-and-forget, non-streaming only). CLI: `janus usage stats`.
+- `storage/usage.py` — records per-request token usage (fire-and-forget, non-streaming only). Records cost, cache tokens, and client_key_id. CLI: `janus usage stats`, `janus usage cost`, `janus usage by-key`.
+- `storage/analytics.py` — aggregated queries: `get_spend_summary(days)`, `get_breakdown(dimension, days)`, `get_success_rate(days)`.
+- `storage/budgets.py` — budget CRUD + `get_budget_status(key_id)`.
 - CLI key management: `janus keys create/list/revoke`.
+
+## Pricing & cost tracking
+
+The `pricing/` package provides per-model cost estimation. `PricingRegistry` merges builtin defaults (~28 popular models) with YAML overrides from the `pricing:` config section. Cost is computed at recording time via `compute_cost(usage, model, registry)` and stored in the `usage.cost` column. Unknown models cost $0.0 (not an error).
+
+- `pricing/builtin.py` — hardcoded `dict[str, ModelPricing]` seed data ($ per million tokens: input, output, cache_creation, cache_read).
+- `pricing/registry.py` — `PricingRegistry(overrides)`, exact match then progressively shorter prefix matching for model variants.
+- `pricing/calculator.py` — `compute_cost(usage, model, registry) -> float`, pure function.
+- Config: `pricing:` section in YAML, same dict structure as builtin.
+
+## Budget enforcement
+
+Budgets are daily spending limits stored in the `budgets` SQLite table. Each budget targets either a specific API key (`key_id`) or is global (`key_id = NULL`). Enforcement happens in `_handle()` before routing:
+
+- **Warn threshold** (default 80%): request proceeds, dashboard shows amber.
+- **Hard threshold** (100%): request rejected with `429` + `Retry-After` header.
+- Both per-key and global budgets are checked; most restrictive wins.
+- Fail-safe: DB errors don't block requests.
+- `storage/budgets.py` — CRUD + `get_budget_status(key_id)`.
+- CLI: `janus budgets list/set/delete`.
+
+## Analytics
+
+`storage/analytics.py` provides aggregated queries: `get_spend_summary(days)`, `get_breakdown(dimension, days)`, `get_success_rate(days)`. The dashboard `/dashboard/analytics` page uses Chart.js (via CDN) for spend trends and success-rate donut charts. Breakdowns available by model, provider, account, or client key.
 
 ## Dashboard
 
-The `dashboard/` package serves an HTMX + Jinja2 UI at `/dashboard`. No npm, no build step — Tailwind and HTMX via CDN. Templates are in `dashboard/templates/`. Management API endpoints (`POST /dashboard/api/keys`, `DELETE /dashboard/api/keys/{id}`) return HTMX partials, not JSON.
+The `dashboard/` package serves an HTMX + Jinja2 UI at `/dashboard`. No npm, no build step — Tailwind, HTMX, and Chart.js via CDN. Templates are in `dashboard/templates/`. Management API endpoints (`POST /dashboard/api/keys`, `DELETE /dashboard/api/keys/{id}`, `POST /dashboard/api/budgets`, `DELETE /dashboard/api/budgets/{id}`) return HTMX partials, not JSON.
 
 ## Config
 

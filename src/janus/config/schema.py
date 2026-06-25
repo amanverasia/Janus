@@ -43,3 +43,4 @@ class JanusConfig(BaseModel):
     combos: list[ComboConfig] = Field(default_factory=list)
     api_keys: list[str] = Field(default_factory=list)
     token_savers: TokenSaverConfig = Field(default_factory=TokenSaverConfig)
+    pricing: dict[str, dict[str, float]] = Field(default_factory=dict)

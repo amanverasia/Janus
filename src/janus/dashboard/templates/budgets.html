@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Budgets - Janus{% endblock %}
+{% block budgets_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-6">Budgets</h1>
+
+<!-- Create Budget Form -->
+<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
+    <h2 class="text-lg font-semibold text-white mb-4">Create / Update Budget</h2>
+    <form hx-post="/dashboard/api/budgets" hx-target="#budgets-table" class="flex flex-wrap items-end gap-4">
+        <div>
+            <label class="block text-gray-400 text-sm mb-1">Scope</label>
+            <select name="key_select" class="bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                <option value="global">Global (all keys)</option>
+                {% for key in keys %}
+                <option value="{{ key.id }}">{{ key.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-gray-400 text-sm mb-1">Daily Limit ($)</label>
+            <input type="number" name="daily_limit" step="0.01" min="0" value="5.00"
+                   class="bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm w-32">
+        </div>
+        <div>
+            <label class="block text-gray-400 text-sm mb-1">Warn at (%)</label>
+            <input type="number" name="warn_pct" step="1" min="1" max="100" value="80"
+                   class="bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm w-24">
+        </div>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">
+            Set Budget
+        </button>
+    </form>
+</div>
+
+<!-- Budgets Table -->
+<div id="budgets-table">
+    {% include "budgets_partial.html" %}
+</div>
+{% endblock %}
