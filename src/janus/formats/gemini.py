@@ -164,11 +164,7 @@ class GeminiStreamEmitter:
             return []
 
         if isinstance(event, ToolUseBlockStart):
-            return [
-                self._make_chunk(
-                    [{"functionCall": {"name": event.name, "args": {}}}]
-                )
-            ]
+            return [self._make_chunk([{"functionCall": {"name": event.name, "args": {}}}])]
 
         if isinstance(event, TextDelta):
             return [self._make_chunk([{"text": event.text}])]
@@ -343,9 +339,7 @@ class GeminiAdapter:
                     response = json.loads(part.content)
                 except (json.JSONDecodeError, TypeError):
                     response = {"result": part.content}
-                parts.append(
-                    {"functionResponse": {"id": part.tool_use_id, "response": response}}
-                )
+                parts.append({"functionResponse": {"id": part.tool_use_id, "response": response}})
         return {"role": role, "parts": parts}
 
     # ---- response parsing ----

@@ -6,9 +6,7 @@ from typing import Any
 def encode_sse(data: dict[str, Any]) -> bytes:
     text = json.dumps(data, separators=(",", ":"))
     if "\n" in text:
-        return b"".join(
-            b"data: " + line.encode() + b"\n" for line in text.splitlines()
-        ) + b"\n"
+        return b"".join(b"data: " + line.encode() + b"\n" for line in text.splitlines()) + b"\n"
     return b"data: " + text.encode() + b"\n\n"
 
 

@@ -190,9 +190,7 @@ class OpenAIStreamEmitter:
         if isinstance(event, InputJsonDelta):
             oai_idx = self._tool_indices.get(event.index, 0)
             delta = {
-                "tool_calls": [
-                    {"index": oai_idx, "function": {"arguments": event.partial_json}}
-                ]
+                "tool_calls": [{"index": oai_idx, "function": {"arguments": event.partial_json}}]
             }
             return [self._make_chunk(delta)]
 
@@ -470,9 +468,7 @@ class OpenAIAdapter:
             "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
             "object": "chat.completion",
             "model": resp.model,
-            "choices": [
-                {"index": 0, "message": message, "finish_reason": finish}
-            ],
+            "choices": [{"index": 0, "message": message, "finish_reason": finish}],
             "usage": {
                 "prompt_tokens": resp.usage.input_tokens,
                 "completion_tokens": resp.usage.output_tokens,

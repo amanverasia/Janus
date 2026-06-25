@@ -19,7 +19,7 @@ Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
 ## Quick Start
 
 ```bash
-pip install janus
+pip install janus-ai
 janus config-init
 janus serve --port 20128
 ```

@@ -41,6 +41,7 @@ async def test_translate_stream_anthropic_to_openai():
 @pytest.mark.asyncio
 async def test_translate_stream_openai_to_openai():
     """Same-format: OpenAI upstream -> OpenAI client output."""
+
     async def _openai_lines():
         lines = [
             '{"id":"r1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}',
@@ -85,6 +86,7 @@ async def test_translate_stream_anthropic_to_anthropic():
 @pytest.mark.asyncio
 async def test_translate_stream_empty():
     """Empty upstream should still produce emitter finish output."""
+
     async def _empty():
         return
         yield  # make it an async generator

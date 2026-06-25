@@ -5,7 +5,7 @@
 ### pip
 
 ```bash
-pip install janus
+pip install janus-ai
 ```
 
 ### Docker

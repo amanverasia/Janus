@@ -13,9 +13,7 @@ from .schema import JanusConfig
 _VAR_RE = re.compile(r"\$\{(?P<var>[A-Z][A-Z0-9_]*)\}", re.ASCII)
 
 
-def resolve_vars(
-    value: Any, env: Mapping[str, str] | None = None
-) -> Any:
+def resolve_vars(value: Any, env: Mapping[str, str] | None = None) -> Any:
     if env is None:
         env = os.environ
     if isinstance(value, str):

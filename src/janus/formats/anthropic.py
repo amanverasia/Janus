@@ -90,9 +90,7 @@ class AnthropicStreamParser:
             if delta_type == "text_delta":
                 return [TextDelta(index=index, text=delta.get("text", ""))]
             if delta_type == "input_json_delta":
-                return [
-                    InputJsonDelta(index=index, partial_json=delta.get("partial_json", ""))
-                ]
+                return [InputJsonDelta(index=index, partial_json=delta.get("partial_json", ""))]
             return []
 
         if event_type == "content_block_stop":
@@ -105,9 +103,7 @@ class AnthropicStreamParser:
             events: list[CanonicalEvent] = []
             usage = Usage(output_tokens=usage_raw.get("output_tokens", 0))
             stop_reason = delta.get("stop_reason")
-            events.append(
-                MessageDelta(stop_reason=stop_reason, usage=usage if usage_raw else None)
-            )
+            events.append(MessageDelta(stop_reason=stop_reason, usage=usage if usage_raw else None))
             return events
 
         if event_type == "message_stop":

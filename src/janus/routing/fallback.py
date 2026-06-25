@@ -34,9 +34,7 @@ class FallbackHandler:
             raise ValueError(f"Unknown model: {model_str}")
         available = [t for t in targets if self.is_available(t.account_id)]
         if not available:
-            raise ValueError(
-                f"No available providers for '{model_str}' (all accounts cooled down)"
-            )
+            raise ValueError(f"No available providers for '{model_str}' (all accounts cooled down)")
         return available
 
     def mark_cooldown(
