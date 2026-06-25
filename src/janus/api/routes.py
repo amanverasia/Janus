@@ -8,16 +8,11 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from janus.config.schema import ProviderConfig
 from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.base import FormatAdapter
 from janus.formats.gemini import GeminiAdapter
 from janus.formats.openai import OpenAIAdapter
-from janus.providers.anthropic import AnthropicProvider
 from janus.providers.base import Provider
-from janus.providers.gemini import GeminiProvider
-from janus.providers.openai_compat import OpenAICompatProvider
-from janus.providers.opencode_free import OpenCodeFreeProvider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import FallbackHandler
@@ -40,18 +35,6 @@ def _resolve_format(name: str) -> FormatAdapter:
     if name == "opencode_free":
         name = "openai"
     return FORMATS[name]
-
-
-def _build_provider(config: ProviderConfig) -> Provider:
-    if config.api_type == "opencode_free":
-        return OpenCodeFreeProvider()
-    if config.api_type == "openai_compat":
-        return OpenAICompatProvider(base_url=config.base_url, api_key=config.api_key)
-    if config.api_type == "anthropic":
-        return AnthropicProvider(api_key=config.api_key or "", base_url=config.base_url)
-    if config.api_type == "gemini":
-        return GeminiProvider(api_key=config.api_key or "")
-    raise ValueError(f"Unknown api_type: {config.api_type}")
 
 
 async def _check_budgets(
@@ -123,7 +106,8 @@ async def _handle(
     for target in attempts:
         provider_adapter = _resolve_format(target.native_format)
         upstream_payload = provider_adapter.build_upstream_request(canonical_req, target.model)
-        provider = _build_provider(target.provider_config)
+        providers: dict[str, Provider] = request.app.state.providers
+        provider = providers[target.provider_config.id]
 
         try:
             if canonical_req.stream:
