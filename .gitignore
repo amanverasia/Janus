@@ -78,3 +78,10 @@ logs/
 *.spec
 pip-log.txt
 pip-delete-this-directory.txt
+
+# MkDocs build output
+site/
+
+# Python build artifacts
+dist/
+*.egg-info/
