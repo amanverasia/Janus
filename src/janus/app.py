@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from janus.api.routes import router
 from janus.config.schema import JanusConfig, ProviderConfig
@@ -76,4 +77,9 @@ def create_app(
     from janus.dashboard.routes import router as dashboard_router
 
     app.include_router(dashboard_router, prefix="/dashboard")
+
+    @app.get("/")
+    async def root_redirect() -> RedirectResponse:
+        return RedirectResponse(url="/dashboard")
+
     return app
