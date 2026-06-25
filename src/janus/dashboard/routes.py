@@ -326,6 +326,12 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    new_key = params.get("api_key", [""])[0] or None
+    if not new_key:
+        from janus.storage.providers_db import get_provider
+
+        existing = await get_provider(db_path, provider_id)
+        new_key = existing["api_key"] if existing else None
     await update_provider(
         db_path,
         provider_id,
@@ -333,7 +339,7 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
             "prefix": params["prefix"][0],
             "api_type": params["api_type"][0],
             "base_url": params["base_url"][0],
-            "api_key": params.get("api_key", [""])[0] or None,
+            "api_key": new_key,
             "models": models,
         },
     )

@@ -29,11 +29,11 @@
             <p class="text-gray-400 text-sm mb-3">Choose a template:</p>
             <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
                 {% for key, entry in catalog.items() %}
-                <button onclick="fillProviderForm('{{ key }}', '{{ entry.name }}', '{{ entry.api_type }}', '{{ entry.base_url }}', '{{ entry.prefix }}', '{{ entry.default_models | join(', ') }}')"
+                <button onclick="fillProviderForm('{{ key }}', '{{ entry.api_type }}', '{{ entry.base_url }}', '{{ entry.prefix }}', '{{ entry.default_models | join(', ') }}')"
                         class="bg-gray-900 hover:bg-gray-700 border border-gray-700 rounded-lg p-3 text-center transition-colors">
                     <div class="mb-1 flex items-center justify-center h-7">
                         {% if entry.logo %}
-                        <img src="https://cdn.simpleicons.org/{{ entry.logo }}" alt="{{ entry.name }}" class="h-6 w-6" onerror="this.parentElement.innerHTML='<span class=\'text-2xl\'>{{ entry.icon }}</span>'">
+                        <img src="https://cdn.simpleicons.org/{{ entry.logo }}/white" alt="{{ entry.name }}" class="h-6 w-6" style="filter: invert(1) brightness(2)">
                         {% else %}
                         <span class="text-2xl">{{ entry.icon }}</span>
                         {% endif %}
@@ -136,6 +136,7 @@
                 <label class="block text-gray-400 text-sm mb-1">API Key</label>
                 <input type="password" name="api_key" id="e-api_key" placeholder="sk-..."
                        class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                <p id="e-api-key-hint" class="text-xs mt-1 text-gray-500 hidden">Key already set — leave blank to keep current</p>
             </div>
             <div>
                 <div class="flex items-center justify-between mb-1">
@@ -158,7 +159,7 @@
 </div>
 
 <script>
-function fillProviderForm(key, name, apiType, baseUrl, prefix, models) {
+function fillProviderForm(key, apiType, baseUrl, prefix, models) {
     document.getElementById('f-id').value = key === 'custom' ? '' : key;
     document.getElementById('f-prefix').value = prefix;
     document.getElementById('f-api_type').value = apiType;
@@ -218,13 +219,23 @@ function fetchModels(prefix) {
     });
 }
 
-function editProvider(id, prefix, apiType, baseUrl, models) {
+function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey) {
     document.getElementById('e-provider-id').value = id;
     document.getElementById('e-prefix').value = prefix;
     document.getElementById('e-api_type').value = apiType;
     document.getElementById('e-base_url').value = baseUrl;
     document.getElementById('e-models').value = models;
     document.getElementById('e-api_key').value = '';
+    var hintEl = document.getElementById('e-api-key-hint');
+    if (hasApiKey) {
+        hintEl.textContent = 'Key already set — leave blank to keep current';
+        hintEl.classList.remove('hidden');
+        document.getElementById('e-api_key').placeholder = '••••••••••••';
+    } else {
+        hintEl.textContent = 'No API key set';
+        hintEl.classList.remove('hidden');
+        document.getElementById('e-api_key').placeholder = 'sk-...';
+    }
     var form = document.getElementById('edit-form');
     form.onsubmit = function(e) {
         e.preventDefault();

@@ -18,7 +18,7 @@
                 <div class="flex items-center justify-center w-8 h-8">
                     {% set logo_slug = logo_map.get(provider.id, '') %}
                     {% if logo_slug %}
-                    <img src="https://cdn.simpleicons.org/{{ logo_slug }}" alt="{{ provider.id }}" class="w-6 h-6" onerror="this.parentElement.innerHTML='<span class=\'text-2xl\'>{{ icon_map.get(provider.id, '⚙️') }}</span>'">
+                    <img src="https://cdn.simpleicons.org/{{ logo_slug }}/white" alt="{{ provider.id }}" class="w-6 h-6" style="filter: invert(1) brightness(2)">
                     {% else %}
                     <span class="text-2xl">{{ icon_map.get(provider.id, '⚙️') }}</span>
                     {% endif %}
@@ -54,7 +54,7 @@
             </div>
         </div>
         <div class="flex items-center space-x-3 mt-4 pt-4 border-t border-gray-700">
-            <button onclick="editProvider('{{ provider.id }}', '{{ provider.prefix }}', '{{ provider.api_type }}', '{{ provider.base_url }}', '{{ provider.models_list | join(', ') }}')"
+            <button onclick="editProvider('{{ provider.id }}', '{{ provider.prefix }}', '{{ provider.api_type }}', '{{ provider.base_url }}', '{{ provider.models_list | join(', ') }}', {% if provider.api_key %}true{% else %}false{% endif %})"
                     class="text-blue-400 hover:text-blue-300 text-sm font-medium">Edit</button>
             <button hx-delete="/dashboard/api/providers/{{ provider.id }}" hx-target="#providers-grid"
                     hx-confirm="Delete provider '{{ provider.id }}'?"
