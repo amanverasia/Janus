@@ -1,0 +1,14 @@
+services:
+  janus:
+    build: .
+    ports:
+      - "20128:20128"
+    volumes:
+      - ./janus-data:/home/janus/.janus
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GLM_API_KEY=${GLM_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+    restart: unless-stopped

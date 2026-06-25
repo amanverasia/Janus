@@ -1,0 +1,10 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+tests/
+docs/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+janus-data/
