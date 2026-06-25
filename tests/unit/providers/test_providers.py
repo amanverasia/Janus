@@ -12,9 +12,7 @@ from janus.providers.opencode_free import OpenCodeFreeProvider
 @respx.mock
 async def test_openai_compat_provider_nonstream():
     respx.post("https://test.com/v1/chat/completions").mock(
-        return_value=httpx.Response(
-            200, json={"choices": [{"message": {"content": "hi"}}]}
-        )
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
     )
     provider = OpenAICompatProvider(base_url="https://test.com/v1", api_key="sk-test")
     result = await provider.call({"model": "m1", "messages": []}, stream=False)
@@ -33,9 +31,7 @@ async def test_anthropic_provider():
         )
     )
     provider = AnthropicProvider(api_key="sk-ant-test")
-    result = await provider.call(
-        {"model": "c", "messages": [], "max_tokens": 100}, stream=False
-    )
+    result = await provider.call({"model": "c", "messages": [], "max_tokens": 100}, stream=False)
     assert result.json_data["content"][0]["text"] == "hi"
 
 
@@ -56,9 +52,7 @@ async def test_gemini_provider():
 @respx.mock
 async def test_opencode_free_provider():
     respx.post("https://opencode.ai/zen/v1/chat/completions").mock(
-        return_value=httpx.Response(
-            200, json={"choices": [{"message": {"content": "hi"}}]}
-        )
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
     )
     provider = OpenCodeFreeProvider()
     result = await provider.call({"model": "test", "messages": []}, stream=False)

@@ -40,9 +40,7 @@ class OpenAICompatProvider:
         payload = {**payload, "stream": True}
 
         async def line_iter() -> AsyncIterator[str]:
-            async with self._client.stream(
-                "POST", url, json=payload, headers=self._headers
-            ) as r:
+            async with self._client.stream("POST", url, json=payload, headers=self._headers) as r:
                 async for raw_line in r.aiter_lines():
                     yield raw_line
 

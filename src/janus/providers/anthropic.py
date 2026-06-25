@@ -14,9 +14,7 @@ _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
 class AnthropicProvider:
     name = "anthropic"
 
-    def __init__(
-        self, api_key: str, base_url: str = "https://api.anthropic.com"
-    ) -> None:
+    def __init__(self, api_key: str, base_url: str = "https://api.anthropic.com") -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(
@@ -43,9 +41,7 @@ class AnthropicProvider:
         payload = {**payload, "stream": True}
 
         async def line_iter() -> AsyncIterator[str]:
-            async with self._client.stream(
-                "POST", url, json=payload, headers=self._headers
-            ) as r:
+            async with self._client.stream("POST", url, json=payload, headers=self._headers) as r:
                 async for raw_line in r.aiter_lines():
                     yield raw_line
 

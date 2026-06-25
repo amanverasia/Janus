@@ -28,24 +28,15 @@ class GeminiProvider:
 
     async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:
         model = payload.get("model", "gemini-2.0-flash")
-        model = (
-            model.removeprefix("models/")
-            if isinstance(model, str)
-            else "gemini-2.0-flash"
-        )
+        model = model.removeprefix("models/") if isinstance(model, str) else "gemini-2.0-flash"
         if stream:
             url = (
                 f"{self.base_url}/v1beta/models/{model}:streamGenerateContent"
                 f"?alt=sse&key={self.api_key}"
             )
             return await self._call_stream(url, payload)
-        url = (
-            f"{self.base_url}/v1beta/models/{model}:generateContent"
-            f"?key={self.api_key}"
-        )
-        r = await self._client.post(
-            url, json=payload, headers={"Content-Type": "application/json"}
-        )
+        url = f"{self.base_url}/v1beta/models/{model}:generateContent?key={self.api_key}"
+        r = await self._client.post(url, json=payload, headers={"Content-Type": "application/json"})
         return RawResult(status_code=r.status_code, json_data=r.json())
 
     async def _call_stream(self, url: str, payload: dict[str, Any]) -> RawResult:
