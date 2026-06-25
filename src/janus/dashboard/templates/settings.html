@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Settings - Janus{% endblock %}
+{% block settings_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold text-white mb-6">Settings</h1>
+
+<div class="space-y-4 max-w-2xl">
+    <!-- API Key Requirement -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-bold text-white">Require API Key</h2>
+                <p class="text-gray-400 text-sm mt-1">When enabled, all requests must include a valid Janus API key.</p>
+            </div>
+            {% set rak = settings.server_require_api_key or ('true' if config.server.require_api_key else 'false') %}
+            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
+                    hx-vals='js:{key: "server_require_api_key", value: settingsApiKeyRequired ? "false" : "true"}'
+                    onclick="settingsApiKeyRequired = !settingsApiKeyRequired; this.className = this.className.includes('green') ? 'bg-gray-700 text-gray-400 rounded-lg px-4 py-2 text-sm font-medium transition-colors' : 'bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors'; this.textContent = settingsApiKeyRequired ? 'Required' : 'Not Required'"
+                    class="{{ 'bg-green-600 text-white' if rak == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                {{ 'Required' if rak == 'true' else 'Not Required' }}
+            </button>
+        </div>
+    </div>
+
+    <!-- Server Info -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 class="text-lg font-bold text-white mb-4">Server</h2>
+        <div class="space-y-2">
+            <div class="flex justify-between">
+                <span class="text-gray-400 text-sm">Host</span>
+                <span class="text-gray-300 text-sm font-mono">{{ config.server.host }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-400 text-sm">Port</span>
+                <span class="text-gray-300 text-sm font-mono">{{ config.server.port }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-400 text-sm">Data Directory</span>
+                <span class="text-gray-300 text-sm font-mono">{{ config.server.data_dir }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config Keys -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 class="text-lg font-bold text-white mb-4">Stored Settings</h2>
+        {% if settings %}
+        <div class="space-y-2">
+            {% for key, value in settings.items() %}
+            <div class="flex justify-between">
+                <span class="text-gray-400 text-sm">{{ key }}</span>
+                <span class="text-gray-300 text-sm font-mono">{{ value }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-sm">No settings stored in the database.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+var settingsApiKeyRequired = {{ 'true' if settings.server_require_api_key == 'true' else ('true' if config.server.require_api_key else 'false') }};
+</script>
+{% endblock %}

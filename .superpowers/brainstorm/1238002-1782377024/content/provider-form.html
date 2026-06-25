@@ -1,0 +1,19 @@
+<h2>What about the provider add/edit experience?</h2>
+<p class="subtitle">This is the most complex CRUD feature. When a user adds a provider from the UI, what should the form look like?</p>
+
+<div class="options">
+  <div class="option" data-choice="catalog" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Provider Catalog (Recommended)</h3>
+      <p>Pre-built catalog of ~15 known providers (OpenAI, Anthropic, Gemini, Groq, DeepSeek, etc.). User picks from a gallery → only needs to paste API key. Fields like <code>base_url</code> and <code>api_type</code> are auto-filled. Also supports "Custom Provider" for unknown OpenAI-compatible endpoints.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="raw" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Raw Form</h3>
+      <p>Single generic form with all fields blank: <code>id</code>, <code>prefix</code>, <code>api_type</code>, <code>base_url</code>, <code>api_key</code>, <code>models</code>. User fills everything manually.</p>
+    </div>
+  </div>
+</div>
