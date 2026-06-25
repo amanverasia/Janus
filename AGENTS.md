@@ -50,7 +50,9 @@ Providers, combos, token savers, pricing overrides, and server settings live in 
 
 Hot-reload helpers in `dashboard/reload.py` rebuild in-memory state from DB after changes: `reload_providers`, `reload_combos`, `reload_savers`, `reload_pricing`. Dashboard mutation routes call these after writing to the DB.
 
-`dashboard/catalog.py` holds the provider catalog (14 known providers with pre-filled `api_type`, `base_url`, default models) that the "Add Provider" UI draws from.
+`dashboard/catalog.py` holds the provider catalog (14 known providers with pre-filled `api_type`, `base_url`, default models, and Simple Icons logo slugs) that the "Add Provider" UI draws from.
+
+Provider edit endpoint preserves the existing API key when the field is left blank (fetches current value from DB). The `POST /dashboard/api/providers/fetch-models` endpoint calls upstream `/models` to auto-populate the models field.
 
 ## Adding a new format adapter
 
