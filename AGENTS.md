@@ -38,10 +38,19 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → `Save
 
 ## Provider lifecycle & connection pooling
 
-- Providers are built once in `create_app()` via `_build_provider()` in **`app.py`** (not routes.py) and cached in `app.state.providers` as `dict[str, Provider]` keyed by `config.id`.
+- `create_app()` creates an empty `app.state.providers = {}`. Providers are built during `lifespan()` startup via `reload_providers()` (in `dashboard/reload.py`), which reads enabled providers from the `providers` DB table and calls `_build_provider()` (still defined in `app.py`).
 - Each provider holds a shared `httpx.AsyncClient` with pool limits (100 connections, 20 keepalive). Clients are NOT created per-request.
 - Providers are closed on shutdown via the FastAPI lifespan handler in `app.py`.
+- After dashboard CRUD operations, `reload_providers(app)` rebuilds providers, registry, and fallback handler without restart. Deleted/disabled providers have their `httpx.AsyncClient` closed.
 - `_handle()` looks up cached providers by `target.provider_config.id` — never constructs providers inline.
+
+## DB-driven config (source of truth)
+
+Providers, combos, token savers, pricing overrides, and server settings live in SQLite, not YAML. The YAML config file (`~/.janus/config.yaml`) is a **seed** — loaded once on first startup via `seed_from_config()` (in `database.py`), which imports into `providers`, `combos`, `settings`, `pricing_overrides` tables. After seeding, the **DB is the source of truth** — editing YAML and restarting will NOT re-seed (idempotent: existing rows are skipped).
+
+Hot-reload helpers in `dashboard/reload.py` rebuild in-memory state from DB after changes: `reload_providers`, `reload_combos`, `reload_savers`, `reload_pricing`. Dashboard mutation routes call these after writing to the DB.
+
+`dashboard/catalog.py` holds the provider catalog (14 known providers with pre-filled `api_type`, `base_url`, default models) that the "Add Provider" UI draws from.
 
 ## Adding a new format adapter
 
@@ -57,7 +66,7 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → `Save
 ## Adding a new token saver
 
 1. Implement `TokenSaver` protocol (`transform(req) -> CanonicalRequest`) in `src/janus/tokensavers/`.
-2. Add to pipeline construction in `src/janus/app.py`.
+2. Add construction logic to `reload_savers()` in **`src/janus/dashboard/reload.py`** (not `app.py`).
 3. Savers must be fail-safe — exceptions are caught by the pipeline and logged, never breaking the request.
 
 ## Code style (enforced by tooling)
@@ -73,7 +82,8 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → `Save
 - Provider tests mock httpx with `respx` (no real network calls).
 - Integration tests use FastAPI ASGI transport (`httpx.ASGITransport`) in-process.
 - Test fixtures (sample API payloads, usage seed helpers) live in `tests/fixtures/`.
-- **Dashboard routes do lazy `init_db` guard** because ASGITransport doesn't run the FastAPI lifespan handler. If you add dashboard routes that touch the DB, follow this pattern (see `dashboard/routes.py:34`).
+- **Dashboard routes do lazy `init_db` guard** because ASGITransport doesn't run the FastAPI lifespan handler. `_ensure_db()` (in `dashboard/routes.py`) now also triggers `seed_from_config()` + all reload functions, so tests that hit dashboard routes get a fully seeded + warmed app. If you add dashboard routes that touch the DB, call `_ensure_db(request)` first.
+- API route tests that need providers/combos must call `init_db()` + `seed_from_config()` + reload functions explicitly in their fixture (ASGITransport skips lifespan). See pattern in `tests/integration/test_api.py`.
 
 ## SQLite storage
 
@@ -89,13 +99,13 @@ Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup
 
 ## Pricing & budget enforcement
 
-- `PricingRegistry` merges builtin defaults (~28 models in `pricing/builtin.py`) with YAML overrides from the `pricing:` config section. Cost computed at recording time via `compute_cost(usage, model, registry)`. Unknown models cost $0.0 (not an error).
+- `PricingRegistry` merges builtin defaults (~28 models in `pricing/builtin.py`) with DB overrides from the `pricing_overrides` table (seeded from YAML `pricing:` section on first startup). Cost computed at recording time via `compute_cost(usage, model, registry)`. Unknown models cost $0.0 (not an error).
 - Budgets are daily spending limits in the `budgets` SQLite table. Per-key (`key_id` set) or global (`key_id = NULL`). Enforcement in `_handle()` before routing: warn at 80% (request proceeds), block at 100% (request rejected with `429` + `Retry-After`). Most restrictive wins. Fail-safe: DB errors don't block requests.
 - CLI: `janus budgets list/set/delete`, `janus pricing list/show`.
 
 ## Config
 
-Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. The `providers:`, `combos:`, and `token_savers:` keys can be null (all commented out) — the loader filters None values. Generate a template with `janus config-init`.
+Runtime config is YAML at `~/.janus/config.yaml` with `${ENV_VAR}` token resolution. Generate a template with `janus config-init`. After first startup, config is seeded into SQLite and the DB is authoritative (see "DB-driven config" above). The `providers:`, `combos:`, and `token_savers:` keys can be null — the loader filters None values.
 
 Combos are named ordered model sequences. A client sends `"model": "combo-name"` and Janus tries each model in order with all its accounts.
 
@@ -104,12 +114,3 @@ Combos are named ordered model sequences. A client sends `"model": "combo-name"`
 Docs site uses MkDocs Material. Config in `mkdocs.yml`, pages in `docs/`. Internal design specs in `docs/superpowers/` are excluded from the site nav via `exclude_docs`. Preview with `mkdocs serve`, verify with `mkdocs build --strict`.
 
 Build backend is hatchling. Wheel + sdist via `python -m build`. PyPI publishing is automated via `.github/workflows/publish.yml` (OIDC trusted publisher, triggered on `v*` tag push). GitHub Pages deployment via `.github/workflows/docs.yml` (triggered on push to `main` when `docs/`, `mkdocs.yml`, or `README.md` change).
-
-## Dashboard CRUD & DB-driven config (Phase 9)
-
-- **Dashboard is now full CRUD** — providers, combos, token savers, pricing overrides, and settings are managed from SQLite, not YAML. The dashboard UI calls REST routes that read/write DB tables directly.
-- **YAML config is a seed file.** It is loaded on first startup via `seed_from_config()` (in `database.py`), which does a one-time YAML → DB migration. After seeding, the **DB is the source of truth** — editing the YAML and restarting will NOT re-seed (idempotent: existing rows are skipped).
-- `dashboard/reload.py` provides hot-reload helpers that re-read DB state into the live app without restart: `reload_providers`, `reload_combos`, `reload_savers`, `reload_pricing`. Dashboard mutation routes call these after writing to the DB so changes take effect immediately.
-- `dashboard/catalog.py` holds the **provider catalog** — the list of known upstream providers (display names, default API types, base URLs) that the "Add Provider" form draws from.
-- Dashboard `_ensure_db()` (the lazy-init guard used by ASGITransport tests) now also triggers `seed_from_config()` + reload functions, so tests that hit dashboard routes get a fully seeded + warmed app without the lifespan handler.
-- **New DB tables:** `providers`, `combos`, `settings`, `pricing_overrides`. All created idempotently by `init_db()`.
