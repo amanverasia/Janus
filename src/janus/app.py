@@ -59,7 +59,7 @@ def create_app(
     registry: ProviderRegistry | None = None,
     config: JanusConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Janus", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Janus", version="0.2.0", lifespan=lifespan)
     if registry is None:
         registry = ProviderRegistry()
     if config is None:
