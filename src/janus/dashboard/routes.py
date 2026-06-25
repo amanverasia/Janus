@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from janus.storage.analytics import (
@@ -381,6 +381,74 @@ async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
         "providers": providers,
     }
     return _templates.TemplateResponse(request, "providers_partial.html", context)
+
+
+@router.post("/api/providers/fetch-models")
+async def api_fetch_models(request: Request) -> JSONResponse:
+    from urllib.parse import parse_qs
+
+    import httpx
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    api_type = params.get("api_type", [""])[0]
+    base_url = params.get("base_url", [""])[0].rstrip("/")
+    api_key = params.get("api_key", [""])[0]
+
+    try:
+        if api_type == "openai_compat":
+            headers: dict[str, str] = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{base_url}/models", headers=headers)
+            if resp.status_code != 200:
+                return JSONResponse(
+                    {"error": f"Upstream returned {resp.status_code}"}, status_code=502
+                )
+            data = resp.json()
+            models = sorted(m["id"] for m in data.get("data", []) if "id" in m)
+            return JSONResponse({"models": models})
+
+        if api_type == "anthropic":
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            }
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{base_url}/v1/models", headers=headers)
+            if resp.status_code != 200:
+                return JSONResponse(
+                    {"error": f"Upstream returned {resp.status_code}"}, status_code=502
+                )
+            data = resp.json()
+            models = sorted(m["id"] for m in data.get("data", []) if "id" in m)
+            return JSONResponse({"models": models})
+
+        if api_type == "gemini":
+            params_dict: dict[str, str] = {}
+            if api_key:
+                params_dict["key"] = api_key
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{base_url}/v1beta/models", params=params_dict)
+            if resp.status_code != 200:
+                return JSONResponse(
+                    {"error": f"Upstream returned {resp.status_code}"}, status_code=502
+                )
+            data = resp.json()
+            models = sorted(
+                m["name"].replace("models/", "") for m in data.get("models", []) if "name" in m
+            )
+            return JSONResponse({"models": models})
+
+        return JSONResponse(
+            {"error": f"Fetch not supported for api_type: {api_type}"}, status_code=400
+        )
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "Request timed out"}, status_code=504)
+    except Exception as e:
+        return JSONResponse({"error": str(type(e).__name__)}, status_code=502)
 
 
 # ---- Combo CRUD ----

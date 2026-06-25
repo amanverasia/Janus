@@ -1,14 +1,28 @@
+{% set logo_map = {
+    'openai': 'openai', 'anthropic': '', 'gemini': 'googlegemini',
+    'groq': 'groq', 'together': 'togetherdotai', 'deepseek': 'deepseek',
+    'openrouter': 'openrouter', 'mistral': 'mistralai', 'fireworks': 'fireworks',
+    'perplexity': 'perplexity', 'xai': 'x', 'qwen': ''
+} %}
+{% set icon_map = {
+    'openai': '🟢', 'anthropic': '🟠', 'gemini': '🔵',
+    'groq': '⚡', 'together': '🤝', 'deepseek': '🔬',
+    'openrouter': '🔀', 'mistral': '🌬️', 'fireworks': '🎆',
+    'perplexity': '🔍', 'xai': '❌', 'qwen': '🌐'
+} %}
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     {% for provider in providers %}
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 {% if not provider.is_enabled %}opacity-50{% endif %}">
         <div class="flex items-center justify-between mb-4">
             <div class="flex items-center space-x-3">
-                <span class="text-2xl">{% set cat = {
-                    'openai': '🟢', 'anthropic': '🟠', 'gemini': '🔵',
-                    'groq': '⚡', 'together': '🤝', 'deepseek': '🔬',
-                    'openrouter': '🔀', 'mistral': '🌬️', 'fireworks': '🎆',
-                    'perplexity': '🔍', 'xai': '❌', 'qwen': '🌐'
-                } %}{{ cat.get(provider.id, '⚙️') }}</span>
+                <div class="flex items-center justify-center w-8 h-8">
+                    {% set logo_slug = logo_map.get(provider.id, '') %}
+                    {% if logo_slug %}
+                    <img src="https://cdn.simpleicons.org/{{ logo_slug }}" alt="{{ provider.id }}" class="w-6 h-6" onerror="this.parentElement.innerHTML='<span class=\'text-2xl\'>{{ icon_map.get(provider.id, '⚙️') }}</span>'">
+                    {% else %}
+                    <span class="text-2xl">{{ icon_map.get(provider.id, '⚙️') }}</span>
+                    {% endif %}
+                </div>
                 <div>
                     <h3 class="text-lg font-bold text-white">{{ provider.id }}</h3>
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-gray-300">{{ provider.api_type }}</span>

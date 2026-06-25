@@ -6,6 +6,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "openai": {
         "name": "OpenAI",
         "icon": "🟢",
+        "logo": "openai",
         "api_type": "openai_compat",
         "base_url": "https://api.openai.com/v1",
         "prefix": "openai",
@@ -14,6 +15,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "anthropic": {
         "name": "Anthropic",
         "icon": "🟠",
+        "logo": "",
         "api_type": "anthropic",
         "base_url": "https://api.anthropic.com",
         "prefix": "anthropic",
@@ -22,6 +24,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "gemini": {
         "name": "Google Gemini",
         "icon": "🔵",
+        "logo": "googlegemini",
         "api_type": "gemini",
         "base_url": "https://generativelanguage.googleapis.com",
         "prefix": "gemini",
@@ -30,6 +33,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "groq": {
         "name": "Groq",
         "icon": "⚡",
+        "logo": "groq",
         "api_type": "openai_compat",
         "base_url": "https://api.groq.com/openai/v1",
         "prefix": "groq",
@@ -38,6 +42,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "together": {
         "name": "Together AI",
         "icon": "🤝",
+        "logo": "togetherdotai",
         "api_type": "openai_compat",
         "base_url": "https://api.together.xyz/v1",
         "prefix": "together",
@@ -46,6 +51,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "deepseek": {
         "name": "DeepSeek",
         "icon": "🔬",
+        "logo": "deepseek",
         "api_type": "openai_compat",
         "base_url": "https://api.deepseek.com/v1",
         "prefix": "deepseek",
@@ -54,6 +60,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "openrouter": {
         "name": "OpenRouter",
         "icon": "🔀",
+        "logo": "openrouter",
         "api_type": "openai_compat",
         "base_url": "https://openrouter.ai/api/v1",
         "prefix": "openrouter",
@@ -62,6 +69,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "mistral": {
         "name": "Mistral",
         "icon": "🌬️",
+        "logo": "mistralai",
         "api_type": "openai_compat",
         "base_url": "https://api.mistral.ai/v1",
         "prefix": "mistral",
@@ -70,6 +78,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "fireworks": {
         "name": "Fireworks",
         "icon": "🎆",
+        "logo": "fireworks",
         "api_type": "openai_compat",
         "base_url": "https://api.fireworks.ai/inference/v1",
         "prefix": "fireworks",
@@ -78,6 +87,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "perplexity": {
         "name": "Perplexity",
         "icon": "🔍",
+        "logo": "perplexity",
         "api_type": "openai_compat",
         "base_url": "https://api.perplexity.ai",
         "prefix": "perplexity",
@@ -86,6 +96,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "xai": {
         "name": "xAI (Grok)",
         "icon": "❌",
+        "logo": "x",
         "api_type": "openai_compat",
         "base_url": "https://api.x.ai/v1",
         "prefix": "xai",
@@ -94,6 +105,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "qwen": {
         "name": "Qwen/DashScope",
         "icon": "🌐",
+        "logo": "",
         "api_type": "openai_compat",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "prefix": "qwen",
@@ -102,6 +114,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "opencode_free": {
         "name": "OpenCode Zen (Free)",
         "icon": "🆓",
+        "logo": "",
         "api_type": "opencode_free",
         "base_url": "",
         "prefix": "opencode",
@@ -110,6 +123,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "custom": {
         "name": "Custom Provider",
         "icon": "⚙️",
+        "logo": "",
         "api_type": "openai_compat",
         "base_url": "",
         "prefix": "",
