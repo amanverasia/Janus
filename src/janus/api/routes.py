@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import FallbackHandler
 from janus.storage.budgets import get_budget_status
 from janus.streaming.translator import translate_stream
+from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
 
 from .deps import require_api_key
@@ -129,8 +131,33 @@ async def _handle(
                     raise HTTPException(status_code=502, detail="No stream from upstream")
                 parser = provider_adapter.stream_parser()
                 emitter = client_adapter.stream_emitter()
-                generator = translate_stream(lines, parser, emitter)
-                return StreamingResponse(generator, media_type="text/event-stream")
+                tracker = StreamUsageTracker(parser)
+
+                from janus.pricing.calculator import compute_cost
+                from janus.storage.usage import record_usage
+
+                async def _streaming_generator() -> AsyncIterator[bytes]:
+                    try:
+                        async for chunk in translate_stream(lines, tracker, emitter):
+                            yield chunk
+                    finally:
+                        usage = tracker.get_usage()
+                        cost = compute_cost(usage, target.model, pricing_registry)
+                        await record_usage(
+                            db_path,
+                            provider_id=target.provider_config.id,
+                            model=target.model,
+                            account_id=target.account_id,
+                            input_tokens=usage.input_tokens,
+                            output_tokens=usage.output_tokens,
+                            cache_creation_tokens=usage.cache_creation_input_tokens,
+                            cache_read_tokens=usage.cache_read_input_tokens,
+                            status=200,
+                            client_key_id=client_key_id,
+                            cost=cost,
+                        )
+
+                return StreamingResponse(_streaming_generator(), media_type="text/event-stream")
 
             result = await provider.call(upstream_payload, stream=False)
             if result.status_code >= 400:

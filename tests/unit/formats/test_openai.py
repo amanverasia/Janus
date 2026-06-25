@@ -51,6 +51,29 @@ def test_build_upstream_request():
     assert payload["messages"][1]["content"] == "hi"
 
 
+def test_build_upstream_request_stream_injects_include_usage():
+    req = CanonicalRequest(
+        model="gpt-4",
+        system=[SystemBlock(type="text", text="Be concise")],
+        messages=[Message(role=Role.USER, content="hi")],
+        stream=True,
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "gpt-4")
+    assert payload["stream"] is True
+    assert payload["stream_options"] == {"include_usage": True}
+
+
+def test_build_upstream_request_nonstream_no_stream_options():
+    req = CanonicalRequest(
+        model="gpt-4",
+        messages=[Message(role=Role.USER, content="hi")],
+        stream=False,
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "gpt-4")
+    assert "stream" not in payload
+    assert "stream_options" not in payload
+
+
 def test_parse_upstream_response():
     raw = json.loads((FIXTURES / "openai_nonstream_response.json").read_text())
     resp = OpenAIAdapter().parse_upstream_response(raw)
@@ -93,6 +116,27 @@ def test_parse_upstream_stream():
 
     text = "".join(e.text for e in all_events if hasattr(e, "text"))
     assert "Hello" in text
+
+
+def test_parse_upstream_stream_with_usage():
+    """OpenAI parser should extract usage from the final chunk when include_usage is set."""
+    parser = OpenAIAdapter().stream_parser()
+    lines = [
+        '{"id":"r1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}',
+        '{"id":"r1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}',
+        '{"id":"r1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+        '{"id":"r1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":42,"completion_tokens":7,"total_tokens":49}}',
+        "[DONE]",
+    ]
+    all_events: list = []
+    for line in lines:
+        all_events.extend(parser.feed(line))
+    all_events.extend(parser.finish())
+
+    usage_deltas = [e for e in all_events if isinstance(e, MessageDelta) and e.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 42
+    assert usage_deltas[0].usage.output_tokens == 7
 
 
 def test_emit_stream():

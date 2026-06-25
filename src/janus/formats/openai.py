@@ -74,6 +74,18 @@ class OpenAIStreamParser:
             return []
 
         events: list[CanonicalEvent] = []
+
+        usage_raw = chunk.get("usage")
+        if isinstance(usage_raw, dict) and usage_raw.get("prompt_tokens") is not None:
+            events.append(
+                MessageDelta(
+                    usage=Usage(
+                        input_tokens=usage_raw.get("prompt_tokens", 0),
+                        output_tokens=usage_raw.get("completion_tokens", 0),
+                    ),
+                )
+            )
+
         choices = chunk.get("choices") or []
         if not choices:
             return events
@@ -341,6 +353,9 @@ class OpenAIAdapter:
             messages.append(self._build_message(msg))
 
         payload: dict[str, Any] = {"model": model, "messages": messages}
+        if req.stream:
+            payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
         if req.max_tokens is not None:
             payload["max_tokens"] = req.max_tokens
         if req.temperature is not None:
