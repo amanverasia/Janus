@@ -23,6 +23,8 @@ janus serve --port 20128
 
 Point your coding tool at `http://localhost:20128/v1` and start routing.
 
+**📚 [Documentation](https://amanverasia.github.io/Janus/) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)**
+
 ## Docker
 
 ```bash
@@ -154,4 +156,4 @@ Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / Jinja2 / HTMX / Chart
 
 ## License
 
-TBD
+[GPL-3.0](LICENSE) © 2026 Aman Verasia
