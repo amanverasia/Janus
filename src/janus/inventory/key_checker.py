@@ -937,6 +937,10 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
             },
         )
 
+    from janus.routing.reload_bridge import schedule_reload_providers
+
+    schedule_reload_providers(db_path)
+
 
 async def check_all_upstream_keys(db_path: str | Path) -> int:
     from janus.storage.upstream_keys import list_upstream_keys

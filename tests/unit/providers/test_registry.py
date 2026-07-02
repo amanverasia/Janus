@@ -50,6 +50,25 @@ def test_multi_account_same_prefix():
     assert targets[1].account_id == "ds-2"
 
 
+def test_upstream_key_id_used_as_account_id():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openai-main::uk_key-1",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            api_key="sk-live",
+            models=["gpt-4o"],
+            upstream_key_id="key-1",
+        )
+    )
+    targets = registry.lookup("openai/gpt-4o")
+    assert targets is not None
+    assert targets[0].account_id == "key-1"
+    assert targets[0].provider_config.id == "openai-main::uk_key-1"
+
+
 def test_lookup_returns_none_for_unknown():
     registry = ProviderRegistry()
     assert registry.lookup("no/such") is None

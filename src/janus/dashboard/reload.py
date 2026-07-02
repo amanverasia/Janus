@@ -6,15 +6,18 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from janus.app import _build_provider
-from janus.config.schema import ComboConfig, ProviderConfig
+from janus.config.schema import ComboConfig
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
+from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
+from janus.routing.upstream_expand import expand_gateway_provider
 from janus.storage.combos_db import list_combos
 from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
 from janus.storage.settings import get_all_settings
+from janus.storage.upstream_keys import list_routable_upstream_keys
 from janus.tokensavers.base import TokenSaver
 from janus.tokensavers.caveman import CavemanSaver
 from janus.tokensavers.pipeline import SaverPipeline
@@ -32,17 +35,11 @@ async def reload_providers(app: FastAPI) -> None:
     new_providers: dict[str, Provider] = {}
 
     for row in rows:
-        models = json.loads(row["models"]) if row["models"] else []
-        pc = ProviderConfig(
-            id=row["id"],
-            prefix=row["prefix"],
-            api_type=row["api_type"],
-            base_url=row["base_url"],
-            api_key=row["api_key"],
-            models=models,
-        )
-        registry.register(pc)
-        new_providers[row["id"]] = _build_provider(pc)
+        inventory_id = inventory_provider_id_for_prefix(row["prefix"])
+        upstream_keys = await list_routable_upstream_keys(db_path, inventory_id)
+        for pc in expand_gateway_provider(row, upstream_keys):
+            registry.register(pc)
+            new_providers[pc.id] = _build_provider(pc)
 
     combo_rows = await list_combos(db_path)
     for row in combo_rows:

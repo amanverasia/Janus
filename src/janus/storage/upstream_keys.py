@@ -218,6 +218,33 @@ async def count_upstream_keys(db_path: str | Path) -> int:
     return int(row[0])
 
 
+async def list_routable_upstream_keys(
+    db_path: str | Path,
+    inventory_provider_id: str,
+) -> list[dict[str, Any]]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT * FROM upstream_keys
+               WHERE provider_id = ?
+                 AND status = 'active'
+                 AND is_valid = 1
+                 AND is_usable = 1
+                 AND (
+                   is_daily_limited = 0
+                   OR daily_credit_limit IS NULL
+                   OR daily_credit_used IS NULL
+                   OR daily_credit_used < daily_credit_limit
+                 )
+               ORDER BY priority DESC,
+                        CASE WHEN credits_remaining IS NULL THEN 1 ELSE 0 END,
+                        credits_remaining DESC,
+                        created_at ASC""",
+            (inventory_provider_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def count_pending_upstream_keys(db_path: str | Path) -> int:
     async with get_connection(db_path) as db:
         async with db.execute(

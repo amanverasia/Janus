@@ -1,0 +1,4 @@
+server:
+  port: 20128
+  host: 127.0.0.1
+  data_dir: /Users/amanverasia/Projects/merge_janus_keys/Janus/.demo-data
