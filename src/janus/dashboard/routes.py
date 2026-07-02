@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 import yaml
@@ -32,6 +33,7 @@ from janus.storage.usage import get_usage_stats
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
 _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+_templates.env.filters["urlencode"] = lambda value: quote(str(value))
 
 try:
     from importlib.metadata import version as _pkg_version

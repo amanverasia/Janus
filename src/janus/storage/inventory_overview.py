@@ -110,3 +110,68 @@ async def get_credit_summary(db_path: str | Path) -> list[dict[str, Any]]:
         ) as cur:
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def get_best_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
+    from janus.inventory.key_encryption import decrypt_key_value
+
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT k.id, k.key_value, k.key_label, k.key_masked, k.provider_id,
+                      p.display_name AS provider_display_name,
+                      p.name AS provider_name,
+                      k.credits_remaining, k.credits_total, k.rate_limit_rpm,
+                      k.is_usable, k.usability_status
+               FROM upstream_keys k
+               JOIN inventory_providers p ON k.provider_id = p.id
+               WHERE k.status = 'active'
+                 AND k.is_usable = 1
+                 AND k.credits_remaining IS NOT NULL
+                 AND k.credits_remaining > 0
+               ORDER BY k.credits_remaining DESC"""
+        ) as cur:
+            rows = await cur.fetchall()
+    best_by_provider: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        item = dict(row)
+        key_value = item.get("key_value")
+        if isinstance(key_value, str):
+            item["key_value"] = decrypt_key_value(key_value)
+        provider_id = str(item["provider_id"])
+        if provider_id not in best_by_provider:
+            best_by_provider[provider_id] = item
+    return list(best_by_provider.values())
+
+
+async def get_top_keys_per_provider(
+    db_path: str | Path,
+    *,
+    per_provider: int = 5,
+) -> dict[str, list[dict[str, Any]]]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """WITH ranked AS (
+                 SELECT k.id, k.key_masked, k.key_label, k.provider_id, k.credits_remaining,
+                        k.status, k.is_usable, p.display_name AS provider_display_name,
+                        ROW_NUMBER() OVER (
+                          PARTITION BY k.provider_id
+                          ORDER BY k.credits_remaining DESC NULLS LAST, k.updated_at DESC
+                        ) AS rn
+                 FROM upstream_keys k
+                 JOIN inventory_providers p ON k.provider_id = p.id
+                 WHERE k.status = 'active' AND k.is_valid = 1 AND k.is_usable = 1
+               )
+               SELECT id, key_masked, key_label, provider_id, credits_remaining,
+                      status, is_usable, provider_display_name
+               FROM ranked
+               WHERE rn <= ?
+               ORDER BY provider_display_name, rn""",
+            (per_provider,),
+        ) as cur:
+            rows = await cur.fetchall()
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        item = dict(row)
+        provider_id = str(item["provider_id"])
+        grouped.setdefault(provider_id, []).append(item)
+    return grouped

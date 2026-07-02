@@ -47,6 +47,8 @@
     {% include "inventory_encryption_partial.html" %}
 </div>
 
+{% include "inventory_best_keys_partial.html" %}
+
 <div class="grid lg:grid-cols-2 gap-6 mb-8">
     <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
         <div class="px-4 py-3 border-b border-gray-700">
@@ -95,6 +97,29 @@
             {% endfor %}
         </div>
     </div>
+
+    {% if top_keys %}
+    <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-700">
+            <h2 class="text-lg font-semibold text-white">Top Keys by Provider</h2>
+        </div>
+        <div class="divide-y divide-gray-700 max-h-96 overflow-y-auto">
+            {% for provider_id, keys in top_keys.items() %}
+            <div class="px-4 py-3">
+                <p class="text-white font-medium mb-2">{{ keys[0].provider_display_name }}</p>
+                <ul class="space-y-1">
+                    {% for key in keys %}
+                    <li class="text-xs text-gray-400 font-mono flex justify-between gap-2">
+                        <span>{{ key.key_masked }}</span>
+                        <span>{% if key.credits_remaining is not none %}${{ "%.2f"|format(key.credits_remaining) }}{% else %}—{% endif %}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
