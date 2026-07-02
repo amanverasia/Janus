@@ -31,9 +31,7 @@ async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: 
         if not key_value:
             continue
         provider_id = (
-            row.get("provider_id")
-            or detect_provider_from_key(str(key_value))
-            or "unidentified"
+            row.get("provider_id") or detect_provider_from_key(str(key_value)) or "unidentified"
         )
         if dry_run:
             imported += 1
