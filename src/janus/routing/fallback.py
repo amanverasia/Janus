@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import time
+from pathlib import Path
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
+from janus.storage.cooldowns import get_active_cooldowns, save_cooldown
 
 COOLDOWN_DURATIONS: dict[str, float] = {
     "rate_limit": 60.0,
@@ -13,8 +16,9 @@ COOLDOWN_DURATIONS: dict[str, float] = {
 
 
 class FallbackHandler:
-    def __init__(self, registry: ProviderRegistry) -> None:
+    def __init__(self, registry: ProviderRegistry, db_path: str | Path | None = None) -> None:
         self.registry = registry
+        self.db_path = db_path
         self._cooldowns: dict[str, float] = {}
 
     def resolve_attempts(self, model_str: str) -> list[ResolvedTarget]:
@@ -50,10 +54,25 @@ class FallbackHandler:
             cooldown = retry_after
         else:
             cooldown = COOLDOWN_DURATIONS.get(error_type, 60.0)
-        self._cooldowns[account_id] = time.monotonic() + cooldown
+        self._cooldowns[account_id] = time.time() + cooldown
+        if self.db_path is not None:
+            self._persist_cooldown(account_id, self._cooldowns[account_id])
+
+    def _persist_cooldown(self, account_id: str, expires_at: float) -> None:
+        assert self.db_path is not None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(save_cooldown(self.db_path, account_id, expires_at))
+
+    async def load_cooldowns(self) -> None:
+        if self.db_path is None:
+            return
+        self._cooldowns = await get_active_cooldowns(self.db_path)
 
     def is_available(self, account_id: str) -> bool:
         expiry = self._cooldowns.get(account_id)
         if expiry is None:
             return True
-        return time.monotonic() >= expiry
+        return time.time() >= expiry

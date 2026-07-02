@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS pricing_overrides (
     cache_read_per_mtok REAL NOT NULL DEFAULT 0.0
 );
 
+CREATE TABLE IF NOT EXISTS cooldowns (
+    account_id TEXT PRIMARY KEY,
+    expires_at REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);

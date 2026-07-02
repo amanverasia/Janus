@@ -167,3 +167,40 @@ def test_retry_after_override():
     handler = FallbackHandler(registry)
     handler.mark_cooldown("x", "rate_limit", retry_after=120.0)
     assert not handler.is_available("x")
+
+
+async def test_cooldown_persistence_round_trip(tmp_path):
+    from janus.storage.database import init_db
+
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="acct-a",
+            prefix="p",
+            api_type="openai_compat",
+            base_url="https://p.com",
+            api_key="k",
+            models=["m"],
+        )
+    )
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+
+    handler = FallbackHandler(registry, db_path=db_path)
+    handler.mark_cooldown("acct-a", "rate_limit", duration=120.0)
+    assert not handler.is_available("acct-a")
+
+    import asyncio
+
+    await asyncio.sleep(0.05)
+
+    restored = FallbackHandler(registry, db_path=db_path)
+    await restored.load_cooldowns()
+    assert not restored.is_available("acct-a")
+
+
+async def test_load_cooldowns_noop_without_db():
+    registry = ProviderRegistry()
+    handler = FallbackHandler(registry)
+    await handler.load_cooldowns()
+    assert handler.is_available("anything")

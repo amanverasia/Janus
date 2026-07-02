@@ -26,6 +26,18 @@ def test_parse_generate_content():
     assert req.tools[0].function.name == "read"
 
 
+def test_parse_request_uses_model_field():
+    raw = {"model": "openai/gpt-4o", "contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+    req = GeminiAdapter().parse_request(raw)
+    assert req.model == "openai/gpt-4o"
+
+
+def test_parse_request_defaults_model_empty():
+    raw = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+    req = GeminiAdapter().parse_request(raw)
+    assert req.model == ""
+
+
 def test_build_upstream_request():
     req = CanonicalRequest(
         model="gemini-2.0-flash",

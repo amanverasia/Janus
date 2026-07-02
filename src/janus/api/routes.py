@@ -250,3 +250,19 @@ async def chat_completions(request: Request) -> Response:
 async def messages(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("anthropic", body, request)
+
+
+gemini_router = APIRouter()
+
+
+@gemini_router.post("/v1beta/models/{model_action:path}", dependencies=[Depends(require_api_key)])
+async def gemini_generate(model_action: str, request: Request) -> Response:
+    if ":" not in model_action:
+        raise HTTPException(status_code=404, detail="Unknown endpoint")
+    model, action = model_action.rsplit(":", 1)
+    if action not in ("generateContent", "streamGenerateContent"):
+        raise HTTPException(status_code=404, detail=f"Unsupported action: {action}")
+    body: dict[str, Any] = await request.json()
+    body["model"] = model
+    body["stream"] = action == "streamGenerateContent"
+    return await _handle("gemini", body, request)

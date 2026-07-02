@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Gemini inbound client endpoint — Gemini-native tools can now talk to Janus directly via `POST /v1beta/models/{prefix/model}:generateContent` (and `:streamGenerateContent`)
+- Dashboard Test-Connection button — probes an upstream provider with a 1-token request and reports status + latency
+- Dashboard Export Config — download the current DB state (providers, combos, pricing) as a YAML file
+- Dashboard Reset-to-Defaults — clear DB tables and re-seed from `config.yaml` (danger zone on Settings page)
+- Cooldown state now persists across server restarts via SQLite
+- API key auth now accepts Gemini-style `x-goog-api-key` header and `?key=` query param
+- Docker image published to `ghcr.io/amanverasia/janus` via CI (multi-arch: amd64 + arm64)
+
+### Changed
+- Dockerfile copies `README.md` and `LICENSE` so the hatchling build succeeds in CI
+- Dashboard mutations no longer wipe in-memory fallback cooldowns
+
 ## [0.2.2] - 2026-06-25
 
 ### Fixed

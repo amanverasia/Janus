@@ -56,6 +56,23 @@ janus keys create --name "my-key"
 
 The full key is shown once. Use it in the `Authorization: Bearer <key>` header or as your `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`.
 
+## Gemini-Native Tools
+
+Point Gemini SDKs and tools at Janus. The base URL is `http://localhost:20128`
+(the Gemini endpoint is mounted at the root, not under `/v1`):
+
+```bash
+export GOOGLE_GEMINI_BASE_URL=http://localhost:20128
+export GEMINI_API_KEY=sk-janus-yourkey
+```
+
+Tools send requests to `POST /v1beta/models/{model}:generateContent`. Use the
+`prefix/model` convention in the model path (e.g. `openai/gpt-4o`) so Janus can
+route it — the upstream provider does not need to be Gemini.
+
+If `require_api_key` is enabled, Janus accepts the standard Gemini auth styles:
+the `x-goog-api-key` header or the `?key=` query parameter.
+
 ## Model Naming
 
 Models are referenced as `{prefix}/{model}`:

@@ -202,6 +202,68 @@ data: {"type":"message_stop"}
 
 ---
 
+## POST /v1beta/models/{model}:generateContent
+
+Gemini GenerateContent format. Point Gemini-native tools at Janus by using the
+`prefix/model` routing convention in the URL path. Janus translates and routes
+the request to any configured provider — the upstream does not need to be Gemini.
+
+!!! note "Routing key"
+    The `{model}` segment uses `prefix/model` (e.g. `openai/gpt-4o`) just like the
+    other endpoints. This is what Janus uses for routing; the actual upstream model
+    name is the part after the slash.
+
+### Non-Streaming
+
+```bash
+curl "http://localhost:20128/v1beta/models/openai/gpt-4o:generateContent" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-janus-yourkey" \
+  -d '{
+    "contents": [{"role": "user", "parts": [{"text": "Hello!"}]}]
+  }'
+```
+
+Response — standard Gemini `GenerateContentResponse` JSON:
+
+```json
+{
+  "candidates": [
+    {
+      "content": {"role": "model", "parts": [{"text": "Hello! How can I help?"}]},
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 3,
+    "candidatesTokenCount": 5,
+    "totalTokenCount": 8
+  }
+}
+```
+
+### Streaming
+
+Use `:streamGenerateContent` instead of `:generateContent`:
+
+```bash
+curl "http://localhost:20128/v1beta/models/openai/gpt-4o:streamGenerateContent" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-janus-yourkey" \
+  -d '{
+    "contents": [{"role": "user", "parts": [{"text": "Hello!"}]}]
+  }'
+```
+
+The response is a `text/event-stream` of JSON objects, one per chunk.
+
+!!! tip "Authentication"
+    When `require_api_key` is on, Gemini-style auth is also accepted: the
+    `x-goog-api-key` header or `?key=` query parameter.
+
+---
+
 ## GET /v1/models
 
 Lists all registered provider models and combos.

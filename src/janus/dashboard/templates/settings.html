@@ -58,6 +58,32 @@
         <p class="text-gray-500 text-sm">No settings stored in the database.</p>
         {% endif %}
     </div>
+
+    <!-- Export Config -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-bold text-white">Export Config</h2>
+                <p class="text-gray-400 text-sm mt-1">Download the current DB state as a YAML config file. Provider API keys are included in plaintext.</p>
+            </div>
+            <a href="/dashboard/api/export" download
+               class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 transition-colors">Download YAML</a>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-red-900">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-bold text-red-400">Danger Zone</h2>
+                <p class="text-gray-400 text-sm mt-1">Reset providers, combos, pricing, and settings to the values in your config.yaml. API keys and usage history are preserved.</p>
+            </div>
+            <button hx-post="/dashboard/api/reset" hx-target="this" hx-swap="none"
+                    hx-confirm="This will clear all providers, combos, pricing, and settings, then re-seed from config.yaml. Continue?"
+                    onclick="setTimeout(function(){ location.reload(); }, 500)"
+                    class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-500 transition-colors">Reset to Defaults</button>
+        </div>
+    </div>
 </div>
 
 <script>

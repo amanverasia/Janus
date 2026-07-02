@@ -186,6 +186,81 @@ async def test_unknown_model_error(app):
         assert r.status_code == 400
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_gemini_inbound_nonstream(app):
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Hello from Gemini!"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+        }
+        r = await client.post("/v1beta/models/test/test-m1:generateContent", json=payload)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["candidates"][0]["content"]["parts"][0]["text"] == "Hello from Gemini!"
+        assert data["usageMetadata"]["promptTokenCount"] == 4
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_gemini_inbound_stream(app):
+    sse_body = (
+        'data: {"id":"r1","object":"chat.completion.chunk",'
+        '"choices":[{"index":0,"delta":{"role":"assistant"},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"id":"r1","object":"chat.completion.chunk",'
+        '"choices":[{"index":0,"delta":{"content":"Hello"},'
+        '"finish_reason":null}]}\n\n'
+        'data: {"id":"r1","object":"chat.completion.chunk",'
+        '"choices":[{"index":0,"delta":{},'
+        '"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+        }
+        async with client.stream(
+            "POST", "/v1beta/models/test/test-m1:streamGenerateContent", json=payload
+        ) as response:
+            assert response.status_code == 200
+            body = b""
+            async for chunk in response.aiter_bytes():
+                body += chunk
+            assert b"Hello" in body
+
+
+@pytest.mark.asyncio
+async def test_gemini_inbound_bad_action(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/v1beta/models/test/test-m1:bogusAction", json={"contents": []})
+        assert r.status_code == 404
+
+
 # --- Phase 2 tests ---
 
 
