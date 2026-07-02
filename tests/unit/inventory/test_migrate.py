@@ -37,6 +37,20 @@ async def test_verify_inventory_summary(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_import_dashboard_json(tmp_path) -> None:
+    from janus.inventory.migrate import import_dashboard_json, verify_inventory
+
+    db_path = tmp_path / "test.db"
+    payload = json.dumps(
+        [{"key_value": "sk-proj-json-import-test-key", "provider_id": "openai"}]
+    ).encode()
+    count = await import_dashboard_json(db_path, payload, dry_run=False)
+    assert count == 1
+    summary = await verify_inventory(db_path)
+    assert summary["total"] == 1
+
+
+@pytest.mark.asyncio
 async def test_import_dashboard_export_dry_run(tmp_path) -> None:
     db_path = tmp_path / "test.db"
     export_path = tmp_path / "export.json"

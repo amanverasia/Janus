@@ -56,6 +56,67 @@ async def test_inventory_add_page(client):
     assert "Add Upstream Keys" in r.text
 
 
+async def test_inventory_import_page(client):
+    r = await client.get("/dashboard/inventory/import")
+    assert r.status_code == 200
+    assert "Import Upstream Keys" in r.text
+
+
+async def test_inventory_overview_encryption_panel(client):
+    r = await client.get("/dashboard/inventory")
+    assert r.status_code == 200
+    assert "Encryption at Rest" in r.text
+
+
+async def test_inventory_keys_has_reidentify_and_import_links(client):
+    r = await client.get("/dashboard/inventory/keys")
+    assert r.status_code == 200
+    assert "Re-identify" in r.text
+    assert "/dashboard/inventory/import" in r.text
+
+
+async def test_inventory_import_upload(client):
+    import json
+
+    payload = json.dumps(
+        [{"key_value": "sk-proj-" + "i" * 16, "provider_id": "openai", "status": "active"}]
+    )
+    r = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("export.json", payload, "application/json")},
+        data={"verify": "true"},
+    )
+    assert r.status_code == 200
+    assert "Imported 1" in r.text
+    assert "Verification Summary" in r.text
+
+
+async def test_inventory_reclassify_preview(client):
+    r = await client.post(
+        "/dashboard/api/inventory/reclassify?dry=true&scope=invalid",
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "Re-identify Invalid Keys" in r.text
+
+
+async def test_inventory_export_provider_filter(client):
+    await client.post(
+        "/dashboard/api/inventory/keys",
+        data={"keys_text": "gsk_" + "y" * 16, "provider_id": "groq"},
+    )
+    await client.post(
+        "/dashboard/api/inventory/keys",
+        data={"keys_text": "sk-proj-" + "z" * 16, "provider_id": "openai"},
+    )
+    export = await client.get("/dashboard/api/inventory/export?provider_id=groq")
+    assert export.status_code == 200
+    payload = export.json()
+    assert payload["count"] == 1
+    assert payload["keys"][0]["provider_id"] == "groq"
+    assert "attachment" in export.headers.get("content-disposition", "")
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_inventory_submit_key(client):

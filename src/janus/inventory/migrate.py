@@ -77,8 +77,12 @@ def format_inventory_verification(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: bool) -> int:
-    rows = load_export_payload(export_path)
+async def import_dashboard_rows(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    dry_run: bool,
+) -> int:
     if not dry_run:
         await init_db(db_path)
 
@@ -123,3 +127,14 @@ async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: 
         )
         imported += 1
     return imported
+
+
+async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: bool) -> int:
+    rows = load_export_payload(export_path)
+    return await import_dashboard_rows(db_path, rows, dry_run=dry_run)
+
+
+async def import_dashboard_json(db_path: Path, data: bytes, *, dry_run: bool) -> int:
+    payload = json.loads(data)
+    rows = _parse_export_payload(payload)
+    return await import_dashboard_rows(db_path, rows, dry_run=dry_run)

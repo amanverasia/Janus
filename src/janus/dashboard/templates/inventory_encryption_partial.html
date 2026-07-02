@@ -1,0 +1,35 @@
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div>
+        <h2 class="text-lg font-semibold text-white">Encryption at Rest</h2>
+        <p class="text-sm text-gray-400 mt-1">
+            {% if encryption_enabled %}
+            <span class="text-green-400">INVENTORY_ENCRYPTION_KEY is set.</span>
+            New keys are encrypted automatically.
+            {% else %}
+            <span class="text-yellow-400">INVENTORY_ENCRYPTION_KEY is not set.</span>
+            Keys are stored in plaintext until encryption is enabled.
+            {% endif %}
+        </p>
+        <p class="text-sm text-gray-300 mt-2">
+            {{ encryption.encrypted }} encrypted · {{ encryption.plaintext }} plaintext
+            ({{ encryption.total }} total)
+        </p>
+        {% if converted %}
+        <p class="text-sm text-green-400 mt-2">Encrypted {{ converted }} key(s) just now.</p>
+        {% endif %}
+        {% if error %}
+        <p class="text-sm text-red-400 mt-2">{{ error }}</p>
+        {% endif %}
+    </div>
+    {% if encryption_enabled and encryption.plaintext > 0 %}
+    <button hx-post="/dashboard/api/inventory/encrypt-keys"
+            hx-target="#encryption-panel"
+            hx-swap="innerHTML"
+            hx-confirm="Encrypt {{ encryption.plaintext }} plaintext key(s) at rest?"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm cursor-pointer whitespace-nowrap">
+        Encrypt {{ encryption.plaintext }} Plaintext Key(s)
+    </button>
+    {% elif not encryption_enabled %}
+    <p class="text-xs text-gray-500 font-mono">janus inventory generate-encryption-key</p>
+    {% endif %}
+</div>
