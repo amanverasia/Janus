@@ -89,9 +89,14 @@
 
 <!-- Success Rate -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+    {% set success_total = success.success_2xx + success.client_4xx + success.server_5xx %}
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <h2 class="text-lg font-semibold text-white mb-4">Success Rate</h2>
+        {% if success_total > 0 %}
         <canvas id="successChart" height="120"></canvas>
+        {% else %}
+        <div class="py-8 text-center"><p class="text-gray-400">No requests in this range.</p></div>
+        {% endif %}
     </div>
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <h2 class="text-lg font-semibold text-white mb-4">Status Breakdown</h2>

@@ -266,5 +266,21 @@ document.addEventListener('click', function(e) {
         btn.dataset.hasKey === 'true'
     );
 });
+
+function closeProviderModals() {
+    document.getElementById('add-modal').classList.add('hidden');
+    document.getElementById('edit-modal').classList.add('hidden');
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeProviderModals();
+});
+
+['add-modal', 'edit-modal'].forEach(function(id) {
+    var el = document.getElementById(id);
+    el.addEventListener('click', function(e) {
+        if (e.target === el) closeProviderModals();
+    });
+});
 </script>
 {% endblock %}
