@@ -16,6 +16,16 @@ from janus.inventory.url_guard import mask_key
 
 from .database import get_connection
 
+SORT_COLUMNS: dict[str, str] = {
+    "credits": "k.credits_remaining",
+    "provider": "p.display_name",
+    "status": "k.status",
+    "rate_limit": "k.rate_limit_rpm",
+    "last_checked": "k.last_checked_at",
+}
+
+DEFAULT_PAGE_SIZE = 25
+
 
 def _new_key_id() -> str:
     return str(uuid.uuid4())
@@ -123,6 +133,132 @@ async def find_upstream_key_by_value_and_provider(
                WHERE key_hash = ? AND provider_id = ? AND status != 'revoked'
                LIMIT 1""",
             (key_hash, provider_id),
+        ) as cur:
+            row = await cur.fetchone()
+    return _decode_upstream_row(row) if row else None
+
+
+def _list_filters(
+    *,
+    provider_id: str | None,
+    status: str | None,
+    search: str | None,
+) -> tuple[str, list[Any]]:
+    clauses = ["k.status != 'revoked'"]
+    params: list[Any] = []
+    if provider_id:
+        clauses.append("k.provider_id = ?")
+        params.append(provider_id)
+    if status:
+        clauses.append("k.status = ?")
+        params.append(status)
+    if search:
+        clauses.append("(k.key_label LIKE ? OR k.key_masked LIKE ? OR k.provider_id LIKE ?)")
+        pattern = f"%{search}%"
+        params.extend([pattern, pattern, pattern])
+    return " AND ".join(clauses), params
+
+
+def _normalize_sort(sort: str) -> str:
+    return sort if sort in SORT_COLUMNS else "credits"
+
+
+def _normalize_direction(direction: str) -> str:
+    return "ASC" if direction.lower() == "asc" else "DESC"
+
+
+async def count_upstream_keys_filtered(
+    db_path: str | Path,
+    *,
+    provider_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+) -> int:
+    where, params = _list_filters(provider_id=provider_id, status=status, search=search)
+    query = f"""
+        SELECT COUNT(*)
+        FROM upstream_keys k
+        JOIN inventory_providers p ON k.provider_id = p.id
+        WHERE {where}
+    """
+    async with get_connection(db_path) as db:
+        async with db.execute(query, params) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return 0
+    return int(row[0])
+
+
+async def list_upstream_keys_page(
+    db_path: str | Path,
+    *,
+    provider_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    sort: str = "credits",
+    direction: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
+    masked: bool = True,
+) -> list[dict[str, Any]]:
+    where, params = _list_filters(provider_id=provider_id, status=status, search=search)
+    sort_key = _normalize_sort(sort)
+    sort_col = SORT_COLUMNS[sort_key]
+    sort_dir = _normalize_direction(direction)
+    null_dir = "ASC" if sort_dir == "DESC" else "DESC"
+    query = f"""
+        SELECT k.*,
+               p.display_name AS provider_display_name,
+               p.name AS provider_name,
+               p.billing_model AS provider_billing_model
+        FROM upstream_keys k
+        JOIN inventory_providers p ON k.provider_id = p.id
+        WHERE {where}
+        ORDER BY ({sort_col} IS NULL) {null_dir}, {sort_col} {sort_dir}, k.created_at DESC
+        LIMIT ? OFFSET ?
+    """
+    page_params = [*params, limit, offset]
+    async with get_connection(db_path) as db:
+        async with db.execute(query, page_params) as cur:
+            rows = await cur.fetchall()
+    items = [_decode_upstream_row(row) for row in rows]
+    if masked:
+        for item in items:
+            item.pop("key_value", None)
+    return items
+
+
+async def list_upstream_key_history(
+    db_path: str | Path,
+    upstream_key_id: str,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT id, upstream_key_id, previous_status, new_status,
+                      credits_remaining, notes, changed_at
+               FROM upstream_key_history
+               WHERE upstream_key_id = ?
+               ORDER BY changed_at DESC
+               LIMIT ?""",
+            (upstream_key_id, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_upstream_key_detail(db_path: str | Path, key_id: str) -> dict[str, Any] | None:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT k.*,
+                      p.display_name AS provider_display_name,
+                      p.name AS provider_name,
+                      p.billing_model AS provider_billing_model
+               FROM upstream_keys k
+               JOIN inventory_providers p ON k.provider_id = p.id
+               WHERE k.id = ? AND k.status != 'revoked'""",
+            (key_id,),
         ) as cur:
             row = await cur.fetchone()
     return _decode_upstream_row(row) if row else None

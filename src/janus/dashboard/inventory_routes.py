@@ -22,23 +22,31 @@ from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 from janus.inventory.reclassify import reclassify_upstream_keys
 from janus.storage.inventory_overview import (
+    get_best_upstream_keys,
     get_credit_summary,
     get_inventory_summary,
     get_provider_cards,
     get_recent_activity,
+    get_top_keys_per_provider,
 )
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.upstream_keys import (
+    DEFAULT_PAGE_SIZE,
+    SORT_COLUMNS,
     count_pending_upstream_keys,
     count_storage_encryption_state,
+    count_upstream_keys_filtered,
     delete_upstream_key,
     export_upstream_keys,
+    get_upstream_key_detail,
     get_upstream_keys_by_ids,
+    list_upstream_key_history,
     list_upstream_keys,
-    list_upstream_keys_masked,
+    list_upstream_keys_page,
     reencrypt_plaintext_upstream_keys,
     update_upstream_key,
 )
+from janus.storage.upstream_models import list_models_for_key
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
@@ -73,9 +81,18 @@ def _poll_query(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    direction: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
     key_ids: list[str] | None = None,
 ) -> str:
-    params: dict[str, str] = {}
+    params: dict[str, str] = {
+        "sort": sort,
+        "dir": direction,
+        "limit": str(limit),
+        "offset": str(offset),
+    }
     if provider_id:
         params["provider_id"] = provider_id
     if status:
@@ -87,38 +104,91 @@ def _poll_query(
     return urlencode(params)
 
 
+def _clamp_page_size(limit: int) -> int:
+    return max(1, min(limit, 200))
+
+
+def _safe_json_field(value: Any) -> Any:
+    if value is None or isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def _sort_toggle(current_sort: str, current_dir: str, column: str) -> str:
+    if current_sort == column:
+        return "asc" if current_dir == "desc" else "desc"
+    if column in {"provider", "status"}:
+        return "asc"
+    return "desc"
+
+
 async def _keys_context(
     db_path: Path,
     *,
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    direction: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
     submit_message: str | None = None,
 ) -> dict[str, Any]:
     providers = await list_inventory_providers(db_path, active_only=True)
-    keys = await list_upstream_keys_masked(
+    page_size = _clamp_page_size(limit)
+    total = await count_upstream_keys_filtered(
         db_path,
         provider_id=provider_id or None,
         status=status or None,
         search=search or None,
     )
-    provider_names = {p["id"]: p["display_name"] for p in providers}
-    for key in keys:
-        key["provider_display_name"] = provider_names.get(key["provider_id"], key["provider_id"])
+    if total > 0 and offset >= total:
+        offset = max(0, ((total - 1) // page_size) * page_size)
+    keys = await list_upstream_keys_page(
+        db_path,
+        provider_id=provider_id or None,
+        status=status or None,
+        search=search or None,
+        sort=sort,
+        direction=direction,
+        limit=page_size,
+        offset=offset,
+        masked=True,
+    )
     has_pending = await count_pending_upstream_keys(db_path) > 0
+    page = (offset // page_size) + 1 if total else 1
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
     return {
         "keys": keys,
         "providers": providers,
         "provider_id": provider_id,
         "status": status,
         "search": search,
+        "sort": sort,
+        "direction": direction,
+        "limit": page_size,
+        "offset": offset,
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "sort_columns": SORT_COLUMNS,
         "status_badge": _status_badge,
         "submit_message": submit_message,
         "has_pending": has_pending,
+        "sort_toggle": _sort_toggle,
         "poll_query": _poll_query(
             provider_id=provider_id,
             status=status,
             search=search,
+            sort=sort,
+            direction=direction,
+            limit=page_size,
+            offset=offset,
         ),
     }
 
@@ -165,6 +235,8 @@ async def inventory_overview_page(request: Request) -> HTMLResponse:
         "recent_activity": await get_recent_activity(db_path),
         "credit_summary": await get_credit_summary(db_path),
         "status_badge": _status_badge,
+        "best_keys": await get_best_upstream_keys(db_path),
+        "top_keys": await get_top_keys_per_provider(db_path),
         **await _encryption_context(db_path),
     }
     return _templates.TemplateResponse(request, "inventory_overview.html", context)
@@ -176,6 +248,10 @@ async def inventory_keys_page(
     provider_id: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     context = await _keys_context(
@@ -183,6 +259,10 @@ async def inventory_keys_page(
         provider_id=provider_id or "",
         status=status or "",
         search=search or "",
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
     )
     context["request"] = request
     return _templates.TemplateResponse(request, "inventory_keys.html", context)
@@ -220,6 +300,10 @@ async def _keys_partial(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    direction: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
     submit_message: str | None = None,
 ) -> HTMLResponse:
     context = await _keys_context(
@@ -227,6 +311,10 @@ async def _keys_partial(
         provider_id=provider_id,
         status=status,
         search=search,
+        sort=sort,
+        direction=direction,
+        limit=limit,
+        offset=offset,
         submit_message=submit_message,
     )
     context["request"] = request
@@ -239,6 +327,10 @@ async def api_inventory_keys_partial(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     return await _keys_partial(
@@ -247,6 +339,10 @@ async def api_inventory_keys_partial(
         provider_id=provider_id,
         status=status,
         search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -378,6 +474,10 @@ async def api_recheck_upstream_key(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     _schedule_recheck(key_id, db_path)
@@ -387,6 +487,10 @@ async def api_recheck_upstream_key(
         provider_id=provider_id,
         status=status,
         search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
         submit_message="Recheck started — status will update automatically.",
     )
 
@@ -398,6 +502,10 @@ async def api_delete_upstream_key(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     await delete_upstream_key(db_path, key_id)
@@ -407,6 +515,10 @@ async def api_delete_upstream_key(
         provider_id=provider_id,
         status=status,
         search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -416,6 +528,10 @@ async def api_recheck_all_upstream_keys(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     keys = await list_upstream_keys(db_path)
@@ -426,6 +542,10 @@ async def api_recheck_all_upstream_keys(
         provider_id=provider_id,
         status=status,
         search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
         submit_message=f"Rechecking {len(keys)} key(s) in background.",
     )
 
@@ -475,6 +595,10 @@ async def api_reclassify_upstream_keys(
     provider_id: str = "",
     status: str = "",
     search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
 ) -> Response:
     db_path = await _ensure_db(request)
     if scope not in {"invalid", "all"}:
@@ -492,6 +616,10 @@ async def api_reclassify_upstream_keys(
                         provider_id=provider_id,
                         status=status,
                         search=search,
+                        sort=sort,
+                        direction=dir,
+                        limit=limit,
+                        offset=offset,
                     ),
                     "provider_id": provider_id,
                     "status": status,
@@ -510,6 +638,10 @@ async def api_reclassify_upstream_keys(
             provider_id=provider_id,
             status=status,
             search=search,
+            sort=sort,
+            direction=dir,
+            limit=limit,
+            offset=offset,
             submit_message=message,
         )
     return JSONResponse(payload)
@@ -592,6 +724,140 @@ async def api_export_upstream_keys(
             "keys": exported,
         },
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/api/inventory/keys")
+async def api_list_upstream_keys_json(
+    request: Request,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
+) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    page_size = _clamp_page_size(limit)
+    total = await count_upstream_keys_filtered(
+        db_path,
+        provider_id=provider_id or None,
+        status=status or None,
+        search=search or None,
+    )
+    keys = await list_upstream_keys_page(
+        db_path,
+        provider_id=provider_id or None,
+        status=status or None,
+        search=search or None,
+        sort=sort,
+        direction=dir,
+        limit=page_size,
+        offset=offset,
+        masked=True,
+    )
+    providers = await list_inventory_providers(db_path, active_only=True)
+    return JSONResponse(
+        {
+            "keys": keys,
+            "total": total,
+            "limit": page_size,
+            "offset": offset,
+            "providers": providers,
+        }
+    )
+
+
+@router.get("/api/inventory/keys/{key_id}")
+async def api_get_upstream_key_json(request: Request, key_id: str) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    detail = await get_upstream_key_detail(db_path, key_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    models = await list_models_for_key(db_path, key_id)
+    history = await list_upstream_key_history(db_path, key_id)
+    for model in models:
+        model["capabilities"] = _safe_json_field(model.get("capabilities"))
+        model["benchmarks"] = _safe_json_field(model.get("benchmarks"))
+    detail["health_warnings"] = _safe_json_field(detail.get("health_warnings"))
+    detail["metadata"] = _safe_json_field(detail.get("metadata"))
+    return JSONResponse(
+        {
+            **detail,
+            "models": models,
+            "history": history,
+        }
+    )
+
+
+@router.get("/api/inventory/keys/{key_id}/partial", response_class=HTMLResponse)
+async def api_upstream_key_detail_partial(request: Request, key_id: str) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    detail = await get_upstream_key_detail(db_path, key_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    models = await list_models_for_key(db_path, key_id)
+    history = await list_upstream_key_history(db_path, key_id)
+    for model in models:
+        model["capabilities"] = _safe_json_field(model.get("capabilities"))
+        model["benchmarks"] = _safe_json_field(model.get("benchmarks"))
+    detail["health_warnings"] = _safe_json_field(detail.get("health_warnings"))
+    detail["metadata"] = _safe_json_field(detail.get("metadata"))
+    return _templates.TemplateResponse(
+        request,
+        "inventory_key_detail_partial.html",
+        {
+            "request": request,
+            "key": detail,
+            "models": models,
+            "history": history,
+            "status_badge": _status_badge,
+        },
+    )
+
+
+@router.get("/api/inventory/keys/{key_id}/json")
+async def api_upstream_key_agent_json(request: Request, key_id: str) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    detail = await get_upstream_key_detail(db_path, key_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    models = await list_models_for_key(db_path, key_id)
+    payload = {
+        "id": detail["id"],
+        "provider_id": detail["provider_id"],
+        "provider_display_name": detail.get("provider_display_name"),
+        "key_label": detail.get("key_label"),
+        "key_value": detail.get("key_value"),
+        "custom_base_url": detail.get("custom_base_url"),
+        "status": detail.get("status"),
+        "models": [model.get("model_id") for model in models if model.get("model_id")],
+        "model_details": models,
+    }
+    return JSONResponse(
+        payload,
+        headers={"Content-Disposition": f'attachment; filename="janus-key-{key_id}.json"'},
+    )
+
+
+@router.get("/api/inventory/best-keys")
+async def api_best_upstream_keys(request: Request) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    best_keys = await get_best_upstream_keys(db_path)
+    return JSONResponse({"bestKeys": best_keys})
+
+
+@router.get("/api/inventory/best-keys/partial", response_class=HTMLResponse)
+async def api_best_upstream_keys_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    return _templates.TemplateResponse(
+        request,
+        "inventory_best_keys_partial.html",
+        {
+            "request": request,
+            "best_keys": await get_best_upstream_keys(db_path),
+        },
     )
 
 

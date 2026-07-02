@@ -5,7 +5,7 @@
 {% if results %}
 {% if has_pending %}
 <div hx-get="/dashboard/api/inventory/submit/status{% if poll_query %}?{{ poll_query }}{% endif %}"
-     hx-trigger="every 2s"
+     hx-trigger="every 3s"
      hx-target="#submit-results"
      hx-swap="innerHTML"
      class="hidden"

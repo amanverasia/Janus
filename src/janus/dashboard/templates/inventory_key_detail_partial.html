@@ -1,0 +1,149 @@
+<div class="space-y-6">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <p class="text-white font-medium text-lg">{{ key.key_label or 'Upstream key' }}</p>
+            <div class="mt-2 flex items-center gap-2">
+                <code id="key-value-display" class="text-xs bg-gray-900 px-2 py-1 rounded font-mono text-gray-400">{{ key.key_masked }}</code>
+                <button type="button" onclick="toggleKeyReveal()"
+                        class="px-2 py-1 text-xs border border-gray-600 rounded hover:bg-gray-700 cursor-pointer">Reveal</button>
+                <button type="button" onclick="copyKeyValue()"
+                        class="px-2 py-1 text-xs border border-gray-600 rounded hover:bg-gray-700 cursor-pointer">Copy</button>
+            </div>
+            <span id="full-key-value" class="hidden">{{ key.key_value }}</span>
+        </div>
+        <div class="flex gap-2">
+            <a href="/dashboard/api/inventory/keys/{{ key.id }}/json"
+               class="px-3 py-1.5 text-xs border border-gray-600 rounded hover:bg-gray-700">Download JSON</a>
+            <button hx-post="/dashboard/api/inventory/keys/{{ key.id }}/recheck"
+                    hx-target="#key-detail-body"
+                    hx-swap="innerHTML"
+                    class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">
+                Recheck
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-700">
+            <p class="text-xs text-gray-500 uppercase">Status</p>
+            <span class="inline-flex mt-1 px-2 py-0.5 rounded text-xs {{ status_badge(key.status) }}">{{ key.status }}</span>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-700">
+            <p class="text-xs text-gray-500 uppercase">Provider</p>
+            <p class="text-white mt-1">{{ key.provider_display_name }}</p>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-700">
+            <p class="text-xs text-gray-500 uppercase">Credits</p>
+            <p class="text-white mt-1">
+                {% if key.credits_remaining is not none %}${{ "%.2f"|format(key.credits_remaining) }}{% else %}—{% endif %}
+                {% if key.credits_total is not none %} / ${{ "%.2f"|format(key.credits_total) }}{% endif %}
+            </p>
+        </div>
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-700">
+            <p class="text-xs text-gray-500 uppercase">Rate limits</p>
+            <p class="text-white mt-1 text-xs">
+                RPM {{ key.rate_limit_rpm or '—' }} · TPM {{ key.rate_limit_tpm or '—' }}
+            </p>
+        </div>
+    </div>
+
+    {% if key.credits_total %}
+    <div>
+        <p class="text-xs text-gray-500 uppercase mb-2">Credit usage</p>
+        <div class="h-2 bg-gray-900 rounded overflow-hidden">
+            {% set used_pct = ((key.credits_used or 0) / key.credits_total * 100) if key.credits_total else 0 %}
+            <div class="h-full bg-blue-500" style="width: {{ [used_pct, 100]|min }}%"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div>
+            <p class="text-xs text-gray-500 uppercase mb-1">Health</p>
+            <p>{{ key.health_status or '—' }}{% if key.health_warnings %} · {{ key.health_warnings }}{% endif %}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 uppercase mb-1">Usability</p>
+            <p>{{ key.usability_status or '—' }}{% if key.usability_note %} — {{ key.usability_note }}{% endif %}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 uppercase mb-1">Source node</p>
+            <p>{{ key.source_node or '—' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-gray-500 uppercase mb-1">Last checked</p>
+            <p>{{ key.last_checked_at or '—' }}</p>
+        </div>
+    </div>
+
+    {% if key.last_error %}
+    <div class="bg-red-900/30 border border-red-800 rounded-lg p-3 text-red-200 text-sm">{{ key.last_error }}</div>
+    {% endif %}
+
+    <div>
+        <h3 class="text-white font-medium mb-2">Models ({{ models|length }})</h3>
+        {% if models %}
+        <div class="space-y-2 max-h-56 overflow-y-auto">
+            {% for model in models %}
+            <div class="bg-gray-900 border border-gray-700 rounded-lg p-3">
+                <div class="flex justify-between gap-2">
+                    <p class="text-white font-mono text-sm">{{ model.model_id }}</p>
+                    {% if model.tokens_per_second %}<span class="text-xs text-gray-500">{{ model.tokens_per_second }} t/s</span>{% endif %}
+                </div>
+                {% if model.display_name %}<p class="text-xs text-gray-500">{{ model.display_name }}</p>{% endif %}
+                <p class="text-xs text-gray-400 mt-1">
+                    ctx {{ model.context_window or '—' }} · out {{ model.max_output_tokens or '—' }}
+                    {% if model.pricing_input is not none %} · in ${{ model.pricing_input }}{% endif %}
+                    {% if model.pricing_output is not none %} · out ${{ model.pricing_output }}{% endif %}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500">No models discovered yet.</p>
+        {% endif %}
+    </div>
+
+    <div>
+        <h3 class="text-white font-medium mb-2">History</h3>
+        {% if history %}
+        <div class="space-y-2 max-h-40 overflow-y-auto">
+            {% for item in history %}
+            <div class="flex justify-between gap-3 text-xs border-b border-gray-700 pb-2">
+                <span>{{ item.previous_status or '—' }} → {{ item.new_status }}</span>
+                <span class="text-gray-500">{{ item.changed_at }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-500">No history yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+let keyRevealed = false;
+function toggleKeyReveal() {
+  const display = document.getElementById('key-value-display');
+  const full = document.getElementById('full-key-value');
+  if (!display || !full) return;
+  keyRevealed = !keyRevealed;
+  display.textContent = keyRevealed ? full.textContent : '{{ key.key_masked }}';
+  display.classList.toggle('text-green-300', keyRevealed);
+}
+function copyKeyValue() {
+  const full = document.getElementById('full-key-value');
+  if (!full) return;
+  const value = full.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+}
+</script>

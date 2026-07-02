@@ -100,6 +100,57 @@ async def test_inventory_reclassify_preview(client):
     assert "Re-identify Invalid Keys" in r.text
 
 
+async def test_inventory_keys_json_pagination(client):
+    for idx in range(3):
+        await client.post(
+            "/dashboard/api/inventory/keys",
+            data={"keys_text": f"gsk_{idx}" + "x" * 16, "provider_id": "groq"},
+        )
+    listing = await client.get(
+        "/dashboard/api/inventory/keys?limit=2&offset=0&sort=credits&dir=desc"
+    )
+    assert listing.status_code == 200
+    payload = listing.json()
+    assert payload["total"] == 3
+    assert len(payload["keys"]) == 2
+
+
+async def test_inventory_key_detail_endpoints(client):
+    create = await client.post(
+        "/dashboard/api/inventory/keys",
+        data={"keys_text": "sk-proj-detail-endpoint-key", "provider_id": "openai"},
+    )
+    assert create.status_code == 200
+    export = await client.get("/dashboard/api/inventory/export")
+    key_id = export.json()["keys"][0]["id"]
+
+    detail = await client.get(f"/dashboard/api/inventory/keys/{key_id}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["id"] == key_id
+    assert "models" in body
+    assert "history" in body
+
+    partial = await client.get(f"/dashboard/api/inventory/keys/{key_id}/partial")
+    assert partial.status_code == 200
+    assert "Key Detail" not in partial.text
+    assert body["key_masked"] in partial.text or "sk-proj" in partial.text
+
+    agent = await client.get(f"/dashboard/api/inventory/keys/{key_id}/json")
+    assert agent.status_code == 200
+    assert agent.json()["key_value"]
+
+
+async def test_inventory_best_keys_endpoint(client):
+    await client.post(
+        "/dashboard/api/inventory/keys",
+        data={"keys_text": "sk-proj-best-endpoint-key", "provider_id": "openai"},
+    )
+    response = await client.get("/dashboard/api/inventory/best-keys")
+    assert response.status_code == 200
+    assert "bestKeys" in response.json()
+
+
 async def test_inventory_export_provider_filter(client):
     await client.post(
         "/dashboard/api/inventory/keys",
@@ -147,7 +198,7 @@ async def test_inventory_keys_partial_polls_when_pending(client):
     )
     assert create.status_code == 200
     assert "Validation in progress" in create.text
-    assert 'hx-trigger="every 2s"' in create.text
+    assert 'hx-trigger="every 3s"' in create.text
 
     partial = await client.get("/dashboard/api/inventory/keys/partial")
     assert partial.status_code == 200
@@ -159,7 +210,7 @@ async def test_inventory_submit_status_endpoint(client):
         data={"keys_text": "sk-proj-status-test", "provider_id": "openai"},
     )
     assert create.status_code == 200
-    assert 'hx-trigger="every 2s"' in create.text
+    assert 'hx-trigger="every 3s"' in create.text
 
     export = await client.get("/dashboard/api/inventory/export")
     key_id = export.json()["keys"][0]["id"]
