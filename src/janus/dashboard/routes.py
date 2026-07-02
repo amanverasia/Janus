@@ -7,10 +7,12 @@ from typing import Any, cast
 
 import httpx
 import yaml
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from janus.api.auth import authenticate_api_key
+from janus.dashboard.auth import require_dashboard_access
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
@@ -27,9 +29,20 @@ from janus.storage.budgets import (
 from janus.storage.database import init_db
 from janus.storage.usage import get_usage_stats
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
 _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+try:
+    from importlib.metadata import version as _pkg_version
+
+    _templates.env.globals["janus_version"] = _pkg_version("janus-ai")
+except Exception:
+    _templates.env.globals["janus_version"] = "0.0.0"
+
+
+def _api_v1_base_url(request: Request) -> str:
+    return str(request.base_url).rstrip("/") + "/v1"
 
 
 async def _ensure_db(request: Request) -> Path:
@@ -67,12 +80,52 @@ async def _get_usage_stats_safe(db_path: Path) -> dict[str, Any]:
         }
 
 
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse:
+    if not next.startswith("/dashboard"):
+        next = "/dashboard"
+    context: dict[str, Any] = {
+        "request": request,
+        "next": next,
+        "error": None,
+    }
+    return _templates.TemplateResponse(request, "login.html", context)
+
+
+@router.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    api_key: str = Form(...),
+    next: str = Form("/dashboard"),
+) -> Response:
+    if not next.startswith("/dashboard"):
+        next = "/dashboard"
+    if not await authenticate_api_key(request, api_key.strip()):
+        context: dict[str, Any] = {
+            "request": request,
+            "next": next,
+            "error": "Invalid API key",
+        }
+        return _templates.TemplateResponse(request, "login.html", context, status_code=401)
+    response = RedirectResponse(url=next, status_code=303)
+    response.set_cookie(
+        "janus_dashboard_key",
+        api_key.strip(),
+        httponly=True,
+        samesite="lax",
+        max_age=30 * 86400,
+    )
+    return response
+
+
 @router.get("", response_class=HTMLResponse)
 async def overview(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     stats = await _get_usage_stats_safe(db_path)
+    from janus.storage.providers_db import list_providers
+
+    provider_count = len(await list_providers(db_path, enabled_only=True))
     registry = request.app.state.registry
-    provider_count = sum(len(configs) for configs in registry.providers.values())
     today_cost = 0.0
     global_budget = None
     try:
@@ -688,15 +741,13 @@ async def api_update_setting(request: Request) -> HTMLResponse:
 
 @router.get("/tools", response_class=HTMLResponse)
 async def tools_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.storage.settings import get_all_settings
+    await _ensure_db(request)
+    from janus.api.auth import is_require_api_key_enabled
 
-    settings = await get_all_settings(db_path)
-    require_key = settings.get("server_require_api_key", "false") == "true"
-    base_url = f"http://localhost:{request.app.state.config.server.port}/v1"
+    require_key = await is_require_api_key_enabled(request)
     context: dict[str, Any] = {
         "request": request,
-        "base_url": base_url,
+        "base_url": _api_v1_base_url(request),
         "require_key": require_key,
     }
     return _templates.TemplateResponse(request, "tools.html", context)

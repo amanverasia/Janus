@@ -81,5 +81,18 @@ function resetComboForm() {
     form.reset();
     document.getElementById('combo-modal-title').textContent = 'Add Combo';
 }
+
+function closeComboModal() {
+    document.getElementById('combo-modal').classList.add('hidden');
+    resetComboForm();
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeComboModal();
+});
+
+document.getElementById('combo-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeComboModal();
+});
 </script>
 {% endblock %}

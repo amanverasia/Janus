@@ -11,7 +11,7 @@
         <div class="flex items-center justify-between">
             <div>
                 <h2 class="text-lg font-bold text-white">Require API Key</h2>
-                <p class="text-gray-400 text-sm mt-1">When enabled, all requests must include a valid Janus API key.</p>
+                <p class="text-gray-400 text-sm mt-1">When enabled, all requests must include a valid Janus API key. Takes effect immediately.</p>
             </div>
             {% set rak = settings.server_require_api_key or ('true' if config.server.require_api_key else 'false') %}
             <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
