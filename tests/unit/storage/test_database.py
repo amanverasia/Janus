@@ -12,6 +12,8 @@ async def test_init_db_creates_tables(tmp_path):
             tables = [row[0] for row in await cur.fetchall()]
     assert "api_keys" in tables
     assert "usage" in tables
+    assert "inventory_providers" in tables
+    assert "upstream_keys" in tables
 
 
 @pytest.mark.asyncio

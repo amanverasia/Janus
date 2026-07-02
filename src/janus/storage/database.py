@@ -83,6 +83,95 @@ CREATE TABLE IF NOT EXISTS cooldowns (
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
+
+CREATE TABLE IF NOT EXISTS inventory_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    auth_type TEXT NOT NULL DEFAULT 'api_key',
+    auth_header TEXT NOT NULL DEFAULT 'Authorization',
+    auth_prefix TEXT NOT NULL DEFAULT 'Bearer',
+    key_env_var TEXT,
+    models_endpoint TEXT,
+    health_check_endpoint TEXT,
+    credit_check_endpoint TEXT,
+    billing_model TEXT NOT NULL DEFAULT 'unknown',
+    is_direct INTEGER NOT NULL DEFAULT 1,
+    routing_note TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS upstream_keys (
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL REFERENCES inventory_providers(id),
+    key_label TEXT,
+    key_value TEXT NOT NULL,
+    key_masked TEXT NOT NULL,
+    custom_base_url TEXT,
+    status TEXT NOT NULL DEFAULT 'pending_validation',
+    is_valid INTEGER NOT NULL DEFAULT 0,
+    health_status TEXT DEFAULT 'healthy',
+    health_warnings TEXT,
+    is_usable INTEGER NOT NULL DEFAULT 0,
+    usability_status TEXT DEFAULT 'unknown',
+    usability_note TEXT,
+    credits_remaining REAL,
+    credits_total REAL,
+    credits_used REAL,
+    rate_limit_rpm INTEGER,
+    rate_limit_tpm INTEGER,
+    rate_limit_rpd INTEGER,
+    usage_current_rpm INTEGER DEFAULT 0,
+    usage_current_tpm INTEGER DEFAULT 0,
+    daily_credit_limit REAL,
+    daily_credit_used REAL DEFAULT 0,
+    daily_credit_date TEXT,
+    is_daily_limited INTEGER NOT NULL DEFAULT 0,
+    priority INTEGER NOT NULL DEFAULT 0,
+    metadata TEXT,
+    source_node TEXT,
+    last_checked_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS upstream_models (
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL REFERENCES inventory_providers(id),
+    upstream_key_id TEXT REFERENCES upstream_keys(id),
+    model_id TEXT NOT NULL,
+    display_name TEXT,
+    context_window INTEGER,
+    max_output_tokens INTEGER,
+    pricing_input REAL,
+    pricing_output REAL,
+    pricing_cached_input REAL,
+    capabilities TEXT,
+    benchmarks TEXT,
+    is_available INTEGER NOT NULL DEFAULT 1,
+    tokens_per_second REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS upstream_key_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    upstream_key_id TEXT NOT NULL REFERENCES upstream_keys(id),
+    previous_status TEXT,
+    new_status TEXT NOT NULL,
+    credits_remaining REAL,
+    notes TEXT,
+    changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_upstream_keys_provider ON upstream_keys(provider_id);
+CREATE INDEX IF NOT EXISTS idx_upstream_keys_status ON upstream_keys(status);
+CREATE INDEX IF NOT EXISTS idx_upstream_models_provider ON upstream_models(provider_id);
+CREATE INDEX IF NOT EXISTS idx_upstream_models_key ON upstream_models(upstream_key_id);
+CREATE INDEX IF NOT EXISTS idx_upstream_key_history_key ON upstream_key_history(upstream_key_id);
 """
 
 _NEW_USAGE_COLUMNS = [
@@ -112,6 +201,7 @@ async def init_db(db_path: str | Path) -> None:
         await db.executescript(_SCHEMA)
         await _migrate_usage_columns(db)
         await db.commit()
+    await seed_inventory_providers(db_path)
 
 
 @asynccontextmanager
@@ -188,4 +278,50 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                     ),
                 )
 
+        await db.commit()
+
+
+async def seed_inventory_providers(db_path: str | Path) -> None:
+    from janus.inventory.catalog import INVENTORY_PROVIDERS
+
+    async with get_connection(db_path) as db:
+        for provider in INVENTORY_PROVIDERS.values():
+            await db.execute(
+                """INSERT INTO inventory_providers
+                   (id, name, display_name, base_url, auth_type, auth_header, auth_prefix,
+                    key_env_var, models_endpoint, health_check_endpoint, credit_check_endpoint,
+                    billing_model, is_direct, routing_note, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                   ON CONFLICT(id) DO UPDATE SET
+                     name = excluded.name,
+                     display_name = excluded.display_name,
+                     base_url = excluded.base_url,
+                     auth_type = excluded.auth_type,
+                     auth_header = excluded.auth_header,
+                     auth_prefix = excluded.auth_prefix,
+                     key_env_var = excluded.key_env_var,
+                     models_endpoint = excluded.models_endpoint,
+                     health_check_endpoint = excluded.health_check_endpoint,
+                     credit_check_endpoint = excluded.credit_check_endpoint,
+                     billing_model = excluded.billing_model,
+                     is_direct = excluded.is_direct,
+                     routing_note = excluded.routing_note,
+                     updated_at = datetime('now')""",
+                (
+                    provider["id"],
+                    provider["name"],
+                    provider["display_name"],
+                    provider["base_url"],
+                    provider["auth_type"],
+                    provider["auth_header"],
+                    provider["auth_prefix"],
+                    provider.get("key_env_var"),
+                    provider.get("models_endpoint"),
+                    provider.get("health_check_endpoint"),
+                    provider.get("credit_check_endpoint"),
+                    provider.get("billing_model", "unknown"),
+                    1 if provider.get("is_direct", True) else 0,
+                    provider.get("routing_note"),
+                ),
+            )
         await db.commit()
