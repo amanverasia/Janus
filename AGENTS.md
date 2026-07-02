@@ -92,7 +92,7 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup via FastAPI lifespan (`app.py`). Schema migrations are idempotent — `init_db()` uses `PRAGMA table_info` + `ALTER TABLE ADD COLUMN` for new columns.
 
 - `storage/api_keys.py` — keys are `sk-janus-{32hex}`, stored as SHA256 hash. `verify_key()` returns `int | None` (DB row ID). The API-key gate (`api/deps.py`) checks both config `api_keys` (static list) AND DB keys. When a DB key is used, `request.state.client_key_id` is set.
-- `storage/usage.py` — `record_usage()` records per-request token usage (fire-and-forget, non-streaming only). Params include `cost`, `cache_creation_tokens`, `cache_read_tokens`, `client_key_id`.
+- `storage/usage.py` — `record_usage()` records per-request token usage (fire-and-forget). Streaming requests now also record via `StreamUsageTracker` + `finally` block. Params include `cost`, `cache_creation_tokens`, `cache_read_tokens`, `client_key_id`.
 - `storage/settings.py` — key-value settings store (`get_setting`, `set_setting`, `get_all_settings`).
 - `storage/providers_db.py` — provider CRUD (create, update, delete, toggle, list).
 - `storage/combos_db.py` — combo CRUD.

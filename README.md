@@ -4,7 +4,7 @@
 > AI call — facing the developer on one side and every provider on the other.
 
 Janus is a local-first, single-user AI routing gateway. It exposes
-OpenAI/Anthropic-compatible HTTP endpoints that your coding tools (Claude Code,
+OpenAI/Anthropic/Gemini-compatible HTTP endpoints that your coding tools (Claude Code,
 Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
 40+ AI providers — without either side needing to know the other exists.
 

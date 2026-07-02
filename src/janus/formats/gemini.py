@@ -239,7 +239,7 @@ class GeminiAdapter:
         gen_config = raw.get("generationConfig") or {}
 
         return CanonicalRequest(
-            model="",
+            model=raw.get("model", ""),
             system=system,
             messages=messages,
             tools=tools,

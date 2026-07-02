@@ -63,6 +63,11 @@
                     data-base-url="{{ provider.base_url }}"
                     data-models="{{ provider.models_list | join(', ') }}"
                     data-has-key="{{ 'true' if provider.api_key else 'false' }}">Edit</button>
+            <button hx-post="/dashboard/api/providers/{{ provider.id }}/test"
+                    hx-target="#test-status-{{ provider.id }}"
+                    hx-swap="innerHTML"
+                    class="text-green-400 hover:text-green-300 text-sm font-medium">Test</button>
+            <span id="test-status-{{ provider.id }}" class="text-sm"></span>
             <button hx-delete="/dashboard/api/providers/{{ provider.id }}" hx-target="#providers-grid"
                     hx-confirm="Delete provider '{{ provider.id }}'?"
                     class="text-red-400 hover:text-red-300 text-sm font-medium">Delete</button>

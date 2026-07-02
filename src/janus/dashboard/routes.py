@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
+import yaml
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from janus.storage.analytics import (
@@ -493,6 +496,78 @@ async def api_fetch_models(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(type(e).__name__)}, status_code=502)
 
 
+@router.post("/api/providers/{provider_id}/test")
+async def api_test_connection(request: Request, provider_id: str) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.providers_db import get_provider
+
+    provider = await get_provider(db_path, provider_id)
+    if not provider:
+        return JSONResponse({"error": "Provider not found"}, status_code=404)
+
+    models = json.loads(provider["models"]) if provider["models"] else []
+    model = models[0] if models else ""
+    api_type = provider["api_type"]
+    base_url = provider["base_url"].rstrip("/")
+    api_key = provider["api_key"] or ""
+
+    try:
+        start = time.perf_counter()
+        if api_type == "openai_compat":
+            headers: dict[str, str] = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            body: dict[str, Any] = {
+                "model": model,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 1,
+            }
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=body)
+
+        elif api_type == "anthropic":
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "model": model,
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "hi"}],
+            }
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(f"{base_url}/v1/messages", headers=headers, json=body)
+
+        elif api_type == "gemini":
+            params: dict[str, str] = {}
+            if api_key:
+                params["key"] = api_key
+            body = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{base_url}/v1beta/models/{model}:generateContent",
+                    params=params,
+                    json=body,
+                )
+        else:
+            return JSONResponse(
+                {"error": f"Test not supported for api_type: {api_type}"}, status_code=400
+            )
+
+        latency_ms = round((time.perf_counter() - start) * 1000)
+        ok = resp.status_code < 400
+        return JSONResponse(
+            {"ok": ok, "status": resp.status_code, "latency_ms": latency_ms}
+            if ok
+            else {"ok": False, "status": resp.status_code, "latency_ms": latency_ms}
+        )
+    except httpx.TimeoutException:
+        return JSONResponse({"ok": False, "error": "Request timed out"}, status_code=504)
+    except (httpx.ConnectError, httpx.RequestError) as e:
+        return JSONResponse({"ok": False, "error": str(type(e).__name__)}, status_code=502)
+
+
 # ---- Combo CRUD ----
 
 
@@ -733,3 +808,85 @@ async def settings_page(request: Request) -> HTMLResponse:
         "config": request.app.state.config,
     }
     return _templates.TemplateResponse(request, "settings.html", context)
+
+
+@router.get("/api/export")
+async def api_export_config(request: Request) -> Response:
+    db_path = await _ensure_db(request)
+    from janus.storage.combos_db import list_combos
+    from janus.storage.pricing_db import list_pricing_overrides
+    from janus.storage.providers_db import list_providers
+
+    providers_raw = await list_providers(db_path)
+    providers_yaml = [
+        {
+            "id": p["id"],
+            "prefix": p["prefix"],
+            "api_type": p["api_type"],
+            "base_url": p["base_url"],
+            "api_key": p["api_key"],
+            "models": json.loads(p["models"]) if p["models"] else [],
+        }
+        for p in providers_raw
+    ]
+
+    combos_raw = await list_combos(db_path)
+    combos_yaml = [
+        {"name": c["name"], "models": json.loads(c["models"]) if c["models"] else []}
+        for c in combos_raw
+    ]
+
+    overrides_raw = await list_pricing_overrides(db_path)
+    pricing_yaml = {
+        o["model"]: {
+            "input_per_mtok": o["input_per_mtok"],
+            "output_per_mtok": o["output_per_mtok"],
+            "cache_creation_per_mtok": o["cache_creation_per_mtok"],
+            "cache_read_per_mtok": o["cache_read_per_mtok"],
+        }
+        for o in overrides_raw
+    }
+
+    config_data: dict[str, Any] = {
+        "server": {"port": request.app.state.config.server.port},
+        "providers": providers_yaml,
+    }
+    if combos_yaml:
+        config_data["combos"] = combos_yaml
+    if pricing_yaml:
+        config_data["pricing"] = pricing_yaml
+
+    yaml_text = yaml.safe_dump(config_data, sort_keys=False)
+    return Response(
+        content=yaml_text,
+        media_type="text/yaml",
+        headers={"Content-Disposition": 'attachment; filename="janus-config.yaml"'},
+    )
+
+
+@router.post("/api/reset", response_class=HTMLResponse)
+async def api_reset_to_defaults(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.database import get_connection, seed_from_config
+
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM providers")
+        await db.execute("DELETE FROM combos")
+        await db.execute("DELETE FROM pricing_overrides")
+        await db.execute("DELETE FROM settings")
+        await db.commit()
+
+    await seed_from_config(db_path, request.app.state.config)
+
+    from janus.dashboard.reload import (
+        reload_combos,
+        reload_pricing,
+        reload_providers,
+        reload_savers,
+    )
+
+    await reload_providers(request.app)
+    await reload_combos(request.app)
+    await reload_savers(request.app)
+    await reload_pricing(request.app)
+    return HTMLResponse(content="", status_code=200)

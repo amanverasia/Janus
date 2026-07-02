@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
-from janus.api.routes import router
+from janus.api.routes import gemini_router, router
 from janus.config.schema import JanusConfig, ProviderConfig
 from janus.pricing.registry import PricingRegistry
 from janus.providers.anthropic import AnthropicProvider
@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await reload_combos(app)
     await reload_savers(app)
     await reload_pricing(app)
+    await app.state.fallback_handler.load_cooldowns()
 
     yield
     for provider in app.state.providers.values():
@@ -60,7 +61,7 @@ def create_app(
     registry: ProviderRegistry | None = None,
     config: JanusConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Janus", version="0.2.2", lifespan=lifespan)
+    app = FastAPI(title="Janus", version="0.2.4", lifespan=lifespan)
     if registry is None:
         registry = ProviderRegistry()
     if config is None:
@@ -68,11 +69,12 @@ def create_app(
     app.state.registry = registry
     app.state.config = config
     app.state.db_path = config.server.data_dir / "janus.db"
-    app.state.fallback_handler = FallbackHandler(registry)
+    app.state.fallback_handler = FallbackHandler(registry, db_path=app.state.db_path)
     app.state.saver_pipeline = SaverPipeline([])
     app.state.pricing_registry = PricingRegistry(config.pricing)
     app.state.providers = {}
     app.include_router(router, prefix="/v1")
+    app.include_router(gemini_router)
 
     from janus.dashboard.routes import router as dashboard_router
 
