@@ -59,6 +59,95 @@ def test_resolve_single_model_multi_account():
     assert len(attempts) == 2
 
 
+def test_round_robin_rotates_account_order():
+    registry = ProviderRegistry()
+    for account_id in ("ds-1", "ds-2", "ds-3"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix="ds",
+                api_type="openai_compat",
+                base_url="https://ds.com",
+                api_key=f"k-{account_id}",
+                models=["m1"],
+            )
+        )
+    handler = FallbackHandler(registry)
+
+    first = handler.resolve_attempts("ds/m1")
+    second = handler.resolve_attempts("ds/m1")
+    third = handler.resolve_attempts("ds/m1")
+
+    assert [t.account_id for t in first] == ["ds-1", "ds-2", "ds-3"]
+    assert [t.account_id for t in second] == ["ds-2", "ds-3", "ds-1"]
+    assert [t.account_id for t in third] == ["ds-3", "ds-1", "ds-2"]
+
+
+def test_round_robin_skips_cooled_down_accounts():
+    registry = ProviderRegistry()
+    for account_id in ("ds-1", "ds-2", "ds-3"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix="ds",
+                api_type="openai_compat",
+                base_url="https://ds.com",
+                api_key=f"k-{account_id}",
+                models=["m1"],
+            )
+        )
+    handler = FallbackHandler(registry)
+    handler.mark_cooldown("ds-2", "rate_limit")
+
+    attempts = handler.resolve_attempts("ds/m1")
+    assert [t.account_id for t in attempts] == ["ds-1", "ds-3"]
+
+    attempts = handler.resolve_attempts("ds/m1")
+    assert [t.account_id for t in attempts] == ["ds-3", "ds-1"]
+
+
+def test_round_robin_rotates_within_combo_model_groups():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="a-1",
+            prefix="a",
+            api_type="openai_compat",
+            base_url="https://a.com",
+            api_key="k1",
+            models=["b"],
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="a-2",
+            prefix="a",
+            api_type="openai_compat",
+            base_url="https://a.com",
+            api_key="k2",
+            models=["b"],
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="c",
+            prefix="c",
+            api_type="anthropic",
+            base_url="https://c.com",
+            api_key="k",
+            models=["d"],
+        )
+    )
+    registry.register_combo(ComboConfig(name="stk", models=["a/b", "c/d"]))
+    handler = FallbackHandler(registry)
+
+    first = handler.resolve_attempts("stk")
+    second = handler.resolve_attempts("stk")
+
+    assert [t.account_id for t in first] == ["a-1", "a-2", "c"]
+    assert [t.account_id for t in second] == ["a-2", "a-1", "c"]
+
+
 def test_resolve_combo_expansion():
     registry = ProviderRegistry()
     registry.register(
