@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.responses import Response
 
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.routes import _ensure_db, _templates
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
 from janus.inventory.key_checker import check_all_upstream_keys
+from janus.inventory.key_encryption import encryption_enabled
+from janus.inventory.migrate import import_dashboard_json, verify_inventory
 from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 from janus.inventory.reclassify import reclassify_upstream_keys
@@ -26,11 +30,13 @@ from janus.storage.inventory_overview import (
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.upstream_keys import (
     count_pending_upstream_keys,
+    count_storage_encryption_state,
     delete_upstream_key,
     export_upstream_keys,
     get_upstream_keys_by_ids,
     list_upstream_keys,
     list_upstream_keys_masked,
+    reencrypt_plaintext_upstream_keys,
     update_upstream_key,
 )
 
@@ -138,6 +144,14 @@ def _status_badge(status: str) -> str:
     return mapping.get(status, "bg-gray-700 text-gray-200")
 
 
+async def _encryption_context(db_path: Path) -> dict[str, Any]:
+    state = await count_storage_encryption_state(db_path)
+    return {
+        "encryption": state,
+        "encryption_enabled": encryption_enabled(),
+    }
+
+
 @router.get("/inventory", response_class=HTMLResponse)
 async def inventory_overview_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -151,6 +165,7 @@ async def inventory_overview_page(request: Request) -> HTMLResponse:
         "recent_activity": await get_recent_activity(db_path),
         "credit_summary": await get_credit_summary(db_path),
         "status_badge": _status_badge,
+        **await _encryption_context(db_path),
     }
     return _templates.TemplateResponse(request, "inventory_overview.html", context)
 
@@ -184,6 +199,18 @@ async def inventory_add_page(request: Request) -> HTMLResponse:
         "error": None,
     }
     return _templates.TemplateResponse(request, "inventory_add.html", context)
+
+
+@router.get("/inventory/import", response_class=HTMLResponse)
+async def inventory_import_page(request: Request) -> HTMLResponse:
+    context: dict[str, Any] = {
+        "request": request,
+        "error": None,
+        "imported_count": None,
+        "verification": None,
+        "filename": None,
+    }
+    return _templates.TemplateResponse(request, "inventory_import.html", context)
 
 
 async def _keys_partial(
@@ -440,29 +467,131 @@ async def api_inventory_submit_status(
     )
 
 
-@router.post("/api/inventory/reclassify")
+@router.post("/api/inventory/reclassify", response_model=None)
 async def api_reclassify_upstream_keys(
     request: Request,
     dry: bool = Query(default=True),
     scope: str = Query(default="invalid"),
-) -> JSONResponse:
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+) -> Response:
     db_path = await _ensure_db(request)
     if scope not in {"invalid", "all"}:
         raise HTTPException(status_code=400, detail="scope must be 'invalid' or 'all'")
     payload = await reclassify_upstream_keys(db_path, dry_run=dry, scope=scope)
+    if request.headers.get("HX-Request"):
+        if dry:
+            return _templates.TemplateResponse(
+                request,
+                "inventory_reclassify_partial.html",
+                {
+                    "request": request,
+                    "payload": payload,
+                    "poll_query": _poll_query(
+                        provider_id=provider_id,
+                        status=status,
+                        search=search,
+                    ),
+                    "provider_id": provider_id,
+                    "status": status,
+                    "search": search,
+                },
+            )
+        moved_count = len(payload["moved"])
+        message = (
+            f"Re-identified {moved_count} key(s). Re-validation running in background."
+            if moved_count
+            else "No keys were reassigned."
+        )
+        return await _keys_partial(
+            request,
+            db_path,
+            provider_id=provider_id,
+            status=status,
+            search=search,
+            submit_message=message,
+        )
     return JSONResponse(payload)
 
 
+@router.get("/api/inventory/reclassify/clear", response_class=HTMLResponse)
+async def api_reclassify_clear() -> HTMLResponse:
+    return HTMLResponse("")
+
+
+@router.post("/api/inventory/encrypt-keys", response_class=HTMLResponse)
+async def api_inventory_encrypt_keys(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    error: str | None = None
+    converted = 0
+    if not encryption_enabled():
+        error = "Set INVENTORY_ENCRYPTION_KEY in the environment before encrypting keys."
+    else:
+        try:
+            converted = await reencrypt_plaintext_upstream_keys(db_path)
+        except RuntimeError as exc:
+            error = str(exc)
+    context = {
+        "request": request,
+        "error": error,
+        "converted": converted,
+        **await _encryption_context(db_path),
+    }
+    return _templates.TemplateResponse(request, "inventory_encryption_partial.html", context)
+
+
+@router.post("/api/inventory/import", response_class=HTMLResponse)
+async def api_inventory_import(
+    request: Request,
+    export_file: UploadFile = File(...),
+    verify: str = Form(""),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    data = await export_file.read()
+    error: str | None = None
+    imported = 0
+    try:
+        imported = await import_dashboard_json(db_path, data, dry_run=False)
+    except (ValueError, json.JSONDecodeError) as exc:
+        error = str(exc)
+
+    verification: dict[str, Any] | None = None
+    if error is None and verify.lower() in {"true", "1", "on", "yes"}:
+        verification = await verify_inventory(db_path)
+
+    return _templates.TemplateResponse(
+        request,
+        "inventory_import_results.html",
+        {
+            "request": request,
+            "error": error,
+            "imported_count": imported if error is None else None,
+            "verification": verification,
+            "filename": export_file.filename,
+        },
+    )
+
+
 @router.get("/api/inventory/export")
-async def api_export_upstream_keys(request: Request) -> JSONResponse:
+async def api_export_upstream_keys(
+    request: Request,
+    provider_id: str | None = None,
+) -> JSONResponse:
     db_path = await _ensure_db(request)
     exported = await export_upstream_keys(db_path)
+    if provider_id:
+        exported = [item for item in exported if item["provider_id"] == provider_id]
+    filename = "janus-inventory-export.json"
+    if provider_id:
+        filename = f"janus-inventory-{provider_id}.json"
     return JSONResponse(
         {
             "exported_at": datetime.now(UTC).replace(tzinfo=None).isoformat(),
             "count": len(exported),
             "keys": exported,
-        }
+        },
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

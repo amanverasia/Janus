@@ -1,0 +1,47 @@
+{% set moved = payload.moved %}
+<div class="mb-4 bg-gray-800 border border-gray-600 rounded-lg p-4">
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h3 class="text-white font-medium">Re-identify Invalid Keys</h3>
+            <p class="text-sm text-gray-400 mt-1">
+                Scanned {{ payload.examined }} {{ payload.scope }} key(s).
+                {% if moved %}
+                {{ moved|length }} can move to a different provider.
+                {% else %}
+                None can be reassigned.
+                {% endif %}
+            </p>
+        </div>
+        <button hx-get="/dashboard/api/inventory/reclassify/clear"
+                hx-target="#reclassify-panel"
+                hx-swap="innerHTML"
+                class="text-gray-400 hover:text-white text-sm cursor-pointer">
+            Dismiss
+        </button>
+    </div>
+
+    {% if moved %}
+    <ul class="mt-3 space-y-1 text-sm font-mono text-gray-300 max-h-48 overflow-y-auto">
+        {% for change in moved[:12] %}
+        <li>{{ change.key_masked }}: {{ change.from }} → {{ change.to }}</li>
+        {% endfor %}
+        {% if moved|length > 12 %}
+        <li class="text-gray-500">…and {{ moved|length - 12 }} more</li>
+        {% endif %}
+    </ul>
+    <div class="mt-4 flex gap-2">
+        <button hx-post="/dashboard/api/inventory/reclassify?dry=false&scope={{ payload.scope }}{% if poll_query %}&{{ poll_query }}{% endif %}"
+                hx-target="#inventory-keys-content"
+                hx-swap="innerHTML"
+                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm cursor-pointer">
+            Apply Re-identify ({{ moved|length }})
+        </button>
+        <button hx-get="/dashboard/api/inventory/reclassify/clear"
+                hx-target="#reclassify-panel"
+                hx-swap="innerHTML"
+                class="px-3 py-1.5 border border-gray-600 text-gray-300 rounded text-sm hover:bg-gray-700 cursor-pointer">
+            Cancel
+        </button>
+    </div>
+    {% endif %}
+</div>

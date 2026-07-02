@@ -8,6 +8,7 @@
     <div class="flex gap-2">
         <a href="/dashboard/inventory/keys" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">All Keys</a>
         <a href="/dashboard/inventory/add" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">Add Keys</a>
+        <a href="/dashboard/inventory/import" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Import JSON</a>
     </div>
 </div>
 
@@ -40,6 +41,10 @@
         <p class="text-xs text-gray-400 uppercase">Models</p>
         <p class="text-2xl font-bold text-white mt-1">{{ summary.models }}</p>
     </div>
+</div>
+
+<div id="encryption-panel" class="bg-gray-800 rounded-xl border border-gray-700 p-4 mb-8">
+    {% include "inventory_encryption_partial.html" %}
 </div>
 
 <div class="grid lg:grid-cols-2 gap-6 mb-8">
