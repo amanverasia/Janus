@@ -218,6 +218,30 @@ async def count_upstream_keys(db_path: str | Path) -> int:
     return int(row[0])
 
 
+async def count_pending_upstream_keys(db_path: str | Path) -> int:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM upstream_keys WHERE status = 'pending_validation'"
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return 0
+    return int(row[0])
+
+
+async def get_upstream_keys_by_ids(
+    db_path: str | Path, key_ids: list[str]
+) -> list[dict[str, Any]]:
+    if not key_ids:
+        return []
+    placeholders = ", ".join("?" for _ in key_ids)
+    query = f"SELECT * FROM upstream_keys WHERE id IN ({placeholders}) ORDER BY created_at"
+    async with get_connection(db_path) as db:
+        async with db.execute(query, key_ids) as cur:
+            rows = await cur.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def export_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(

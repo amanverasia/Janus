@@ -79,6 +79,35 @@ async def test_inventory_submit_key(client):
     assert payload["count"] == 1
 
 
+async def test_inventory_keys_partial_polls_when_pending(client):
+    create = await client.post(
+        "/dashboard/api/inventory/keys",
+        data={"keys_text": "gsk_testkey", "provider_id": "groq"},
+    )
+    assert create.status_code == 200
+    assert "Validation in progress" in create.text
+    assert 'hx-trigger="every 2s"' in create.text
+
+    partial = await client.get("/dashboard/api/inventory/keys/partial")
+    assert partial.status_code == 200
+
+
+async def test_inventory_submit_status_endpoint(client):
+    create = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": "sk-proj-status-test", "provider_id": "openai"},
+    )
+    assert create.status_code == 200
+    assert 'hx-trigger="every 2s"' in create.text
+
+    export = await client.get("/dashboard/api/inventory/export")
+    key_id = export.json()["keys"][0]["id"]
+
+    status = await client.get(f"/dashboard/api/inventory/submit/status?ids={key_id}")
+    assert status.status_code == 200
+    assert "pending_validation" in status.text
+
+
 async def test_inventory_delete_key(client):
     create = await client.post(
         "/dashboard/api/inventory/keys",
