@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS upstream_keys (
     provider_id TEXT NOT NULL REFERENCES inventory_providers(id),
     key_label TEXT,
     key_value TEXT NOT NULL,
+    key_hash TEXT,
     key_masked TEXT NOT NULL,
     custom_base_url TEXT,
     status TEXT NOT NULL DEFAULT 'pending_validation',
@@ -172,7 +173,12 @@ CREATE INDEX IF NOT EXISTS idx_upstream_keys_status ON upstream_keys(status);
 CREATE INDEX IF NOT EXISTS idx_upstream_models_provider ON upstream_models(provider_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_models_key ON upstream_models(upstream_key_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_key_history_key ON upstream_key_history(upstream_key_id);
+CREATE INDEX IF NOT EXISTS idx_upstream_keys_key_hash ON upstream_keys(key_hash);
 """
+
+_UPSTREAM_KEY_NEW_COLUMNS = [
+    ("key_hash", "TEXT"),
+]
 
 _NEW_USAGE_COLUMNS = [
     ("cost", "REAL DEFAULT 0.0"),
@@ -180,6 +186,37 @@ _NEW_USAGE_COLUMNS = [
     ("cache_read_tokens", "INTEGER DEFAULT 0"),
     ("client_key_id", "INTEGER"),
 ]
+
+
+async def _migrate_upstream_key_columns(db: aiosqlite.Connection) -> None:
+    from janus.inventory.key_encryption import (
+        decrypt_key_value,
+        hash_upstream_key,
+        is_encrypted_value,
+    )
+
+    cursor = await db.execute("PRAGMA table_info(upstream_keys)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    for col, col_type in _UPSTREAM_KEY_NEW_COLUMNS:
+        if col not in existing:
+            await db.execute(f"ALTER TABLE upstream_keys ADD COLUMN {col} {col_type}")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_upstream_keys_key_hash ON upstream_keys(key_hash)"
+    )
+    async with db.execute("SELECT id, key_value, key_hash FROM upstream_keys") as cur:
+        key_rows = await cur.fetchall()
+    for row in key_rows:
+        if row["key_hash"]:
+            continue
+        stored = row["key_value"]
+        if not isinstance(stored, str):
+            continue
+        plaintext = decrypt_key_value(stored) if is_encrypted_value(stored) else stored
+        await db.execute(
+            "UPDATE upstream_keys SET key_hash = ? WHERE id = ?",
+            (hash_upstream_key(plaintext), row["id"]),
+        )
 
 
 async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
@@ -200,6 +237,7 @@ async def init_db(db_path: str | Path) -> None:
     async with aiosqlite.connect(str(db_path)) as db:
         await db.executescript(_SCHEMA)
         await _migrate_usage_columns(db)
+        await _migrate_upstream_key_columns(db)
         await db.commit()
     await seed_inventory_providers(db_path)
 
