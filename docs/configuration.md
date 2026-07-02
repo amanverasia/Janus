@@ -13,6 +13,41 @@ Generate a template with all sections commented out:
 janus config-init
 ```
 
+## DB-driven configuration
+
+On **first startup**, Janus seeds SQLite from your YAML file:
+
+| YAML section | Seeded into |
+|---|---|
+| `providers` | `providers` table |
+| `combos` | `combos` table |
+| `token_savers` | `settings` table (`saver_*` keys) |
+| `pricing` | `pricing_overrides` table |
+| `server.require_api_key` | `settings` table (`server_require_api_key`) |
+
+Seeding is **idempotent** — if a table already has rows, that section is skipped.
+After seeding, the **database is the source of truth**. Editing YAML and restarting
+will not re-apply providers, combos, savers, or pricing.
+
+To manage runtime config:
+
+- Use the [dashboard](dashboard.md) — changes hot-reload immediately
+- **Export Config** (`GET /dashboard/api/export`) — download current DB state as YAML
+- **Reset to Defaults** (Settings page) — wipe DB tables and re-seed from YAML
+
+Static `api_keys` in YAML are **not** seeded — they remain in the config file and
+are checked at auth time alongside DB-managed keys.
+
+Runtime settings stored in the `settings` table:
+
+| Key | Description |
+|---|---|
+| `server_require_api_key` | `true` / `false` — overrides YAML default |
+| `saver_rtk_enabled` | RTK token saver on/off |
+| `saver_caveman_enabled` | Caveman saver on/off |
+| `saver_ponytail_enabled` | Ponytail saver on/off |
+| `saver_ponytail_level` | `lite`, `full`, or `ultra` |
+
 ## Environment Variable Resolution
 
 Any value in the YAML may reference environment variables using the `${VAR_NAME}`
@@ -42,7 +77,7 @@ Controls the HTTP server.
 |-------|------|---------|-------------|
 | `port` | `int` | `20128` | Server port |
 | `host` | `str` | `"127.0.0.1"` | Bind address |
-| `require_api_key` | `bool` | `false` | When `true`, all `/v1/*` endpoints require auth (except `/health`) |
+| `require_api_key` | `bool` | `false` | When `true`, all API endpoints require auth (except `/health`). Can be toggled at runtime from the dashboard Settings page (stored in DB). |
 | `data_dir` | `Path` | `~/.janus` | Directory for the SQLite DB (`data_dir/janus.db`) |
 
 ```yaml
@@ -177,7 +212,9 @@ token_savers:
 ## `pricing`
 
 User pricing overrides. Keys are model names; values are dicts with per-million-token
-rates (in USD). These merge with and override the ~28 builtin model prices.
+rates (in USD). On first startup, this section seeds the `pricing_overrides` table.
+After that, manage overrides via the dashboard Pricing page or CLI — the YAML section
+is not re-read on restart.
 
 | Rate Key | Description |
 |----------|-------------|

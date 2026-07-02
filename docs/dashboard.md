@@ -10,108 +10,214 @@ Open it in your browser:
 http://localhost:20128/dashboard
 ```
 
-## Pages
+The root URL `/` redirects here.
 
-### Overview
+## Authentication
 
-**`/dashboard`**
+**Loopback clients** (`127.0.0.1`, `localhost`) access the dashboard without auth.
 
-A summary landing page showing:
+**Remote clients** must authenticate with a valid Janus API key. Unauthenticated
+browser requests are redirected to `/dashboard/login`, which sets an httponly
+`janus_dashboard_key` cookie (30-day max-age). API-style requests without a cookie
+receive `401`.
 
-- Key stats: total requests, total input/output tokens
-- Provider count
-- Registered combos
+Accepted auth methods (same as the API):
+
+- `Authorization: Bearer <key>`
+- `x-goog-api-key: <key>`
+- `?key=<key>`
+
+!!! warning "Remote access"
+    When binding to `0.0.0.0` (Docker default), enable `require_api_key` and use
+    the login page for dashboard access from other machines. See
+    [Deployment](deployment.md).
+
+## Navigation
+
+The sidebar groups 13 pages into four sections:
+
+| Section | Pages |
+|---|---|
+| **Monitor** | Overview, Usage, Analytics, Key Inventory |
+| **Manage** | Providers, Combos, Token Savers, Budgets |
+| **Access** | API Keys, Tool Setup |
+| **System** | Pricing, Settings |
+
+---
+
+## Monitor
+
+### Overview — `/dashboard`
+
+Summary landing page:
+
+- Total requests, input/output tokens
+- Provider and combo counts
 - Today's total cost
-- Global budget status bar (with percentage and ok/warning/exceeded indicator)
+- Global budget status bar
 
-### Providers
+### Usage — `/dashboard/usage`
 
-**`/dashboard/providers`**
+- Total requests, input tokens, output tokens
+- Per-model breakdown
 
-Lists all registered providers with their configuration details:
+### Analytics — `/dashboard/analytics`
 
-- Provider ID and prefix
-- API type (`openai_compat`, `anthropic`, `gemini`, `opencode_free`)
-- Base URL
-- Supported models
+Interactive Chart.js visualizations:
 
-### Combos
-
-**`/dashboard/combos`**
-
-Lists all registered combos with their model chains. Each combo shows its name
-and the ordered list of `prefix/model` entries that define the fallback sequence.
-
-### API Keys
-
-**`/dashboard/keys`**
-
-Manage API keys:
-
-- **Key list**: shows ID, prefix, name, and status (active/revoked) for each key
-- **Create**: HTMX form to create a new key by name. The full `sk-janus-...` key
-  is displayed **once** — copy it immediately.
-- **Revoke**: HTMX button to revoke a key. Revoked keys are rejected on
-  authentication.
-
-### Usage
-
-**`/dashboard/usage`**
-
-Usage statistics:
-
-- Total requests
-- Total input tokens
-- Total output tokens
-- Per-model breakdown (requests, input tokens, output tokens)
-
-### Analytics
-
-**`/dashboard/analytics`**
-
-Interactive analytics with Chart.js:
-
-- **Spend trend chart** — daily cost over time
+- **Spend trend** — daily cost over time
 - **Breakdown** — by model, provider, account, or client key
-- **Success rate donut** — 2xx vs 4xx vs 5xx response distribution
-
-Query parameters control the time window and breakdown dimension:
+- **Success rate donut** — 2xx vs 4xx vs 5xx
 
 | Parameter | Default | Options |
 |---|---|---|
 | `days` | `30` | Any integer (e.g. `?days=7`) |
 | `dimension` | `model` | `model`, `provider`, `account`, `client_key` |
 
-Example: spend by provider for the last 7 days:
+### Key Inventory — `/dashboard/inventory`
 
-```
-/dashboard/analytics?days=7&dimension=provider
-```
+Upstream key management — overview, key list, add, import, encryption status.
+See [Key Inventory](inventory.md) for full documentation.
 
-### Budgets
+---
 
-**`/dashboard/budgets`**
+## Manage
 
-Budget management with live status:
+### Providers — `/dashboard/providers`
 
-- **Budget list**: each row shows scope (global or key name), daily limit,
-  spent today, percentage, and status badge (`ok` / `warning` / `exceeded`).
-- **Create**: HTMX form — select key scope (global or specific key), enter daily
-  limit and warn percentage.
-- **Delete**: HTMX button to remove a budget.
+Full CRUD for gateway providers:
 
-Budget status updates in real time as new requests are processed.
+- **Catalog gallery** — 14 known providers (OpenAI, Anthropic, Gemini, Groq,
+  DeepSeek, OpenRouter, Mistral, Fireworks, Perplexity, xAI, Qwen, Together,
+  OpenCode Zen, Custom) with logos and pre-filled defaults
+- **Add / Edit** — set prefix, API type, base URL, API key, models
+- **Fetch Models** — auto-populate models from upstream `/models` endpoint
+- **Test Connection** — 1-token probe with status and latency
+- **Enable / Disable** — toggle without deleting
+- **Delete** — remove provider (closes its HTTP client)
+
+When editing, leave the API key field **blank** to preserve the existing key.
+
+Changes hot-reload — no server restart needed.
+
+### Combos — `/dashboard/combos`
+
+Full CRUD for fallback chains:
+
+- **Create / Edit** — name and ordered model list
+- **Drag-and-drop reorder** — Sortable.js for priority changes
+- **Delete** — remove combo
+
+### Token Savers — `/dashboard/savers`
+
+Toggle savers at runtime:
+
+- **RTK** — on/off (default on)
+- **Caveman** — on/off
+- **Ponytail** — on/off with level selector (lite / full / ultra)
+
+Settings are stored in the DB and take effect immediately.
+
+### Budgets — `/dashboard/budgets`
+
+- **Budget list** — scope (global or key name), daily limit, spent today,
+  percentage, status badge (`ok` / `warning` / `exceeded`)
+- **Create** — select key scope, enter daily limit and warn percentage
+- **Delete** — remove budget
+
+---
+
+## Access
+
+### API Keys — `/dashboard/keys`
+
+- **Key list** — ID, prefix, name, status (active/revoked)
+- **Create** — HTMX form; full `sk-janus-...` key shown **once**
+- **Revoke** — deactivate key
+
+### Tool Setup — `/dashboard/tools`
+
+Copy-paste environment variable cards for:
+
+- Claude Code
+- Codex
+- Cursor
+- Cline
+
+Each card shows the exact `export` commands for your server URL and auth settings.
+
+---
+
+## System
+
+### Pricing — `/dashboard/pricing`
+
+- View all ~28 builtin model prices
+- **Add / Edit / Delete** custom pricing overrides
+- Overrides merge with builtins at request recording time
+
+### Settings — `/dashboard/settings`
+
+- **Require API key** — runtime toggle (stored in DB, overrides YAML default)
+- **Server info** — host, port, data directory
+- **Export Config** — download current DB state as YAML
+- **Reset to Defaults** — wipe DB tables and re-seed from `config.yaml` (danger zone)
+
+---
 
 ## Management API
 
-The dashboard includes HTMX endpoints that return HTML partials (not JSON):
+Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.
+
+### API Keys
 
 | Method | Path | Action |
 |---|---|---|
 | `POST` | `/dashboard/api/keys` | Create an API key |
 | `DELETE` | `/dashboard/api/keys/{id}` | Revoke an API key |
+
+### Budgets
+
+| Method | Path | Action |
+|---|---|---|
 | `POST` | `/dashboard/api/budgets` | Create or update a budget |
 | `DELETE` | `/dashboard/api/budgets/{id}` | Delete a budget |
 
-These are designed for HTMX-driven forms and not intended for programmatic use.
-For scripting, use the [CLI](cli.md) instead.
+### Providers
+
+| Method | Path | Action |
+|---|---|---|
+| `POST` | `/dashboard/api/providers` | Create provider |
+| `PUT` | `/dashboard/api/providers/{id}` | Update provider |
+| `DELETE` | `/dashboard/api/providers/{id}` | Delete provider |
+| `POST` | `/dashboard/api/providers/fetch-models` | Fetch models from upstream (JSON) |
+| `POST` | `/dashboard/api/providers/{id}/test` | Test connection (JSON) |
+
+### Combos
+
+| Method | Path | Action |
+|---|---|---|
+| `POST` | `/dashboard/api/combos` | Create combo |
+| `PUT` | `/dashboard/api/combos/{id}` | Update combo |
+| `DELETE` | `/dashboard/api/combos/{id}` | Delete combo |
+
+### Settings & config
+
+| Method | Path | Action |
+|---|---|---|
+| `POST` | `/dashboard/api/settings` | Update runtime settings (savers, require_api_key) |
+| `GET` | `/dashboard/api/export` | Export DB config as YAML (JSON download) |
+| `POST` | `/dashboard/api/reset` | Reset DB and re-seed from YAML |
+
+### Pricing
+
+| Method | Path | Action |
+|---|---|---|
+| `POST` | `/dashboard/api/pricing` | Create or update pricing override |
+| `DELETE` | `/dashboard/api/pricing/{model}` | Delete pricing override |
+
+### Inventory
+
+See [Key Inventory — Push API](inventory.md#push-api) for `POST /dashboard/api/inventory/push`.
+
+For scripting, prefer the [CLI](cli.md) over HTMX endpoints.

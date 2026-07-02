@@ -6,7 +6,8 @@ model in order — with automatic cooldowns and multi-account rotation.
 
 ## Defining a combo
 
-Add combos to your `~/.janus/config.yaml`:
+Create combos from the **dashboard** (recommended) or seed them in
+`~/.janus/config.yaml` on first startup:
 
 ```yaml
 combos:
@@ -24,6 +25,9 @@ combos:
 
 The order of `models` defines the fallback chain. The first model is tried
 first; if it fails with a fallback-eligible error, the next is tried.
+
+Use the dashboard **Combos** page to create, edit (with drag-and-drop reorder),
+or delete combos at runtime.
 
 ## Using combos from a client
 
@@ -83,8 +87,8 @@ as you need under the same `prefix`.
 ## Cooldowns
 
 When a provider returns an error, the account is placed in cooldown — removed
-from the candidate pool for a fixed duration. Cooldowns are in-memory and based
-on `time.monotonic()`, so they reset when the server restarts.
+from the candidate pool for a fixed duration. Cooldowns are stored in SQLite and
+**persist across server restarts**.
 
 | Error type | Cooldown |
 |---|---|

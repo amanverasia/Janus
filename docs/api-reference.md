@@ -1,15 +1,26 @@
 # API Reference
 
-All endpoints are under the `/v1` prefix. Janus exposes two format-compatible APIs
-(OpenAI and Anthropic) plus utility endpoints.
+Janus exposes three client-facing API surfaces plus utility endpoints:
+
+| Surface | Base path | Format |
+|---|---|---|
+| OpenAI | `/v1/chat/completions` | OpenAI Chat Completions |
+| Anthropic | `/v1/messages` | Anthropic Messages |
+| Gemini | `/v1beta/models/{model}:generateContent` | Gemini GenerateContent |
+| Utility | `/v1/health`, `/v1/models` | JSON |
 
 ## Authentication
 
-When `server.require_api_key` is `true` in your config, all endpoints except
-`GET /v1/health` require an API key in the `Authorization` header:
+When `require_api_key` is enabled, all endpoints except `GET /v1/health` require
+an API key. The setting can come from YAML (`server.require_api_key`) or the
+dashboard Settings page (DB `server_require_api_key` — takes precedence when set).
+
+Accepted auth methods:
 
 ```
 Authorization: Bearer <key>
+x-goog-api-key: <key>
+?key=<key>
 ```
 
 Keys can be:
@@ -354,3 +365,13 @@ With header: `Retry-After: 34567`
 ```json
 {"detail": "All providers exhausted: openai-personal: 429"}
 ```
+
+---
+
+## Inventory
+
+### POST /dashboard/api/inventory/push
+
+Programmatically ingest upstream API keys. Requires `INVENTORY_PUSH_TOKEN` as
+Bearer auth. See [Key Inventory — Push API](inventory.md#push-api) for request
+format and rate limits.

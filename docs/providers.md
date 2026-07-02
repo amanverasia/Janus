@@ -1,7 +1,9 @@
 # Providers
 
 Janus routes requests to any of 40+ AI providers through a unified provider model.
-Each provider is registered in your `config.yaml` under the `providers` list.
+Providers are registered via the **dashboard** (recommended) or seeded from
+`config.yaml` on first startup. After seeding, the SQLite database is the source
+of truth.
 
 ## Provider Model
 
@@ -29,6 +31,28 @@ accounts share that prefix, Janus tries them in order with automatic fallback.
 
 Most providers use `openai_compat` — if a provider offers an "OpenAI-compatible"
 endpoint, that's the one to use.
+
+## Dashboard catalog
+
+The dashboard **Providers** page includes a catalog of 14 known providers with
+pre-filled defaults, logos (via Simple Icons), and one-click setup:
+
+OpenAI, Anthropic, Google Gemini, Groq, Together AI, DeepSeek, OpenRouter,
+Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, OpenCode Zen (Free), and
+Custom.
+
+Each entry supports **Fetch Models** (auto-populate from upstream) and **Test
+Connection** (1-token probe with latency).
+
+## Inventory-backed routing
+
+When [upstream key inventory](inventory.md) has routable keys for a gateway
+prefix, Janus expands the provider into one account per key — the same
+multi-account fallback behavior as registering multiple YAML providers with the
+same prefix. The gateway provider's static `api_key` is used only when no routable
+inventory keys exist.
+
+Gateway prefix `gemini` maps to inventory provider `google`.
 
 ---
 

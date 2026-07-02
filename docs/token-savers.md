@@ -33,6 +33,8 @@ After format-specific compression, RTK applies:
 
 Content under 50 characters is skipped entirely (not worth processing).
 
+Enable via YAML (first startup), dashboard **Token Savers** page, or DB settings:
+
 ```yaml
 token_savers:
   rtk:
@@ -106,3 +108,14 @@ exception:
 
 This means you can safely enable savers without worrying about edge cases in
 tool output crashing your request pipeline.
+
+## Dashboard management
+
+Toggle savers at runtime from `/dashboard/savers`:
+
+- RTK on/off
+- Caveman on/off
+- Ponytail on/off with level selector (lite / full / ultra)
+
+Settings are stored in the `settings` table and hot-reload immediately. After
+first startup, dashboard settings override the YAML `token_savers` section.
