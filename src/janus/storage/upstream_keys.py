@@ -5,6 +5,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from janus.inventory.key_encryption import (
+    decrypt_key_value,
+    encrypt_key_value,
+    encryption_enabled,
+    hash_upstream_key,
+    is_encrypted_value,
+)
 from janus.inventory.url_guard import mask_key
 
 from .database import get_connection
@@ -12,6 +19,19 @@ from .database import get_connection
 
 def _new_key_id() -> str:
     return str(uuid.uuid4())
+
+
+def _prepare_key_storage(key_value: str) -> tuple[str, str, str]:
+    stored_value = encrypt_key_value(key_value)
+    return stored_value, hash_upstream_key(key_value), mask_key(key_value)
+
+
+def _decode_upstream_row(row: Any) -> dict[str, Any]:
+    item = dict(row)
+    key_value = item.get("key_value")
+    if isinstance(key_value, str):
+        item["key_value"] = decrypt_key_value(key_value)
+    return item
 
 
 async def create_upstream_key(
@@ -26,12 +46,14 @@ async def create_upstream_key(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     key_id = _new_key_id()
+    stored_value, key_hash, key_masked = _prepare_key_storage(key_value)
     record = {
         "id": key_id,
         "provider_id": provider_id,
         "key_label": key_label,
         "key_value": key_value,
-        "key_masked": mask_key(key_value),
+        "key_hash": key_hash,
+        "key_masked": key_masked,
         "custom_base_url": custom_base_url,
         "status": "pending_validation",
         "is_valid": 0,
@@ -45,15 +67,16 @@ async def create_upstream_key(
     async with get_connection(db_path) as db:
         await db.execute(
             """INSERT INTO upstream_keys
-               (id, provider_id, key_label, key_value, key_masked, custom_base_url,
+               (id, provider_id, key_label, key_value, key_hash, key_masked, custom_base_url,
                 status, is_valid, health_status, is_usable, usability_status,
                 priority, metadata, source_node)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record["id"],
                 record["provider_id"],
                 record["key_label"],
-                record["key_value"],
+                stored_value,
+                record["key_hash"],
                 record["key_masked"],
                 record["custom_base_url"],
                 record["status"],
@@ -74,17 +97,18 @@ async def get_upstream_key(db_path: str | Path, key_id: str) -> dict[str, Any] |
     async with get_connection(db_path) as db:
         async with db.execute("SELECT * FROM upstream_keys WHERE id = ?", (key_id,)) as cur:
             row = await cur.fetchone()
-    return dict(row) if row else None
+    return _decode_upstream_row(row) if row else None
 
 
 async def find_upstream_key_by_value(db_path: str | Path, key_value: str) -> dict[str, Any] | None:
+    key_hash = hash_upstream_key(key_value)
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT * FROM upstream_keys WHERE key_value = ? AND status != 'revoked' LIMIT 1",
-            (key_value,),
+            "SELECT * FROM upstream_keys WHERE key_hash = ? AND status != 'revoked' LIMIT 1",
+            (key_hash,),
         ) as cur:
             row = await cur.fetchone()
-    return dict(row) if row else None
+    return _decode_upstream_row(row) if row else None
 
 
 async def find_upstream_key_by_value_and_provider(
@@ -92,15 +116,16 @@ async def find_upstream_key_by_value_and_provider(
     key_value: str,
     provider_id: str,
 ) -> dict[str, Any] | None:
+    key_hash = hash_upstream_key(key_value)
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT * FROM upstream_keys
-               WHERE key_value = ? AND provider_id = ? AND status != 'revoked'
+               WHERE key_hash = ? AND provider_id = ? AND status != 'revoked'
                LIMIT 1""",
-            (key_value, provider_id),
+            (key_hash, provider_id),
         ) as cur:
             row = await cur.fetchone()
-    return dict(row) if row else None
+    return _decode_upstream_row(row) if row else None
 
 
 async def list_upstream_keys(
@@ -134,7 +159,7 @@ async def list_upstream_keys(
     async with get_connection(db_path) as db:
         async with db.execute(query, params) as cur:
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_decode_upstream_row(row) for row in rows]
 
 
 async def list_upstream_keys_masked(db_path: str | Path, **kwargs: Any) -> list[dict[str, Any]]:
@@ -156,6 +181,7 @@ async def update_upstream_key(
         "provider_id",
         "key_label",
         "key_value",
+        "key_hash",
         "key_masked",
         "custom_base_url",
         "status",
@@ -185,7 +211,13 @@ async def update_upstream_key(
     }
     updates: list[str] = []
     params: list[Any] = []
-    for field, value in data.items():
+    payload = dict(data)
+    if "key_value" in payload and isinstance(payload["key_value"], str):
+        stored_value, key_hash, key_masked = _prepare_key_storage(payload["key_value"])
+        payload["key_value"] = stored_value
+        payload["key_hash"] = key_hash
+        payload["key_masked"] = key_masked
+    for field, value in payload.items():
         if field not in allowed:
             continue
         if field == "metadata" and isinstance(value, dict):
@@ -268,7 +300,7 @@ async def list_routable_upstream_keys(
             (inventory_provider_id,),
         ) as cur:
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_decode_upstream_row(row) for row in rows]
 
 
 async def count_pending_upstream_keys(db_path: str | Path) -> int:
@@ -290,7 +322,7 @@ async def get_upstream_keys_by_ids(db_path: str | Path, key_ids: list[str]) -> l
     async with get_connection(db_path) as db:
         async with db.execute(query, key_ids) as cur:
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    return [_decode_upstream_row(row) for row in rows]
 
 
 async def export_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
@@ -305,7 +337,7 @@ async def export_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
             rows = await cur.fetchall()
     exported: list[dict[str, Any]] = []
     for row in rows:
-        item = dict(row)
+        item = _decode_upstream_row(row)
         metadata = item.get("metadata")
         if isinstance(metadata, str):
             try:
@@ -314,3 +346,44 @@ async def export_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
                 item["metadata"] = None
         exported.append(item)
     return exported
+
+
+async def reencrypt_plaintext_upstream_keys(db_path: str | Path) -> int:
+    if not encryption_enabled():
+        raise RuntimeError("INVENTORY_ENCRYPTION_KEY must be set to encrypt upstream keys")
+    converted = 0
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT id, key_value FROM upstream_keys") as cur:
+            rows = await cur.fetchall()
+        for row in rows:
+            stored = row["key_value"]
+            if not isinstance(stored, str) or is_encrypted_value(stored):
+                continue
+            plaintext = stored
+            encrypted, key_hash, key_masked = _prepare_key_storage(plaintext)
+            await db.execute(
+                """UPDATE upstream_keys
+                   SET key_value = ?, key_hash = ?, key_masked = ?, updated_at = datetime('now')
+                   WHERE id = ?""",
+                (encrypted, key_hash, key_masked, row["id"]),
+            )
+            converted += 1
+        await db.commit()
+    return converted
+
+
+async def count_storage_encryption_state(db_path: str | Path) -> dict[str, int]:
+    encrypted = 0
+    plaintext = 0
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            "SELECT key_value FROM upstream_keys WHERE status != 'revoked'"
+        ) as cur:
+            rows = await cur.fetchall()
+    for row in rows:
+        stored = row["key_value"]
+        if isinstance(stored, str) and is_encrypted_value(stored):
+            encrypted += 1
+        else:
+            plaintext += 1
+    return {"encrypted": encrypted, "plaintext": plaintext, "total": encrypted + plaintext}

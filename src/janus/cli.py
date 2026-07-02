@@ -66,10 +66,12 @@ keys_app = typer.Typer(help="Manage API keys")
 usage_app = typer.Typer(help="Usage statistics")
 budgets_app = typer.Typer(help="Manage spending budgets")
 pricing_app = typer.Typer(help="View model pricing")
+inventory_app = typer.Typer(help="Upstream key inventory")
 app.add_typer(keys_app, name="keys")
 app.add_typer(usage_app, name="usage")
 app.add_typer(budgets_app, name="budgets")
 app.add_typer(pricing_app, name="pricing")
+app.add_typer(inventory_app, name="inventory")
 
 
 def _get_db_path(config: str) -> Path:
@@ -344,3 +346,83 @@ def pricing_show(
     typer.echo(f"  Output:             ${p.output_per_mtok} / Mtok")
     typer.echo(f"  Cache creation:     ${p.cache_creation_per_mtok} / Mtok")
     typer.echo(f"  Cache read:         ${p.cache_read_per_mtok} / Mtok")
+
+
+@inventory_app.command("generate-encryption-key")
+def inventory_generate_encryption_key() -> None:
+    """Generate a Fernet key for INVENTORY_ENCRYPTION_KEY."""
+    from janus.inventory.key_encryption import generate_encryption_key
+
+    typer.echo(generate_encryption_key())
+
+
+@inventory_app.command("encrypt-keys")
+def inventory_encrypt_keys(
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Encrypt plaintext upstream keys at rest (requires INVENTORY_ENCRYPTION_KEY)."""
+    import asyncio
+
+    from janus.inventory.key_encryption import encryption_enabled
+    from janus.storage.database import init_db
+    from janus.storage.upstream_keys import (
+        count_storage_encryption_state,
+        reencrypt_plaintext_upstream_keys,
+    )
+
+    if not encryption_enabled():
+        typer.echo("Set INVENTORY_ENCRYPTION_KEY before running encrypt-keys.")
+        raise typer.Exit(1)
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    before = asyncio.run(count_storage_encryption_state(db_path))
+    converted = asyncio.run(reencrypt_plaintext_upstream_keys(db_path))
+    after = asyncio.run(count_storage_encryption_state(db_path))
+    typer.echo(f"Encrypted {converted} key(s).")
+    typer.echo(
+        f"Storage state: {after['encrypted']} encrypted, {after['plaintext']} plaintext "
+        f"(was {before['encrypted']} encrypted, {before['plaintext']} plaintext)"
+    )
+
+
+@inventory_app.command("verify")
+def inventory_verify(
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Summarize upstream key inventory for cutover verification."""
+    import asyncio
+
+    from janus.inventory.migrate import format_inventory_verification, verify_inventory
+    from janus.storage.database import init_db
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    summary = asyncio.run(verify_inventory(db_path))
+    typer.echo(format_inventory_verification(summary))
+
+
+@inventory_app.command("migrate")
+def inventory_migrate(
+    export_file: Path = typer.Argument(..., help="Dashboard export JSON path"),
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Count rows without writing"),
+    verify: bool = typer.Option(False, "--verify", help="Print summary after import"),
+) -> None:
+    """Import Dashboard_For_Apis export JSON into upstream keys."""
+    import asyncio
+
+    from janus.inventory.migrate import (
+        format_inventory_verification,
+        import_dashboard_export,
+        verify_inventory,
+    )
+
+    db_path = _get_db_path(config)
+    count = asyncio.run(import_dashboard_export(db_path, export_file, dry_run=dry_run))
+    action = "Would import" if dry_run else "Imported"
+    typer.echo(f"{action} {count} upstream key(s) into {db_path}")
+    if verify and not dry_run:
+        summary = asyncio.run(verify_inventory(db_path))
+        typer.echo("")
+        typer.echo(format_inventory_verification(summary))

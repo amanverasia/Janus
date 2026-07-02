@@ -3,10 +3,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 from janus.inventory.url_guard import detect_provider_from_key
 from janus.storage.database import init_db
-from janus.storage.upstream_keys import create_upstream_key, update_upstream_key
+from janus.storage.upstream_keys import (
+    count_storage_encryption_state,
+    count_upstream_keys,
+    create_upstream_key,
+    list_upstream_keys,
+    update_upstream_key,
+)
 
 
 def _parse_export_payload(raw: Any) -> list[dict[str, Any]]:
@@ -19,9 +26,59 @@ def _parse_export_payload(raw: Any) -> list[dict[str, Any]]:
     raise ValueError("Expected export JSON with a top-level 'keys' array or a bare array")
 
 
-async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: bool) -> int:
+def load_export_payload(export_path: Path) -> list[dict[str, Any]]:
     payload = json.loads(export_path.read_text())
-    rows = _parse_export_payload(payload)
+    return _parse_export_payload(payload)
+
+
+def fetch_export_payload(url: str) -> list[dict[str, Any]]:
+    with urlopen(url) as response:
+        payload = json.loads(response.read())
+    return _parse_export_payload(payload)
+
+
+async def verify_inventory(db_path: Path) -> dict[str, Any]:
+    keys = await list_upstream_keys(db_path)
+    by_status: dict[str, int] = {}
+    by_provider: dict[str, int] = {}
+    routable = 0
+    for key in keys:
+        by_status[key["status"]] = by_status.get(key["status"], 0) + 1
+        by_provider[key["provider_id"]] = by_provider.get(key["provider_id"], 0) + 1
+        if key["status"] == "active" and key["is_valid"] and key["is_usable"]:
+            routable += 1
+    encryption = await count_storage_encryption_state(db_path)
+    return {
+        "total": await count_upstream_keys(db_path),
+        "routable": routable,
+        "by_status": dict(sorted(by_status.items())),
+        "by_provider": dict(sorted(by_provider.items(), key=lambda item: (-item[1], item[0]))),
+        "encryption": encryption,
+    }
+
+
+def format_inventory_verification(summary: dict[str, Any]) -> str:
+    lines = [
+        f"Total upstream keys: {summary['total']}",
+        f"Routable keys: {summary['routable']}",
+        "By status:",
+    ]
+    for status, count in summary["by_status"].items():
+        lines.append(f"  {status}: {count}")
+    lines.append("Top providers:")
+    for provider_id, count in list(summary["by_provider"].items())[:10]:
+        lines.append(f"  {provider_id}: {count}")
+    encryption = summary["encryption"]
+    lines.append(
+        "Encryption at rest: "
+        f"{encryption['encrypted']} encrypted, {encryption['plaintext']} plaintext "
+        f"({encryption['total']} total)"
+    )
+    return "\n".join(lines)
+
+
+async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: bool) -> int:
+    rows = load_export_payload(export_path)
     if not dry_run:
         await init_db(db_path)
 
