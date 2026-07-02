@@ -1,0 +1,57 @@
+{% if submit_message %}
+<div class="mb-4 bg-blue-900 border border-blue-700 rounded-lg p-4 text-blue-200 text-sm">{{ submit_message }}</div>
+{% endif %}
+
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden overflow-x-auto">
+    {% if keys %}
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-900 border-b border-gray-700">
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Provider</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Key</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Credits</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Usability</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Checked</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700">
+            {% for key in keys %}
+            <tr class="hover:bg-gray-700">
+                <td class="px-4 py-3 text-sm text-white">{{ key.provider_display_name }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 font-mono">{{ key.key_masked }}</td>
+                <td class="px-4 py-3">
+                    <span class="inline-flex px-2 py-0.5 rounded text-xs {{ status_badge(key.status) }}">{{ key.status }}</span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-300">
+                    {% if key.credits_remaining is not none %}${{ "%.2f"|format(key.credits_remaining) }}{% else %}—{% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-400">{{ key.usability_status or '—' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-500">{{ key.last_checked_at or '—' }}</td>
+                <td class="px-4 py-3 text-right space-x-2">
+                    <button hx-post="/dashboard/api/inventory/keys/{{ key.id }}/recheck"
+                            hx-target="#inventory-keys-content"
+                            hx-swap="innerHTML"
+                            class="px-2 py-1 text-xs border border-gray-600 rounded text-gray-300 hover:bg-gray-700 cursor-pointer">
+                        Recheck
+                    </button>
+                    <button hx-delete="/dashboard/api/inventory/keys/{{ key.id }}"
+                            hx-target="#inventory-keys-content"
+                            hx-swap="innerHTML"
+                            hx-confirm="Delete this upstream key?"
+                            class="px-2 py-1 text-xs border border-red-700 rounded text-red-400 hover:bg-red-900 cursor-pointer">
+                        Delete
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-12 text-center">
+        <p class="text-gray-400 mb-4">No upstream keys match your filters.</p>
+        <a href="/dashboard/inventory/add" class="text-blue-400 hover:text-blue-300 text-sm">Add keys</a>
+    </div>
+    {% endif %}
+</div>

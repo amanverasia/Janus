@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -52,7 +53,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await reload_pricing(app)
     await app.state.fallback_handler.load_cooldowns()
 
+    from janus.inventory.scheduler import run_inventory_scheduler, scheduler_enabled
+
+    app.state.inventory_scheduler_stop = asyncio.Event()
+    app.state.inventory_scheduler_task = None
+    if scheduler_enabled():
+        app.state.inventory_scheduler_task = asyncio.create_task(
+            run_inventory_scheduler(app.state.db_path, app.state.inventory_scheduler_stop)
+        )
+
     yield
+
+    app.state.inventory_scheduler_stop.set()
+    scheduler_task = app.state.inventory_scheduler_task
+    if scheduler_task is not None:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
     for provider in app.state.providers.values():
         await provider.close()
 
@@ -76,9 +95,11 @@ def create_app(
     app.include_router(router, prefix="/v1")
     app.include_router(gemini_router)
 
+    from janus.dashboard.inventory_routes import router as inventory_router
     from janus.dashboard.routes import router as dashboard_router
 
     app.include_router(dashboard_router, prefix="/dashboard")
+    app.include_router(inventory_router, prefix="/dashboard")
 
     @app.get("/")
     async def root_redirect() -> RedirectResponse:

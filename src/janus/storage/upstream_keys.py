@@ -82,10 +82,11 @@ async def list_upstream_keys(
     *,
     provider_id: str | None = None,
     status: str | None = None,
+    search: str | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     query = "SELECT * FROM upstream_keys"
-    clauses: list[str] = []
+    clauses: list[str] = ["status != 'revoked'"]
     params: list[Any] = []
     if provider_id is not None:
         clauses.append("provider_id = ?")
@@ -93,6 +94,10 @@ async def list_upstream_keys(
     if status is not None:
         clauses.append("status = ?")
         params.append(status)
+    if search:
+        clauses.append("(key_label LIKE ? OR key_masked LIKE ? OR provider_id LIKE ?)")
+        pattern = f"%{search}%"
+        params.extend([pattern, pattern, pattern])
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     query += " ORDER BY priority DESC, created_at DESC"
@@ -204,8 +209,33 @@ async def record_upstream_key_history(
 
 async def count_upstream_keys(db_path: str | Path) -> int:
     async with get_connection(db_path) as db:
-        async with db.execute("SELECT COUNT(*) FROM upstream_keys") as cur:
+        async with db.execute(
+            "SELECT COUNT(*) FROM upstream_keys WHERE status != 'revoked'"
+        ) as cur:
             row = await cur.fetchone()
     if row is None:
         return 0
     return int(row[0])
+
+
+async def export_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT k.*, p.display_name as provider_display_name
+               FROM upstream_keys k
+               JOIN inventory_providers p ON k.provider_id = p.id
+               WHERE k.status != 'revoked'
+               ORDER BY k.provider_id, k.created_at"""
+        ) as cur:
+            rows = await cur.fetchall()
+    exported: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        metadata = item.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                item["metadata"] = json.loads(metadata)
+            except json.JSONDecodeError:
+                item["metadata"] = None
+        exported.append(item)
+    return exported

@@ -1,0 +1,30 @@
+{% if error %}
+<div class="mb-4 bg-red-900 border border-red-700 rounded-lg p-4 text-red-200 text-sm">{{ error }}</div>
+{% endif %}
+
+{% if results %}
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-700">
+        <h2 class="text-lg font-semibold text-white">Submitted {{ results|length }} key(s)</h2>
+        <p class="text-sm text-gray-400">Validation is running in the background.</p>
+    </div>
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-900 border-b border-gray-700">
+                <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Key</th>
+                <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Provider</th>
+                <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Status</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700">
+            {% for item in results %}
+            <tr>
+                <td class="px-4 py-2 text-sm font-mono text-gray-300">{{ item.key_masked }}</td>
+                <td class="px-4 py-2 text-sm text-gray-400">{{ item.provider_id }}</td>
+                <td class="px-4 py-2 text-sm text-gray-300">{{ item.status }}{% if item.error %} — {{ item.error }}{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
