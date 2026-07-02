@@ -4,8 +4,9 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from janus.dashboard.auth import require_dashboard_access
@@ -22,17 +23,99 @@ from janus.storage.inventory_overview import (
 )
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.upstream_keys import (
+    count_pending_upstream_keys,
     create_upstream_key,
     delete_upstream_key,
     export_upstream_keys,
+    get_upstream_keys_by_ids,
+    list_upstream_keys,
     list_upstream_keys_masked,
+    update_upstream_key,
 )
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
 
 def _schedule_recheck(key_id: str, db_path: Path) -> None:
-    asyncio.create_task(check_upstream_key(db_path, key_id))
+    async def _run() -> None:
+        await update_upstream_key(
+            db_path,
+            key_id,
+            {"status": "pending_validation", "last_error": None},
+        )
+        await check_upstream_key(db_path, key_id)
+
+    asyncio.create_task(_run())
+
+
+def _schedule_recheck_all(db_path: Path) -> None:
+    asyncio.create_task(_run_all_keys(db_path))
+
+
+async def _run_all_keys(db_path: Path) -> None:
+    keys = await list_upstream_keys(db_path)
+    for key in keys:
+        await update_upstream_key(
+            db_path,
+            key["id"],
+            {"status": "pending_validation", "last_error": None},
+        )
+    await check_all_upstream_keys(db_path)
+
+
+def _poll_query(
+    *,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+    key_ids: list[str] | None = None,
+) -> str:
+    params: dict[str, str] = {}
+    if provider_id:
+        params["provider_id"] = provider_id
+    if status:
+        params["status"] = status
+    if search:
+        params["search"] = search
+    if key_ids:
+        params["ids"] = ",".join(key_ids)
+    return urlencode(params)
+
+
+async def _keys_context(
+    db_path: Path,
+    *,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+    submit_message: str | None = None,
+) -> dict[str, Any]:
+    providers = await list_inventory_providers(db_path, active_only=True)
+    keys = await list_upstream_keys_masked(
+        db_path,
+        provider_id=provider_id or None,
+        status=status or None,
+        search=search or None,
+    )
+    provider_names = {p["id"]: p["display_name"] for p in providers}
+    for key in keys:
+        key["provider_display_name"] = provider_names.get(key["provider_id"], key["provider_id"])
+    has_pending = await count_pending_upstream_keys(db_path) > 0
+    return {
+        "keys": keys,
+        "providers": providers,
+        "provider_id": provider_id,
+        "status": status,
+        "search": search,
+        "status_badge": _status_badge,
+        "submit_message": submit_message,
+        "has_pending": has_pending,
+        "poll_query": _poll_query(
+            provider_id=provider_id,
+            status=status,
+            search=search,
+        ),
+    }
 
 
 def _parse_bulk_keys(raw: str) -> list[dict[str, str]]:
@@ -81,26 +164,13 @@ async def inventory_keys_page(
     search: str | None = None,
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    providers = await list_inventory_providers(db_path, active_only=True)
-    keys = await list_upstream_keys_masked(
+    context = await _keys_context(
         db_path,
-        provider_id=provider_id or None,
-        status=status or None,
-        search=search or None,
+        provider_id=provider_id or "",
+        status=status or "",
+        search=search or "",
     )
-    provider_names = {p["id"]: p["display_name"] for p in providers}
-    for key in keys:
-        key["provider_display_name"] = provider_names.get(key["provider_id"], key["provider_id"])
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": keys,
-        "providers": providers,
-        "provider_id": provider_id or "",
-        "status": status or "",
-        "search": search or "",
-        "status_badge": _status_badge,
-        "submit_message": None,
-    }
+    context["request"] = request
     return _templates.TemplateResponse(request, "inventory_keys.html", context)
 
 
@@ -126,27 +196,32 @@ async def _keys_partial(
     search: str = "",
     submit_message: str | None = None,
 ) -> HTMLResponse:
-    providers = await list_inventory_providers(db_path, active_only=True)
-    keys = await list_upstream_keys_masked(
+    context = await _keys_context(
         db_path,
-        provider_id=provider_id or None,
-        status=status or None,
-        search=search or None,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        submit_message=submit_message,
     )
-    provider_names = {p["id"]: p["display_name"] for p in providers}
-    for key in keys:
-        key["provider_display_name"] = provider_names.get(key["provider_id"], key["provider_id"])
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": keys,
-        "providers": providers,
-        "provider_id": provider_id,
-        "status": status,
-        "search": search,
-        "status_badge": _status_badge,
-        "submit_message": submit_message,
-    }
+    context["request"] = request
     return _templates.TemplateResponse(request, "inventory_keys_partial.html", context)
+
+
+@router.get("/api/inventory/keys/partial", response_class=HTMLResponse)
+async def api_inventory_keys_partial(
+    request: Request,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+    )
 
 
 @router.post("/api/inventory/submit", response_class=HTMLResponse)
@@ -207,7 +282,13 @@ async def api_inventory_submit(
     return _templates.TemplateResponse(
         request,
         "inventory_add_results.html",
-        {"request": request, "results": results, "error": None},
+        {
+            "request": request,
+            "results": results,
+            "error": None,
+            "has_pending": any(item.get("status") == "pending_validation" for item in results),
+            "poll_query": _poll_query(key_ids=[item["id"] for item in results if item.get("id")]),
+        },
     )
 
 
@@ -217,6 +298,9 @@ async def api_submit_upstream_keys(
     keys_text: str = Form(...),
     provider_id: str = Form("auto"),
     custom_base_url: str = Form(""),
+    filter_provider_id: str = Form(""),
+    filter_status: str = Form(""),
+    filter_search: str = Form(""),
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     entries = _parse_bulk_keys(keys_text)
@@ -252,31 +336,109 @@ async def api_submit_upstream_keys(
         created += 1
 
     message = f"Added {created} key(s). Validation running in background."
-    return await _keys_partial(request, db_path, submit_message=message)
-
-
-@router.post("/api/inventory/keys/{key_id}/recheck", response_class=HTMLResponse)
-async def api_recheck_upstream_key(request: Request, key_id: str) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    await check_upstream_key(db_path, key_id)
-    return await _keys_partial(request, db_path, submit_message="Recheck complete.")
-
-
-@router.delete("/api/inventory/keys/{key_id}", response_class=HTMLResponse)
-async def api_delete_upstream_key(request: Request, key_id: str) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    await delete_upstream_key(db_path, key_id)
-    return await _keys_partial(request, db_path)
-
-
-@router.post("/api/inventory/recheck-all", response_class=HTMLResponse)
-async def api_recheck_all_upstream_keys(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    count = await check_all_upstream_keys(db_path)
     return await _keys_partial(
         request,
         db_path,
-        submit_message=f"Rechecked {count} key(s).",
+        provider_id=filter_provider_id,
+        status=filter_status,
+        search=filter_search,
+        submit_message=message,
+    )
+
+
+@router.post("/api/inventory/keys/{key_id}/recheck", response_class=HTMLResponse)
+async def api_recheck_upstream_key(
+    request: Request,
+    key_id: str,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    _schedule_recheck(key_id, db_path)
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        submit_message="Recheck started — status will update automatically.",
+    )
+
+
+@router.delete("/api/inventory/keys/{key_id}", response_class=HTMLResponse)
+async def api_delete_upstream_key(
+    request: Request,
+    key_id: str,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    await delete_upstream_key(db_path, key_id)
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+    )
+
+
+@router.post("/api/inventory/recheck-all", response_class=HTMLResponse)
+async def api_recheck_all_upstream_keys(
+    request: Request,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    keys = await list_upstream_keys(db_path)
+    _schedule_recheck_all(db_path)
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        submit_message=f"Rechecking {len(keys)} key(s) in background.",
+    )
+
+
+@router.get("/api/inventory/submit/status", response_class=HTMLResponse)
+async def api_inventory_submit_status(
+    request: Request,
+    ids: str = Query(""),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    key_ids = [item for item in ids.split(",") if item]
+    keys = await get_upstream_keys_by_ids(db_path, key_ids)
+    provider_names = {
+        p["id"]: p["display_name"]
+        for p in await list_inventory_providers(db_path, active_only=True)
+    }
+    results = [
+        {
+            "id": key["id"],
+            "key_masked": key["key_masked"],
+            "provider_id": key["provider_id"],
+            "provider_display_name": provider_names.get(key["provider_id"], key["provider_id"]),
+            "status": key["status"],
+            "error": key.get("last_error"),
+        }
+        for key in keys
+    ]
+    has_pending = any(item["status"] == "pending_validation" for item in results)
+    return _templates.TemplateResponse(
+        request,
+        "inventory_add_results.html",
+        {
+            "request": request,
+            "results": results,
+            "error": None,
+            "has_pending": has_pending,
+            "poll_query": _poll_query(key_ids=key_ids),
+        },
     )
 
 
