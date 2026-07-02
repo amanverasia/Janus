@@ -81,3 +81,4 @@ pip-delete-this-directory.txt
 
 # MkDocs build output
 site/
+.demo-data/
