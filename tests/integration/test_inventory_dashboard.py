@@ -68,7 +68,7 @@ async def test_inventory_submit_key(client):
 
     r = await client.post(
         "/dashboard/api/inventory/submit",
-        data={"keys_text": "sk-proj-test-key", "provider_id": "openai"},
+        data={"keys_text": "sk-proj-" + "t" * 16, "provider_id": "openai"},
     )
     assert r.status_code == 200
     assert "pending_validation" in r.text
@@ -82,7 +82,7 @@ async def test_inventory_submit_key(client):
 async def test_inventory_keys_partial_polls_when_pending(client):
     create = await client.post(
         "/dashboard/api/inventory/keys",
-        data={"keys_text": "gsk_testkey", "provider_id": "groq"},
+        data={"keys_text": "gsk_" + "x" * 16, "provider_id": "groq"},
     )
     assert create.status_code == 200
     assert "Validation in progress" in create.text
@@ -111,7 +111,7 @@ async def test_inventory_submit_status_endpoint(client):
 async def test_inventory_delete_key(client):
     create = await client.post(
         "/dashboard/api/inventory/keys",
-        data={"keys_text": "gsk_testkey", "provider_id": "groq"},
+        data={"keys_text": "gsk_" + "x" * 16, "provider_id": "groq"},
     )
     assert create.status_code == 200
 

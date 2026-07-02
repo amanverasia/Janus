@@ -6,15 +6,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.routes import _ensure_db, _templates
 from janus.inventory.catalog import get_inventory_providers
-from janus.inventory.key_checker import check_all_upstream_keys, check_upstream_key
-from janus.inventory.provider_detection import resolve_provider_for_key
-from janus.inventory.url_guard import is_http_url
+from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
+from janus.inventory.key_checker import check_all_upstream_keys
+from janus.inventory.rate_limit import get_submit_rate_limiter
+from janus.inventory.recheck_scheduler import schedule_upstream_recheck
+from janus.inventory.reclassify import reclassify_upstream_keys
 from janus.storage.inventory_overview import (
     get_credit_summary,
     get_inventory_summary,
@@ -24,7 +26,6 @@ from janus.storage.inventory_overview import (
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.upstream_keys import (
     count_pending_upstream_keys,
-    create_upstream_key,
     delete_upstream_key,
     export_upstream_keys,
     get_upstream_keys_by_ids,
@@ -36,16 +37,14 @@ from janus.storage.upstream_keys import (
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
 
-def _schedule_recheck(key_id: str, db_path: Path) -> None:
-    async def _run() -> None:
-        await update_upstream_key(
-            db_path,
-            key_id,
-            {"status": "pending_validation", "last_error": None},
-        )
-        await check_upstream_key(db_path, key_id)
+def _client_id(request: Request) -> str:
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
-    asyncio.create_task(_run())
+
+def _schedule_recheck(key_id: str, db_path: Path) -> None:
+    schedule_upstream_recheck(key_id, db_path)
 
 
 def _schedule_recheck_all(db_path: Path) -> None:
@@ -232,50 +231,50 @@ async def api_inventory_submit(
     custom_base_url: str = Form(""),
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    entries = _parse_bulk_keys(keys_text)
-    base_url = custom_base_url.strip() or None
-    if base_url and not is_http_url(base_url):
+    entries = [KeyIngestEntry(key=entry["key"]) for entry in _parse_bulk_keys(keys_text)]
+    batch_error = enforce_batch_size(len(entries))
+    if batch_error:
         return _templates.TemplateResponse(
             request,
             "inventory_add_results.html",
-            {"request": request, "results": [], "error": "Invalid custom base URL."},
+            {"request": request, "results": [], "error": batch_error},
+        )
+
+    limiter = get_submit_rate_limiter()
+    if entries and not limiter.allow(_client_id(request), len(entries)):
+        return _templates.TemplateResponse(
+            request,
+            "inventory_add_results.html",
+            {
+                "request": request,
+                "results": [],
+                "error": f"Rate limited. Max {limiter.limit} keys per minute.",
+            },
         )
 
     results: list[dict[str, Any]] = []
     for entry in entries:
-        key_value = entry["key"]
-        resolved_provider, custom_meta = await resolve_provider_for_key(
-            key_value,
-            chosen_provider=provider_id,
-            custom_base_url=base_url,
-        )
-        effective_base_url = base_url
-        if resolved_provider == "custom":
-            effective_base_url = (custom_meta or {}).get("custom_base_url") or base_url
-        if resolved_provider == "custom" and not effective_base_url:
-            results.append(
-                {
-                    "key_masked": key_value[:8] + "…",
-                    "provider_id": resolved_provider,
-                    "status": "skipped",
-                    "error": "Custom provider requires a base URL.",
-                }
-            )
-            continue
-        record = await create_upstream_key(
+        item = await ingest_upstream_key(
             db_path,
-            provider_id=resolved_provider,
-            key_value=key_value,
-            custom_base_url=effective_base_url if resolved_provider == "custom" else None,
-            metadata=custom_meta,
+            entry,
+            chosen_provider=provider_id,
+            custom_base_url=custom_base_url.strip() or None,
         )
-        _schedule_recheck(record["id"], db_path)
+        if item["status"] in {"registered", "updated"} and item.get("id"):
+            _schedule_recheck(item["id"], db_path)
+        display_status = item["status"]
+        if display_status == "registered":
+            display_status = "pending_validation"
+        elif display_status == "updated":
+            display_status = "pending_validation"
         results.append(
             {
-                "id": record["id"],
-                "key_masked": record["key_masked"],
-                "provider_id": resolved_provider,
-                "status": "pending_validation",
+                "id": item.get("id"),
+                "key_masked": item.get("key_masked"),
+                "provider_id": item.get("provider_id"),
+                "provider_display_name": item.get("provider_display_name"),
+                "status": display_status,
+                "error": item.get("error"),
             }
         )
 
@@ -303,37 +302,36 @@ async def api_submit_upstream_keys(
     filter_search: str = Form(""),
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    entries = _parse_bulk_keys(keys_text)
+    entries = [
+        KeyIngestEntry(key=entry["key"], label=entry["label"] or None)
+        for entry in _parse_bulk_keys(keys_text)
+    ]
     if not entries:
         return await _keys_partial(request, db_path, submit_message="No keys found in input.")
 
-    base_url = custom_base_url.strip() or None
-    if base_url and not is_http_url(base_url):
-        return await _keys_partial(request, db_path, submit_message="Invalid custom base URL.")
+    batch_error = enforce_batch_size(len(entries))
+    if batch_error:
+        return await _keys_partial(request, db_path, submit_message=batch_error)
+
+    limiter = get_submit_rate_limiter()
+    if not limiter.allow(_client_id(request), len(entries)):
+        return await _keys_partial(
+            request,
+            db_path,
+            submit_message=f"Rate limited. Max {limiter.limit} keys per minute.",
+        )
 
     created = 0
     for entry in entries:
-        key_value = entry["key"]
-        resolved_provider, custom_meta = await resolve_provider_for_key(
-            key_value,
-            chosen_provider=provider_id,
-            custom_base_url=base_url,
-        )
-        effective_base_url = base_url
-        if resolved_provider == "custom":
-            effective_base_url = (custom_meta or {}).get("custom_base_url") or base_url
-        if resolved_provider == "custom" and not effective_base_url:
-            continue
-        record = await create_upstream_key(
+        item = await ingest_upstream_key(
             db_path,
-            provider_id=resolved_provider,
-            key_value=key_value,
-            key_label=entry["label"] or None,
-            custom_base_url=effective_base_url if resolved_provider == "custom" else None,
-            metadata=custom_meta,
+            entry,
+            chosen_provider=provider_id,
+            custom_base_url=custom_base_url.strip() or None,
         )
-        _schedule_recheck(record["id"], db_path)
-        created += 1
+        if item["status"] in {"registered", "updated"} and item.get("id"):
+            _schedule_recheck(item["id"], db_path)
+            created += 1
 
     message = f"Added {created} key(s). Validation running in background."
     return await _keys_partial(
@@ -440,6 +438,19 @@ async def api_inventory_submit_status(
             "poll_query": _poll_query(key_ids=key_ids),
         },
     )
+
+
+@router.post("/api/inventory/reclassify")
+async def api_reclassify_upstream_keys(
+    request: Request,
+    dry: bool = Query(default=True),
+    scope: str = Query(default="invalid"),
+) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    if scope not in {"invalid", "all"}:
+        raise HTTPException(status_code=400, detail="scope must be 'invalid' or 'all'")
+    payload = await reclassify_upstream_keys(db_path, dry_run=dry, scope=scope)
+    return JSONResponse(payload)
 
 
 @router.get("/api/inventory/export")
