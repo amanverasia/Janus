@@ -46,7 +46,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reload_providers,
         reload_savers,
     )
+    from janus.routing.reload_bridge import bind_reload_app
 
+    bind_reload_app(app)
     await reload_providers(app)
     await reload_combos(app)
     await reload_savers(app)

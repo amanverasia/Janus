@@ -46,7 +46,7 @@ class ProviderRegistry:
                     model=rest,
                     provider_config=config,
                     native_format=native,
-                    account_id=config.id,
+                    account_id=config.upstream_key_id or config.id,
                 )
             )
         return results

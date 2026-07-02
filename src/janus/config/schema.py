@@ -19,6 +19,7 @@ class ProviderConfig(BaseModel):
     base_url: str
     api_key: str | None = None
     models: list[str] = Field(default_factory=list)
+    upstream_key_id: str | None = None
 
 
 class ComboConfig(BaseModel):
