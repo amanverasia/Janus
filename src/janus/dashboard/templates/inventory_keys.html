@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Upstream Keys - Janus{% endblock %}
+{% block inventory_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white">Upstream Keys</h1>
+    <div class="flex gap-2">
+        <a href="/dashboard/inventory" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm">Overview</a>
+        <a href="/dashboard/inventory/add" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">Add Keys</a>
+        <button hx-post="/dashboard/api/inventory/recheck-all"
+                hx-target="#inventory-keys-content"
+                hx-swap="innerHTML"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm cursor-pointer">
+            Recheck All
+        </button>
+        <a href="/dashboard/api/inventory/export" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm" target="_blank">Export JSON</a>
+    </div>
+</div>
+
+<form method="get" class="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-6 grid md:grid-cols-4 gap-3">
+    <input type="text" name="search" value="{{ search }}" placeholder="Search label or key…"
+           class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+    <select name="provider_id" class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+        <option value="">All providers</option>
+        {% for p in providers %}
+        <option value="{{ p.id }}" {% if provider_id == p.id %}selected{% endif %}>{{ p.display_name }}</option>
+        {% endfor %}
+    </select>
+    <select name="status" class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
+        <option value="">All statuses</option>
+        {% for s in ['active', 'invalid', 'pending_validation', 'error', 'daily_exhausted'] %}
+        <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">Filter</button>
+</form>
+
+<div id="inventory-keys-content">
+    {% include "inventory_keys_partial.html" %}
+</div>
+{% endblock %}
