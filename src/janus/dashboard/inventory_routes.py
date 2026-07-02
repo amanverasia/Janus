@@ -12,7 +12,8 @@ from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.routes import _ensure_db, _templates
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.key_checker import check_all_upstream_keys, check_upstream_key
-from janus.inventory.url_guard import detect_provider_from_key, is_http_url
+from janus.inventory.provider_detection import resolve_provider_for_key
+from janus.inventory.url_guard import is_http_url
 from janus.storage.inventory_overview import (
     get_credit_summary,
     get_inventory_summary,
@@ -168,10 +169,15 @@ async def api_inventory_submit(
     results: list[dict[str, Any]] = []
     for entry in entries:
         key_value = entry["key"]
-        resolved_provider = provider_id
-        if resolved_provider == "auto":
-            resolved_provider = detect_provider_from_key(key_value) or "unidentified"
-        if resolved_provider == "custom" and not base_url:
+        resolved_provider, custom_meta = await resolve_provider_for_key(
+            key_value,
+            chosen_provider=provider_id,
+            custom_base_url=base_url,
+        )
+        effective_base_url = base_url
+        if resolved_provider == "custom":
+            effective_base_url = (custom_meta or {}).get("custom_base_url") or base_url
+        if resolved_provider == "custom" and not effective_base_url:
             results.append(
                 {
                     "key_masked": key_value[:8] + "…",
@@ -185,7 +191,8 @@ async def api_inventory_submit(
             db_path,
             provider_id=resolved_provider,
             key_value=key_value,
-            custom_base_url=base_url if resolved_provider == "custom" else None,
+            custom_base_url=effective_base_url if resolved_provider == "custom" else None,
+            metadata=custom_meta,
         )
         _schedule_recheck(record["id"], db_path)
         results.append(
@@ -223,17 +230,23 @@ async def api_submit_upstream_keys(
     created = 0
     for entry in entries:
         key_value = entry["key"]
-        resolved_provider = provider_id
-        if resolved_provider == "auto":
-            resolved_provider = detect_provider_from_key(key_value) or "unidentified"
-        if resolved_provider == "custom" and not base_url:
+        resolved_provider, custom_meta = await resolve_provider_for_key(
+            key_value,
+            chosen_provider=provider_id,
+            custom_base_url=base_url,
+        )
+        effective_base_url = base_url
+        if resolved_provider == "custom":
+            effective_base_url = (custom_meta or {}).get("custom_base_url") or base_url
+        if resolved_provider == "custom" and not effective_base_url:
             continue
         record = await create_upstream_key(
             db_path,
             provider_id=resolved_provider,
             key_value=key_value,
             key_label=entry["label"] or None,
-            custom_base_url=base_url if resolved_provider == "custom" else None,
+            custom_base_url=effective_base_url if resolved_provider == "custom" else None,
+            metadata=custom_meta,
         )
         _schedule_recheck(record["id"], db_path)
         created += 1
