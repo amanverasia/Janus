@@ -20,6 +20,16 @@ class FallbackHandler:
         self.registry = registry
         self.db_path = db_path
         self._cooldowns: dict[str, float] = {}
+        self._rotation_counters: dict[str, int] = {}
+
+    def _rotate_accounts(
+        self, pool_key: str, accounts: list[ResolvedTarget]
+    ) -> list[ResolvedTarget]:
+        if len(accounts) <= 1:
+            return accounts
+        index = self._rotation_counters.get(pool_key, 0) % len(accounts)
+        self._rotation_counters[pool_key] = index + 1
+        return accounts[index:] + accounts[:index]
 
     def resolve_attempts(self, model_str: str) -> list[ResolvedTarget]:
         combo_models = self.registry.lookup_combo(model_str)
@@ -28,7 +38,8 @@ class FallbackHandler:
             for m in combo_models:
                 targets = self.registry.lookup(m)
                 if targets:
-                    all_attempts.extend(t for t in targets if self.is_available(t.account_id))
+                    available = [t for t in targets if self.is_available(t.account_id)]
+                    all_attempts.extend(self._rotate_accounts(m, available))
             if not all_attempts:
                 raise ValueError(f"No available providers for combo '{model_str}'")
             return all_attempts
@@ -39,7 +50,7 @@ class FallbackHandler:
         available = [t for t in targets if self.is_available(t.account_id)]
         if not available:
             raise ValueError(f"No available providers for '{model_str}' (all accounts cooled down)")
-        return available
+        return self._rotate_accounts(model_str, available)
 
     def mark_cooldown(
         self,
