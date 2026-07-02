@@ -229,9 +229,7 @@ async def count_pending_upstream_keys(db_path: str | Path) -> int:
     return int(row[0])
 
 
-async def get_upstream_keys_by_ids(
-    db_path: str | Path, key_ids: list[str]
-) -> list[dict[str, Any]]:
+async def get_upstream_keys_by_ids(db_path: str | Path, key_ids: list[str]) -> list[dict[str, Any]]:
     if not key_ids:
         return []
     placeholders = ", ".join("?" for _ in key_ids)
