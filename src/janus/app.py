@@ -97,11 +97,13 @@ def create_app(
     app.include_router(router, prefix="/v1")
     app.include_router(gemini_router)
 
+    from janus.dashboard.inventory_push_routes import router as inventory_push_router
     from janus.dashboard.inventory_routes import router as inventory_router
     from janus.dashboard.routes import router as dashboard_router
 
     app.include_router(dashboard_router, prefix="/dashboard")
     app.include_router(inventory_router, prefix="/dashboard")
+    app.include_router(inventory_push_router, prefix="/dashboard/api/inventory")
 
     @app.get("/")
     async def root_redirect() -> RedirectResponse:

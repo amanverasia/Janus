@@ -77,6 +77,32 @@ async def get_upstream_key(db_path: str | Path, key_id: str) -> dict[str, Any] |
     return dict(row) if row else None
 
 
+async def find_upstream_key_by_value(db_path: str | Path, key_value: str) -> dict[str, Any] | None:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            "SELECT * FROM upstream_keys WHERE key_value = ? AND status != 'revoked' LIMIT 1",
+            (key_value,),
+        ) as cur:
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def find_upstream_key_by_value_and_provider(
+    db_path: str | Path,
+    key_value: str,
+    provider_id: str,
+) -> dict[str, Any] | None:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT * FROM upstream_keys
+               WHERE key_value = ? AND provider_id = ? AND status != 'revoked'
+               LIMIT 1""",
+            (key_value, provider_id),
+        ) as cur:
+            row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def list_upstream_keys(
     db_path: str | Path,
     *,
