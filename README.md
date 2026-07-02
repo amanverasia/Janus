@@ -118,6 +118,31 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
 - **Pricing** — 28 builtin model prices, YAML-overridable, cache token rates
 - **Dashboard** — HTMX UI at `/dashboard` with charts, budget management, usage stats
+- **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/inventory`)
+
+## Upstream Key Inventory
+
+Built-in dashboard for upstream provider API keys: health checks, credit tracking, and automatic routing through the best available key.
+
+**Dashboard:** `http://127.0.0.1:20128/dashboard/inventory`
+
+- Overview stats, paginated/sortable keys table, key detail modal, best-keys widget
+- Add keys, bulk submit, import from Dashboard export JSON, re-identify misclassified keys
+- Encryption at rest; routable keys wired into gateway fallback rotation
+- Background recheck scheduler (twice daily by default)
+
+| Variable | Purpose |
+|---|---|
+| `INVENTORY_ENCRYPTION_KEY` | Fernet key for encrypting upstream keys at rest |
+| `INVENTORY_PUSH_TOKEN` | Auth token for `POST /dashboard/api/inventory/push` |
+| `INVENTORY_SCHEDULER_ENABLED` | Set to `false` to disable background rechecks (default: `true`) |
+
+```bash
+janus inventory generate-encryption-key          # create Fernet key
+janus inventory migrate export.json --verify     # import Dashboard export + summary
+janus inventory verify                           # cutover verification summary
+janus inventory encrypt-keys                       # encrypt plaintext keys in DB
+```
 
 ## CLI Reference
 
@@ -130,6 +155,7 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 | `janus usage stats/cost/by-key` | Usage and cost reports |
 | `janus budgets list/set/delete` | Manage spending budgets |
 | `janus pricing list/show` | View model pricing |
+| `janus inventory migrate/verify/encrypt-keys/generate-encryption-key` | Upstream key inventory and cutover |
 
 ## Development
 
