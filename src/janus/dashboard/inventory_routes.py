@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.responses import Response
 
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.routes import _ensure_db, _templates
@@ -474,7 +475,7 @@ async def api_reclassify_upstream_keys(
     provider_id: str = "",
     status: str = "",
     search: str = "",
-):
+) -> Response:
     db_path = await _ensure_db(request)
     if scope not in {"invalid", "all"}:
         raise HTTPException(status_code=400, detail="scope must be 'invalid' or 'all'")
