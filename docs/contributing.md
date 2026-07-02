@@ -71,7 +71,7 @@ On 429/5xx/auth/network errors, the account is cooled down and the next attempt 
 ## Adding a New Token Saver
 
 1. Implement the `TokenSaver` protocol (`transform(req) -> CanonicalRequest`) in `src/janus/tokensavers/`.
-2. Add to pipeline construction in `src/janus/app.py`.
+2. Add construction logic to `reload_savers()` in `src/janus/dashboard/reload.py`.
 3. Savers must be fail-safe — exceptions are caught by the pipeline and logged, never breaking the request.
 
 ## PR Process

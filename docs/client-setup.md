@@ -2,13 +2,18 @@
 
 Point your coding tools at Janus. The base URL is always `http://localhost:20128/v1` (adjust port if you changed it).
 
+!!! tip "Tool Setup page"
+    The dashboard at `/dashboard/tools` shows copy-paste environment variable
+    cards for Claude Code, Codex, Cursor, and Cline — tailored to your server URL
+    and auth settings.
+
 ## Claude Code
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:20128/v1
 ```
 
-If `require_api_key` is enabled in your config:
+If `require_api_key` is enabled in your config (or toggled from dashboard Settings):
 
 ```bash
 export ANTHROPIC_API_KEY=sk-janus-yourkey
@@ -85,3 +90,10 @@ Models are referenced as `{prefix}/{model}`:
 | `best-effort` | Combo — tries each model in the combo chain |
 
 See [Combos](combos.md) for fallback chain configuration.
+
+## Remote / Docker setups
+
+When Janus runs on another machine or in Docker with `host: 0.0.0.0`, replace
+`localhost` with the host's address. Enable `require_api_key` and use a
+dashboard-created key. The dashboard requires login from non-loopback clients —
+see [Dashboard — Authentication](dashboard.md#authentication).

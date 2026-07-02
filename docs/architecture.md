@@ -54,15 +54,17 @@ flowchart TD
 Step by step:
 
 1. **Client sends** a request in its native format (OpenAI, Anthropic, or
-   Gemini) to `/v1/chat/completions` or `/v1/messages`.
+   Gemini) to `/v1/chat/completions`, `/v1/messages`, or
+   `/v1beta/models/{model}:generateContent`.
 2. **`parse_request`** converts the raw request body into a `CanonicalRequest`.
 3. **`SaverPipeline.apply`** runs enabled token savers (RTK, Caveman, Ponytail)
    in sequence. Fail-safe — exceptions are caught and logged.
 4. **Budget check** (`_check_budgets`) evaluates per-key and global budgets. If
    any is exceeded, the request is rejected with `HTTP 429 + Retry-After`.
 5. **`FallbackHandler.resolve_attempts`** generates an ordered list of
-   `ResolvedTarget`s — expanding combos to models, and models to all available
-   accounts, filtering out cooled-down accounts.
+   `ResolvedTarget`s — expanding combos to models, models to all available
+   accounts (including inventory-expanded keys), filtering out cooled-down
+   accounts.
 6. **Per-attempt loop**: for each target:
    - `build_upstream_request` converts the `CanonicalRequest` to the provider's
      native format.
@@ -84,7 +86,7 @@ Three format adapters are registered in the `FORMATS` dict:
 |---|---|---|
 | `OpenAIAdapter` | `POST /v1/chat/completions` | `formats/openai.py` |
 | `AnthropicAdapter` | `POST /v1/messages` | `formats/anthropic.py` |
-| `GeminiAdapter` | `POST /v1/chat/completions` | `formats/gemini.py` |
+| `GeminiAdapter` | `POST /v1beta/models/{model}:generateContent` | `formats/gemini.py` |
 
 Each adapter implements six methods (the `FormatAdapter` protocol):
 
@@ -145,6 +147,13 @@ self._combos: dict[str, list[str]] = {}
 `lookup_combo("best-effort")` returns the ordered model list, or `None` if no
 combo matches.
 
+### Inventory expansion
+
+During `reload_providers()`, each gateway provider row is expanded via
+`expand_gateway_provider()`. If routable upstream inventory keys exist for the
+prefix (mapped via `inventory_provider_id_for_prefix`), one `ProviderConfig` is
+created per key. Otherwise the gateway provider's static `api_key` is used.
+
 ### FallbackHandler
 
 `FallbackHandler` sits between the registry and the request handler:
@@ -152,60 +161,69 @@ combo matches.
 - **`resolve_attempts(model_str)`** — expands a combo (or single model) into a
   flat ordered list of `ResolvedTarget`s, filtering out accounts in cooldown.
 - **`mark_cooldown(account_id, error_type)`** — records when an account becomes
-  available again using `time.monotonic()`.
+  available again.
 - **`is_available(account_id)`** — checks whether an account's cooldown has
   expired.
 
-Cooldown state is in-memory and resets on server restart.
+Cooldown state is stored in the `cooldowns` SQLite table and **persists across
+server restarts**. Cooldowns are loaded on startup and after provider reload.
 
 ## Provider lifecycle
 
-Providers are **built once** in `create_app()` via `_build_provider()` in
-`app.py`, then cached in `app.state.providers` as `dict[str, Provider]` keyed by
-`config.id`. The request handler looks up cached providers by
-`target.provider_config.id` — never constructs providers inline.
+`create_app()` initializes an empty `app.state.providers = {}`. Providers are
+**built during lifespan startup** via `reload_providers()` in
+`dashboard/reload.py`, which reads enabled providers from the DB and calls
+`_build_provider()`. Cached in `app.state.providers` keyed by `config.id`.
+
+Dashboard CRUD operations call `reload_providers()` to rebuild providers,
+registry, and fallback handler **without restart**. Deleted/disabled providers
+have their `httpx.AsyncClient` closed.
 
 Each provider holds a **shared `httpx.AsyncClient`** with connection pool limits:
 100 max connections, 20 keepalive connections. Clients are not created
-per-request, avoiding connection overhead.
+per-request.
 
-Providers are **closed on shutdown** via the FastAPI lifespan handler in
-`app.py`:
-
-```python
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    await init_db(db_path)
-    yield
-    for provider in app.state.providers.values():
-        await provider.close()
-```
+Providers are **closed on shutdown** via the FastAPI lifespan handler.
 
 ## SQLite storage
 
 Janus persists runtime state in SQLite at `~/.janus/janus.db`. The database is
 auto-created on startup via `init_db()` in the lifespan handler.
 
-| Table | Purpose | Key columns |
-|---|---|---|
-| `api_keys` | API key storage (SHA256-hashed) | `id`, `key_hash`, `name`, `prefix`, `is_active` |
-| `usage` | Per-request token + cost tracking | `model`, `input_tokens`, `output_tokens`, `cost`, `client_key_id`, `timestamp` |
-| `budgets` | Daily spending limits | `key_id` (NULL = global), `daily_limit`, `warn_pct`, `is_active` |
+| Table | Purpose |
+|---|---|
+| `api_keys` | API key storage (SHA256-hashed) |
+| `usage` | Per-request token + cost tracking |
+| `budgets` | Daily spending limits |
+| `providers` | Gateway provider configs (DB-driven) |
+| `combos` | Named fallback chains |
+| `settings` | Runtime key-value settings |
+| `pricing_overrides` | Custom model pricing |
+| `cooldowns` | Account cooldown expiry timestamps |
+| `inventory_providers` | Upstream provider metadata |
+| `upstream_keys` | Stored upstream API keys |
+| `upstream_models` | Models accessible per key |
+| `upstream_key_history` | Key check/validation history |
 
 ### Schema migrations
 
 Schema migrations are **idempotent**. `init_db()` uses `PRAGMA table_info` to
-check existing columns, then `ALTER TABLE ADD COLUMN` for any new ones. This
-means upgrading Janus doesn't require a separate migration step — the database
-self-heals on startup.
+check existing columns, then `ALTER TABLE ADD COLUMN` for any new ones.
 
 All database access is async via `aiosqlite`, wrapped in `get_connection()` —
 an async context manager.
 
+### Config seeding
+
+On first startup, `seed_from_config()` imports YAML sections into the tables
+above (skipping non-empty tables). After seeding, the DB is authoritative. See
+[Configuration — DB-driven config](configuration.md#db-driven-configuration).
+
 ## Pricing
 
 Janus includes **28 builtin model prices** in `pricing/builtin.py`. The
-`PricingRegistry` merges these with any YAML overrides from the `pricing:`
-config section.
+`PricingRegistry` merges these with DB overrides from the `pricing_overrides`
+table (seeded from YAML on first startup).
 
 Cost is computed at recording time via:
 
@@ -233,5 +251,8 @@ Token savers run on the `CanonicalRequest` after parsing and before routing.
 The `SaverPipeline` runs enabled savers in order (RTK → Caveman → Ponytail) and
 is **fail-safe** — exceptions are caught and logged at `WARNING` level, never
 breaking the request.
+
+Saver construction is in `reload_savers()` (`dashboard/reload.py`), reading
+enabled flags from the `settings` table.
 
 See [Token Savers](token-savers.md) for saver configuration and behavior.

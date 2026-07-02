@@ -30,16 +30,19 @@ nav:
       - Overview: index.md
       - Getting Started: getting-started.md
       - Client Setup: client-setup.md
+      - Deployment: deployment.md
   - Guides:
       - Providers: providers.md
       - Combos & Fallback: combos.md
       - Token Savers: token-savers.md
+      - Key Inventory: inventory.md
       - Budgets: budgets.md
       - Dashboard: dashboard.md
   - Reference:
       - Configuration: configuration.md
       - API Reference: api-reference.md
       - CLI: cli.md
+      - Changelog: changelog.md
   - Development:
       - Architecture: architecture.md
       - Contributing: contributing.md

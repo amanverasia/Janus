@@ -242,7 +242,8 @@ janus budgets delete 2
 ### `janus pricing list`
 
 List all known model pricing, sorted by name. Includes builtin prices merged
-with any YAML overrides.
+with any DB overrides (seeded from YAML on first startup, then managed via
+dashboard or CLI).
 
 ```bash
 janus pricing list
@@ -287,3 +288,65 @@ Model: gpt-4o
 
 Pricing uses progressive prefix matching — `gpt-4o` matches the same entry as
 `gpt-4o-2024-08-06`. Unknown models show no pricing found.
+
+---
+
+## Inventory
+
+Manage upstream API key inventory. See [Key Inventory](inventory.md) for concepts
+and dashboard workflows.
+
+### `janus inventory generate-encryption-key`
+
+Generate a Fernet key for `INVENTORY_ENCRYPTION_KEY`:
+
+```bash
+janus inventory generate-encryption-key
+# gAAAAABl...
+```
+
+### `janus inventory encrypt-keys`
+
+Encrypt plaintext upstream keys at rest. Requires `INVENTORY_ENCRYPTION_KEY` to
+be set in the environment.
+
+```bash
+export INVENTORY_ENCRYPTION_KEY='gAAAAABl...'
+janus inventory encrypt-keys
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--config` / `-c` | `~/.janus/config.yaml` | Path to config file |
+
+### `janus inventory verify`
+
+Summarize inventory state for cutover verification:
+
+```bash
+janus inventory verify
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--config` / `-c` | `~/.janus/config.yaml` | Path to config file |
+
+### `janus inventory migrate`
+
+Import a Dashboard_For_Apis export JSON into upstream keys:
+
+```bash
+janus inventory migrate export.json
+janus inventory migrate export.json --dry-run
+janus inventory migrate export.json --verify
+```
+
+| Argument | Description |
+|---|---|
+| `export_file` | Path to export JSON (required) |
+
+| Option | Default | Description |
+|---|---|---|
+| `--dry-run` | off | Count rows without writing |
+| `--verify` | off | Print summary after import |
+| `--config` / `-c` | `~/.janus/config.yaml` | Path to config file |
