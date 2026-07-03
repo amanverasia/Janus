@@ -90,6 +90,23 @@ def test_vendor_prefix_prefers_exact_prefixed_override():
     assert p.input_per_mtok == 9.9
 
 
+def test_deepseek_v4_pro_pricing():
+    reg = PricingRegistry({})
+    p = reg.get("deepseek-v4-pro")
+    assert p is not None
+    assert p.input_per_mtok == 0.435
+    assert p.output_per_mtok == 0.87
+    assert p.cache_read_per_mtok == 0.003625
+
+
+def test_deepseek_v4_flash_pricing():
+    reg = PricingRegistry({})
+    p = reg.get("deepseek/deepseek-v4-flash")
+    assert p is not None
+    assert p.input_per_mtok == 0.14
+    assert p.output_per_mtok == 0.28
+
+
 def test_get_all_returns_merged_table():
     overrides = {
         "custom": {
