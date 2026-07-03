@@ -5,6 +5,23 @@
 {% block content %}
 <h1 class="text-2xl font-bold text-white mb-6">Overview</h1>
 
+<div class="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-8">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+        <div>
+            <h2 class="text-lg font-semibold text-white">Quick setup</h2>
+            <p class="text-gray-400 text-sm">Point OpenCode, Cursor, Claude Code, or any OpenAI-compatible client here.</p>
+        </div>
+        <a href="/dashboard/tools" class="text-sm text-blue-400 hover:text-blue-300 shrink-0">Full tool setup →</a>
+    </div>
+    <div class="bg-gray-900 rounded-lg border border-gray-700 flex items-center gap-3 p-3">
+        <code id="janus-base-url" class="flex-1 min-w-0 text-sm text-green-300 font-mono break-all">{{ base_url }}</code>
+        <button type="button" id="copy-base-url-btn"
+                class="shrink-0 px-3 py-1.5 text-xs font-medium border border-gray-600 rounded text-gray-300 hover:bg-gray-700 hover:text-white cursor-pointer">
+            Copy
+        </button>
+    </div>
+</div>
+
 <!-- Stats Cards -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
     <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
@@ -72,4 +89,31 @@
     <p class="text-gray-500 text-sm">No combos configured.</p>
     {% endif %}
 </div>
+
+<script>
+(function() {
+    var btn = document.getElementById('copy-base-url-btn');
+    var el = document.getElementById('janus-base-url');
+    if (!btn || !el) return;
+    btn.addEventListener('click', function() {
+        var text = el.textContent.trim();
+        var done = function() {
+            var orig = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(function() { btn.textContent = orig; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done);
+            return;
+        }
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        done();
+    });
+})();
+</script>
 {% endblock %}

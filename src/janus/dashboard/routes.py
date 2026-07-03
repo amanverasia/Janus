@@ -222,6 +222,7 @@ async def overview(request: Request) -> HTMLResponse:
         "combos": registry.combos,
         "today_cost": today_cost,
         "global_budget": global_budget,
+        "base_url": _api_v1_base_url(request),
     }
     return _templates.TemplateResponse(request, "overview.html", context)
 

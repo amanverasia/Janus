@@ -30,6 +30,8 @@ async def test_dashboard_overview(app):
         r = await client.get("/dashboard")
         assert r.status_code == 200
         assert "Janus" in r.text
+        assert "http://test/v1" in r.text
+        assert "Quick setup" in r.text
 
 
 @pytest.mark.asyncio
