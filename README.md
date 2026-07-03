@@ -8,41 +8,181 @@ OpenAI/Anthropic/Gemini-compatible HTTP endpoints that your coding tools (Claude
 Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
 40+ AI providers — without either side needing to know the other exists.
 
-## Quickstart
+## First-time setup
+
+Janus needs Python **3.11+**. Everything lives under `~/.janus/` — a seed
+`config.yaml` and a SQLite database (`janus.db`) that becomes the source of truth
+after the first startup.
+
+### 1. Install
+
+**From PyPI (recommended):**
 
 ```bash
-# Install
-pip install -e .
+pip install janus-ai
+```
 
-# Generate default config
+**From source (development):**
+
+```bash
+git clone https://github.com/amanverasia/Janus.git
+cd Janus
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+```
+
+### 2. Create config
+
+```bash
 janus config-init
+```
 
-# Start the server
+This writes `~/.janus/config.yaml`. Open it and add at least one provider with
+your API keys. Environment variables in `${VAR}` form are resolved at startup:
+
+```bash
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Example provider block:
+
+```yaml
+providers:
+  - id: openai
+    prefix: openai
+    api_type: openai_compat
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    models: [gpt-4o, gpt-4o-mini]
+```
+
+You can also add providers later from the dashboard — no restart required.
+
+### 3. Start the server
+
+```bash
 janus serve --port 20128
 ```
 
-Point your coding tool at `http://localhost:20128/v1` and start routing.
+For access from other machines on your LAN or Tailscale:
+
+```bash
+janus serve --host 0.0.0.0 --port 20128
+```
+
+Janus serves **plain HTTP** only. Use `http://`, not `https://`, unless you put
+a reverse proxy with TLS in front.
+
+### 4. Verify
+
+```bash
+curl http://localhost:20128/v1/health
+# {"status":"ok"}
+```
+
+Open the dashboard at [http://localhost:20128/dashboard](http://localhost:20128/dashboard).
+The root URL `/` redirects there.
+
+### 5. Configure via dashboard
+
+On first startup, Janus imports `providers`, `combos`, `token_savers`, and
+`pricing` from YAML into SQLite. **After that, the database is authoritative** —
+editing YAML and restarting will not re-apply changes. Use the dashboard instead.
+
+| Step | Where | What |
+|---|---|---|
+| Add providers | **Providers** | Pick from the catalog or add custom; fetch models, test connection |
+| Create a client key | **API Keys** | `sk-janus-...` shown once — save it |
+| Enable auth | **Settings** | Toggle **Require API key** (recommended for remote access) |
+| Set dashboard login | **Settings → Dashboard Login** | Username + password for remote browser sign-in |
+| Connect your tools | **Tool Setup** | Copy-paste env vars for Claude Code, Codex, Cursor, Cline |
+
+**Dashboard access rules:**
+
+- **localhost** — no sign-in required
+- **Remote** (LAN, Tailscale, Docker on `0.0.0.0`) — sign in at `/dashboard/login`
+  with your dashboard username/password or a Janus API key
+
+Create a key from the CLI instead:
+
+```bash
+janus keys create --name "my-laptop"
+```
+
+### 6. Send a test request
+
+```bash
+curl http://localhost:20128/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 50
+  }'
+```
+
+List registered models:
+
+```bash
+curl http://localhost:20128/v1/models
+```
+
+### 7. Point your coding tool at Janus
+
+**Claude Code / Anthropic tools:**
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:20128/v1
+export ANTHROPIC_API_KEY=sk-janus-yourkey   # if require_api_key is on
+```
+
+**OpenAI-compatible tools (Codex, Cursor, Cline, etc.):**
+
+```bash
+export OPENAI_BASE_URL=http://localhost:20128/v1
+export OPENAI_API_KEY=sk-janus-yourkey      # if require_api_key is on
+```
+
+Use `prefix/model` in requests (e.g. `openai/gpt-4o`,
+`anthropic/claude-sonnet-4-20250514`) or a combo name like `best-effort`.
 
 **📚 [Documentation](https://amanverasia.github.io/Janus/) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)**
 
 ## Docker
 
 ```bash
-# Create config in the persistent volume
 mkdir -p janus-data
-cp ~/.janus/config.yaml janus-data/config.yaml  # or create one with janus config-init
+janus config-init --path janus-data/config.yaml
+# Edit janus-data/config.yaml — add providers and ${ENV_VAR} keys
 
-# Build and run
+# Optional: pass API keys via .env in the repo root
+echo 'OPENAI_API_KEY=sk-...' >> .env
+
 docker compose up -d
 ```
 
-The SQLite database and config persist in `./janus-data/`. Environment variables
-from `.env` are passed through for `${ENV_VAR}` resolution in config.
+The image binds to `0.0.0.0:20128`. SQLite and config persist in `./janus-data/`.
+After first startup, manage providers and settings from the dashboard — not by
+editing YAML alone.
+
+**Remote dashboard:** enable **Require API key** in Settings, create a Janus API
+key, and set a dashboard username/password under **Dashboard Login**.
+
+```bash
+curl http://localhost:20128/v1/health
+open http://localhost:20128/dashboard    # macOS; or visit in your browser
+```
 
 ## Configuration
 
-Janus reads YAML config from `~/.janus/config.yaml` with `${ENV_VAR}` token
-resolution. Generate a template with `janus config-init`.
+Janus reads YAML from `~/.janus/config.yaml` (or `--config`) with `${ENV_VAR}`
+token resolution. Generate a template with `janus config-init`.
+
+On **first startup only**, YAML seeds the SQLite database. Subsequent changes
+should be made via the **dashboard** or **Export Config** / **Reset to Defaults**
+on the Settings page.
 
 ```yaml
 server:
@@ -96,7 +236,9 @@ combos:
 
 ## Client Setup
 
-Point your coding tools at Janus:
+See step 7 in [First-time setup](#first-time-setup) for the basics. The dashboard
+**Tool Setup** page (`/dashboard/tools`) generates copy-paste env vars for your
+exact server URL and auth settings.
 
 **Claude Code / Anthropic tools:**
 ```bash
@@ -117,7 +259,7 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Budgets** — daily spending limits per API key or global, with warn/block thresholds
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
 - **Pricing** — 28 builtin model prices, YAML-overridable, cache token rates
-- **Dashboard** — HTMX UI at `/dashboard` with charts, budget management, usage stats
+- **Dashboard** — HTMX UI at `/dashboard` with charts, budget management, usage stats, and remote username/password login
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/inventory`)
 
 ## Upstream Key Inventory
