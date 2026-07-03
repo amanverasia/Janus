@@ -113,6 +113,23 @@ async def test_record_usage_with_cost_and_cache(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_record_usage_with_client_key_label(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        model="gpt-4o",
+        status=200,
+        client_key_label="Config (sk-s****tatic)",
+        cost=0.01,
+    )
+    from janus.storage.analytics import get_breakdown
+
+    rows = await get_breakdown(db_path, dimension="client_key", days=30)
+    assert rows[0]["client_key"] == "Config (sk-s****tatic)"
+
+
+@pytest.mark.asyncio
 async def test_record_usage_defaults_backward_compatible(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)

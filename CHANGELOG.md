@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-03
+
+### Added
+- Key Inventory bulk-add preview with auto-provision of routing providers when adding upstream keys
+- Shared inventory tab navigation across all Key Inventory pages
+- Token Savers partial polling so toggle state syncs across devices/tabs
+- DeepSeek/Moonshot credit balances normalized from CNY to USD (`INVENTORY_CNY_USD_RATE`, default 0.138)
+- Analytics per-client API key labels in the breakdown (stores `client_key_label` on usage rows)
+
+### Fixed
+- Token saver toggles not persisting — HTMX now sends the correct checked value on save
+- Token saver toggle visuals (plain CSS instead of broken Tailwind `peer-checked` on CDN)
+- Providers dashboard 500 when inventory key stats were added to the template
+- Provider edit/test/fetch-models uses inventory keys when the provider has no direct API key
+- Analytics key breakdown showing `—` for named client keys
+- Tool Setup copy button alignment on `/dashboard/tools`
+
+### Changed
+- `janus serve --host` default remains `127.0.0.1`; bind `0.0.0.0` explicitly for LAN access
+- Saver settings use DB defaults via `ensure_saver_defaults()` (RTK on by default when unset)
+
 ## [0.3.0] - 2026-07-03
 
 ### Added

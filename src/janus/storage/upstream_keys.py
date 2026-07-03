@@ -439,6 +439,52 @@ async def list_routable_upstream_keys(
     return [_decode_upstream_row(row) for row in rows]
 
 
+async def summarize_upstream_keys_for_inventory(
+    db_path: str | Path,
+    inventory_provider_id: str,
+) -> dict[str, int]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT
+                 COUNT(*) AS total,
+                 SUM(CASE
+                   WHEN status = 'active' AND is_valid = 1 AND is_usable = 1
+                   THEN 1 ELSE 0 END) AS routable,
+                 SUM(CASE WHEN status = 'pending_validation' THEN 1 ELSE 0 END) AS pending
+               FROM upstream_keys
+               WHERE provider_id = ? AND status != 'revoked'""",
+            (inventory_provider_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return {"total": 0, "routable": 0, "pending": 0}
+    return {
+        "total": int(row[0]),
+        "routable": int(row[1] or 0),
+        "pending": int(row[2] or 0),
+    }
+
+
+async def get_probe_upstream_key(
+    db_path: str | Path,
+    inventory_provider_id: str,
+) -> str | None:
+    routable = await list_routable_upstream_keys(db_path, inventory_provider_id)
+    if routable:
+        return str(routable[0]["key_value"])
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT key_value FROM upstream_keys
+               WHERE provider_id = ? AND status != 'revoked'
+               ORDER BY created_at ASC LIMIT 1""",
+            (inventory_provider_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
 async def count_pending_upstream_keys(db_path: str | Path) -> int:
     async with get_connection(db_path) as db:
         async with db.execute(

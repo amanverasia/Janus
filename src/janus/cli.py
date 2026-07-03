@@ -198,14 +198,11 @@ def usage_by_key(
     import asyncio
 
     from janus.storage.analytics import get_breakdown
-    from janus.storage.api_keys import list_keys
     from janus.storage.database import init_db
 
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
     rows = asyncio.run(get_breakdown(db_path, dimension="client_key", days=days))
-    keys = asyncio.run(list_keys(db_path))
-    key_map = {k["id"]: k["name"] for k in keys}
     if not rows:
         typer.echo("No per-key usage data.")
         return
@@ -213,11 +210,7 @@ def usage_by_key(
     typer.echo(f"{'Key':<25} {'Requests':>8} {'Cost':>12}")
     typer.echo("-" * 48)
     for r in rows:
-        name = (
-            key_map.get(r["client_key_id"], f"Key #{r['client_key_id']}")
-            if r["client_key_id"]
-            else "No key"
-        )
+        name = r.get("client_key") or "No key"
         typer.echo(f"  {name:<23} {r['requests']:>8} ${r['cost']:>10.4f}")
 
 

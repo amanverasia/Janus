@@ -16,6 +16,7 @@ async def test_usage_table_has_new_columns(tmp_path):
     assert "cache_creation_tokens" in columns
     assert "cache_read_tokens" in columns
     assert "client_key_id" in columns
+    assert "client_key_label" in columns
 
 
 @pytest.mark.asyncio

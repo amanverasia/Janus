@@ -21,6 +21,7 @@ async def record_usage(
     cache_read_tokens: int = 0,
     status: int = 0,
     client_key_id: int | None = None,
+    client_key_label: str | None = None,
     cost: float = 0.0,
 ) -> None:
     try:
@@ -28,8 +29,9 @@ async def record_usage(
             await db.execute(
                 """INSERT INTO usage
                    (provider_id, model, account_id, input_tokens, output_tokens,
-                    cache_creation_tokens, cache_read_tokens, status, client_key_id, cost)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    cache_creation_tokens, cache_read_tokens, status, client_key_id,
+                    client_key_label, cost)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     provider_id,
                     model,
@@ -40,6 +42,7 @@ async def record_usage(
                     cache_read_tokens,
                     status,
                     client_key_id,
+                    client_key_label,
                     cost,
                 ),
             )

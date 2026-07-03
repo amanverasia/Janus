@@ -17,8 +17,8 @@ async def seed_usage(
                 """INSERT INTO usage
                    (timestamp, provider_id, model, account_id,
                     input_tokens, output_tokens, cache_creation_tokens,
-                    cache_read_tokens, status, client_key_id, cost)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    cache_read_tokens, status, client_key_id, client_key_label, cost)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ts,
                     row.get("provider_id"),
@@ -30,6 +30,7 @@ async def seed_usage(
                     row.get("cache_read_tokens", 0),
                     row.get("status", 200),
                     row.get("client_key_id"),
+                    row.get("client_key_label"),
                     row.get("cost", 0.0),
                 ),
             )

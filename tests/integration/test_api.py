@@ -550,3 +550,42 @@ async def test_usage_recorded_after_request(tmp_path):
     assert stats["total_requests"] == 1
     assert stats["total_input_tokens"] == 10
     assert stats["total_output_tokens"] == 5
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_usage_records_client_key_when_optional_auth(app, tmp_path):
+    from janus.storage.analytics import get_breakdown
+    from janus.storage.api_keys import create_key
+
+    full_key, meta = await create_key(app.state.db_path, "cursor")
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+        assert r.status_code == 200
+
+    breakdown = await get_breakdown(app.state.db_path, dimension="client_key", days=30)
+    assert len(breakdown) == 1
+    assert breakdown[0]["client_key"] == meta["name"]
+    assert breakdown[0]["requests"] == 1

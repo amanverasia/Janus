@@ -88,6 +88,7 @@ async def _handle(
     pricing_registry = request.app.state.pricing_registry
 
     client_key_id = getattr(request.state, "client_key_id", None)
+    client_key_label = getattr(request.state, "client_key_label", None)
 
     blocked_response = await _check_budgets(db_path, client_key_id)
     if blocked_response is not None:
@@ -154,6 +155,7 @@ async def _handle(
                             cache_read_tokens=usage.cache_read_input_tokens,
                             status=200,
                             client_key_id=client_key_id,
+                            client_key_label=client_key_label,
                             cost=cost,
                         )
 
@@ -192,6 +194,7 @@ async def _handle(
                 cache_read_tokens=canonical_resp.usage.cache_read_input_tokens,
                 status=result.status_code,
                 client_key_id=client_key_id,
+                client_key_label=client_key_label,
                 cost=cost,
             )
 

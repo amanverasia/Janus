@@ -1,0 +1,71 @@
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden mb-4">
+    <div class="px-4 py-3 border-b border-gray-700">
+        <h2 class="text-lg font-semibold text-white">Confirm key import</h2>
+        <p class="text-sm text-gray-400 mt-1">
+            {{ total_keys }} key(s) ready to add.
+            {% if preview.rejected_count %}
+            {{ preview.rejected_count }} line(s) skipped (invalid format).
+            {% endif %}
+        </p>
+    </div>
+
+    {% if preview.unidentified_count %}
+    <div class="mx-4 mt-4 bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 text-sm text-yellow-200">
+        {{ preview.unidentified_count }} key(s) could not be auto-detected. They will be added as
+        <strong>unidentified</strong> for manual review and will not get routing until reclassified.
+    </div>
+    {% endif %}
+
+    <div class="p-4 space-y-3">
+        {% for group in preview.groups %}
+        <div class="rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <p class="text-white font-medium">{{ group.display_name }}</p>
+                    <p class="text-sm text-gray-400 mt-0.5">{{ group.key_count }} key(s)</p>
+                    {% if group.sample_masked %}
+                    <p class="text-xs font-mono text-gray-500 mt-2">{{ group.sample_masked|join(', ') }}{% if group.key_count > 3 %} …{% endif %}</p>
+                    {% endif %}
+                </div>
+                <div class="text-right text-sm">
+                    {% if group.action == 'exists' %}
+                    <span class="text-green-400">Routing provider exists</span>
+                    <p class="text-gray-500 mt-1">prefix <code class="text-gray-400">{{ group.routing_prefix }}</code></p>
+                    {% elif group.action == 'enable' %}
+                    <span class="text-yellow-300">Will re-enable routing provider</span>
+                    <p class="text-gray-500 mt-1"><code class="text-gray-400">{{ group.existing_provider_id }}</code></p>
+                    {% elif group.action == 'create' %}
+                    <span class="text-blue-400">Will create routing provider</span>
+                    <p class="text-gray-500 mt-1">prefix <code class="text-gray-400">{{ group.routing_prefix }}</code></p>
+                    {% else %}
+                    <span class="text-gray-400">Inventory only</span>
+                    {% if group.skip_reason %}
+                    <p class="text-gray-500 mt-1">{{ group.skip_reason }}</p>
+                    {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="px-4 py-3 border-t border-gray-700 flex flex-wrap gap-2 justify-end">
+        <button type="button"
+                onclick="document.getElementById('submit-results').innerHTML = ''"
+                class="px-4 py-2 border border-gray-600 text-gray-300 hover:text-white rounded-lg text-sm cursor-pointer">
+            Cancel
+        </button>
+        <form hx-post="/dashboard/api/inventory/submit"
+              hx-target="#submit-results"
+              hx-swap="innerHTML"
+              class="inline">
+            <input type="hidden" name="provider_id" value="{{ provider_id }}">
+            <input type="hidden" name="custom_base_url" value="{{ custom_base_url }}">
+            <input type="hidden" name="provision_routing" value="true">
+            <textarea name="keys_text" class="hidden" aria-hidden="true">{{ keys_text }}</textarea>
+            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium cursor-pointer">
+                Confirm &amp; Add Keys
+            </button>
+        </form>
+    </div>
+</div>

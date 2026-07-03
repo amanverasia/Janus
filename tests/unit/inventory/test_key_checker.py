@@ -72,6 +72,36 @@ async def test_validate_key_openrouter_credit_check():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_validate_key_deepseek_cny_converted_to_usd(monkeypatch):
+    monkeypatch.setenv("INVENTORY_CNY_USD_RATE", "0.1")
+    respx.get("https://api.deepseek.com/v1/models").mock(
+        return_value=Response(200, json={"data": [{"id": "deepseek-chat"}]})
+    )
+    respx.get("https://api.deepseek.com/user/balance").mock(
+        return_value=Response(
+            200,
+            json={
+                "balance_infos": [
+                    {
+                        "currency": "CNY",
+                        "total_balance": "9558.21",
+                        "granted_balance": "10000.00",
+                        "topped_up_balance": "0.00",
+                    }
+                ]
+            },
+        )
+    )
+
+    result = await validate_key("sk-" + "a" * 20, "deepseek", skip_probe=True)
+    assert result["is_valid"] is True
+    assert result["credits_remaining"] == pytest.approx(955.82)
+    assert result["credits_total"] == pytest.approx(1000.0)
+    assert result["metadata"]["credits_currency"] == "CNY"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_validate_key_rate_limited_partial_check():
     respx.get("https://api.openai.com/v1/models").mock(
         return_value=Response(429, headers={"x-ratelimit-limit-requests": "3"})

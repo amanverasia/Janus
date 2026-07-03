@@ -3,92 +3,72 @@
 {% block savers_active %}bg-gray-700 text-white{% endblock %}
 
 {% block content %}
+<style>
+.saver-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+.saver-toggle input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.saver-toggle-track {
+    position: relative;
+    display: block;
+    width: 2.75rem;
+    height: 1.5rem;
+    background-color: #4b5563;
+    border-radius: 9999px;
+    transition: background-color 0.2s ease;
+    pointer-events: none;
+}
+.saver-toggle-track::after {
+    content: "";
+    position: absolute;
+    top: 0.125rem;
+    left: 0.125rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    background-color: #fff;
+    border-radius: 9999px;
+    transition: transform 0.2s ease;
+}
+.saver-toggle input:checked + .saver-toggle-track {
+    background-color: #2563eb;
+}
+.saver-toggle input:checked + .saver-toggle-track::after {
+    transform: translateX(1.25rem);
+}
+.saver-toggle input:focus-visible + .saver-toggle-track {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+}
+</style>
+
 <h1 class="text-2xl font-bold text-white mb-2">Token Savers</h1>
-<p class="text-gray-400 text-sm mb-6">Reduce token usage before requests are sent upstream. Savers run in order; enable only what you need.</p>
+<p class="text-gray-400 text-sm mb-2">Reduce token usage before requests are sent upstream. Savers run in order; enable only what you need.</p>
+<p class="text-gray-500 text-xs mb-6">Settings are stored on this server and sync across devices every few seconds.</p>
 
-<div class="space-y-4">
-    <!-- RTK -->
-    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <div class="flex items-center justify-between">
-            <div class="flex-1">
-                <div class="flex items-center space-x-3 mb-2">
-                    <h2 class="text-lg font-bold text-white">RTK</h2>
-                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200">Recommended</span>
-                </div>
-                <p class="text-gray-400 text-sm">Recursive Token Kompression — compresses conversation history to reduce input tokens. No quality loss for long conversations.</p>
-            </div>
-            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
-                    hx-vals='js:{key: "saver_rtk_enabled", value: saverRtkEnabled ? "false" : "true"}'
-                    onclick="var newVal = !saverRtkEnabled; saverRtkEnabled = newVal; saverToggleUpdate(this, newVal)"
-                    class="saver-rtk-btn {{ 'bg-green-600 text-white' if settings.saver_rtk_enabled != 'false' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-                {{ 'Enabled' if settings.saver_rtk_enabled != 'false' else 'Disabled' }}
-            </button>
-        </div>
-    </div>
-
-    <!-- Caveman -->
-    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <div class="flex items-center justify-between">
-            <div class="flex-1">
-                <div class="flex items-center space-x-3 mb-2">
-                    <h2 class="text-lg font-bold text-white">Caveman</h2>
-                </div>
-                <p class="text-gray-400 text-sm">Strips filler words, pleasantries, and verbose phrasing from requests. Aggressive token savings, may affect nuance.</p>
-            </div>
-            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
-                    hx-vals='js:{key: "saver_caveman_enabled", value: saverCavemanEnabled ? "false" : "true"}'
-                    onclick="var newVal = !saverCavemanEnabled; saverCavemanEnabled = newVal; saverToggleUpdate(this, newVal)"
-                    class="{{ 'bg-green-600 text-white' if settings.saver_caveman_enabled == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-                {{ 'Enabled' if settings.saver_caveman_enabled == 'true' else 'Disabled' }}
-            </button>
-        </div>
-    </div>
-
-    <!-- Ponytail -->
-    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-        <div class="flex items-start justify-between">
-            <div class="flex-1">
-                <div class="flex items-center space-x-3 mb-2">
-                    <h2 class="text-lg font-bold text-white">Ponytail</h2>
-                </div>
-                <p class="text-gray-400 text-sm mb-3">Summarizes older messages into a compact summary. Choose compression level:</p>
-                <div class="inline-flex rounded-lg border border-gray-700 overflow-hidden" id="ponytail-levels">
-                    {% set pl = settings.saver_ponytail_level or 'full' %}
-                    {% for level in ['lite', 'full', 'ultra'] %}
-                    <button hx-post="/dashboard/api/settings" hx-swap="none"
-                            hx-vals='js:{key: "saver_ponytail_level", value: "{{ level }}"}'
-                            onclick="ponytailLevelSelect(this, '{{ level }}')"
-                            class="px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn
-                            {% if pl == level %}bg-blue-600 text-white{% else %}bg-gray-900 text-gray-400 hover:text-white{% endif %}">
-                        {{ level | capitalize }}
-                    </button>
-                    {% endfor %}
-                </div>
-            </div>
-            <button hx-post="/dashboard/api/settings" hx-target="this" hx-swap="none"
-                    hx-vals='js:{key: "saver_ponytail_enabled", value: saverPonytailEnabled ? "false" : "true"}'
-                    onclick="var newVal = !saverPonytailEnabled; saverPonytailEnabled = newVal; saverToggleUpdate(this, newVal)"
-                    class="{{ 'bg-green-600 text-white' if settings.saver_ponytail_enabled == 'true' else 'bg-gray-700 text-gray-400' }} rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-                {{ 'Enabled' if settings.saver_ponytail_enabled == 'true' else 'Disabled' }}
-            </button>
-        </div>
-    </div>
+<div id="savers-list"
+     hx-get="/dashboard/api/savers/partial"
+     hx-trigger="load, every 8s"
+     hx-swap="innerHTML">
+    {% include "savers_list.html" %}
 </div>
 
 <script>
-var saverRtkEnabled = {{ 'true' if settings.saver_rtk_enabled != 'false' else 'false' }};
-var saverCavemanEnabled = {{ 'true' if settings.saver_caveman_enabled == 'true' else 'false' }};
-var saverPonytailEnabled = {{ 'true' if settings.saver_ponytail_enabled == 'true' else 'false' }};
-
-function saverToggleUpdate(btn, on) {
-    btn.className = on
-        ? 'bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors'
-        : 'bg-gray-700 text-gray-400 rounded-lg px-4 py-2 text-sm font-medium transition-colors';
-    btn.textContent = on ? 'Enabled' : 'Disabled';
-}
-
 function ponytailLevelSelect(btn, level) {
     var container = document.getElementById('ponytail-levels');
+    if (!container) return;
     var buttons = container.querySelectorAll('.ponytail-btn');
     buttons.forEach(function(b) {
         b.className = 'px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn bg-gray-900 text-gray-400 hover:text-white';

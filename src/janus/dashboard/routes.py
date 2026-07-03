@@ -226,19 +226,11 @@ async def overview(request: Request) -> HTMLResponse:
 async def providers_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     from janus.dashboard.catalog import get_catalog
-    from janus.storage.providers_db import list_providers
 
-    providers_raw = await list_providers(db_path)
-    providers = []
-    for p in providers_raw:
-        parsed = dict(p)
-        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
-        providers.append(parsed)
-    catalog = get_catalog()
     context: dict[str, Any] = {
         "request": request,
-        "providers": providers,
-        "catalog": catalog,
+        "providers": await _enrich_providers(db_path),
+        "catalog": get_catalog(),
         "logo_map": get_provider_logo_map(),
     }
     return _templates.TemplateResponse(request, "providers.html", context)
@@ -521,18 +513,41 @@ async def api_delete_provider(request: Request, provider_id: str) -> HTMLRespons
     return await _providers_partial(request, db_path)
 
 
-async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
+async def _resolve_provider_api_key(db_path: Path, provider: dict[str, Any]) -> str:
+    api_key = provider.get("api_key") or ""
+    if api_key:
+        return str(api_key)
+    from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
+    from janus.storage.upstream_keys import get_probe_upstream_key
+
+    inventory_id = inventory_provider_id_for_prefix(str(provider["prefix"]))
+    probe = await get_probe_upstream_key(db_path, inventory_id)
+    return probe or ""
+
+
+async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
+    from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
     from janus.storage.providers_db import list_providers
+    from janus.storage.upstream_keys import summarize_upstream_keys_for_inventory
 
     providers_raw = await list_providers(db_path)
-    providers = []
+    providers: list[dict[str, Any]] = []
     for p in providers_raw:
         parsed = dict(p)
         parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        inventory_id = inventory_provider_id_for_prefix(str(parsed["prefix"]))
+        parsed["inventory_provider_id"] = inventory_id
+        parsed["inventory_keys"] = await summarize_upstream_keys_for_inventory(
+            db_path, inventory_id
+        )
         providers.append(parsed)
+    return providers
+
+
+async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
     context: dict[str, Any] = {
         "request": request,
-        "providers": providers,
+        "providers": await _enrich_providers(db_path),
         "logo_map": get_provider_logo_map(),
     }
     return _templates.TemplateResponse(request, "providers_partial.html", context)
@@ -544,12 +559,19 @@ async def api_fetch_models(request: Request) -> JSONResponse:
 
     import httpx
 
-    await _ensure_db(request)
+    db_path = await _ensure_db(request)
     body = await request.body()
     params = parse_qs(body.decode())
     api_type = params.get("api_type", [""])[0]
     base_url = params.get("base_url", [""])[0].rstrip("/")
     api_key = params.get("api_key", [""])[0]
+    provider_id = params.get("provider_id", [""])[0]
+    if not api_key and provider_id:
+        from janus.storage.providers_db import get_provider
+
+        provider = await get_provider(db_path, provider_id)
+        if provider:
+            api_key = await _resolve_provider_api_key(db_path, provider)
 
     allowed_schemes = ("http", "https")
     try:
@@ -644,7 +666,7 @@ async def api_test_connection(request: Request, provider_id: str) -> JSONRespons
     model = models[0] if models else ""
     api_type = provider["api_type"]
     base_url = provider["base_url"].rstrip("/")
-    api_key = provider["api_key"] or ""
+    api_key = await _resolve_provider_api_key(db_path, provider)
 
     try:
         start = time.perf_counter()
@@ -783,17 +805,28 @@ async def _combos_partial(request: Request, db_path: Path) -> HTMLResponse:
 # ---- Token Savers ----
 
 
+async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
+    from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
+
+    await ensure_saver_defaults(db_path)
+    settings = resolve_saver_settings(await get_all_settings(db_path))
+    return {"request": request, "settings": settings}
+
+
 @router.get("/savers", response_class=HTMLResponse)
 async def savers_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.settings import get_all_settings
+    return _templates.TemplateResponse(
+        request, "savers.html", await _savers_context(request, db_path)
+    )
 
-    settings = await get_all_settings(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "settings": settings,
-    }
-    return _templates.TemplateResponse(request, "savers.html", context)
+
+@router.get("/api/savers/partial", response_class=HTMLResponse)
+async def savers_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    return _templates.TemplateResponse(
+        request, "savers_list.html", await _savers_context(request, db_path)
+    )
 
 
 @router.post("/api/settings", response_class=HTMLResponse)
