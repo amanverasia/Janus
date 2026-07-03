@@ -34,7 +34,11 @@ async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str,
         async with db.execute(
             """SELECT date(timestamp) as date,
                       COUNT(*) as requests,
-                      COALESCE(SUM(cost), 0.0) as cost
+                      COALESCE(SUM(cost), 0.0) as cost,
+                      COALESCE(SUM(input_tokens), 0) as input_tokens,
+                      COALESCE(SUM(output_tokens), 0) as output_tokens,
+                      COALESCE(SUM(input_tokens), 0)
+                        + COALESCE(SUM(output_tokens), 0) as tokens
                FROM usage
                WHERE timestamp >= datetime('now', ?)
                GROUP BY date(timestamp)
@@ -52,6 +56,64 @@ async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str,
         "total_cache_read_tokens": row["cr"],
         "daily": [dict(r) for r in daily_rows],
     }
+
+
+async def get_flow(db_path: str | Path, *, days: int = 30) -> dict[str, Any]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT
+                   COALESCE(k.name, 'Direct') as source,
+                   COALESCE(u.model, 'unknown') as model,
+                   COALESCE(u.provider_id, 'unknown') as provider,
+                   COUNT(*) as requests,
+                   COALESCE(SUM(u.input_tokens), 0)
+                     + COALESCE(SUM(u.output_tokens), 0) as tokens,
+                   COALESCE(SUM(u.cost), 0.0) as cost
+               FROM usage u
+               LEFT JOIN api_keys k ON u.client_key_id = k.id
+               WHERE u.timestamp >= datetime('now', ?)
+               GROUP BY source, model, provider""",
+            (f"-{days} days",),
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+
+    nodes: list[dict[str, str]] = []
+    node_index: dict[str, int] = {}
+
+    def _node(name: str, kind: str) -> int:
+        node_id = f"{kind}:{name}"
+        if node_id not in node_index:
+            node_index[node_id] = len(nodes)
+            nodes.append({"name": name, "kind": kind})
+        return node_index[node_id]
+
+    links: dict[tuple[int, int], dict[str, float]] = {}
+
+    def _link(src: int, dst: int, requests: int, tokens: int, cost: float) -> None:
+        key = (src, dst)
+        agg = links.setdefault(key, {"requests": 0, "tokens": 0, "cost": 0.0})
+        agg["requests"] += requests
+        agg["tokens"] += tokens
+        agg["cost"] += cost
+
+    for r in rows:
+        key_node = _node(str(r["source"]), "key")
+        model_node = _node(str(r["model"]), "model")
+        provider_node = _node(str(r["provider"]), "provider")
+        _link(key_node, model_node, r["requests"], r["tokens"], r["cost"])
+        _link(model_node, provider_node, r["requests"], r["tokens"], r["cost"])
+
+    link_list = [
+        {
+            "source": src,
+            "target": dst,
+            "requests": vals["requests"],
+            "tokens": vals["tokens"],
+            "cost": round(vals["cost"], 6),
+        }
+        for (src, dst), vals in links.items()
+    ]
+    return {"nodes": nodes, "links": link_list}
 
 
 async def get_breakdown(

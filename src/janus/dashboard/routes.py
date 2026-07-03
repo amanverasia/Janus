@@ -28,6 +28,7 @@ from janus.dashboard.credentials import (
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
+    get_flow,
     get_spend_summary,
     get_success_rate,
 )
@@ -299,6 +300,7 @@ async def analytics_page(
         summary = await get_spend_summary(db_path, days=days)
         breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
         success = await get_success_rate(db_path, days=days)
+        flow = await get_flow(db_path, days=days)
     except Exception:
         summary = {
             "total_cost": 0,
@@ -309,11 +311,13 @@ async def analytics_page(
         }
         breakdown = []
         success = {"success_2xx": 0, "client_4xx": 0, "server_5xx": 0, "total": 0}
+        flow = {"nodes": [], "links": []}
     context: dict[str, Any] = {
         "request": request,
         "summary": summary,
         "breakdown": breakdown,
         "success": success,
+        "flow": flow,
         "days": days,
         "dimension": dimension,
     }

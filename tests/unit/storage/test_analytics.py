@@ -4,6 +4,7 @@ import pytest
 
 from janus.storage.analytics import (
     get_breakdown,
+    get_flow,
     get_spend_summary,
     get_success_rate,
 )
@@ -64,6 +65,9 @@ async def test_get_spend_summary_with_data(tmp_path):
     assert result["total_input_tokens"] == 3500
     assert result["total_output_tokens"] == 1750
     assert len(result["daily"]) >= 1
+    for day in result["daily"]:
+        assert "tokens" in day
+        assert day["tokens"] == day["input_tokens"] + day["output_tokens"]
 
 
 @pytest.mark.asyncio
@@ -151,3 +155,70 @@ async def test_get_success_rate(tmp_path):
     assert result["client_4xx"] == 1
     assert result["server_5xx"] == 1
     assert result["total"] == 4
+
+
+@pytest.mark.asyncio
+async def test_get_flow_empty(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    result = await get_flow(db_path, days=30)
+    assert result["nodes"] == []
+    assert result["links"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_flow_builds_key_model_provider_graph(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "provider_id": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "provider_id": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "provider_id": "anthropic",
+                "model": "claude",
+                "input_tokens": 200,
+                "output_tokens": 100,
+                "cost": 0.02,
+                "status": 200,
+            },
+        ],
+    )
+    result = await get_flow(db_path, days=30)
+    names = {n["name"] for n in result["nodes"]}
+    kinds = {n["kind"] for n in result["nodes"]}
+    assert {"gpt-4o", "claude", "openai", "anthropic", "Direct"} <= names
+    assert kinds == {"key", "model", "provider"}
+    # every link references valid node indices
+    node_count = len(result["nodes"])
+    for link in result["links"]:
+        assert 0 <= link["source"] < node_count
+        assert 0 <= link["target"] < node_count
+    # aggregated key->model link for gpt-4o should have 2 requests
+    key_idx = next(i for i, n in enumerate(result["nodes"]) if n["kind"] == "key")
+    gpt_idx = next(
+        i for i, n in enumerate(result["nodes"]) if n["kind"] == "model" and n["name"] == "gpt-4o"
+    )
+    gpt_link = next(
+        link for link in result["links"] if link["source"] == key_idx and link["target"] == gpt_idx
+    )
+    assert gpt_link["requests"] == 2
+    assert gpt_link["tokens"] == 300
