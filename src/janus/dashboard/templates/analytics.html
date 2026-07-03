@@ -5,16 +5,25 @@
 {% block content %}
 <h1 class="text-2xl font-bold text-white mb-6">Analytics</h1>
 
-<!-- Date Range Selector -->
-<div class="flex space-x-2 mb-6">
-    {% for d in [7, 30, 90] %}
-    <a href="/dashboard/analytics?days={{ d }}&dimension={{ dimension }}"
-       class="px-4 py-2 rounded-lg text-sm font-medium {% if days == d %}bg-blue-600 text-white{% else %}bg-gray-800 text-gray-400 hover:text-white{% endif %} transition-colors">
-        {{ d }}d
-    </a>
-    {% endfor %}
+<!-- Date Range Selector + View Tabs -->
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div class="flex space-x-2">
+        {% for d, label in [(1, "24h"), (7, "7D"), (30, "30D"), (60, "60D"), (90, "90D")] %}
+        <a href="/dashboard/analytics?days={{ d }}&dimension={{ dimension }}"
+           class="px-4 py-2 rounded-lg text-sm font-medium {% if days == d %}bg-blue-600 text-white{% else %}bg-gray-800 text-gray-400 hover:text-white{% endif %} transition-colors">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </div>
+    <div class="inline-flex rounded-lg bg-gray-800 p-1">
+        <button type="button" id="tab-overview" onclick="switchView('overview')"
+                class="px-4 py-1.5 rounded-md text-sm font-medium text-white bg-gray-700">Overview</button>
+        <button type="button" id="tab-details" onclick="switchView('details')"
+                class="px-4 py-1.5 rounded-md text-sm font-medium text-gray-400 hover:text-white">Details</button>
+    </div>
 </div>
 
+<div id="view-overview">
 <!-- Stats Cards -->
 <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
     <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
@@ -37,7 +46,15 @@
 
 <!-- Spend Chart -->
 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
-    <h2 class="text-lg font-semibold text-white mb-4">Spend Over Time</h2>
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-white" id="trendTitle">Spend Over Time</h2>
+        <div class="inline-flex rounded-lg bg-gray-900 p-1">
+            <button type="button" id="metric-cost" onclick="switchMetric('cost')"
+                    class="px-3 py-1 rounded-md text-xs font-medium text-white bg-blue-600">Costs</button>
+            <button type="button" id="metric-tokens" onclick="switchMetric('tokens')"
+                    class="px-3 py-1 rounded-md text-xs font-medium text-gray-400 hover:text-white">Tokens</button>
+        </div>
+    </div>
     {% if summary.daily %}
     <canvas id="spendChart" height="80"></canvas>
     {% else %}
@@ -116,23 +133,56 @@
         </div>
     </div>
 </div>
+</div><!-- /view-overview -->
 
+<!-- Details: Flow diagram -->
+<div id="view-details" class="hidden">
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h2 class="text-lg font-semibold text-white">Request Flow</h2>
+                <p class="text-xs text-gray-500">API Key → Model → Provider</p>
+            </div>
+            <div class="inline-flex rounded-lg bg-gray-900 p-1">
+                <button type="button" id="flow-tokens" onclick="switchFlowMetric('tokens')"
+                        class="px-3 py-1 rounded-md text-xs font-medium text-white bg-blue-600">Tokens</button>
+                <button type="button" id="flow-cost" onclick="switchFlowMetric('cost')"
+                        class="px-3 py-1 rounded-md text-xs font-medium text-gray-400 hover:text-white">Cost</button>
+                <button type="button" id="flow-requests" onclick="switchFlowMetric('requests')"
+                        class="px-3 py-1 rounded-md text-xs font-medium text-gray-400 hover:text-white">Requests</button>
+            </div>
+        </div>
+        {% if flow.links %}
+        <div id="sankey" class="w-full overflow-x-auto"></div>
+        {% else %}
+        <div class="py-12 text-center"><p class="text-gray-400">No flow data for this range.</p></div>
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script>
 const dailyData = {{ summary.daily | tojson }};
-var spendCanvas = document.getElementById('spendChart');
-if (spendCanvas) {
-    new Chart(spendCanvas, {
+const flowData = {{ flow | tojson }};
+
+let spendChart = null;
+let currentMetric = 'cost';
+
+function renderSpendChart(metric) {
+    var spendCanvas = document.getElementById('spendChart');
+    if (!spendCanvas) return;
+    const isCost = metric === 'cost';
+    const values = dailyData.map(d => isCost ? d.cost : d.tokens);
+    const label = isCost ? 'Daily Cost ($)' : 'Daily Tokens';
+    const color = isCost ? '#3b82f6' : '#10b981';
+    const bg = isCost ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)';
+    if (spendChart) spendChart.destroy();
+    spendChart = new Chart(spendCanvas, {
         type: 'line',
         data: {
             labels: dailyData.map(d => d.date),
-            datasets: [{
-                label: 'Daily Cost ($)',
-                data: dailyData.map(d => d.cost),
-                borderColor: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                fill: true,
-                tension: 0.3,
-            }]
+            datasets: [{ label, data: values, borderColor: color, backgroundColor: bg, fill: true, tension: 0.3 }]
         },
         options: {
             responsive: true,
@@ -143,6 +193,103 @@ if (spendCanvas) {
             }
         }
     });
+}
+
+function switchMetric(metric) {
+    currentMetric = metric;
+    document.getElementById('trendTitle').textContent = metric === 'cost' ? 'Spend Over Time' : 'Tokens Over Time';
+    for (const m of ['cost', 'tokens']) {
+        const btn = document.getElementById('metric-' + m);
+        if (!btn) continue;
+        btn.classList.toggle('bg-blue-600', m === metric);
+        btn.classList.toggle('text-white', m === metric);
+        btn.classList.toggle('text-gray-400', m !== metric);
+    }
+    renderSpendChart(metric);
+}
+
+renderSpendChart('cost');
+
+// --- Sankey flow diagram ---
+let flowMetric = 'tokens';
+let sankeyRendered = false;
+
+function renderSankey(metric) {
+    const container = document.getElementById('sankey');
+    if (!container || !window.d3 || !d3.sankey) return;
+    if (!flowData.links || flowData.links.length === 0) return;
+    container.innerHTML = '';
+    const width = Math.max(container.clientWidth || 800, 600);
+    const height = Math.max(120, flowData.nodes.length * 26);
+
+    const svg = d3.select(container).append('svg')
+        .attr('width', width).attr('height', height)
+        .attr('viewBox', [0, 0, width, height]);
+
+    const sankey = d3.sankey()
+        .nodeWidth(14).nodePadding(14)
+        .extent([[8, 8], [width - 8, height - 8]]);
+
+    const graph = sankey({
+        nodes: flowData.nodes.map(d => Object.assign({}, d)),
+        links: flowData.links.map(d => ({ source: d.source, target: d.target, value: Math.max(d[metric] || 0, 0.0000001), _raw: d }))
+    });
+
+    const kindColor = { key: '#a855f7', model: '#3b82f6', provider: '#10b981' };
+
+    svg.append('g').attr('fill', 'none')
+        .selectAll('path').data(graph.links).join('path')
+        .attr('d', d3.sankeyLinkHorizontal())
+        .attr('stroke', d => kindColor[d.source.kind] || '#6b7280')
+        .attr('stroke-opacity', 0.35)
+        .attr('stroke-width', d => Math.max(1, d.width))
+        .append('title')
+        .text(d => {
+            const r = d._raw;
+            return `${d.source.name} → ${d.target.name}\n${r.requests} req · ${r.tokens} tok · $${(r.cost || 0).toFixed(4)}`;
+        });
+
+    const node = svg.append('g').selectAll('g').data(graph.nodes).join('g');
+    node.append('rect')
+        .attr('x', d => d.x0).attr('y', d => d.y0)
+        .attr('height', d => Math.max(1, d.y1 - d.y0)).attr('width', d => d.x1 - d.x0)
+        .attr('fill', d => kindColor[d.kind] || '#9ca3af')
+        .append('title').text(d => d.name);
+    node.append('text')
+        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+        .attr('y', d => (d.y1 + d.y0) / 2)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .attr('fill', '#d1d5db').attr('font-size', '11px')
+        .text(d => d.name);
+    sankeyRendered = true;
+}
+
+function switchFlowMetric(metric) {
+    flowMetric = metric;
+    for (const m of ['tokens', 'cost', 'requests']) {
+        const btn = document.getElementById('flow-' + m);
+        if (!btn) continue;
+        btn.classList.toggle('bg-blue-600', m === metric);
+        btn.classList.toggle('text-white', m === metric);
+        btn.classList.toggle('text-gray-400', m !== metric);
+    }
+    renderSankey(metric);
+}
+
+function switchView(view) {
+    const isOverview = view === 'overview';
+    document.getElementById('view-overview').classList.toggle('hidden', !isOverview);
+    document.getElementById('view-details').classList.toggle('hidden', isOverview);
+    const ov = document.getElementById('tab-overview');
+    const dt = document.getElementById('tab-details');
+    ov.classList.toggle('bg-gray-700', isOverview);
+    ov.classList.toggle('text-white', isOverview);
+    ov.classList.toggle('text-gray-400', !isOverview);
+    dt.classList.toggle('bg-gray-700', !isOverview);
+    dt.classList.toggle('text-white', !isOverview);
+    dt.classList.toggle('text-gray-400', isOverview);
+    if (!isOverview && !sankeyRendered) renderSankey(flowMetric);
 }
 
 const successData = {{ success | tojson }};
