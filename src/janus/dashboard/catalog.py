@@ -7,7 +7,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "openai": {
         "name": "OpenAI",
         "icon": "🟢",
-        "logo": "openai",
+        "logo": "openai.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.openai.com/v1",
         "prefix": "openai",
@@ -16,7 +16,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "anthropic": {
         "name": "Anthropic",
         "icon": "🟠",
-        "logo": "",
+        "logo": "anthropic.svg",
         "api_type": "anthropic",
         "base_url": "https://api.anthropic.com",
         "prefix": "anthropic",
@@ -25,7 +25,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "gemini": {
         "name": "Google Gemini",
         "icon": "🔵",
-        "logo": "googlegemini",
+        "logo": "gemini.svg",
         "api_type": "gemini",
         "base_url": "https://generativelanguage.googleapis.com",
         "prefix": "gemini",
@@ -34,7 +34,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "groq": {
         "name": "Groq",
         "icon": "⚡",
-        "logo": "groq",
+        "logo": "groq.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.groq.com/openai/v1",
         "prefix": "groq",
@@ -43,7 +43,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "together": {
         "name": "Together AI",
         "icon": "🤝",
-        "logo": "togetherdotai",
+        "logo": "together.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.together.xyz/v1",
         "prefix": "together",
@@ -52,7 +52,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "deepseek": {
         "name": "DeepSeek",
         "icon": "🔬",
-        "logo": "deepseek",
+        "logo": "deepseek.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.deepseek.com/v1",
         "prefix": "deepseek",
@@ -61,7 +61,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "openrouter": {
         "name": "OpenRouter",
         "icon": "🔀",
-        "logo": "openrouter",
+        "logo": "openrouter.svg",
         "api_type": "openai_compat",
         "base_url": "https://openrouter.ai/api/v1",
         "prefix": "openrouter",
@@ -70,7 +70,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "mistral": {
         "name": "Mistral",
         "icon": "🌬️",
-        "logo": "mistralai",
+        "logo": "mistral.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.mistral.ai/v1",
         "prefix": "mistral",
@@ -79,7 +79,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "fireworks": {
         "name": "Fireworks",
         "icon": "🎆",
-        "logo": "fireworks",
+        "logo": "fireworks.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.fireworks.ai/inference/v1",
         "prefix": "fireworks",
@@ -88,7 +88,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "perplexity": {
         "name": "Perplexity",
         "icon": "🔍",
-        "logo": "perplexity",
+        "logo": "perplexity.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.perplexity.ai",
         "prefix": "perplexity",
@@ -97,7 +97,7 @@ CATALOG: dict[str, dict[str, Any]] = {
     "xai": {
         "name": "xAI (Grok)",
         "icon": "❌",
-        "logo": "x",
+        "logo": "xai.svg",
         "api_type": "openai_compat",
         "base_url": "https://api.x.ai/v1",
         "prefix": "xai",
@@ -135,3 +135,20 @@ CATALOG: dict[str, dict[str, Any]] = {
 
 def get_catalog() -> dict[str, dict[str, Any]]:
     return copy.deepcopy(CATALOG)
+
+
+def provider_logo_url(filename: str) -> str:
+    return f"/dashboard/static/logos/{filename}"
+
+
+def get_provider_logo_map() -> dict[str, str]:
+    logos: dict[str, str] = {}
+    for key, entry in CATALOG.items():
+        logo = entry.get("logo")
+        if not logo:
+            continue
+        logos[key] = str(logo)
+        prefix = entry.get("prefix")
+        if prefix:
+            logos[str(prefix)] = str(logo)
+    return logos

@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
+from janus.dashboard.catalog import get_provider_logo_map, provider_logo_url
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
@@ -34,6 +35,7 @@ router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
 _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _templates.env.filters["urlencode"] = lambda value: quote(str(value))
+_templates.env.globals["provider_logo_url"] = provider_logo_url
 
 try:
     from importlib.metadata import version as _pkg_version
@@ -164,6 +166,7 @@ async def providers_page(request: Request) -> HTMLResponse:
         "request": request,
         "providers": providers,
         "catalog": catalog,
+        "logo_map": get_provider_logo_map(),
     }
     return _templates.TemplateResponse(request, "providers.html", context)
 
@@ -454,6 +457,7 @@ async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
     context: dict[str, Any] = {
         "request": request,
         "providers": providers,
+        "logo_map": get_provider_logo_map(),
     }
     return _templates.TemplateResponse(request, "providers_partial.html", context)
 
