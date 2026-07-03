@@ -111,6 +111,8 @@ class CanonicalRequest(BaseModel):
     top_p: float | None = None
     stop: list[str] | None = None
     stream: bool = False
+    thinking: dict[str, str] | None = None
+    reasoning_effort: str | None = None
 
 
 class CanonicalResponse(BaseModel):
