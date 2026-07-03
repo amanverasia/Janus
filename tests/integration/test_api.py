@@ -284,7 +284,7 @@ async def test_fallback_on_429(tmp_path):
         models=["m1"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0, data_dir=tmp_path),
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider1, provider2],
     )
     app = create_app(config=cfg)
@@ -333,7 +333,7 @@ async def test_all_providers_exhaustured_returns_503(tmp_path):
         models=["m1"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0, data_dir=tmp_path),
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
     )
     app = create_app(config=cfg)
@@ -364,7 +364,7 @@ async def test_combo_expansion(tmp_path):
         models=["b"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0, data_dir=tmp_path),
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
         combos=[ComboConfig(name="stk", models=["a/b"])],
     )
@@ -414,7 +414,7 @@ async def test_models_lists_combos(tmp_path):
         models=["b"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0, data_dir=tmp_path),
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
         combos=[ComboConfig(name="stk", models=["a/b"])],
     )
@@ -444,7 +444,7 @@ async def test_rtk_compresses_tool_result_before_provider(tmp_path):
         models=["m"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0, data_dir=tmp_path),
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
         token_savers=TokenSaverConfig(rtk=TokenSaverSettings(enabled=True)),
     )
@@ -516,7 +516,7 @@ async def test_usage_recorded_after_request(tmp_path):
         models=["m"],
     )
     cfg = JanusConfig(
-        server=ServerSettings(port=0, data_dir=tmp_path),
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
     )
     app = create_app(config=cfg)

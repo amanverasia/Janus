@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class ServerSettings(BaseModel):
     port: int = 20128
     host: str = "127.0.0.1"
-    require_api_key: bool = False
+    require_api_key: bool = True
     data_dir: Path = Path.home() / ".janus"
 
 

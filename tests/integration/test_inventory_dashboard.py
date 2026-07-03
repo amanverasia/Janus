@@ -86,7 +86,14 @@ async def test_inventory_submit_provisions_routing_provider(client, tmp_path):
 async def test_inventory_import_page(client):
     r = await client.get("/dashboard/inventory/import")
     assert r.status_code == 200
-    assert "Import Upstream Keys" in r.text
+    assert "Expected JSON format" in r.text
+
+
+async def test_routing_page(client):
+    r = await client.get("/dashboard/routing")
+    assert r.status_code == 200
+    assert "Routing" in r.text
+    assert "Combo fallback chains" in r.text
 
 
 async def test_inventory_overview_encryption_panel(client):

@@ -69,6 +69,10 @@ async def _ensure_db(request: Request) -> Path:
 
         await seed_from_config(db_path, request.app.state.config)
 
+        from janus.storage.settings import ensure_server_defaults
+
+        await ensure_server_defaults(db_path)
+
         from janus.dashboard.reload import (
             reload_combos,
             reload_pricing,
@@ -252,6 +256,19 @@ async def combos_page(request: Request) -> HTMLResponse:
         "combos": combos,
     }
     return _templates.TemplateResponse(request, "combos.html", context)
+
+
+@router.get("/routing", response_class=HTMLResponse)
+async def routing_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.routing_overview import get_routing_overview
+
+    overview = await get_routing_overview(db_path)
+    context: dict[str, Any] = {
+        "request": request,
+        "overview": overview,
+    }
+    return _templates.TemplateResponse(request, "routing.html", context)
 
 
 @router.get("/keys", response_class=HTMLResponse)
@@ -965,8 +982,13 @@ async def _pricing_partial(request: Request, db_path: Path) -> HTMLResponse:
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.settings import get_all_settings
+    from janus.storage.settings import (
+        ensure_server_defaults,
+        get_all_settings,
+        require_api_key_enabled,
+    )
 
+    await ensure_server_defaults(db_path)
     settings = await get_all_settings(db_path)
     hidden_keys = {
         SETTINGS_PASSWORD_HASH,
@@ -979,6 +1001,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         "config": request.app.state.config,
         "dashboard_username": settings.get(SETTINGS_USERNAME, ""),
         "dashboard_password_set": bool(settings.get(SETTINGS_PASSWORD_HASH)),
+        "require_api_key_enabled": require_api_key_enabled(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 

@@ -11,6 +11,10 @@ SAVER_SETTING_DEFAULTS: dict[str, str] = {
     "saver_ponytail_level": "full",
 }
 
+SERVER_SETTING_DEFAULTS: dict[str, str] = {
+    "server_require_api_key": "true",
+}
+
 
 async def get_setting(db_path: str | Path, key: str, default: str | None = None) -> str | None:
     async with get_connection(db_path) as db:
@@ -44,6 +48,28 @@ async def ensure_saver_defaults(db_path: str | Path) -> None:
                 (key, value),
             )
         await db.commit()
+
+
+async def ensure_server_defaults(db_path: str | Path) -> None:
+    async with get_connection(db_path) as db:
+        for key, value in SERVER_SETTING_DEFAULTS.items():
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                (key, value),
+            )
+        await db.commit()
+
+
+def resolve_server_settings(settings: dict[str, str]) -> dict[str, str]:
+    resolved = dict(SERVER_SETTING_DEFAULTS)
+    for key in SERVER_SETTING_DEFAULTS:
+        if key in settings:
+            resolved[key] = settings[key]
+    return resolved
+
+
+def require_api_key_enabled(settings: dict[str, str]) -> bool:
+    return resolve_server_settings(settings)["server_require_api_key"].lower() == "true"
 
 
 def resolve_saver_settings(settings: dict[str, str]) -> dict[str, str]:

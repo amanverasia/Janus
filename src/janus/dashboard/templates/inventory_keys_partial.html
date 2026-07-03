@@ -27,6 +27,13 @@
                         Provider{% if sort == 'provider' %} {{ '↓' if direction == 'desc' else '↑' }}{% endif %}
                     </button>
                 </th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <button hx-get="/dashboard/api/inventory/keys/partial?sort=priority&dir={{ sort_toggle(sort, direction, 'priority') }}&limit={{ limit }}&offset=0{% if provider_id %}&provider_id={{ provider_id }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if search %}&search={{ search|urlencode }}{% endif %}"
+                            hx-target="#inventory-keys-content" hx-swap="innerHTML"
+                            class="hover:text-white cursor-pointer">
+                        Priority{% if sort == 'priority' %} {{ '↓' if direction == 'desc' else '↑' }}{% endif %}
+                    </button>
+                </th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Key</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
                     <button hx-get="/dashboard/api/inventory/keys/partial?sort=status&dir={{ sort_toggle(sort, direction, 'status') }}&limit={{ limit }}&offset=0{% if provider_id %}&provider_id={{ provider_id }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if search %}&search={{ search|urlencode }}{% endif %}"
@@ -60,6 +67,7 @@
                     <div>{{ key.provider_display_name }}</div>
                     {% if key.source_node %}<div class="text-xs text-gray-500">{{ key.source_node }}</div>{% endif %}
                 </td>
+                <td class="px-4 py-3 text-sm text-gray-300 font-mono">{{ key.priority or 0 }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 font-mono">
                     <div>{{ key.key_masked }}</div>
                     {% if key.key_label %}<div class="text-xs text-gray-500">{{ key.key_label }}</div>{% endif %}
