@@ -193,3 +193,21 @@ def test_tool_use_in_parse():
     assert tool_msg.role == Role.TOOL
     assert isinstance(tool_msg.content[0], ToolResult)
     assert tool_msg.content[0].tool_use_id == "call_1"
+
+
+def test_build_upstream_anthropic_style_tool_results():
+    """Anthropic tool_result blocks in user messages must become OpenAI role=tool."""
+    from janus.formats.anthropic import AnthropicAdapter
+
+    raw = json.loads((FIXTURES / "anthropic_message_request.json").read_text())
+    req = AnthropicAdapter().parse_request(raw)
+    payload = OpenAIAdapter().build_upstream_request(req, "deepseek-v4-pro")
+
+    tool_msgs = [m for m in payload["messages"] if m.get("role") == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0]["tool_call_id"] == "t1"
+    assert tool_msgs[0]["content"] == "print('hello')"
+
+    assistant_msgs = [m for m in payload["messages"] if m.get("role") == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0]["tool_calls"][0]["id"] == "t1"
