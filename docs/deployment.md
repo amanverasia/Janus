@@ -29,6 +29,23 @@ container. This persists:
 - `config.yaml` — seed config (loaded once on first startup)
 - `janus.db` — SQLite database (providers, combos, usage, inventory, etc.)
 
+The image runs the app as user `janus` (uid **1000**). On first `docker compose up`,
+Docker may create `./janus-data` on the host as **root**, which blocks SQLite from
+opening `janus.db`. The container entrypoint fixes ownership of the mounted data
+directory on each start (no manual `chown` needed).
+
+If you still hit permission errors (e.g. host uid is not 1000), fix ownership once:
+
+```bash
+sudo chown -R 1000:1000 janus-data
+```
+
+Or, without sudo, using a throwaway root container:
+
+```bash
+docker run --rm -u 0 -v "$(pwd)/janus-data:/data" alpine sh -c 'chown -R 1000:1000 /data'
+```
+
 Environment variables from your host `.env` file are passed through for
 `${ENV_VAR}` resolution in config:
 
