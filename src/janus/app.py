@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from janus.api.routes import gemini_router, router
 from janus.config.schema import JanusConfig, ProviderConfig
@@ -104,6 +106,13 @@ def create_app(
     app.include_router(dashboard_router, prefix="/dashboard")
     app.include_router(inventory_router, prefix="/dashboard")
     app.include_router(inventory_push_router, prefix="/dashboard/api/inventory")
+
+    dashboard_static = Path(__file__).parent / "dashboard" / "static"
+    app.mount(
+        "/dashboard/static",
+        StaticFiles(directory=str(dashboard_static)),
+        name="dashboard_static",
+    )
 
     @app.get("/")
     async def root_redirect() -> RedirectResponse:

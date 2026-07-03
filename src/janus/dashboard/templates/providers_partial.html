@@ -1,9 +1,3 @@
-{% set logo_map = {
-    'openai': 'openai', 'gemini': 'googlegemini',
-    'groq': 'groq', 'together': 'togetherdotai', 'deepseek': 'deepseek',
-    'openrouter': 'openrouter', 'mistral': 'mistralai', 'fireworks': 'fireworks',
-    'perplexity': 'perplexity', 'xai': 'x'
-} %}
 {% set icon_map = {
     'openai': '🟢', 'anthropic': '🟠', 'gemini': '🔵',
     'groq': '⚡', 'together': '🤝', 'deepseek': '🔬',
@@ -20,7 +14,7 @@
                 <div class="flex items-center justify-center w-8 h-8">
                     {% set logo_slug = logo_map.get(provider.id, '') or logo_map.get(provider.prefix, '') %}
                     {% if logo_slug %}
-                    <img src="https://cdn.simpleicons.org/{{ logo_slug }}/white" alt="{{ provider.id }}" class="w-6 h-6" style="filter: invert(1) brightness(2)">
+                    <img src="{{ provider_logo_url(logo_slug) }}" alt="{{ provider.id }}" class="w-6 h-6" style="filter: invert(1) brightness(2)">
                     {% else %}
                     <span class="text-2xl">{{ icon_map.get(provider.id, icon_map.get(provider.prefix, '⚙️')) }}</span>
                     {% endif %}

@@ -33,7 +33,7 @@
                         class="bg-gray-900 hover:bg-gray-700 border border-gray-700 rounded-lg p-3 text-center transition-colors">
                     <div class="mb-1 flex items-center justify-center h-7">
                         {% if entry.logo %}
-                        <img src="https://cdn.simpleicons.org/{{ entry.logo }}/white" alt="{{ entry.name }}" class="h-6 w-6" style="filter: invert(1) brightness(2)">
+                        <img src="{{ provider_logo_url(entry.logo) }}" alt="{{ entry.name }}" class="h-6 w-6" style="filter: invert(1) brightness(2)">
                         {% else %}
                         <span class="text-2xl">{{ entry.icon }}</span>
                         {% endif %}
