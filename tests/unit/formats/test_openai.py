@@ -25,6 +25,12 @@ from janus.formats.openai import OpenAIAdapter
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 
 
+def _oai_chunk(**kwargs: object) -> str:
+    base: dict[str, object] = {"id": "r1", "object": "chat.completion.chunk"}
+    base.update(kwargs)
+    return json.dumps(base, separators=(",", ":"))
+
+
 def test_parse_simple_chat_request():
     raw = json.loads((FIXTURES / "openai_chat_request.json").read_text())
     req = OpenAIAdapter().parse_request(raw)
@@ -247,3 +253,104 @@ def test_build_upstream_inserts_missing_openai_tool_responses() -> None:
     assert len(tool_msgs) == 1
     assert tool_msgs[0]["tool_call_id"] == "c1"
     assert tool_msgs[0]["content"] == "[No response received]"
+
+
+def test_parse_thinking_from_extra_body() -> None:
+    raw = {
+        "model": "deepseek/deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "hi"}],
+        "extra_body": {"thinking": {"type": "disabled"}},
+    }
+    req = OpenAIAdapter().parse_request(raw)
+    assert req.thinking == {"type": "disabled"}
+
+
+def test_parse_thinking_and_reasoning_effort_top_level() -> None:
+    raw = {
+        "model": "deepseek/deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "hi"}],
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
+    req = OpenAIAdapter().parse_request(raw)
+    assert req.thinking == {"type": "enabled"}
+    assert req.reasoning_effort == "max"
+
+
+def test_build_upstream_passes_thinking_for_deepseek() -> None:
+    req = CanonicalRequest(
+        model="deepseek/deepseek-v4-pro",
+        messages=[Message(role=Role.USER, content="hi")],
+        thinking={"type": "enabled"},
+        reasoning_effort="high",
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "deepseek-v4-pro")
+    assert payload["thinking"] == {"type": "enabled"}
+    assert payload["reasoning_effort"] == "high"
+
+
+def test_build_upstream_skips_thinking_for_non_deepseek() -> None:
+    req = CanonicalRequest(
+        model="openai/gpt-4o",
+        messages=[Message(role=Role.USER, content="hi")],
+        thinking={"type": "enabled"},
+        reasoning_effort="high",
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "gpt-4o")
+    assert "thinking" not in payload
+    assert payload["reasoning_effort"] == "high"
+
+
+def test_parse_upstream_stream_reasoning_content() -> None:
+    parser = OpenAIAdapter().stream_parser()
+    lines = [
+        _oai_chunk(choices=[{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]),
+        _oai_chunk(
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {"reasoning_content": "Let me think"},
+                    "finish_reason": None,
+                }
+            ]
+        ),
+        _oai_chunk(
+            choices=[
+                {
+                    "index": 0,
+                    "delta": {"reasoning_content": " about this."},
+                    "finish_reason": None,
+                }
+            ]
+        ),
+        _oai_chunk(choices=[{"index": 0, "delta": {"content": "Answer"}, "finish_reason": None}]),
+        _oai_chunk(choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}]),
+        "[DONE]",
+    ]
+    from janus.canonical.events import ReasoningDelta
+
+    all_events: list = []
+    for line in lines:
+        all_events.extend(parser.feed(line))
+    all_events.extend(parser.finish())
+
+    reasoning = "".join(e.text for e in all_events if isinstance(e, ReasoningDelta))
+    assert reasoning == "Let me think about this."
+
+
+def test_emit_stream_reasoning_content() -> None:
+    from janus.canonical.events import ReasoningBlockStart, ReasoningDelta
+
+    emitter = OpenAIAdapter().stream_emitter()
+    events = [
+        MessageStart(model="deepseek-v4-pro"),
+        ReasoningBlockStart(index=0),
+        ReasoningDelta(index=0, text="Thinking"),
+        MessageStop(),
+    ]
+    chunks = []
+    for ev in events:
+        chunks.extend(emitter.feed(ev))
+    output = b"".join(chunks).decode()
+    assert "reasoning_content" in output
+    assert "Thinking" in output

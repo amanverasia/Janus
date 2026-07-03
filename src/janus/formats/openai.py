@@ -11,6 +11,8 @@ from janus.canonical.events import (
     MessageDelta,
     MessageStart,
     MessageStop,
+    ReasoningBlockStart,
+    ReasoningDelta,
     TextBlockStart,
     TextDelta,
     ToolUseBlockStart,
@@ -53,6 +55,8 @@ class OpenAIStreamParser:
         self._started = False
         self._text_started = False
         self._text_index = 0
+        self._reasoning_started = False
+        self._reasoning_index = 0
         self._tool_map: dict[int, int] = {}
         self._next_block = 0
         self._done = False
@@ -111,6 +115,15 @@ class OpenAIStreamParser:
                 events.append(TextBlockStart(index=self._text_index))
             events.append(TextDelta(index=self._text_index, text=content))
 
+        reasoning = delta.get("reasoning_content")
+        if reasoning is not None:
+            if not self._reasoning_started:
+                self._reasoning_started = True
+                self._reasoning_index = self._next_block
+                self._next_block += 1
+                events.append(ReasoningBlockStart(index=self._reasoning_index))
+            events.append(ReasoningDelta(index=self._reasoning_index, text=reasoning))
+
         tool_calls = delta.get("tool_calls")
         if tool_calls:
             for tc in tool_calls:
@@ -134,6 +147,9 @@ class OpenAIStreamParser:
                     events.append(InputJsonDelta(index=self._tool_map[oai_idx], partial_json=args))
 
         if finish_reason is not None:
+            if self._reasoning_started:
+                events.append(BlockStop(index=self._reasoning_index))
+                self._reasoning_started = False
             if self._text_started:
                 events.append(BlockStop(index=self._text_index))
                 self._text_started = False
@@ -202,6 +218,12 @@ class OpenAIStreamEmitter:
 
         if isinstance(event, TextDelta):
             return [self._make_chunk({"content": event.text})]
+
+        if isinstance(event, ReasoningBlockStart):
+            return []
+
+        if isinstance(event, ReasoningDelta):
+            return [self._make_chunk({"reasoning_content": event.text})]
 
         if isinstance(event, InputJsonDelta):
             oai_idx = self._tool_indices.get(event.index, 0)
@@ -276,6 +298,8 @@ class OpenAIAdapter:
         temperature = raw.get("temperature")
         top_p = raw.get("top_p")
         stop = raw.get("stop")
+        reasoning_effort_raw = raw.get("reasoning_effort")
+        reasoning_effort = str(reasoning_effort_raw) if reasoning_effort_raw is not None else None
 
         return CanonicalRequest(
             model=model,
@@ -287,7 +311,23 @@ class OpenAIAdapter:
             top_p=float(top_p) if top_p is not None else None,
             stop=list(stop) if isinstance(stop, list) else None,
             stream=bool(raw.get("stream", False)),
+            thinking=self._parse_thinking(raw),
+            reasoning_effort=reasoning_effort,
         )
+
+    @staticmethod
+    def _parse_thinking(raw: dict[str, Any]) -> dict[str, str] | None:
+        thinking = raw.get("thinking")
+        if thinking is None:
+            extra = raw.get("extra_body")
+            if isinstance(extra, dict):
+                thinking = extra.get("thinking")
+        if not isinstance(thinking, dict):
+            return None
+        mode = thinking.get("type")
+        if mode in ("enabled", "disabled"):
+            return {"type": mode}
+        return None
 
     @staticmethod
     def _parse_content_parts(msg: dict[str, Any]) -> list[ContentPart]:
@@ -376,6 +416,10 @@ class OpenAIAdapter:
             payload["stop"] = req.stop
         if req.tools:
             payload["tools"] = [self._build_tool_def(t) for t in req.tools]
+        if req.thinking is not None and "deepseek" in model.lower():
+            payload["thinking"] = req.thinking
+        if req.reasoning_effort is not None:
+            payload["reasoning_effort"] = req.reasoning_effort
         return payload
 
     def _build_upstream_messages(self, msg: Message) -> list[dict[str, Any]]:

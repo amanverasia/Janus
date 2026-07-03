@@ -30,6 +30,17 @@ class TextDelta(BaseModel):
     text: str
 
 
+class ReasoningBlockStart(BaseModel):
+    type: Literal["reasoning_block_start"] = "reasoning_block_start"
+    index: int
+
+
+class ReasoningDelta(BaseModel):
+    type: Literal["reasoning_delta"] = "reasoning_delta"
+    index: int
+    text: str
+
+
 class InputJsonDelta(BaseModel):
     type: Literal["input_json_delta"] = "input_json_delta"
     index: int
@@ -56,6 +67,8 @@ CanonicalEvent = Annotated[
     | TextBlockStart
     | ToolUseBlockStart
     | TextDelta
+    | ReasoningBlockStart
+    | ReasoningDelta
     | InputJsonDelta
     | BlockStop
     | MessageDelta
