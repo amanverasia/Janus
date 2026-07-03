@@ -28,6 +28,8 @@ BUILTIN_PRICING: dict[str, ModelPricing] = {
     # DeepSeek
     "deepseek-chat": ModelPricing(0.27, 1.1, 0.0, 0.07),
     "deepseek-reasoner": ModelPricing(0.55, 2.19, 0.0, 0.14),
+    "deepseek-v4-pro": ModelPricing(0.435, 0.87, 0.0, 0.003625),
+    "deepseek-v4-flash": ModelPricing(0.14, 0.28, 0.0, 0.0028),
     # Meta / others
     "llama-3.3-70b-instruct": ModelPricing(0.6, 0.6, 0.0, 0.0),
     "llama-3.1-405b-instruct": ModelPricing(3.0, 3.0, 0.0, 0.0),
