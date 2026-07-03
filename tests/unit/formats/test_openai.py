@@ -289,6 +289,37 @@ def test_build_upstream_passes_thinking_for_deepseek() -> None:
     assert payload["reasoning_effort"] == "high"
 
 
+def test_parse_reasoning_effort_xhigh_from_extra_body() -> None:
+    raw = {
+        "model": "deepseek/deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "hi"}],
+        "extra_body": {"reasoning_effort": "xhigh", "thinking": {"type": "enabled"}},
+    }
+    req = OpenAIAdapter().parse_request(raw)
+    assert req.reasoning_effort == "xhigh"
+
+
+def test_parse_reasoning_effort_max_from_output_config() -> None:
+    raw = {
+        "model": "deepseek/deepseek-v4-pro",
+        "messages": [{"role": "user", "content": "hi"}],
+        "output_config": {"effort": "max"},
+    }
+    req = OpenAIAdapter().parse_request(raw)
+    assert req.reasoning_effort == "max"
+
+
+def test_build_upstream_passes_xhigh_reasoning_effort_for_deepseek() -> None:
+    req = CanonicalRequest(
+        model="deepseek/deepseek-v4-pro",
+        messages=[Message(role=Role.USER, content="hi")],
+        thinking={"type": "enabled"},
+        reasoning_effort="xhigh",
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "deepseek-v4-pro")
+    assert payload["reasoning_effort"] == "xhigh"
+
+
 def test_build_upstream_skips_thinking_for_non_deepseek() -> None:
     req = CanonicalRequest(
         model="openai/gpt-4o",
