@@ -860,6 +860,23 @@ async def api_get_upstream_key_json(request: Request, key_id: str) -> JSONRespon
     )
 
 
+@router.post("/api/inventory/keys/{key_id}/priority", response_class=HTMLResponse)
+async def api_update_upstream_key_priority(
+    request: Request,
+    key_id: str,
+    priority: int = Form(0),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    detail = await get_upstream_key_detail(db_path, key_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    await update_upstream_key(db_path, key_id, {"priority": max(0, priority)})
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await api_upstream_key_detail_partial(request, key_id)
+
+
 @router.get("/api/inventory/keys/{key_id}/partial", response_class=HTMLResponse)
 async def api_upstream_key_detail_partial(request: Request, key_id: str) -> HTMLResponse:
     db_path = await _ensure_db(request)

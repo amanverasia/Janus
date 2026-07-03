@@ -102,12 +102,18 @@
         <div class="flex items-center justify-between gap-4">
             <div class="flex-1 min-w-0">
                 <h2 class="text-lg font-bold text-white">Require API Key</h2>
-                <p class="text-gray-400 text-sm mt-1">When enabled, all API requests must include a valid Janus API key. Takes effect immediately.</p>
+                <p class="text-gray-400 text-sm mt-1">
+                    When enabled, all API requests must include a valid Janus API key. Takes effect immediately.
+                </p>
+                <p class="text-amber-400/90 text-xs mt-2">
+                    Default is on. Keep enabled when this server is reachable on the network.
+                </p>
             </div>
-            {% set rak = settings.server_require_api_key or ('true' if config.server.require_api_key else 'false') %}
             <label class="janus-toggle">
                 <input type="checkbox"
-                       {% if rak == 'true' %}checked{% endif %}
+                       id="require-api-key-toggle"
+                       {% if require_api_key_enabled %}checked{% endif %}
+                       onclick="return confirmRequireApiKeyToggle(event, this)"
                        hx-post="/dashboard/api/settings"
                        hx-swap="none"
                        hx-trigger="change"
@@ -179,4 +185,25 @@
         </div>
     </div>
 </div>
+
+<script>
+function confirmRequireApiKeyToggle(event, el) {
+    if (!el.checked) {
+        return true;
+    }
+    if (!confirm(
+        "Disable API key requirement?\n\nAnyone who can reach this server can use your gateway without authentication."
+    )) {
+        event.preventDefault();
+        return false;
+    }
+    if (!confirm(
+        "FINAL WARNING: This machine is exposed on the network.\n\nDisabling API key auth leaves your gateway open to the internet. Are you absolutely sure?"
+    )) {
+        event.preventDefault();
+        return false;
+    }
+    return true;
+}
+</script>
 {% endblock %}

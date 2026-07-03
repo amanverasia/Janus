@@ -40,6 +40,24 @@
             </p>
         </div>
         <div class="bg-gray-900 rounded-lg p-3 border border-gray-700">
+            <p class="text-xs text-gray-500 uppercase">Priority</p>
+            <form class="mt-2 flex items-center gap-2"
+                  hx-post="/dashboard/api/inventory/keys/{{ key.id }}/priority"
+                  hx-target="#key-detail-body"
+                  hx-swap="innerHTML">
+                <input type="number" name="priority" value="{{ key.priority or 0 }}" min="0" max="9999"
+                       class="w-24 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-sm">
+                <button type="submit"
+                        class="px-2 py-1 text-xs border border-gray-600 rounded hover:bg-gray-700 cursor-pointer">
+                    Save
+                </button>
+            </form>
+            <p class="text-xs text-gray-500 mt-1">Higher = tried first.</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-2 gap-3">
+        <div class="bg-gray-900 rounded-lg p-3 border border-gray-700">
             <p class="text-xs text-gray-500 uppercase">Rate limits</p>
             <p class="text-white mt-1 text-xs">
                 RPM {{ key.rate_limit_rpm or '—' }} · TPM {{ key.rate_limit_tpm or '—' }}

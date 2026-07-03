@@ -5,7 +5,7 @@ def test_server_defaults():
     s = ServerSettings()
     assert s.port == 20128
     assert s.host == "127.0.0.1"
-    assert s.require_api_key is False
+    assert s.require_api_key is True
 
 
 def test_provider_config_validation():

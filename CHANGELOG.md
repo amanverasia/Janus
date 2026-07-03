@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-03
+
+### Added
+- **Routing** dashboard page (`/dashboard/routing`) — visualizes provider account try-order, priority, credits, cooldowns, and combo fallback chains
+- Inventory key **priority** column, sort, and editable priority in key detail modal
+
+### Changed
+- `require_api_key` defaults to **on** (config, CLI template, DB seed)
+- Disabling Require API Key in Settings requires **two confirmation dialogs**
+
 ## [1.0.0] - 2026-07-03
 
 First stable release. Janus is a local-first AI routing gateway with multi-provider

@@ -14,7 +14,7 @@ TEMPLATE_YAML = """# Janus configuration
 server:
   port: 20128
   host: 127.0.0.1
-  require_api_key: false
+  require_api_key: true
 
 providers:
   # - id: glm

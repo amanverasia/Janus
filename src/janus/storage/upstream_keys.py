@@ -22,6 +22,7 @@ SORT_COLUMNS: dict[str, str] = {
     "status": "k.status",
     "rate_limit": "k.rate_limit_rpm",
     "last_checked": "k.last_checked_at",
+    "priority": "k.priority",
 }
 
 DEFAULT_PAGE_SIZE = 25

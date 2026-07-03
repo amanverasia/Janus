@@ -39,7 +39,7 @@ async def test_cost_recorded_for_non_streaming(tmp_path):
         models=["gpt-4o"],
     )
     config = JanusConfig(
-        server=ServerSettings(data_dir=tmp_path),
+        server=ServerSettings(data_dir=tmp_path, require_api_key=False),
         providers=[provider],
     )
     app = create_app(config=config)
@@ -96,7 +96,7 @@ async def test_cost_recorded_for_streaming(tmp_path):
         models=["gpt-4o"],
     )
     config = JanusConfig(
-        server=ServerSettings(data_dir=tmp_path),
+        server=ServerSettings(data_dir=tmp_path, require_api_key=False),
         providers=[provider],
     )
     app = create_app(config=config)
@@ -163,7 +163,7 @@ async def test_cost_recorded_for_streaming_tiktoken_fallback(tmp_path):
         models=["gpt-4o"],
     )
     config = JanusConfig(
-        server=ServerSettings(data_dir=tmp_path),
+        server=ServerSettings(data_dir=tmp_path, require_api_key=False),
         providers=[provider],
     )
     app = create_app(config=config)
