@@ -350,7 +350,7 @@ class OpenAIAdapter:
         for block in req.system:
             messages.append({"role": "system", "content": block.text})
         for msg in req.messages:
-            messages.append(self._build_message(msg))
+            messages.extend(self._build_upstream_messages(msg))
 
         payload: dict[str, Any] = {"model": model, "messages": messages}
         if req.stream:
@@ -368,6 +368,33 @@ class OpenAIAdapter:
             payload["tools"] = [self._build_tool_def(t) for t in req.tools]
         return payload
 
+    def _build_upstream_messages(self, msg: Message) -> list[dict[str, Any]]:
+        if msg.role == Role.TOOL:
+            return [self._build_message(msg)]
+
+        tool_results: list[ToolResult] = []
+        if isinstance(msg.content, list):
+            tool_results = [p for p in msg.content if isinstance(p, ToolResult)]
+        if not tool_results:
+            return [self._build_message(msg)]
+
+        non_result: str | list[ContentPart]
+        if isinstance(msg.content, list):
+            non_result = [p for p in msg.content if not isinstance(p, ToolResult)]
+        else:
+            non_result = msg.content
+        built = self._build_message(Message(role=msg.role, content=non_result))
+
+        out: list[dict[str, Any]] = []
+        content = built.get("content")
+        if content not in (None, "", []) or built.get("tool_calls"):
+            out.append(built)
+        for tr in tool_results:
+            out.append(
+                {"role": "tool", "tool_call_id": tr.tool_use_id, "content": tr.content},
+            )
+        return out
+
     def _build_message(self, msg: Message) -> dict[str, Any]:
         if msg.role == Role.TOOL:
             parts = msg.content if isinstance(msg.content, list) else []
@@ -381,7 +408,11 @@ class OpenAIAdapter:
             content = msg.content
         else:
             tool_uses = [p for p in msg.content if isinstance(p, ToolUse)]
-            non_tool = [p for p in msg.content if not isinstance(p, ToolUse)]
+            non_tool = [
+                p
+                for p in msg.content
+                if not isinstance(p, ToolUse) and not isinstance(p, ToolResult)
+            ]
             if not non_tool:
                 content = None
             elif all(isinstance(p, TextPart) for p in non_tool):

@@ -81,7 +81,13 @@
                     {% endif %}
                 </div>
                 {% if account.key_id %}
-                <a href="/dashboard/inventory/keys" class="text-xs text-blue-400 hover:text-blue-300">keys</a>
+                <button hx-get="/dashboard/api/inventory/keys/{{ account.key_id }}/partial"
+                        hx-target="#key-detail-body"
+                        hx-swap="innerHTML"
+                        onclick="document.getElementById('key-detail-modal').classList.remove('hidden')"
+                        class="px-2 py-1 text-xs border border-gray-600 rounded text-gray-300 hover:bg-gray-700 cursor-pointer shrink-0">
+                    View
+                </button>
                 {% endif %}
             </li>
             {% endfor %}
@@ -127,5 +133,9 @@
         No combos configured. <a href="/dashboard/combos" class="text-blue-400 hover:text-blue-300">Create one</a>.
     </div>
     {% endif %}
+</div>
+
+<div id="key-detail-modal" class="hidden">
+    {% include "inventory_key_detail_modal.html" %}
 </div>
 {% endblock %}
