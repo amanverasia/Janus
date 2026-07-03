@@ -9,6 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from janus.canonical.tool_calls import prepare_tool_messages
 from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.base import FormatAdapter
 from janus.formats.gemini import GeminiAdapter
@@ -99,6 +100,9 @@ async def _handle(
 
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
     canonical_req = saver_pipeline.apply(canonical_req)
+    canonical_req = canonical_req.model_copy(
+        update={"messages": prepare_tool_messages(canonical_req.messages)},
+    )
 
     try:
         attempts = handler.resolve_attempts(canonical_req.model)

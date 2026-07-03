@@ -277,6 +277,23 @@ class AnthropicAdapter:
         )
 
     @staticmethod
+    def _parse_tool_result_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            if text_parts:
+                return "\n".join(text_parts)
+            return json.dumps(content)
+        if content is None:
+            return ""
+        return json.dumps(content)
+
+    @staticmethod
     def _parse_content_parts(content: Any) -> list[ContentPart]:
         if content is None:
             return []
@@ -301,7 +318,7 @@ class AnthropicAdapter:
                 parts.append(
                     ToolResult(
                         tool_use_id=part.get("tool_use_id", ""),
-                        content=part.get("content", ""),
+                        content=AnthropicAdapter._parse_tool_result_content(part.get("content")),
                     )
                 )
             elif ptype == "image":

@@ -211,3 +211,39 @@ def test_build_upstream_anthropic_style_tool_results():
     assistant_msgs = [m for m in payload["messages"] if m.get("role") == "assistant"]
     assert len(assistant_msgs) == 1
     assert assistant_msgs[0]["tool_calls"][0]["id"] == "t1"
+
+
+def test_build_upstream_mixed_tool_result_before_user_text() -> None:
+    req = CanonicalRequest(
+        model="deepseek-v4-pro",
+        messages=[
+            Message(
+                role=Role.USER,
+                content=[
+                    TextPart(text="also"),
+                    ToolResult(tool_use_id="t1", content="result"),
+                ],
+            ),
+        ],
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "deepseek-v4-pro")
+    roles = [m["role"] for m in payload["messages"]]
+    assert roles.index("tool") < roles.index("user")
+
+
+def test_build_upstream_inserts_missing_openai_tool_responses() -> None:
+    req = CanonicalRequest(
+        model="deepseek-v4-pro",
+        messages=[
+            Message(
+                role=Role.ASSISTANT,
+                content=[ToolUse(id="c1", name="read", input={})],
+            ),
+            Message(role=Role.USER, content=[TextPart(text="continue")]),
+        ],
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "deepseek-v4-pro")
+    tool_msgs = [m for m in payload["messages"] if m.get("role") == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0]["tool_call_id"] == "c1"
+    assert tool_msgs[0]["content"] == "[No response received]"
