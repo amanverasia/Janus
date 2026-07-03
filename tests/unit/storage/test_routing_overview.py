@@ -37,7 +37,11 @@ async def test_get_routing_overview_orders_inventory_keys(tmp_path) -> None:
     )
     low = await create_upstream_key(db_path, provider_id="openai", key_value="sk-low-priority")
     high = await create_upstream_key(db_path, provider_id="openai", key_value="sk-high-priority")
-    await update_upstream_key(db_path, low["id"], {"status": "active", "is_valid": 1, "is_usable": 1})
+    await update_upstream_key(
+        db_path,
+        low["id"],
+        {"status": "active", "is_valid": 1, "is_usable": 1},
+    )
     await update_upstream_key(
         db_path,
         high["id"],
