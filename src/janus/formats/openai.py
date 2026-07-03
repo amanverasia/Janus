@@ -299,9 +299,7 @@ class OpenAIAdapter:
         top_p = raw.get("top_p")
         stop = raw.get("stop")
         reasoning_effort_raw = raw.get("reasoning_effort")
-        reasoning_effort = (
-            str(reasoning_effort_raw) if reasoning_effort_raw is not None else None
-        )
+        reasoning_effort = str(reasoning_effort_raw) if reasoning_effort_raw is not None else None
 
         return CanonicalRequest(
             model=model,

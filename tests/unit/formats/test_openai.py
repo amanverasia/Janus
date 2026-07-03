@@ -323,9 +323,7 @@ def test_parse_upstream_stream_reasoning_content() -> None:
                 }
             ]
         ),
-        _oai_chunk(
-            choices=[{"index": 0, "delta": {"content": "Answer"}, "finish_reason": None}]
-        ),
+        _oai_chunk(choices=[{"index": 0, "delta": {"content": "Answer"}, "finish_reason": None}]),
         _oai_chunk(choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}]),
         "[DONE]",
     ]
