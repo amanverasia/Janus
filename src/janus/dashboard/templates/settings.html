@@ -215,18 +215,20 @@
 
 <script>
 function confirmRequireApiKeyToggle(event, el) {
-    if (!el.checked) {
+    if (el.checked) {
         return true;
     }
     if (!confirm(
         "Disable API key requirement?\n\nAnyone who can reach this server can use your gateway without authentication."
     )) {
+        el.checked = true;
         event.preventDefault();
         return false;
     }
     if (!confirm(
-        "FINAL WARNING: This machine is exposed on the network.\n\nDisabling API key auth leaves your gateway open to the internet. Are you absolutely sure?"
+        "FINAL WARNING: This machine may be exposed on the network.\n\nDisabling API key auth leaves your gateway open. Are you absolutely sure?"
     )) {
+        el.checked = true;
         event.preventDefault();
         return false;
     }
