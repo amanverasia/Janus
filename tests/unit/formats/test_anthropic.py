@@ -35,6 +35,33 @@ def test_parse_message_request():
     assert req.messages[2].content[0].tool_use_id == "t1"
 
 
+def test_parse_tool_result_array_content() -> None:
+    req = AnthropicAdapter().parse_request(
+        {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1024,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "t1",
+                            "content": [
+                                {"type": "text", "text": "line1"},
+                                {"type": "text", "text": "line2"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    tool_result = req.messages[0].content[0]
+    assert isinstance(tool_result, ToolResult)
+    assert tool_result.content == "line1\nline2"
+
+
 def test_build_upstream_request():
     req = CanonicalRequest(
         model="claude-sonnet-4-20250514",

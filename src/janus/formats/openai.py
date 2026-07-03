@@ -31,6 +31,7 @@ from janus.canonical.models import (
     ToolUse,
     Usage,
 )
+from janus.canonical.tool_calls import fix_missing_tool_responses_openai
 from janus.streaming.sse import encode_done, encode_sse
 
 _FINISH_TO_STOP: dict[str, str] = {
@@ -351,6 +352,7 @@ class OpenAIAdapter:
             messages.append({"role": "system", "content": block.text})
         for msg in req.messages:
             messages.extend(self._build_upstream_messages(msg))
+        fix_missing_tool_responses_openai(messages)
 
         payload: dict[str, Any] = {"model": model, "messages": messages}
         if req.stream:
@@ -386,13 +388,13 @@ class OpenAIAdapter:
         built = self._build_message(Message(role=msg.role, content=non_result))
 
         out: list[dict[str, Any]] = []
-        content = built.get("content")
-        if content not in (None, "", []) or built.get("tool_calls"):
-            out.append(built)
         for tr in tool_results:
             out.append(
                 {"role": "tool", "tool_call_id": tr.tool_use_id, "content": tr.content},
             )
+        content = built.get("content")
+        if content not in (None, "", []) or built.get("tool_calls"):
+            out.append(built)
         return out
 
     def _build_message(self, msg: Message) -> dict[str, Any]:
