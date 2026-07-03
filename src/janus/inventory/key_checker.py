@@ -425,7 +425,7 @@ def _parse_credit_check_response(
             result["credits_remaining"] = remaining_usd
             result["credits_total"] = total_usd
             result["credits_used"] = used_usd
-            meta: dict[str, Any] = {}
+            meta = {}
             if cash or voucher:
                 meta["cash_balance"] = cash
                 meta["voucher_balance"] = voucher

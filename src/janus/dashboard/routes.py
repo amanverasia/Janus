@@ -824,7 +824,11 @@ async def _combos_partial(request: Request, db_path: Path) -> HTMLResponse:
 
 
 async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
-    from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
+    from janus.storage.settings import (
+        ensure_saver_defaults,
+        get_all_settings,
+        resolve_saver_settings,
+    )
 
     await ensure_saver_defaults(db_path)
     settings = resolve_saver_settings(await get_all_settings(db_path))

@@ -66,8 +66,8 @@ def test_preview_unidentified_keys() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_creates_routing_provider(tmp_path) -> None:
-    from janus.storage.database import init_db
     from janus.routing.provider_provision import ensure_routing_providers
+    from janus.storage.database import init_db
     from janus.storage.providers_db import get_provider
 
     db_path = tmp_path / "janus.db"
