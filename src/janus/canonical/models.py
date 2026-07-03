@@ -51,6 +51,7 @@ ContentPart = Annotated[
 class Message(BaseModel):
     role: Role
     content: str | list[ContentPart]
+    reasoning_content: str | None = None
 
 
 class SystemBlock(BaseModel):
@@ -118,3 +119,4 @@ class CanonicalResponse(BaseModel):
     content: list[ContentPart]
     stop_reason: str | None = None
     usage: Usage = Field(default_factory=Usage)
+    reasoning_content: str | None = None

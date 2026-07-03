@@ -135,3 +135,14 @@ def fix_missing_tool_responses_openai(messages: list[dict[str, Any]]) -> None:
                 messages.insert(insert_position + offset, response)
             i = insert_position + len(missing_responses) - 1
         i += 1
+
+
+def inject_reasoning_content_openai(messages: list[dict[str, Any]], model: str) -> None:
+    if "deepseek" not in model.lower():
+        return
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        rc = msg.get("reasoning_content")
+        if rc is None or rc == "":
+            msg["reasoning_content"] = " "
