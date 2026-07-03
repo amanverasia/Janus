@@ -10,10 +10,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         body { background-color: #111827; }
+        #sidebar-overlay { display: none; }
         @media (max-width: 768px) {
             #sidebar { position: fixed; left: -100%; transition: left 0.3s ease; z-index: 50; height: 100vh; }
             #sidebar.open { left: 0; }
-            #sidebar-overlay { display: none; }
             #sidebar-overlay.open { display: block; }
         }
     </style>
