@@ -7,6 +7,12 @@ from fastapi import Request
 from janus.storage.settings import get_setting
 
 
+def _label_for_config_key(key: str) -> str:
+    from janus.inventory.url_guard import mask_key
+
+    return f"Config ({mask_key(key)})"
+
+
 def extract_api_key(
     request: Request,
     authorization: str = "",
@@ -36,6 +42,7 @@ async def authenticate_api_key(request: Request, key: str | None) -> bool:
     if not key:
         return False
     if key in request.app.state.config.api_keys:
+        request.state.client_key_label = _label_for_config_key(key)
         return True
     from janus.storage.api_keys import verify_key
 

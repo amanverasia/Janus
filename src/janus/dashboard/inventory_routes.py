@@ -21,6 +21,10 @@ from janus.inventory.migrate import import_dashboard_json, verify_inventory
 from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 from janus.inventory.reclassify import reclassify_upstream_keys
+from janus.routing.provider_provision import (
+    build_provision_preview,
+    ensure_routing_providers,
+)
 from janus.storage.inventory_overview import (
     get_best_upstream_keys,
     get_credit_summary,
@@ -30,6 +34,7 @@ from janus.storage.inventory_overview import (
     get_top_keys_per_provider,
 )
 from janus.storage.inventory_providers import list_inventory_providers
+from janus.storage.providers_db import list_providers
 from janus.storage.upstream_keys import (
     DEFAULT_PAGE_SIZE,
     SORT_COLUMNS,
@@ -346,12 +351,59 @@ async def api_inventory_keys_partial(
     )
 
 
+@router.post("/api/inventory/preview", response_class=HTMLResponse)
+async def api_inventory_preview(
+    request: Request,
+    keys_text: str = Form(...),
+    provider_id: str = Form("auto"),
+    custom_base_url: str = Form(""),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    entries = [KeyIngestEntry(key=entry["key"]) for entry in _parse_bulk_keys(keys_text)]
+    batch_error = enforce_batch_size(len(entries))
+    if batch_error:
+        return _templates.TemplateResponse(
+            request,
+            "inventory_add_results.html",
+            {"request": request, "results": [], "error": batch_error},
+        )
+    if not entries:
+        return _templates.TemplateResponse(
+            request,
+            "inventory_add_results.html",
+            {"request": request, "results": [], "error": "No keys found in input."},
+        )
+
+    existing = await list_providers(db_path)
+    preview = build_provision_preview(
+        entries,
+        chosen_provider=provider_id,
+        existing_providers=existing,
+    )
+    total_keys = sum(g.key_count for g in preview.groups)
+
+    return _templates.TemplateResponse(
+        request,
+        "inventory_add_preview.html",
+        {
+            "request": request,
+            "preview": preview,
+            "groups": preview.groups,
+            "total_keys": total_keys,
+            "keys_text": keys_text,
+            "provider_id": provider_id,
+            "custom_base_url": custom_base_url,
+        },
+    )
+
+
 @router.post("/api/inventory/submit", response_class=HTMLResponse)
 async def api_inventory_submit(
     request: Request,
     keys_text: str = Form(...),
     provider_id: str = Form("auto"),
     custom_base_url: str = Form(""),
+    provision_routing: str = Form("false"),
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
     entries = [KeyIngestEntry(key=entry["key"]) for entry in _parse_bulk_keys(keys_text)]
@@ -401,6 +453,22 @@ async def api_inventory_submit(
             }
         )
 
+    provision_results: list[dict[str, Any]] = []
+    if provision_routing.lower() in {"true", "1", "yes"}:
+        routable_ids = {
+            str(item["provider_id"])
+            for item in results
+            if item.get("provider_id") and item.get("status") != "rejected"
+        }
+        provision_results = await ensure_routing_providers(
+            db_path,
+            routable_ids,
+            custom_base_url=custom_base_url.strip() or None,
+        )
+        from janus.dashboard.reload import reload_providers
+
+        await reload_providers(request.app)
+
     return _templates.TemplateResponse(
         request,
         "inventory_add_results.html",
@@ -408,6 +476,7 @@ async def api_inventory_submit(
             "request": request,
             "results": results,
             "error": None,
+            "provision_results": provision_results,
             "has_pending": any(item.get("status") == "pending_validation" for item in results),
             "poll_query": _poll_query(key_ids=[item["id"] for item in results if item.get("id")]),
         },

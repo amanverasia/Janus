@@ -118,6 +118,16 @@ async def test_combo_delete(client):
 async def test_savers_page(client):
     r = await client.get("/dashboard/savers")
     assert r.status_code == 200
+    assert 'name="saver_rtk_enabled"' not in r.text
+    assert "saver_rtk_enabled" in r.text
+    assert "checked" in r.text
+
+
+async def test_savers_partial_sync(client):
+    r = await client.get("/dashboard/api/savers/partial")
+    assert r.status_code == 200
+    assert "RTK" in r.text
+    assert "saver_rtk_enabled" in r.text
 
 
 async def test_tools_page(client):
@@ -144,6 +154,20 @@ async def test_setting_update(client):
         },
     )
     assert r.status_code == 200
+
+
+async def test_saver_toggle_persists(client, app):
+    from janus.storage.settings import get_setting
+
+    await client.post(
+        "/dashboard/api/settings",
+        data={"key": "saver_caveman_enabled", "value": "true"},
+    )
+    await client.post(
+        "/dashboard/api/settings",
+        data={"key": "saver_caveman_enabled", "value": "false"},
+    )
+    assert await get_setting(app.state.db_path, "saver_caveman_enabled") == "false"
 
 
 @respx.mock

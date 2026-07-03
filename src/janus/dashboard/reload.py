@@ -16,7 +16,7 @@ from janus.routing.upstream_expand import expand_gateway_provider
 from janus.storage.combos_db import list_combos
 from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
-from janus.storage.settings import get_all_settings
+from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
 from janus.storage.upstream_keys import list_routable_upstream_keys
 from janus.tokensavers.base import TokenSaver
 from janus.tokensavers.caveman import CavemanSaver
@@ -68,15 +68,15 @@ async def reload_combos(app: FastAPI) -> None:
 
 async def reload_savers(app: FastAPI) -> None:
     db_path: Path = app.state.db_path
-    settings = await get_all_settings(db_path)
+    await ensure_saver_defaults(db_path)
+    settings = resolve_saver_settings(await get_all_settings(db_path))
     savers: list[TokenSaver] = []
-    if settings.get("saver_rtk_enabled", "true").lower() == "true":
+    if settings["saver_rtk_enabled"].lower() == "true":
         savers.append(RTKSaver())
-    if settings.get("saver_caveman_enabled", "false").lower() == "true":
+    if settings["saver_caveman_enabled"].lower() == "true":
         savers.append(CavemanSaver())
-    if settings.get("saver_ponytail_enabled", "false").lower() == "true":
-        level = settings.get("saver_ponytail_level", "full")
-        savers.append(PonytailSaver(level=level))
+    if settings["saver_ponytail_enabled"].lower() == "true":
+        savers.append(PonytailSaver(level=settings["saver_ponytail_level"]))
     app.state.saver_pipeline = SaverPipeline(savers)
 
 

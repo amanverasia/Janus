@@ -1,5 +1,6 @@
 import datetime
 
+import aiosqlite
 import pytest
 
 from janus.storage.analytics import (
@@ -138,6 +139,72 @@ async def test_get_breakdown_by_provider(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_get_breakdown_by_client_key(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("cursor", "abc", "sk-janus-cursor"),
+        )
+        await db.commit()
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "client_key_id": 1,
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "client_key_id": 1,
+                "cost": 0.02,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "model": "claude",
+                "client_key_label": "Config (sk-s****tatic)",
+                "cost": 0.03,
+                "status": 200,
+            },
+        ],
+    )
+    result = await get_breakdown(db_path, dimension="client_key", days=30)
+    assert len(result) == 2
+    by_name = {r["client_key"]: r for r in result}
+    assert by_name["cursor"]["requests"] == 2
+    assert abs(by_name["cursor"]["cost"] - 0.03) < 0.0001
+    assert by_name["Config (sk-s****tatic)"]["requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_flow_uses_client_key_labels(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "provider_id": "openai",
+                "model": "gpt-4o",
+                "client_key_label": "dev-key",
+                "cost": 0.01,
+                "status": 200,
+            },
+        ],
+    )
+    result = await get_flow(db_path, days=30)
+    names = {n["name"] for n in result["nodes"]}
+    assert "dev-key" in names
+
+
+@pytest.mark.asyncio
 async def test_get_success_rate(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)
@@ -205,7 +272,7 @@ async def test_get_flow_builds_key_model_provider_graph(tmp_path):
     result = await get_flow(db_path, days=30)
     names = {n["name"] for n in result["nodes"]}
     kinds = {n["kind"] for n in result["nodes"]}
-    assert {"gpt-4o", "claude", "openai", "anthropic", "Direct"} <= names
+    assert {"gpt-4o", "claude", "openai", "anthropic", "Direct (no API key)"} <= names
     assert kinds == {"key", "model", "provider"}
     # every link references valid node indices
     node_count = len(result["nodes"])

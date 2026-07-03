@@ -80,7 +80,7 @@ async def test_is_require_api_key_falls_back_to_config(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_authenticate_static_yaml_key(tmp_path) -> None:
+async def test_authenticate_static_yaml_key_sets_label(tmp_path) -> None:
     cfg = JanusConfig(
         server=ServerSettings(data_dir=tmp_path),
         api_keys=["sk-static"],
@@ -88,6 +88,7 @@ async def test_authenticate_static_yaml_key(tmp_path) -> None:
     req = _request(config=cfg)
     req.app.state.db_path = tmp_path / "janus.db"
     assert await authenticate_api_key(req, "sk-static") is True
+    assert req.state.client_key_label.startswith("Config (")
 
 
 @pytest.mark.asyncio

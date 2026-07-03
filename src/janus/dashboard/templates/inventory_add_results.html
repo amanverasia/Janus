@@ -2,6 +2,27 @@
 <div class="mb-4 bg-red-900 border border-red-700 rounded-lg p-4 text-red-200 text-sm">{{ error }}</div>
 {% endif %}
 
+{% if provision_results %}
+<div class="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-4">
+    <h3 class="text-sm font-semibold text-white mb-2">Routing providers</h3>
+    <ul class="text-sm text-gray-300 space-y-1">
+        {% for item in provision_results %}
+        <li>
+            {% if item.action == 'created' %}
+            <span class="text-blue-400">Created</span> routing provider <code class="text-gray-400">{{ item.provider_id }}</code> (prefix {{ item.prefix }})
+            {% elif item.action == 'enabled' %}
+            <span class="text-yellow-300">Re-enabled</span> routing provider <code class="text-gray-400">{{ item.provider_id }}</code>
+            {% elif item.action == 'exists' %}
+            <span class="text-green-400">Using existing</span> routing provider <code class="text-gray-400">{{ item.provider_id }}</code>
+            {% elif item.action == 'skipped' %}
+            <span class="text-gray-400">Skipped:</span> {{ item.reason }}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 {% if results %}
 {% if has_pending %}
 <div hx-get="/dashboard/api/inventory/submit/status{% if poll_query %}?{{ poll_query }}{% endif %}"

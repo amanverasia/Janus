@@ -11,10 +11,15 @@ async def require_api_key(
     x_goog_api_key: str = Header(default="", alias="x-goog-api-key"),
     key_query: str = Query(default="", alias="key"),
 ) -> None:
+    key = extract_api_key(request, authorization, x_goog_api_key, key_query)
+    if key:
+        await authenticate_api_key(request, key)
+
     if not await is_require_api_key_enabled(request):
         return
 
-    key = extract_api_key(request, authorization, x_goog_api_key, key_query)
-    if await authenticate_api_key(request, key):
-        return
-    raise HTTPException(status_code=401, detail="Invalid API key")
+    if not key or not (
+        getattr(request.state, "client_key_id", None) is not None
+        or getattr(request.state, "client_key_label", None) is not None
+    ):
+        raise HTTPException(status_code=401, detail="Invalid API key")

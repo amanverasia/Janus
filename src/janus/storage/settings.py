@@ -4,6 +4,13 @@ from pathlib import Path
 
 from .database import get_connection
 
+SAVER_SETTING_DEFAULTS: dict[str, str] = {
+    "saver_rtk_enabled": "true",
+    "saver_caveman_enabled": "false",
+    "saver_ponytail_enabled": "false",
+    "saver_ponytail_level": "full",
+}
+
 
 async def get_setting(db_path: str | Path, key: str, default: str | None = None) -> str | None:
     async with get_connection(db_path) as db:
@@ -27,3 +34,25 @@ async def get_all_settings(db_path: str | Path) -> dict[str, str]:
         async with db.execute("SELECT key, value FROM settings") as cur:
             rows = await cur.fetchall()
     return {row["key"]: row["value"] for row in rows}
+
+
+async def ensure_saver_defaults(db_path: str | Path) -> None:
+    async with get_connection(db_path) as db:
+        for key, value in SAVER_SETTING_DEFAULTS.items():
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                (key, value),
+            )
+        await db.commit()
+
+
+def resolve_saver_settings(settings: dict[str, str]) -> dict[str, str]:
+    resolved = dict(SAVER_SETTING_DEFAULTS)
+    for key in SAVER_SETTING_DEFAULTS:
+        if key in settings:
+            resolved[key] = settings[key]
+    return resolved
+
+
+def saver_enabled(settings: dict[str, str], key: str) -> bool:
+    return resolve_saver_settings(settings).get(key, "false").lower() == "true"

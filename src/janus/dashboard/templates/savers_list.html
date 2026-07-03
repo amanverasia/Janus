@@ -1,0 +1,62 @@
+{% macro saver_toggle(setting_key, enabled) %}
+<label class="saver-toggle shrink-0">
+    <input type="checkbox"
+           {% if enabled %}checked{% endif %}
+           hx-post="/dashboard/api/settings"
+           hx-swap="none"
+           hx-trigger="change"
+           hx-on:htmx:config-request="event.detail.parameters.key='{{ setting_key }}'; event.detail.parameters.value=event.detail.elt.checked ? 'true' : 'false'">
+    <span class="saver-toggle-track" aria-hidden="true"></span>
+</label>
+{% endmacro %}
+
+<div class="space-y-4">
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">RTK</h2>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200">Recommended</span>
+                </div>
+                <p class="text-gray-400 text-sm">Recursive Token Kompression — compresses conversation history to reduce input tokens. No quality loss for long conversations.</p>
+            </div>
+            {{ saver_toggle("saver_rtk_enabled", settings.saver_rtk_enabled == 'true') }}
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">Caveman</h2>
+                </div>
+                <p class="text-gray-400 text-sm">Strips filler words, pleasantries, and verbose phrasing from requests. Aggressive token savings, may affect nuance.</p>
+            </div>
+            {{ saver_toggle("saver_caveman_enabled", settings.saver_caveman_enabled == 'true') }}
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">Ponytail</h2>
+                </div>
+                <p class="text-gray-400 text-sm mb-3">Summarizes older messages into a compact summary. Choose compression level:</p>
+                <div class="inline-flex rounded-lg border border-gray-700 overflow-hidden" id="ponytail-levels">
+                    {% set pl = settings.saver_ponytail_level %}
+                    {% for level in ['lite', 'full', 'ultra'] %}
+                    <button hx-post="/dashboard/api/settings" hx-swap="none"
+                            hx-vals='{"key": "saver_ponytail_level", "value": "{{ level }}"}'
+                            onclick="ponytailLevelSelect(this, '{{ level }}')"
+                            class="px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn
+                            {% if pl == level %}bg-blue-600 text-white{% else %}bg-gray-900 text-gray-400 hover:text-white{% endif %}">
+                        {{ level | capitalize }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {{ saver_toggle("saver_ponytail_enabled", settings.saver_ponytail_enabled == 'true') }}
+        </div>
+    </div>
+</div>

@@ -185,6 +185,7 @@ _NEW_USAGE_COLUMNS = [
     ("cache_creation_tokens", "INTEGER DEFAULT 0"),
     ("cache_read_tokens", "INTEGER DEFAULT 0"),
     ("client_key_id", "INTEGER"),
+    ("client_key_label", "TEXT"),
 ]
 
 

@@ -13,6 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from janus.inventory.catalog import get_inventory_provider
+from janus.inventory.currency import normalize_credits_to_usd
 from janus.inventory.model_catalog import enrich_model_with_catalog
 from janus.inventory.url_guard import BlockedUrlError, safe_fetch
 from janus.storage.upstream_keys import (
@@ -391,14 +392,22 @@ def _parse_credit_check_response(
             usd = next((item for item in infos if item.get("currency") == "USD"), None)
             info = usd or (infos[0] if infos else None)
             if isinstance(info, dict):
+                currency = str(info.get("currency") or "USD")
                 total = float(str(info.get("total_balance") or "0"))
                 granted = float(str(info.get("granted_balance") or "0"))
                 topped = float(str(info.get("topped_up_balance") or "0"))
-                result["credits_remaining"] = total
-                result["credits_total"] = granted + topped
-                result["credits_used"] = max(0.0, result["credits_total"] - total)
-                if not usd and info.get("currency"):
-                    result["metadata"] = {"currency": info["currency"]}
+                raw_total = granted + topped
+                raw_used = max(0.0, raw_total - total)
+                remaining_usd, total_usd, used_usd, fx_meta = normalize_credits_to_usd(
+                    total, raw_total, raw_used, currency
+                )
+                result["credits_remaining"] = remaining_usd
+                result["credits_total"] = total_usd
+                result["credits_used"] = used_usd
+                if fx_meta:
+                    existing = result.get("metadata")
+                    merged = {**(existing if isinstance(existing, dict) else {}), **fx_meta}
+                    result["metadata"] = merged
 
     if provider_id == "moonshot" and isinstance(body, dict):
         if body.get("code") not in (None, 0):
@@ -408,11 +417,22 @@ def _parse_credit_check_response(
             remaining = float(moonshot_data["available_balance"])
             cash = float(moonshot_data.get("cash_balance") or 0)
             voucher = float(moonshot_data.get("voucher_balance") or 0)
-            result["credits_remaining"] = remaining
-            result["credits_total"] = cash + voucher
-            result["credits_used"] = max(0.0, result["credits_total"] - remaining)
+            raw_total = cash + voucher
+            raw_used = max(0.0, raw_total - remaining)
+            remaining_usd, total_usd, used_usd, fx_meta = normalize_credits_to_usd(
+                remaining, raw_total, raw_used, "CNY"
+            )
+            result["credits_remaining"] = remaining_usd
+            result["credits_total"] = total_usd
+            result["credits_used"] = used_usd
+            meta: dict[str, Any] = {}
             if cash or voucher:
-                result["metadata"] = {"cash_balance": cash, "voucher_balance": voucher}
+                meta["cash_balance"] = cash
+                meta["voucher_balance"] = voucher
+            if fx_meta:
+                meta.update(fx_meta)
+            if meta:
+                result["metadata"] = meta
 
 
 def _get_probe_model(provider_id: str, models: list[dict[str, Any]] | None) -> str | None:

@@ -62,7 +62,7 @@ async def get_flow(db_path: str | Path, *, days: int = 30) -> dict[str, Any]:
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT
-                   COALESCE(k.name, 'Direct') as source,
+                   COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as source,
                    COALESCE(u.model, 'unknown') as model,
                    COALESCE(u.provider_id, 'unknown') as provider,
                    COUNT(*) as requests,
@@ -119,6 +119,27 @@ async def get_flow(db_path: str | Path, *, days: int = 30) -> dict[str, Any]:
 async def get_breakdown(
     db_path: str | Path, *, dimension: Dimension, days: int = 30
 ) -> list[dict[str, Any]]:
+    if dimension == "client_key":
+        async with get_connection(db_path) as db:
+            async with db.execute(
+                """SELECT
+                       COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as client_key,
+                       COUNT(*) as requests,
+                       COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+                       COALESCE(SUM(u.output_tokens), 0) as output_tokens,
+                       COALESCE(SUM(u.cache_creation_tokens), 0) as cache_creation_tokens,
+                       COALESCE(SUM(u.cache_read_tokens), 0) as cache_read_tokens,
+                       COALESCE(SUM(u.cost), 0.0) as cost
+                FROM usage u
+                LEFT JOIN api_keys k ON u.client_key_id = k.id
+                WHERE u.timestamp >= datetime('now', ?)
+                GROUP BY COALESCE(k.name, u.client_key_label, 'Direct (no API key)')
+                ORDER BY cost DESC""",
+                (f"-{days} days",),
+            ) as cur:
+                rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
     col = _DIMENSION_COLUMN[dimension]
     async with get_connection(db_path) as db:
         async with db.execute(

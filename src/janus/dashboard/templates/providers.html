@@ -136,7 +136,7 @@
                 <label class="block text-gray-400 text-sm mb-1">API Key</label>
                 <input type="password" name="api_key" id="e-api_key" placeholder="sk-..."
                        class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
-                <p id="e-api-key-hint" class="text-xs mt-1 text-gray-500 hidden">Key already set — leave blank to keep current</p>
+                <p id="e-api-key-hint" class="text-xs mt-1 text-gray-500 hidden"></p>
             </div>
             <div>
                 <div class="flex items-center justify-between mb-1">
@@ -192,6 +192,9 @@ function fetchModels(prefix) {
     body.append('api_type', apiType);
     body.append('base_url', baseUrl);
     body.append('api_key', apiKey);
+    if (prefix === 'e-') {
+        body.append('provider_id', document.getElementById('e-provider-id').value);
+    }
 
     fetch('/dashboard/api/providers/fetch-models', {
         method: 'POST',
@@ -219,7 +222,7 @@ function fetchModels(prefix) {
     });
 }
 
-function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey) {
+function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey, invTotal, invRoutable, invPending) {
     document.getElementById('e-provider-id').value = id;
     document.getElementById('e-prefix').value = prefix;
     document.getElementById('e-api_type').value = apiType;
@@ -227,12 +230,25 @@ function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey) {
     document.getElementById('e-models').value = models;
     document.getElementById('e-api_key').value = '';
     var hintEl = document.getElementById('e-api-key-hint');
-    if (hasApiKey) {
-        hintEl.textContent = 'Key already set — leave blank to keep current';
+    invTotal = parseInt(invTotal || '0', 10);
+    invRoutable = parseInt(invRoutable || '0', 10);
+    invPending = parseInt(invPending || '0', 10);
+    if (invTotal > 0) {
+        var parts = [invTotal + ' key(s) from Key Inventory'];
+        if (invRoutable > 0) parts.push(invRoutable + ' active for routing');
+        if (invPending > 0) parts.push(invPending + ' still validating');
+        hintEl.textContent = parts.join(' · ') + '. Leave blank to use inventory keys.';
+        hintEl.className = 'text-xs mt-1 text-blue-300';
+        hintEl.classList.remove('hidden');
+        document.getElementById('e-api_key').placeholder = 'Optional override key';
+    } else if (hasApiKey) {
+        hintEl.textContent = 'Static key set — leave blank to keep current';
+        hintEl.className = 'text-xs mt-1 text-gray-500';
         hintEl.classList.remove('hidden');
         document.getElementById('e-api_key').placeholder = '••••••••••••';
     } else {
-        hintEl.textContent = 'No API key set';
+        hintEl.textContent = 'No API key — add keys in Key Inventory or enter one here';
+        hintEl.className = 'text-xs mt-1 text-yellow-400';
         hintEl.classList.remove('hidden');
         document.getElementById('e-api_key').placeholder = 'sk-...';
     }
@@ -263,7 +279,10 @@ document.addEventListener('click', function(e) {
         btn.dataset.apiType,
         btn.dataset.baseUrl,
         btn.dataset.models,
-        btn.dataset.hasKey === 'true'
+        btn.dataset.hasKey === 'true',
+        btn.dataset.inventoryTotal,
+        btn.dataset.inventoryRoutable,
+        btn.dataset.inventoryPending
     );
 });
 

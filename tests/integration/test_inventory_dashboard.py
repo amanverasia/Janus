@@ -53,7 +53,34 @@ async def test_inventory_keys_page(client):
 async def test_inventory_add_page(client):
     r = await client.get("/dashboard/inventory/add")
     assert r.status_code == 200
-    assert "Add Upstream Keys" in r.text
+    assert "Preview &amp; Add Keys" in r.text or "Preview & Add Keys" in r.text
+
+
+async def test_inventory_preview_openrouter(client):
+    key = "sk-or-v1-" + "a" * 20
+    r = await client.post(
+        "/dashboard/api/inventory/preview",
+        data={"keys_text": key, "provider_id": "auto"},
+    )
+    assert r.status_code == 200
+    assert "Confirm" in r.text
+    assert "OpenRouter" in r.text
+
+
+async def test_inventory_submit_provisions_routing_provider(client, tmp_path):
+    from janus.storage.providers_db import get_provider
+
+    key = "sk-or-v1-" + "b" * 20
+    r = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": key, "provider_id": "auto", "provision_routing": "true"},
+    )
+    assert r.status_code == 200
+    assert "Created" in r.text or "Using existing" in r.text
+    db_path = tmp_path / "janus.db"
+    row = await get_provider(db_path, "openrouter")
+    assert row is not None
+    assert row["prefix"] == "openrouter"
 
 
 async def test_inventory_import_page(client):
