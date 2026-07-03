@@ -61,6 +61,35 @@ def test_prefix_match_strips_latest():
     assert p.output_per_mtok == 10.0
 
 
+def test_vendor_prefix_match():
+    reg = PricingRegistry({})
+    p = reg.get("openai/gpt-4o-mini")
+    assert p is not None
+    assert p.input_per_mtok == 0.15
+
+
+def test_vendor_prefix_with_suffix_match():
+    reg = PricingRegistry({})
+    p = reg.get("anthropic/claude-sonnet-4-20250514")
+    assert p is not None
+    assert p.input_per_mtok == 3.0
+
+
+def test_vendor_prefix_prefers_exact_prefixed_override():
+    overrides = {
+        "openai/gpt-4o-mini": {
+            "input_per_mtok": 9.9,
+            "output_per_mtok": 1.0,
+            "cache_creation_per_mtok": 0.0,
+            "cache_read_per_mtok": 0.0,
+        }
+    }
+    reg = PricingRegistry(overrides)
+    p = reg.get("openai/gpt-4o-mini")
+    assert p is not None
+    assert p.input_per_mtok == 9.9
+
+
 def test_get_all_returns_merged_table():
     overrides = {
         "custom": {
