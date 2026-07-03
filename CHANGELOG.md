@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-03
+
 ### Added
+- Analytics **Details** view with a Sankey request-flow diagram (API Key → Model → Provider) and a Tokens/Cost/Requests metric toggle
+- Costs↔Tokens toggle on the analytics spend chart, plus finer time ranges (24h/7D/30D/60D/90D)
+- `scripts/seed_openrouter_pricing.py` — seeds per-model pricing overrides from the OpenRouter catalog
 - Gemini inbound client endpoint — Gemini-native tools can now talk to Janus directly via `POST /v1beta/models/{prefix/model}:generateContent` (and `:streamGenerateContent`)
 - Dashboard Test-Connection button — probes an upstream provider with a 1-token request and reports status + latency
 - Dashboard Export Config — download the current DB state (providers, combos, pricing) as a YAML file
@@ -15,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cooldown state now persists across server restarts via SQLite
 - API key auth now accepts Gemini-style `x-goog-api-key` header and `?key=` query param
 - Docker image published to `ghcr.io/amanverasia/janus` via CI (multi-arch: amd64 + arm64)
+
+### Fixed
+- Cost was recorded as $0 for vendor-prefixed models — `PricingRegistry` now matches names like `openai/gpt-4o-mini` against builtin/override keys
+- Startup crash when migrating `upstream_keys` rows (`init_db` read tuple rows by string key)
 
 ### Changed
 - Dockerfile copies `README.md` and `LICENSE` so the hatchling build succeeds in CI
