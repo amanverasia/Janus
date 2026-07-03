@@ -120,6 +120,75 @@ async def test_get_breakdown_by_provider(tmp_path):
         [
             {
                 "timestamp": _ts(0),
+                "provider_id": "deepseek::uk_key-a",
+                "model": "deepseek-v4-pro",
+                "cost": 0.01,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "provider_id": "deepseek::uk_key-b",
+                "model": "deepseek-v4-pro",
+                "cost": 0.02,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "provider_id": "anthropic",
+                "model": "claude",
+                "cost": 0.03,
+                "status": 200,
+            },
+        ],
+    )
+    result = await get_breakdown(db_path, dimension="provider", days=30)
+    assert len(result) == 2
+    by_provider = {r["provider"]: r for r in result}
+    assert by_provider["deepseek"]["requests"] == 2
+    assert abs(by_provider["deepseek"]["cost"] - 0.03) < 0.0001
+    assert by_provider["anthropic"]["requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_breakdown_by_account_uses_upstream_labels(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            """INSERT INTO upstream_keys
+               (id, provider_id, key_value, key_masked, key_label, status, is_valid, is_usable)
+               VALUES (?, ?, ?, ?, ?, 'active', 1, 1)""",
+            ("key-a", "deepseek", "sk-test-a", "sk-****aaaa", "primary"),
+        )
+        await db.commit()
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "provider_id": "deepseek::uk_key-a",
+                "account_id": "key-a",
+                "model": "deepseek-v4-pro",
+                "cost": 0.01,
+                "status": 200,
+            },
+        ],
+    )
+    result = await get_breakdown(db_path, dimension="account", days=30)
+    assert len(result) == 1
+    assert result[0]["account"] == "primary"
+    assert result[0]["requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_breakdown_by_provider_legacy(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
                 "provider_id": "openai",
                 "model": "gpt-4o",
                 "cost": 0.01,

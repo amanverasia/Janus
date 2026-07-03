@@ -86,7 +86,9 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
         "cooldown_count": cooled_count,
         "rotation_note": (
             "Within each provider prefix, Janus tries accounts in the order shown "
-            "(priority DESC, then credits). Available accounts rotate round-robin per request. "
+            "(priority DESC, then credits). With sticky client-key routing enabled in "
+            "Settings, each Janus API key consistently maps to the same upstream account; "
+            "otherwise accounts rotate round-robin per request. "
             "On 429/5xx/auth errors, the account is cooled down and the next is tried."
         ),
     }

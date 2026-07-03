@@ -104,8 +104,16 @@ async def _handle(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
 
+    from janus.storage.settings import is_sticky_client_key_routing_enabled
+
+    sticky_routing = await is_sticky_client_key_routing_enabled(db_path)
+
     try:
-        attempts = handler.resolve_attempts(canonical_req.model)
+        attempts = handler.resolve_attempts(
+            canonical_req.model,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_routing,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

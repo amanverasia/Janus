@@ -64,7 +64,11 @@ async def get_flow(db_path: str | Path, *, days: int = 30) -> dict[str, Any]:
             """SELECT
                    COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as source,
                    COALESCE(u.model, 'unknown') as model,
-                   COALESCE(u.provider_id, 'unknown') as provider,
+                   CASE
+                     WHEN u.provider_id LIKE '%::%'
+                     THEN substr(u.provider_id, 1, instr(u.provider_id, '::') - 1)
+                     ELSE COALESCE(u.provider_id, 'unknown')
+                   END as provider,
                    COUNT(*) as requests,
                    COALESCE(SUM(u.input_tokens), 0)
                      + COALESCE(SUM(u.output_tokens), 0) as tokens,
@@ -134,6 +138,56 @@ async def get_breakdown(
                 LEFT JOIN api_keys k ON u.client_key_id = k.id
                 WHERE u.timestamp >= datetime('now', ?)
                 GROUP BY COALESCE(k.name, u.client_key_label, 'Direct (no API key)')
+                ORDER BY cost DESC""",
+                (f"-{days} days",),
+            ) as cur:
+                rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    if dimension == "provider":
+        async with get_connection(db_path) as db:
+            async with db.execute(
+                """SELECT
+                       CASE
+                         WHEN provider_id LIKE '%::%'
+                         THEN substr(provider_id, 1, instr(provider_id, '::') - 1)
+                         ELSE COALESCE(provider_id, 'unknown')
+                       END as provider,
+                       COUNT(*) as requests,
+                       COALESCE(SUM(input_tokens), 0) as input_tokens,
+                       COALESCE(SUM(output_tokens), 0) as output_tokens,
+                       COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+                       COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+                       COALESCE(SUM(cost), 0.0) as cost
+                FROM usage
+                WHERE timestamp >= datetime('now', ?)
+                GROUP BY provider
+                ORDER BY cost DESC""",
+                (f"-{days} days",),
+            ) as cur:
+                rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    if dimension == "account":
+        async with get_connection(db_path) as db:
+            async with db.execute(
+                """SELECT
+                       COALESCE(
+                         NULLIF(uk.key_label, ''),
+                         uk.key_masked,
+                         u.account_id,
+                         'unknown'
+                       ) as account,
+                       COUNT(*) as requests,
+                       COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+                       COALESCE(SUM(u.output_tokens), 0) as output_tokens,
+                       COALESCE(SUM(u.cache_creation_tokens), 0) as cache_creation_tokens,
+                       COALESCE(SUM(u.cache_read_tokens), 0) as cache_read_tokens,
+                       COALESCE(SUM(u.cost), 0.0) as cost
+                FROM usage u
+                LEFT JOIN upstream_keys uk ON u.account_id = uk.id
+                WHERE u.timestamp >= datetime('now', ?)
+                GROUP BY COALESCE(u.account_id, 'unknown')
                 ORDER BY cost DESC""",
                 (f"-{days} days",),
             ) as cur:
