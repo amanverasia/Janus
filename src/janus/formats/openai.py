@@ -31,7 +31,10 @@ from janus.canonical.models import (
     ToolUse,
     Usage,
 )
-from janus.canonical.tool_calls import fix_missing_tool_responses_openai
+from janus.canonical.tool_calls import (
+    fix_missing_tool_responses_openai,
+    inject_reasoning_content_openai,
+)
 from janus.streaming.sse import encode_done, encode_sse
 
 _FINISH_TO_STOP: dict[str, str] = {
@@ -322,7 +325,11 @@ class OpenAIAdapter:
                     input=args,
                 )
             )
-        return Message(role=Role.ASSISTANT, content=parts)
+        return Message(
+            role=Role.ASSISTANT,
+            content=parts,
+            reasoning_content=msg.get("reasoning_content"),
+        )
 
     @staticmethod
     def _parse_tool(msg: dict[str, Any]) -> Message:
@@ -353,6 +360,7 @@ class OpenAIAdapter:
         for msg in req.messages:
             messages.extend(self._build_upstream_messages(msg))
         fix_missing_tool_responses_openai(messages)
+        inject_reasoning_content_openai(messages, model)
 
         payload: dict[str, Any] = {"model": model, "messages": messages}
         if req.stream:
@@ -440,6 +448,8 @@ class OpenAIAdapter:
                 }
                 for tu in tool_uses
             ]
+        if msg.reasoning_content:
+            result["reasoning_content"] = msg.reasoning_content
         return result
 
     @staticmethod
@@ -485,6 +495,7 @@ class OpenAIAdapter:
             content=parts,
             stop_reason=_FINISH_TO_STOP.get(finish_reason or "", finish_reason),
             usage=usage,
+            reasoning_content=message.get("reasoning_content"),
         )
 
     # ---- response emitting ----
@@ -510,6 +521,10 @@ class OpenAIAdapter:
                 }
                 for tu in tool_uses
             ]
+        if resp.reasoning_content:
+            message["reasoning_content"] = resp.reasoning_content
+        elif tool_uses and "deepseek" in resp.model.lower():
+            message["reasoning_content"] = " "
 
         finish = _STOP_TO_FINISH.get(resp.stop_reason or "end_turn", "stop")
         return {
