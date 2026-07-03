@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-03
+
+### Added
+- Docker entrypoint auto-fixes bind-mount permissions for `/home/janus/.janus` on startup
+
+### Fixed
+- Settings **Require API Key** control is now a toggle (same pattern as Token Savers) and persists correctly
+
+### Changed
+- Deployment docs: document Docker volume UID mismatch and manual `chown` fallback
+
 ## [0.3.1] - 2026-07-03
 
 ### Added
