@@ -207,15 +207,16 @@ async def _migrate_upstream_key_columns(db: aiosqlite.Connection) -> None:
     async with db.execute("SELECT id, key_value, key_hash FROM upstream_keys") as cur:
         key_rows = await cur.fetchall()
     for row in key_rows:
-        if row["key_hash"]:
+        row_id, key_value, key_hash = row[0], row[1], row[2]
+        if key_hash:
             continue
-        stored = row["key_value"]
+        stored = key_value
         if not isinstance(stored, str):
             continue
         plaintext = decrypt_key_value(stored) if is_encrypted_value(stored) else stored
         await db.execute(
             "UPDATE upstream_keys SET key_hash = ? WHERE id = ?",
-            (hash_upstream_key(plaintext), row["id"]),
+            (hash_upstream_key(plaintext), row_id),
         )
 
 
