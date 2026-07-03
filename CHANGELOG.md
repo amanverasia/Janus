@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-03
+
+First stable release. Janus is a local-first AI routing gateway with multi-provider
+fallback, key inventory, analytics, budgets, and a full dashboard.
+
+### Added
+- Key Inventory import page documents expected JSON format (wrapped `keys` array or bare array, field reference table)
+
+### Fixed
+- Dashboard sidebar stays fixed while main content scrolls; Sign out is always visible
+
 ## [0.3.2] - 2026-07-03
 
 ### Added
