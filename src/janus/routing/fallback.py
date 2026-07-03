@@ -23,15 +23,29 @@ class FallbackHandler:
         self._rotation_counters: dict[str, int] = {}
 
     def _rotate_accounts(
-        self, pool_key: str, accounts: list[ResolvedTarget]
+        self,
+        pool_key: str,
+        accounts: list[ResolvedTarget],
+        *,
+        client_key_id: int | None = None,
+        sticky_client_key: bool = False,
     ) -> list[ResolvedTarget]:
         if len(accounts) <= 1:
             return accounts
+        if sticky_client_key and client_key_id is not None:
+            index = client_key_id % len(accounts)
+            return accounts[index:] + accounts[:index]
         index = self._rotation_counters.get(pool_key, 0) % len(accounts)
         self._rotation_counters[pool_key] = index + 1
         return accounts[index:] + accounts[:index]
 
-    def resolve_attempts(self, model_str: str) -> list[ResolvedTarget]:
+    def resolve_attempts(
+        self,
+        model_str: str,
+        *,
+        client_key_id: int | None = None,
+        sticky_client_key: bool = False,
+    ) -> list[ResolvedTarget]:
         combo_models = self.registry.lookup_combo(model_str)
         if combo_models is not None:
             all_attempts: list[ResolvedTarget] = []
@@ -39,7 +53,14 @@ class FallbackHandler:
                 targets = self.registry.lookup(m)
                 if targets:
                     available = [t for t in targets if self.is_available(t.account_id)]
-                    all_attempts.extend(self._rotate_accounts(m, available))
+                    all_attempts.extend(
+                        self._rotate_accounts(
+                            m,
+                            available,
+                            client_key_id=client_key_id,
+                            sticky_client_key=sticky_client_key,
+                        )
+                    )
             if not all_attempts:
                 raise ValueError(f"No available providers for combo '{model_str}'")
             return all_attempts
@@ -50,7 +71,12 @@ class FallbackHandler:
         available = [t for t in targets if self.is_available(t.account_id)]
         if not available:
             raise ValueError(f"No available providers for '{model_str}' (all accounts cooled down)")
-        return self._rotate_accounts(model_str, available)
+        return self._rotate_accounts(
+            model_str,
+            available,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
 
     def mark_cooldown(
         self,

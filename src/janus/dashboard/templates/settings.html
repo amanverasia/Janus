@@ -123,6 +123,33 @@
         </div>
     </div>
 
+    <!-- Sticky Client-Key Routing -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <h2 class="text-lg font-bold text-white">Sticky Client-Key Routing</h2>
+                <p class="text-gray-400 text-sm mt-1">
+                    When enabled, each Janus API key always routes to the same upstream account
+                    for a given model. Improves provider cache hits and makes per-key spend
+                    easier to reconcile. When disabled, accounts rotate round-robin per request.
+                </p>
+                <p class="text-gray-500 text-xs mt-2">
+                    Requests without a Janus API key still use round-robin.
+                </p>
+            </div>
+            <label class="janus-toggle">
+                <input type="checkbox"
+                       id="sticky-routing-toggle"
+                       {% if sticky_client_key_routing_enabled %}checked{% endif %}
+                       hx-post="/dashboard/api/settings"
+                       hx-swap="none"
+                       hx-trigger="change"
+                       hx-on:htmx:config-request="event.detail.parameters.key='server_sticky_client_key_routing'; event.detail.parameters.value=event.detail.elt.checked ? 'true' : 'false'">
+                <span class="janus-toggle-track" aria-hidden="true"></span>
+            </label>
+        </div>
+    </div>
+
     <!-- Server Info -->
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <h2 class="text-lg font-bold text-white mb-4">Server</h2>

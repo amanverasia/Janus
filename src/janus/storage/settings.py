@@ -13,6 +13,7 @@ SAVER_SETTING_DEFAULTS: dict[str, str] = {
 
 SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_require_api_key": "true",
+    "server_sticky_client_key_routing": "false",
 }
 
 
@@ -70,6 +71,16 @@ def resolve_server_settings(settings: dict[str, str]) -> dict[str, str]:
 
 def require_api_key_enabled(settings: dict[str, str]) -> bool:
     return resolve_server_settings(settings)["server_require_api_key"].lower() == "true"
+
+
+def sticky_client_key_routing_enabled(settings: dict[str, str]) -> bool:
+    return resolve_server_settings(settings)["server_sticky_client_key_routing"].lower() == "true"
+
+
+async def is_sticky_client_key_routing_enabled(db_path: str | Path) -> bool:
+    await ensure_server_defaults(db_path)
+    settings = await get_all_settings(db_path)
+    return sticky_client_key_routing_enabled(settings)
 
 
 def resolve_saver_settings(settings: dict[str, str]) -> dict[str, str]:

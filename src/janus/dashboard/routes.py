@@ -991,6 +991,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         ensure_server_defaults,
         get_all_settings,
         require_api_key_enabled,
+        sticky_client_key_routing_enabled,
     )
 
     await ensure_server_defaults(db_path)
@@ -1007,6 +1008,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         "dashboard_username": settings.get(SETTINGS_USERNAME, ""),
         "dashboard_password_set": bool(settings.get(SETTINGS_PASSWORD_HASH)),
         "require_api_key_enabled": require_api_key_enabled(settings),
+        "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 

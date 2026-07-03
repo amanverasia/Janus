@@ -59,6 +59,72 @@ def test_resolve_single_model_multi_account():
     assert len(attempts) == 2
 
 
+def test_sticky_routing_is_consistent_per_client_key():
+    registry = ProviderRegistry()
+    for account_id in ("ds-1", "ds-2", "ds-3"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix="ds",
+                api_type="openai_compat",
+                base_url="https://ds.com",
+                api_key=f"k-{account_id}",
+                models=["m1"],
+            )
+        )
+    handler = FallbackHandler(registry)
+
+    first = handler.resolve_attempts("ds/m1", client_key_id=7, sticky_client_key=True)
+    second = handler.resolve_attempts("ds/m1", client_key_id=7, sticky_client_key=True)
+
+    assert [t.account_id for t in first] == ["ds-2", "ds-3", "ds-1"]
+    assert first[0].account_id == second[0].account_id
+
+
+def test_sticky_routing_without_client_key_uses_round_robin():
+    registry = ProviderRegistry()
+    for account_id in ("ds-1", "ds-2"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix="ds",
+                api_type="openai_compat",
+                base_url="https://ds.com",
+                api_key=f"k-{account_id}",
+                models=["m1"],
+            )
+        )
+    handler = FallbackHandler(registry)
+
+    first = handler.resolve_attempts("ds/m1", sticky_client_key=True)
+    second = handler.resolve_attempts("ds/m1", sticky_client_key=True)
+
+    assert [t.account_id for t in first] == ["ds-1", "ds-2"]
+    assert [t.account_id for t in second] == ["ds-2", "ds-1"]
+
+
+def test_sticky_routing_different_client_keys_get_different_primaries():
+    registry = ProviderRegistry()
+    for account_id in ("ds-1", "ds-2", "ds-3"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix="ds",
+                api_type="openai_compat",
+                base_url="https://ds.com",
+                api_key=f"k-{account_id}",
+                models=["m1"],
+            )
+        )
+    handler = FallbackHandler(registry)
+
+    a = handler.resolve_attempts("ds/m1", client_key_id=1, sticky_client_key=True)
+    b = handler.resolve_attempts("ds/m1", client_key_id=2, sticky_client_key=True)
+
+    assert a[0].account_id == "ds-2"
+    assert b[0].account_id == "ds-3"
+
+
 def test_round_robin_rotates_account_order():
     registry = ProviderRegistry()
     for account_id in ("ds-1", "ds-2", "ds-3"):
