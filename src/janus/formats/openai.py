@@ -298,8 +298,7 @@ class OpenAIAdapter:
         temperature = raw.get("temperature")
         top_p = raw.get("top_p")
         stop = raw.get("stop")
-        reasoning_effort_raw = raw.get("reasoning_effort")
-        reasoning_effort = str(reasoning_effort_raw) if reasoning_effort_raw is not None else None
+        reasoning_effort = self._parse_reasoning_effort(raw)
 
         return CanonicalRequest(
             model=model,
@@ -328,6 +327,24 @@ class OpenAIAdapter:
         if mode in ("enabled", "disabled"):
             return {"type": mode}
         return None
+
+    @staticmethod
+    def _parse_reasoning_effort(raw: dict[str, Any]) -> str | None:
+        effort = raw.get("reasoning_effort")
+        if effort is None:
+            output_config = raw.get("output_config")
+            if isinstance(output_config, dict):
+                effort = output_config.get("effort")
+        extra = raw.get("extra_body")
+        if effort is None and isinstance(extra, dict):
+            effort = extra.get("reasoning_effort")
+            if effort is None:
+                nested_output = extra.get("output_config")
+                if isinstance(nested_output, dict):
+                    effort = nested_output.get("effort")
+        if effort is None:
+            return None
+        return str(effort)
 
     @staticmethod
     def _parse_content_parts(msg: dict[str, Any]) -> list[ContentPart]:
