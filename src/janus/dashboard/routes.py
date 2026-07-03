@@ -935,9 +935,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         SETTINGS_PASSWORD_HASH,
         "dashboard_session_secret",
     }
-    display_settings = {
-        key: value for key, value in settings.items() if key not in hidden_keys
-    }
+    display_settings = {key: value for key, value in settings.items() if key not in hidden_keys}
     context: dict[str, Any] = {
         "request": request,
         "settings": display_settings,
