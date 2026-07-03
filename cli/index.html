@@ -1,0 +1,2319 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The two-faced AI routing gateway">
+      
+      
+      
+        <link rel="canonical" href="https://amanverasia.github.io/Janus/cli/">
+      
+      
+        <link rel="prev" href="../api-reference/">
+      
+      
+        <link rel="next" href="../changelog/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>CLI - Janus</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cli-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Janus" class="md-header__button md-logo" aria-label="Janus" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Janus
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CLI
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/amanverasia/Janus" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    amanverasia/Janus
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href=".." class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../providers/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../configuration/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Janus" class="md-nav__button md-logo" aria-label="Janus" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Janus
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/amanverasia/Janus" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    amanverasia/Janus
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../combos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Combos & Fallback
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../token-savers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Token Savers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Key Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../budgets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Budgets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#top-level-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Top-level commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-serve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus serve
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-config-init" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus config-init
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-config-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus config-path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-keys-create" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys create
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-keys-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-keys-revoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys revoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-usage-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus usage stats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-usage-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus usage cost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-usage-by-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus usage by-key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#budgets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Budgets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Budgets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-budgets-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus budgets list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-budgets-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus budgets set
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-budgets-delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus budgets delete
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pricing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pricing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-pricing-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus pricing list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-pricing-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus pricing show
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inventory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inventory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-generate-encryption-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory generate-encryption-key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-encrypt-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory encrypt-keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-migrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory migrate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#top-level-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Top-level commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-serve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus serve
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-config-init" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus config-init
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-config-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus config-path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keys
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Keys">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-keys-create" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys create
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-keys-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-keys-revoke" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys revoke
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-usage-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus usage stats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-usage-cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus usage cost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-usage-by-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus usage by-key
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#budgets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Budgets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Budgets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-budgets-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus budgets list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-budgets-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus budgets set
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-budgets-delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus budgets delete
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pricing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pricing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pricing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-pricing-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus pricing list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-pricing-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus pricing show
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inventory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inventory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-generate-encryption-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory generate-encryption-key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-encrypt-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory encrypt-keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-inventory-migrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus inventory migrate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cli-reference">CLI Reference<a class="headerlink" href="#cli-reference" title="Permanent link">&para;</a></h1>
+<p>Janus provides a <code>janus</code> command-line tool for server management, key
+management, usage reporting, budget enforcement, and pricing lookup.</p>
+<h2 id="top-level-commands">Top-level commands<a class="headerlink" href="#top-level-commands" title="Permanent link">&para;</a></h2>
+<h3 id="janus-serve"><code>janus serve</code><a class="headerlink" href="#janus-serve" title="Permanent link">&para;</a></h3>
+<p>Start the gateway server.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">20128</span><span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--port</code> / <code>-p</code></td>
+<td><code>20128</code></td>
+<td>Port to listen on</td>
+</tr>
+<tr>
+<td><code>--host</code></td>
+<td><code>127.0.0.1</code></td>
+<td>Host to bind to</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+<tr>
+<td><code>--reload</code></td>
+<td>off</td>
+<td>Enable auto-reload for development</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-config-init"><code>janus config-init</code><a class="headerlink" href="#janus-config-init" title="Permanent link">&para;</a></h3>
+<p>Create a default config file. Will not overwrite an existing file.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>config-init
+<span class="c1"># Config created: /home/user/.janus/config.yaml</span>
+
+janus<span class="w"> </span>config-init<span class="w"> </span>--path<span class="w"> </span>./my-config.yaml
+<span class="c1"># Config created: /home/user/Projects/Janus/my-config.yaml</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--path</code> / <code>-p</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Where to create the config</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-config-path"><code>janus config-path</code><a class="headerlink" href="#janus-config-path" title="Permanent link">&para;</a></h3>
+<p>Print the default config file path.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>config-path
+<span class="c1"># /home/user/.janus/config.yaml</span>
+</code></pre></div>
+<hr />
+<h2 id="keys">Keys<a class="headerlink" href="#keys" title="Permanent link">&para;</a></h2>
+<h3 id="janus-keys-create"><code>janus keys create</code><a class="headerlink" href="#janus-keys-create" title="Permanent link">&para;</a></h3>
+<p>Create a new API key. The full key is printed once — save it immediately.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;default&quot;</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>API Key (save this — shown once): sk-janus-a1b2c3d4e5f67890a1b2c3d4e5f67890
+ID: 1  Name: default
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--name</code> / <code>-n</code></td>
+<td><code>default</code></td>
+<td>Name for this key</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-keys-list"><code>janus keys list</code><a class="headerlink" href="#janus-keys-list" title="Permanent link">&para;</a></h3>
+<p>List all API keys.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>list
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>    1  sk-janus-a1b2...  default                 active  2026-06-25 10:00:00
+    2  sk-janus-f3e4...  dev-key                 active  2026-06-25 11:30:00
+    3  sk-janus-c5d6...  ci                       revoked  2026-06-24 09:00:00
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-keys-revoke"><code>janus keys revoke</code><a class="headerlink" href="#janus-keys-revoke" title="Permanent link">&para;</a></h3>
+<p>Revoke an API key by ID.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>revoke<span class="w"> </span><span class="m">3</span>
+<span class="c1"># Revoked key 3</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>key_id</code></td>
+<td>Key ID to revoke (required)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
+<h3 id="janus-usage-stats"><code>janus usage stats</code><a class="headerlink" href="#janus-usage-stats" title="Permanent link">&para;</a></h3>
+<p>Show overall usage statistics.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>usage<span class="w"> </span>stats
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>Total requests: 1250
+Total input tokens: 890000
+Total output tokens: 320000
+
+By model:
+  claude-sonnet-4-20250514          800 requests     560000 in    200000 out
+  gpt-4o                            450 requests     330000 in    120000 out
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-usage-cost"><code>janus usage cost</code><a class="headerlink" href="#janus-usage-cost" title="Permanent link">&para;</a></h3>
+<p>Show cost breakdown by model for the last N days.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>usage<span class="w"> </span>cost<span class="w"> </span>--days<span class="w"> </span><span class="m">7</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>Cost breakdown (last 7 days):
+Model                                  Requests         Cost
+----------------------------------------------------------
+  claude-sonnet-4-20250514                  800     $12.5000
+  gpt-4o                                    450      $3.2000
+----------------------------------------------------------
+  Total                                             $15.7000
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--days</code> / <code>-d</code></td>
+<td><code>30</code></td>
+<td>Number of days to show</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-usage-by-key"><code>janus usage by-key</code><a class="headerlink" href="#janus-usage-by-key" title="Permanent link">&para;</a></h3>
+<p>Show spending per client API key for the last N days.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>usage<span class="w"> </span>by-key<span class="w"> </span>--days<span class="w"> </span><span class="m">7</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>Spending per key (last 7 days):
+Key                                  Requests         Cost
+------------------------------------------------
+  default                                 1000     $13.5000
+  dev-key                                  250      $2.2000
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--days</code> / <code>-d</code></td>
+<td><code>30</code></td>
+<td>Number of days to show</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="budgets">Budgets<a class="headerlink" href="#budgets" title="Permanent link">&para;</a></h2>
+<h3 id="janus-budgets-list"><code>janus budgets list</code><a class="headerlink" href="#janus-budgets-list" title="Permanent link">&para;</a></h3>
+<p>List all active budgets.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>budgets<span class="w"> </span>list
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>    1  Global            $10.00   spent:     $8.20      82%  warning
+    2  Key #3             $5.00   spent:     $1.10      22%  ok
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-budgets-set"><code>janus budgets set</code><a class="headerlink" href="#janus-budgets-set" title="Permanent link">&para;</a></h3>
+<p>Create or update a budget. If a budget already exists for the given scope, it is
+updated in place.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Global budget: $10/day</span>
+janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">10</span>.00<span class="w"> </span>--key<span class="w"> </span>global
+<span class="c1"># Budget 1 set: global daily limit = $10.00, warn at 80%</span>
+
+<span class="c1"># Per-key budget for key named &quot;dev-key&quot;: $5/day, warn at 70%</span>
+janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">5</span>.00<span class="w"> </span>--key<span class="w"> </span><span class="s2">&quot;dev-key&quot;</span><span class="w"> </span>--warn<span class="w"> </span><span class="m">70</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--daily</code> / <code>-d</code></td>
+<td><em>(required)</em></td>
+<td>Daily limit in USD (float)</td>
+</tr>
+<tr>
+<td><code>--key</code> / <code>-k</code></td>
+<td><code>global</code></td>
+<td><code>global</code> or a key name</td>
+</tr>
+<tr>
+<td><code>--warn</code> / <code>-w</code></td>
+<td><code>80</code></td>
+<td>Warn threshold percentage</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Key matching</p>
+<p><code>--key</code> matches against key <strong>names</strong> (set with <code>janus keys create --name</code>),
+not numeric IDs. Use <code>global</code> for a global budget.</p>
+</div>
+<h3 id="janus-budgets-delete"><code>janus budgets delete</code><a class="headerlink" href="#janus-budgets-delete" title="Permanent link">&para;</a></h3>
+<p>Delete a budget by ID.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>budgets<span class="w"> </span>delete<span class="w"> </span><span class="m">2</span>
+<span class="c1"># Deleted budget 2</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>budget_id</code></td>
+<td>Budget ID to delete (required)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="pricing">Pricing<a class="headerlink" href="#pricing" title="Permanent link">&para;</a></h2>
+<h3 id="janus-pricing-list"><code>janus pricing list</code><a class="headerlink" href="#janus-pricing-list" title="Permanent link">&para;</a></h3>
+<p>List all known model pricing, sorted by name. Includes builtin prices merged
+with any DB overrides (seeded from YAML on first startup, then managed via
+dashboard or CLI).</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>pricing<span class="w"> </span>list
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>  claude-3-5-haiku-20241022     in: $0.8    out: $4.0   cc: $1.0   cr: $0.08
+  claude-sonnet-4-20250514      in: $3.0    out: $15.0  cc: $3.75  cr: $0.3
+  gpt-4o                        in: $2.5    out: $10.0  cc: $0.0   cr: $0.0
+  ...
+</code></pre></div>
+<p>Prices are per million tokens (Mtok).</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-pricing-show"><code>janus pricing show</code><a class="headerlink" href="#janus-pricing-show" title="Permanent link">&para;</a></h3>
+<p>Show pricing for a specific model.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>pricing<span class="w"> </span>show<span class="w"> </span>gpt-4o
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>Model: gpt-4o
+  Input:              $2.5 / Mtok
+  Output:             $10.0 / Mtok
+  Cache creation:     $0.0 / Mtok
+  Cache read:         $0.0 / Mtok
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td>Model name (required)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<p>Pricing uses progressive prefix matching — <code>gpt-4o</code> matches the same entry as
+<code>gpt-4o-2024-08-06</code>. Unknown models show no pricing found.</p>
+<hr />
+<h2 id="inventory">Inventory<a class="headerlink" href="#inventory" title="Permanent link">&para;</a></h2>
+<p>Manage upstream API key inventory. See <a href="../inventory/">Key Inventory</a> for concepts
+and dashboard workflows.</p>
+<h3 id="janus-inventory-generate-encryption-key"><code>janus inventory generate-encryption-key</code><a class="headerlink" href="#janus-inventory-generate-encryption-key" title="Permanent link">&para;</a></h3>
+<p>Generate a Fernet key for <code>INVENTORY_ENCRYPTION_KEY</code>:</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>generate-encryption-key
+<span class="c1"># gAAAAABl...</span>
+</code></pre></div>
+<h3 id="janus-inventory-encrypt-keys"><code>janus inventory encrypt-keys</code><a class="headerlink" href="#janus-inventory-encrypt-keys" title="Permanent link">&para;</a></h3>
+<p>Encrypt plaintext upstream keys at rest. Requires <code>INVENTORY_ENCRYPTION_KEY</code> to
+be set in the environment.</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">&#39;gAAAAABl...&#39;</span>
+janus<span class="w"> </span>inventory<span class="w"> </span>encrypt-keys
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-inventory-verify"><code>janus inventory verify</code><a class="headerlink" href="#janus-inventory-verify" title="Permanent link">&para;</a></h3>
+<p>Summarize inventory state for cutover verification:</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>verify
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-inventory-migrate"><code>janus inventory migrate</code><a class="headerlink" href="#janus-inventory-migrate" title="Permanent link">&para;</a></h3>
+<p>Import a Dashboard_For_Apis export JSON into upstream keys:</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>migrate<span class="w"> </span>export.json
+janus<span class="w"> </span>inventory<span class="w"> </span>migrate<span class="w"> </span>export.json<span class="w"> </span>--dry-run
+janus<span class="w"> </span>inventory<span class="w"> </span>migrate<span class="w"> </span>export.json<span class="w"> </span>--verify
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>export_file</code></td>
+<td>Path to export JSON (required)</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--dry-run</code></td>
+<td>off</td>
+<td>Count rows without writing</td>
+</tr>
+<tr>
+<td><code>--verify</code></td>
+<td>off</td>
+<td>Print summary after import</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
