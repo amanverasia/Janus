@@ -15,24 +15,52 @@
             <span class="text-xl font-bold text-white">Janus Dashboard</span>
         </div>
         <p class="text-gray-400 text-sm mb-6">
-            Remote access requires a valid Janus API key. Create one locally or ask your administrator.
+            Remote access requires sign-in. Use your dashboard username and password, or a Janus API key.
         </p>
         {% if error %}
         <div class="mb-4 bg-red-900/50 border border-red-700 rounded-lg px-4 py-3 text-red-200 text-sm">
             {{ error }}
         </div>
         {% endif %}
-        <form method="post" action="/dashboard/login" class="space-y-4">
+
+        {% if password_login_enabled %}
+        <form method="post" action="/dashboard/login" class="space-y-4 mb-6">
             <input type="hidden" name="next" value="{{ next }}">
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide">Username &amp; Password</h2>
             <div>
-                <label class="block text-gray-400 text-sm mb-1">API Key</label>
-                <input type="password" name="api_key" required autofocus
-                       placeholder="sk-janus-..."
+                <label class="block text-gray-400 text-sm mb-1">Username</label>
+                <input type="text" name="username" required autocomplete="username"
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+            </div>
+            <div>
+                <label class="block text-gray-400 text-sm mb-1">Password</label>
+                <input type="password" name="password" required autocomplete="current-password"
                        class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
             </div>
             <button type="submit"
                     class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
                 Sign in
+            </button>
+        </form>
+
+        <div class="relative mb-6">
+            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-700"></div></div>
+            <div class="relative flex justify-center text-xs"><span class="bg-gray-800 px-2 text-gray-500">or</span></div>
+        </div>
+        {% endif %}
+
+        <form method="post" action="/dashboard/login" class="space-y-4">
+            <input type="hidden" name="next" value="{{ next }}">
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wide">API Key</h2>
+            <div>
+                <label class="block text-gray-400 text-sm mb-1">API Key</label>
+                <input type="password" name="api_key" {% if not password_login_enabled %}required autofocus{% endif %}
+                       placeholder="sk-janus-..."
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+            </div>
+            <button type="submit"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                Sign in with API Key
             </button>
         </form>
     </div>

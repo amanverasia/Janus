@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
+from janus.dashboard.credentials import hash_password
 from janus.storage.database import init_db
 from janus.storage.settings import set_setting
 
@@ -57,6 +58,43 @@ async def test_dashboard_login_sets_cookie(app, tmp_path):
         )
         assert login_r.status_code == 303
         assert "janus_dashboard_key" in login_r.cookies
+
+
+@pytest.mark.asyncio
+async def test_dashboard_password_login_sets_session_cookie(app, tmp_path):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await set_setting(db_path, "dashboard_username", "admin")
+    await set_setting(db_path, "dashboard_password_hash", hash_password("test-password"))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://192.168.1.5") as client:
+        login_r = await client.post(
+            "/dashboard/login",
+            data={"username": "admin", "password": "test-password", "next": "/dashboard"},
+            follow_redirects=False,
+        )
+        assert login_r.status_code == 303
+        assert "janus_dashboard_session" in login_r.cookies
+        dash_r = await client.get("/dashboard", cookies=login_r.cookies)
+        assert dash_r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_dashboard_password_login_rejects_invalid_credentials(app, tmp_path):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await set_setting(db_path, "dashboard_username", "admin")
+    await set_setting(db_path, "dashboard_password_hash", hash_password("test-password"))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://192.168.1.5") as client:
+        login_r = await client.post(
+            "/dashboard/login",
+            data={"username": "admin", "password": "wrong", "next": "/dashboard"},
+            follow_redirects=False,
+        )
+        assert login_r.status_code == 401
 
 
 @pytest.mark.asyncio
