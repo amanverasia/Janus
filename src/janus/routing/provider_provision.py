@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from janus.catalog import inventory_to_gateway_map
 from janus.dashboard.catalog import CATALOG
 from janus.inventory.catalog import get_inventory_provider
 from janus.inventory.ingestion import KeyIngestEntry, validate_key_value
@@ -15,10 +16,7 @@ from janus.storage.providers_db import (
     toggle_provider,
 )
 
-INVENTORY_TO_CATALOG: dict[str, str] = {
-    "google": "gemini",
-    "dashscope": "qwen",
-}
+INVENTORY_TO_CATALOG: dict[str, str] = inventory_to_gateway_map()
 
 NON_ROUTABLE = frozenset({"unidentified"})
 
