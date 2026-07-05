@@ -1,0 +1,20 @@
+<div id="inventory-actions" class="flex flex-wrap gap-2 mb-6"{% if is_partial %} hx-swap-oob="true"{% endif %}>
+    <button hx-post="/dashboard/api/inventory/reclassify?dry=true&scope=invalid{% if poll_query %}&{{ poll_query }}{% endif %}"
+            hx-target="#reclassify-panel"
+            hx-swap="innerHTML"
+            hx-sync="#inventory-keys-content:replace"
+            class="px-3 py-1.5 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm cursor-pointer">
+        Re-identify
+    </button>
+    <button hx-post="/dashboard/api/inventory/recheck-all{% if poll_query %}?{{ poll_query }}{% endif %}"
+            hx-target="#inventory-keys-content"
+            hx-swap="innerHTML"
+            hx-sync="#inventory-keys-content:replace"
+            class="px-3 py-1.5 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm cursor-pointer">
+        Recheck All
+    </button>
+    <a href="/dashboard/api/inventory/export{% if provider_id %}?provider_id={{ provider_id }}{% endif %}"
+       class="px-3 py-1.5 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm">
+        Export JSON
+    </a>
+</div>

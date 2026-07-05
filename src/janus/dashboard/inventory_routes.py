@@ -270,6 +270,7 @@ async def inventory_keys_page(
         offset=offset,
     )
     context["request"] = request
+    context["is_partial"] = False
     return _templates.TemplateResponse(request, "inventory_keys.html", context)
 
 
@@ -323,6 +324,7 @@ async def _keys_partial(
         submit_message=submit_message,
     )
     context["request"] = request
+    context["is_partial"] = True
     return _templates.TemplateResponse(request, "inventory_keys_partial.html", context)
 
 

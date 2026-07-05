@@ -5,34 +5,19 @@
 {% block content %}
 <h1 class="text-2xl font-bold text-white mb-4">Key Inventory</h1>
 {% with active='keys' %}{% include "inventory_nav.html" %}{% endwith %}
-<div class="flex flex-wrap gap-2 mb-6">
-    <button hx-post="/dashboard/api/inventory/reclassify?dry=true&scope=invalid{% if poll_query %}&{{ poll_query }}{% endif %}"
-            hx-target="#reclassify-panel"
-            hx-swap="innerHTML"
-            class="px-3 py-1.5 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm cursor-pointer">
-        Re-identify
-    </button>
-    <button hx-post="/dashboard/api/inventory/recheck-all{% if poll_query %}?{{ poll_query }}{% endif %}"
-            hx-target="#inventory-keys-content"
-            hx-swap="innerHTML"
-            class="px-3 py-1.5 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm cursor-pointer">
-        Recheck All
-    </button>
-    <a href="/dashboard/api/inventory/export{% if provider_id %}?provider_id={{ provider_id }}{% endif %}"
-       class="px-3 py-1.5 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm">
-        Export JSON
-    </a>
-</div>
+{% include "inventory_keys_actions.html" %}
 
 <div id="reclassify-panel" class="mb-4"></div>
 
-<form hx-get="/dashboard/api/inventory/keys/partial"
+<form id="inventory-filter-form"
+      hx-get="/dashboard/api/inventory/keys/partial"
       hx-target="#inventory-keys-content"
       hx-swap="innerHTML"
+      hx-sync="#inventory-keys-content:replace"
       class="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-6 grid md:grid-cols-5 gap-3">
-    <input type="hidden" name="sort" value="{{ sort }}">
-    <input type="hidden" name="dir" value="{{ direction }}">
-    <input type="hidden" name="limit" value="{{ limit }}">
+    <input type="hidden" name="sort" id="inventory-filter-sort" value="{{ sort }}">
+    <input type="hidden" name="dir" id="inventory-filter-dir" value="{{ direction }}">
+    <input type="hidden" name="limit" id="inventory-filter-limit" value="{{ limit }}">
     <input type="hidden" name="offset" value="0">
     <input type="text" name="search" value="{{ search }}" placeholder="Search label or key…"
            class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm md:col-span-2">
