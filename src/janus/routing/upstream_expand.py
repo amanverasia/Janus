@@ -21,6 +21,8 @@ def expand_gateway_provider(
                 api_key=key["key_value"],
                 models=models,
                 upstream_key_id=key["id"],
+                rate_limit_rpm=key.get("rate_limit_rpm"),
+                rate_limit_rpd=key.get("rate_limit_rpd"),
             )
             for key in upstream_keys
         ]

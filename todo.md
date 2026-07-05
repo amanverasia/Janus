@@ -6,11 +6,11 @@ Living backlog from repo audit (2026-07-05). Items are grouped by area; order wi
 
 ## High priority
 
-- [ ] **Fill `[Unreleased]` in `CHANGELOG.md`** — section is empty; track in-flight work there before each release.
-- [ ] **Update `AGENTS.md`** — still says cooldown state is in-memory only; cooldowns now persist in SQLite (`storage/cooldowns.py`). Fix so agents/docs do not mislead contributors.
-- [ ] **Add `mkdocs build --strict` to CI** — docs workflow only runs on `docs/` changes; main CI (`ci.yml`) should fail if the published site would break.
-- [ ] **Unify provider catalogs** — `dashboard/catalog.py` has 14 gateway providers; `inventory/catalog.py` has 29. Duplicated base URLs, models, and metadata drift easily. Single source or codegen sync.
-- [ ] **Use inventory rate limits in routing** — `rate_limit_rpm/tpm/rpd` are stored and shown in the UI but ignored by `routing/fallback.py` and `list_routable_upstream_keys()`. Skip or deprioritize keys near quota exhaustion during rotation.
+- [x] **Fill `[Unreleased]` in `CHANGELOG.md`** — section is empty; track in-flight work there before each release. *(Done 2026-07-05 — seeded with inventory filter fix + CI/docs changes.)*
+- [x] **Update `AGENTS.md`** — still says cooldown state is in-memory only; cooldowns now persist in SQLite (`storage/cooldowns.py`). Fix so agents/docs do not mislead contributors. *(Done 2026-07-05.)*
+- [x] **Add `mkdocs build --strict` to CI** — docs workflow only runs on `docs/` changes; main CI (`ci.yml`) should fail if the published site would break. *(Done 2026-07-05.)*
+- [x] **Unify provider catalogs** — `dashboard/catalog.py` has 14 gateway providers; `inventory/catalog.py` has 29. Duplicated base URLs, models, and metadata drift easily. Single source or codegen sync. *(Done 2026-07-05 — unified into `src/janus/catalog.py`; both legacy modules and the id bridges now derive from it. Also fixed the missing `qwen`→`dashscope` prefix bridge so DashScope inventory keys route for the `qwen` prefix.)*
+- [x] **Use inventory rate limits in routing** — `rate_limit_rpm/tpm/rpd` are stored and shown in the UI but ignored by `routing/fallback.py` and `list_routable_upstream_keys()`. Skip or deprioritize keys near quota exhaustion during rotation. *(Done 2026-07-05 for RPM/RPD — accounts without headroom are moved to the end of the try-order; TPM enforcement deferred since token counts are only known post-response.)*
 
 ---
 
@@ -75,7 +75,7 @@ Living backlog from repo audit (2026-07-05). Items are grouped by area; order wi
 ## Architecture & tech debt
 
 - [ ] **Move `_build_provider()` out of `app.py`** — called from lifespan and reload; belongs in `providers/` factory module for clearer boundaries.
-- [ ] **Reduce catalog duplication between `dashboard/catalog.py` and `inventory/catalog.py`** — different shapes (`CATALOG` dict vs list with detection endpoints); unify schema.
+- [x] **Reduce catalog duplication between `dashboard/catalog.py` and `inventory/catalog.py`** — different shapes (`CATALOG` dict vs list with detection endpoints); unify schema. *(Done 2026-07-05 — see "Unify provider catalogs" above.)*
 - [ ] **Inventory module packaging** — added `inventory/__init__.py`; consider same explicit exports pattern for other leaf packages if mypy/import clarity suffers.
 - [ ] **Structured logging** — request ID, attempt index, and fallback chain logged but not consistently structured for log aggregation.
 

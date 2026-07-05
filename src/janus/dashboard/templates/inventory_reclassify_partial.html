@@ -33,6 +33,7 @@
         <button hx-post="/dashboard/api/inventory/reclassify?dry=false&scope={{ payload.scope }}{% if poll_query %}&{{ poll_query }}{% endif %}"
                 hx-target="#inventory-keys-content"
                 hx-swap="innerHTML"
+                hx-sync="#inventory-keys-content:replace"
                 class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm cursor-pointer">
             Apply Re-identify ({{ moved|length }})
         </button>

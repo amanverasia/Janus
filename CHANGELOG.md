@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-05
+
+### Added
+- **Rate-limit-aware routing** — inventory key rate limits (`rate_limit_rpm`, `rate_limit_rpd`) now feed the fallback handler: accounts at/over their per-minute or per-day request quota are deprioritized (moved to the end of the try-order) during rotation. Daily counts are seeded from the `usage` table on startup and provider reload
+- Unified provider catalog `src/janus/catalog.py` — single source of truth for provider metadata; `dashboard/catalog.py` (14 gateway providers) and `inventory/catalog.py` (29 inventory providers) now derive from it, along with the `google`↔`gemini` / `dashscope`↔`qwen` id bridges
+
+### Fixed
+- Key Inventory: provider/status/search filters no longer reset after a few seconds while validation is in progress (stale auto-refresh poll could overwrite the filtered table and re-arm itself with the old filter). Poll and user actions are now coordinated with `hx-sync`, and the toolbar buttons + filter form stay in sync with the current view.
+- DashScope (Qwen) inventory keys are now picked up for the `qwen` routing prefix (the `qwen`→`dashscope` id bridge was missing, so those keys were silently ignored by routing)
+
+### Changed
+- `AGENTS.md` now correctly documents that account cooldowns persist to SQLite (`storage/cooldowns.py`) instead of being in-memory only
+- CI now runs `mkdocs build --strict` so docs breakage fails the main pipeline
+
 ## [1.1.0] - 2026-07-03
 
 ### Added

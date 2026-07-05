@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
+from datetime import UTC, datetime
 from pathlib import Path
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
 from janus.storage.cooldowns import get_active_cooldowns, save_cooldown
+from janus.storage.usage import get_request_counts_today
 
 COOLDOWN_DURATIONS: dict[str, float] = {
     "rate_limit": 60.0,
@@ -14,6 +17,8 @@ COOLDOWN_DURATIONS: dict[str, float] = {
     "network": 15.0,
 }
 
+RPM_WINDOW_SECONDS = 60.0
+
 
 class FallbackHandler:
     def __init__(self, registry: ProviderRegistry, db_path: str | Path | None = None) -> None:
@@ -21,6 +26,62 @@ class FallbackHandler:
         self.db_path = db_path
         self._cooldowns: dict[str, float] = {}
         self._rotation_counters: dict[str, int] = {}
+        self._request_times: dict[str, deque[float]] = {}
+        self._daily_counts: dict[str, int] = {}
+        self._daily_date: str = self._today()
+
+    @staticmethod
+    def _today() -> str:
+        return datetime.now(UTC).strftime("%Y-%m-%d")
+
+    def _roll_day(self) -> None:
+        today = self._today()
+        if today != self._daily_date:
+            self._daily_date = today
+            self._daily_counts = {}
+
+    @staticmethod
+    def _prune_window(times: deque[float], now: float) -> None:
+        while times and now - times[0] >= RPM_WINDOW_SECONDS:
+            times.popleft()
+
+    def record_request(self, account_id: str) -> None:
+        self._roll_day()
+        now = time.time()
+        times = self._request_times.setdefault(account_id, deque())
+        times.append(now)
+        self._prune_window(times, now)
+        self._daily_counts[account_id] = self._daily_counts.get(account_id, 0) + 1
+
+    def has_rate_headroom(self, target: ResolvedTarget) -> bool:
+        rpm_limit = target.provider_config.rate_limit_rpm
+        if rpm_limit is not None and rpm_limit > 0:
+            times = self._request_times.get(target.account_id)
+            if times is not None:
+                self._prune_window(times, time.time())
+                if len(times) >= rpm_limit:
+                    return False
+        rpd_limit = target.provider_config.rate_limit_rpd
+        if rpd_limit is not None and rpd_limit > 0:
+            self._roll_day()
+            if self._daily_counts.get(target.account_id, 0) >= rpd_limit:
+                return False
+        return True
+
+    def _deprioritize_rate_limited(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
+        if len(accounts) <= 1:
+            return accounts
+        headroom: list[ResolvedTarget] = []
+        limited: list[ResolvedTarget] = []
+        for target in accounts:
+            (headroom if self.has_rate_headroom(target) else limited).append(target)
+        return headroom + limited
+
+    async def load_request_counts(self) -> None:
+        if self.db_path is None:
+            return
+        self._daily_date = self._today()
+        self._daily_counts = await get_request_counts_today(self.db_path)
 
     def _rotate_accounts(
         self,
@@ -54,11 +115,13 @@ class FallbackHandler:
                 if targets:
                     available = [t for t in targets if self.is_available(t.account_id)]
                     all_attempts.extend(
-                        self._rotate_accounts(
-                            m,
-                            available,
-                            client_key_id=client_key_id,
-                            sticky_client_key=sticky_client_key,
+                        self._deprioritize_rate_limited(
+                            self._rotate_accounts(
+                                m,
+                                available,
+                                client_key_id=client_key_id,
+                                sticky_client_key=sticky_client_key,
+                            )
                         )
                     )
             if not all_attempts:
@@ -71,11 +134,13 @@ class FallbackHandler:
         available = [t for t in targets if self.is_available(t.account_id)]
         if not available:
             raise ValueError(f"No available providers for '{model_str}' (all accounts cooled down)")
-        return self._rotate_accounts(
-            model_str,
-            available,
-            client_key_id=client_key_id,
-            sticky_client_key=sticky_client_key,
+        return self._deprioritize_rate_limited(
+            self._rotate_accounts(
+                model_str,
+                available,
+                client_key_id=client_key_id,
+                sticky_client_key=sticky_client_key,
+            )
         )
 
     def mark_cooldown(

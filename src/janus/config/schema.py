@@ -20,6 +20,8 @@ class ProviderConfig(BaseModel):
     api_key: str | None = None
     models: list[str] = Field(default_factory=list)
     upstream_key_id: str | None = None
+    rate_limit_rpm: int | None = None
+    rate_limit_rpd: int | None = None
 
 
 class ComboConfig(BaseModel):
