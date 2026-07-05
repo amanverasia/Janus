@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (
+DEFAULT_SOURCE = (
     REPO_ROOT.parent
     / "Dashboard_For_Apis"
     / "backend"
@@ -72,11 +73,23 @@ def _ts_array_to_json(text: str) -> str:
 
 
 def main() -> None:
-    if not SOURCE.is_file():
-        print(f"Source not found: {SOURCE}", file=sys.stderr)
+    parser = argparse.ArgumentParser(
+        description="Regenerate model_catalog.json from a Dashboard_For_Apis TypeScript export"
+    )
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=DEFAULT_SOURCE,
+        help="Path to model-catalog.ts (default: ../Dashboard_For_Apis/.../model-catalog.ts)",
+    )
+    args = parser.parse_args()
+    source = args.source.resolve()
+
+    if not source.is_file():
+        print(f"Source not found: {source}", file=sys.stderr)
         sys.exit(1)
 
-    source_text = SOURCE.read_text()
+    source_text = source.read_text()
     array_text = _extract_array_text(source_text)
     json_text = _ts_array_to_json(array_text)
     catalog = json.loads(json_text)

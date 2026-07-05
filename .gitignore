@@ -82,3 +82,6 @@ pip-delete-this-directory.txt
 # MkDocs build output
 site/
 .demo-data/
+
+# Cursor / Superpowers local artifacts
+.superpowers/

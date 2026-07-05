@@ -51,6 +51,10 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path:
+        - .
+        - ..
   - pymdownx.tabbed:
       alternate_style: true
   - toc:

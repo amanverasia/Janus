@@ -71,8 +71,30 @@ On 429/5xx/auth/network errors, the account is cooled down and the next attempt 
 ## Adding a New Token Saver
 
 1. Implement the `TokenSaver` protocol (`transform(req) -> CanonicalRequest`) in `src/janus/tokensavers/`.
-2. Add to pipeline construction in `src/janus/app.py`.
+2. Add construction logic to `reload_savers()` in `src/janus/dashboard/reload.py`.
 3. Savers must be fail-safe — exceptions are caught by the pipeline and logged, never breaking the request.
+
+## Maintainer Scripts
+
+The `scripts/` directory holds one-off maintenance tools. They are not installed with the
+package — run them from a dev checkout with `pip install -e ".[dev]"` so `janus` imports resolve.
+
+| Script | When to run |
+|--------|-------------|
+| `scripts/generate_model_catalog.py` | After updating the upstream model catalog in [Dashboard_For_Apis](https://github.com/amanverasia/Dashboard_For_Apis). Regenerates `src/janus/inventory/data/model_catalog.json`. Default source: sibling checkout at `../Dashboard_For_Apis/backend/src/services/model-catalog.ts`; override with `--source`. |
+| `scripts/seed_openrouter_pricing.py` | When refreshing OpenRouter per-model pricing in your local DB. Fetches the live catalog and writes rows to `pricing_overrides`. Use `--dry-run` to preview counts. |
+
+```bash
+# Regenerate model catalog (custom source path)
+.venv/bin/python scripts/generate_model_catalog.py \
+  --source /path/to/model-catalog.ts
+
+# Seed OpenRouter pricing into ~/.janus/janus.db
+.venv/bin/python scripts/seed_openrouter_pricing.py
+
+# Preview without writing
+.venv/bin/python scripts/seed_openrouter_pricing.py --dry-run
+```
 
 ## PR Process
 
