@@ -31,7 +31,8 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → `Save
 ## Routing & fallback layer
 
 - `ProviderRegistry` stores `list[ProviderConfig]` per prefix (multi-account). `lookup()` returns `list[ResolvedTarget]`, not a single target.
-- `FallbackHandler` (`routing/fallback.py`) expands combos → models → available accounts, filtering out cooled-down accounts. Cooldown durations: 429→60s, 5xx→30s, auth→300s, network→15s. State is in-memory (`time.monotonic()`).
+- `FallbackHandler` (`routing/fallback.py`) expands combos → models → available accounts, filtering out cooled-down accounts. Cooldown durations: 429→60s, 5xx→30s, auth→300s, network→15s. Cooldowns are kept in memory (`time.time()` expiries) and persisted to SQLite via `storage/cooldowns.py` (`save_cooldown` fire-and-forget on mark, `load_cooldowns()` restores active ones on startup/reload).
+- Inventory rate limits (`rate_limit_rpm`/`rate_limit_rpd` on `upstream_keys`) feed routing: `expand_gateway_provider` copies them onto each `ProviderConfig`, `_handle()` calls `record_request()` per attempt, and `resolve_attempts` moves accounts without headroom to the end of the try-order (`_deprioritize_rate_limited`). Daily counts are seeded from the `usage` table on startup/reload (`load_request_counts()`); the RPM window is in-memory only (60s sliding).
 - `routing/errors.py` has `classify_error(status_code)` and `is_fallback_eligible(error)` — these drive fallback decisions in `_handle()`.
 - The retry loop lives in `api/routes.py::_handle()`. Streaming requests do NOT retry mid-stream (can't replay partial output).
 - Adding multi-account: register multiple `ProviderConfig` entries with the same `prefix` but different `id`/`api_key`.
@@ -50,7 +51,7 @@ Providers, combos, token savers, pricing overrides, and server settings live in 
 
 Hot-reload helpers in `dashboard/reload.py` rebuild in-memory state from DB after changes: `reload_providers`, `reload_combos`, `reload_savers`, `reload_pricing`. Dashboard mutation routes call these after writing to the DB.
 
-`dashboard/catalog.py` holds the provider catalog (14 known providers with pre-filled `api_type`, `base_url`, default models, and Simple Icons logo slugs) that the "Add Provider" UI draws from.
+`src/janus/catalog.py` is the single source of truth for provider metadata (unified `PROVIDERS` dict with per-entry `inventory` and/or `gateway` blocks). `dashboard/catalog.py` (14 gateway providers for the "Add Provider" UI) and `inventory/catalog.py` (29 inventory providers with detection endpoints) derive their legacy shapes from it, as do the id bridges (`google`↔`gemini`, `dashscope`↔`qwen`) used by `routing/provider_provision.py` and `routing/inventory_bridge.py`. Add new providers to `catalog.py`, not the derived modules.
 
 Provider edit endpoint preserves the existing API key when the field is left blank (fetches current value from DB). The `POST /dashboard/api/providers/fetch-models` endpoint calls upstream `/models` to auto-populate the models field.
 
