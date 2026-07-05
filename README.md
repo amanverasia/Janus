@@ -6,7 +6,8 @@
 Janus is a local-first, single-user AI routing gateway. It exposes
 OpenAI/Anthropic/Gemini-compatible HTTP endpoints that your coding tools (Claude Code,
 Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
-40+ AI providers — without either side needing to know the other exists.
+any of 29 built-in AI providers — or any OpenAI-compatible endpoint — without
+either side needing to know the other exists.
 
 ## First-time setup
 
@@ -254,6 +255,7 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 ## Features
 
 - **Fallback routing** — multi-account rotation with cooldowns (429->60s, 5xx->30s, auth->300s, network->15s)
+- **Rate-limit-aware rotation** — accounts at their per-minute or per-day request quota are tried last
 - **Combos** — named ordered model sequences (e.g., `"model": "best-effort"`)
 - **Token savers** — RTK compression (default ON), Caveman terse prompt, Ponytail lazy-dev prompt
 - **Budgets** — daily spending limits per API key or global, with warn/block thresholds
@@ -271,6 +273,7 @@ Built-in dashboard for upstream provider API keys: health checks, credit trackin
 - Overview stats, paginated/sortable keys table, key detail modal, best-keys widget
 - Add keys, bulk submit, import from Dashboard export JSON, re-identify misclassified keys
 - Encryption at rest; routable keys wired into gateway fallback rotation
+- Detected rate limits (RPM/RPD) deprioritize near-quota keys during routing
 - Background recheck scheduler (twice daily by default)
 
 | Variable | Purpose |
