@@ -1,6 +1,6 @@
 # API Reference
 
-Janus exposes four client-facing API surfaces plus utility endpoints:
+Janus exposes five client-facing API surfaces plus utility endpoints:
 
 | Surface | Base path | Format |
 |---|---|---|
@@ -8,6 +8,7 @@ Janus exposes four client-facing API surfaces plus utility endpoints:
 | OpenAI Responses | `/v1/responses` | OpenAI Responses API |
 | Anthropic | `/v1/messages` | Anthropic Messages |
 | Gemini | `/v1beta/models/{model}:generateContent` | Gemini GenerateContent |
+| Ollama | `/api/chat`, `/api/tags` | Ollama chat (NDJSON streaming) |
 | Utility | `/v1/health`, `/v1/models` | JSON |
 
 ## Authentication
@@ -319,6 +320,42 @@ The response is a `text/event-stream` of JSON objects, one per chunk.
 !!! tip "Authentication"
     When `require_api_key` is on, Gemini-style auth is also accepted: the
     `x-goog-api-key` header or `?key=` query parameter.
+
+---
+
+## POST /api/chat (Ollama)
+
+Ollama chat format — for tools that only support Ollama endpoints. Point the
+tool's Ollama host at Janus (`http://localhost:20128`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | `string` | `prefix/model` or a combo name |
+| `messages` | `array` | Chat messages (`system`/`user`/`assistant`/`tool`, `images` supported) |
+| `stream` | `bool` | Defaults to **`true`** (Ollama convention); NDJSON chunks |
+| `tools` | `array` | Function tool definitions (Ollama/OpenAI nested shape) |
+| `options` | `object` | `num_predict`, `temperature`, `top_p`, `stop` |
+
+```bash
+curl http://localhost:20128/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-janus-yourkey" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "stream": false
+  }'
+```
+
+Streaming responses are `application/x-ndjson` — one JSON object per line,
+ending with a `"done": true` object carrying `done_reason`,
+`prompt_eval_count`, and `eval_count`.
+
+### GET /api/tags
+
+Lists models and combos in Ollama's `tags` shape (`{"models": [{"name": ...}]}`)
+so Ollama clients can discover what's routable. `GET /api/version` is also
+provided for client handshakes.
 
 ---
 

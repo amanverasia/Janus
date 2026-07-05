@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from janus.api.routes import gemini_router, router
+from janus.api.routes import gemini_router, ollama_router, router
 from janus.config.schema import JanusConfig, ProviderConfig
 from janus.pricing.registry import PricingRegistry
 from janus.providers.anthropic import AnthropicProvider
@@ -105,6 +105,7 @@ def create_app(
     app.state.providers = {}
     app.include_router(router, prefix="/v1")
     app.include_router(gemini_router)
+    app.include_router(ollama_router)
 
     from janus.dashboard.inventory_push_routes import router as inventory_push_router
     from janus.dashboard.inventory_routes import router as inventory_router

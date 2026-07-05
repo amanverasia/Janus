@@ -60,6 +60,7 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 
 1. Create `src/janus/formats/<name>.py` implementing all six methods: `parse_request`, `build_upstream_request`, `parse_upstream_response`, `emit_response`, `stream_parser`, `stream_emitter`.
 2. Register in the `FORMATS` dict in `src/janus/api/routes.py`.
+3. If the format streams something other than SSE (e.g. Ollama's NDJSON), set a `stream_media_type` class attribute on the adapter — `_handle()` uses it for the `StreamingResponse` content type (default `text/event-stream`).
 
 ## Adding a new provider executor
 

@@ -15,6 +15,7 @@ from janus.canonical.tool_calls import prepare_tool_messages
 from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.base import FormatAdapter
 from janus.formats.gemini import GeminiAdapter
+from janus.formats.ollama import OllamaAdapter
 from janus.formats.openai import OpenAIAdapter
 from janus.formats.openai_responses import OpenAIResponsesAdapter
 from janus.providers.base import Provider
@@ -36,6 +37,7 @@ FORMATS: dict[str, FormatAdapter] = {
     "openai_responses": OpenAIResponsesAdapter(),
     "anthropic": AnthropicAdapter(),
     "gemini": GeminiAdapter(),
+    "ollama": OllamaAdapter(),
 }
 
 
@@ -209,7 +211,8 @@ async def _handle(
                                 request_body=logged_request_body,
                             )
 
-                return StreamingResponse(_streaming_generator(), media_type="text/event-stream")
+                media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
+                return StreamingResponse(_streaming_generator(), media_type=media_type)
 
             result = await provider.call(upstream_payload, stream=False)
             if result.status_code >= 400:
@@ -358,3 +361,53 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
     body["model"] = model
     body["stream"] = action == "streamGenerateContent"
     return await _handle("gemini", body, request)
+
+
+ollama_router = APIRouter()
+
+
+@ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
+async def ollama_chat(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    return await _handle("ollama", body, request)
+
+
+@ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])
+async def ollama_tags(request: Request) -> dict[str, Any]:
+    registry: ProviderRegistry = request.app.state.registry
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    models: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for prefix, configs in registry.providers.items():
+        for config in configs:
+            for model in config.models:
+                name = f"{prefix}/{model}"
+                if name not in seen:
+                    seen.add(name)
+                    models.append(
+                        {
+                            "name": name,
+                            "model": name,
+                            "modified_at": now,
+                            "size": 0,
+                            "digest": "",
+                            "details": {"family": "janus", "format": "gateway"},
+                        }
+                    )
+    for combo_name in registry.combos:
+        models.append(
+            {
+                "name": combo_name,
+                "model": combo_name,
+                "modified_at": now,
+                "size": 0,
+                "digest": "",
+                "details": {"family": "janus", "format": "combo"},
+            }
+        )
+    return {"models": models}
+
+
+@ollama_router.get("/api/version")
+async def ollama_version() -> dict[str, str]:
+    return {"version": "0.6.0"}
