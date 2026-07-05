@@ -1,6 +1,6 @@
 # Janus — TODO & improvements
 
-Living backlog from repo audit (2026-07-05). Items are grouped by area; order within a section is rough priority.
+Living backlog from repo audit (2026-07-05); last updated 2026-07-05 after completing the Phase 8 9router-parity plan. Items are grouped by area; order within a section is rough priority.
 
 ---
 
@@ -28,6 +28,16 @@ Gap review vs [9router](https://github.com/decolua/9router) done 2026-07-05. Ord
 
 Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first design; YAML export + DB copy is the answer), Cloudflare Workers deploy (Node-only), i18n READMEs.
 
+### Phase 8 follow-ups (discovered during implementation)
+
+- [ ] **Request logs: capture non-fallback upstream errors** — 8.2 logs successes, streams, and the final 503; upstream 4xx errors that raise `HTTPException` directly (non-fallback-eligible) bypass logging. Wrap those raise paths so debug mode sees failed requests too.
+- [ ] **Request logs: configurable retention + pagination** — 500-row cap and 64 KB truncation are hardcoded (`storage/request_logs.py`); the dashboard shows only the latest 100 with no paging. Expose retention in Settings and paginate the table (reuse the keys-table pagination pattern).
+- [ ] **Quota UX round 2** — near-exhaustion warning (dashboard banner at ≥80%, mirroring budget warn), quota state on the Routing page next to cooldowns/rate limits, and live refresh of the provider-card usage bar (currently render-time only).
+- [ ] **True rolling 5h quota windows** — `storage/quotas.py` uses fixed UTC 5-hour buckets as an approximation; Claude/Codex subscriptions use rolling windows anchored to first request. Needs per-window timestamp tracking (deque or window-anchor column).
+- [ ] **Copilot model pricing** — `copilot/*` models are unknown to `pricing/builtin.py`, so usage shows $0. Add reference prices (as a "what this would cost via API" savings tracker, like 9router) or flag them explicitly as subscription-covered.
+- [ ] **Ollama surface completeness** — some Ollama clients call `POST /api/show` (model metadata) and `POST /api/generate` (bare completions) before/instead of `/api/chat`. Add minimal shims so those clients don't fail the handshake. `/api/version` is already stubbed.
+- [ ] **Copilot session-token 401 mid-stream** — a session token revoked between refresh and stream start surfaces as a stream error (no retry, by design). Consider a one-shot forced token refresh + retry for the non-streaming path.
+
 ---
 
 ## Routing & gateway
@@ -36,7 +46,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 - [ ] **Streaming fallback story** — mid-stream errors cannot retry (by design). Document clearly for users; optionally explore safe reconnect patterns for idempotent short streams.
 - [ ] **Gateway-level rate limiting** — inventory submit is rate-limited; public `/v1/*` API is not. Add optional per-key RPM limits on the Janus API itself.
 - [ ] **Richer `/v1/health`** — today returns `{"status":"ok"}`. Add optional checks: DB reachable, provider count, inventory scheduler alive, last recheck age.
-- [ ] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types. *(Tracked as Phase 8.4 above.)*
+- [x] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types. *(Done 2026-07-05 for the framework + GitHub Copilot — see Phase 8.4. Remaining providers tracked as 8.4b.)*
 
 ---
 
@@ -56,7 +66,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 - [ ] **Surface $0-cost warnings in analytics** — when `compute_cost` returns 0 for an unknown model, flag it in Usage/Analytics so spend looks wrong.
 - [ ] **Automate pricing refresh** — document + optional CLI/cron for OpenRouter seed; consider similar for other catalogs.
 - [ ] **Budget notifications beyond HTTP 429** — warn at 80% is silent to the user until the next blocked request. Dashboard banner or webhook at warn threshold.
-- [ ] **Monthly / rolling budgets** — budgets are daily only (`storage/budgets.py`).
+- [ ] **Monthly / rolling budgets** — budgets are daily only (`storage/budgets.py`). *(Note: per-provider subscription quotas (Phase 8.5) now cover weekly/monthly consumption windows, but spend budgets — dollar limits per key/global — remain daily-only.)*
 
 ---
 
@@ -64,7 +74,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 
 - [ ] **Replace `alert()` error handling** — `providers.html` and `combos.html` still use browser alerts on HTMX failures; use inline toasts like other pages.
 - [ ] **Vendor CDN dependencies** — Tailwind, HTMX, Chart.js, D3 load from CDNs in `base.html` / `analytics.html`. Bundle for offline, air-gapped, and CSP-hardened deployments.
-- [ ] **Missing provider logos** — several dashboard catalog entries have empty `logo` (Qwen, OpenCode, custom). Add SVGs under `dashboard/static/logos/`.
+- [ ] **Missing provider logos** — several dashboard catalog entries have empty `logo` (Qwen, OpenCode, custom, GitHub Copilot). Add SVGs under `dashboard/static/logos/`.
 - [x] **Align README marketing numbers** — README says "40+ providers" and inventory "29 providers"; dashboard catalog is 14. Pick consistent, accurate counts. *(Done 2026-07-05 — README now says "29 built-in providers, or any OpenAI-compatible endpoint".)*
 - [ ] **Routing page enhancements** — show live rotation index, sticky-routing state per client key, and estimated try-order after cooldowns expire.
 
@@ -73,6 +83,8 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 ## Docs & developer experience
 
 - [ ] **Document maintainer scripts in user docs** — currently only in `CONTRIBUTING.md`; add a short "Maintenance" subsection to deployment or contributing on the docs site (already included via snippet — verify it renders on GitHub Pages).
+- [ ] **Refresh README feature list** — README predates Phase 8; add Responses API (Codex-native), Ollama endpoints, GitHub Copilot OAuth, subscription quotas, request logging, and Headroom to the feature summary and any endpoint tables.
+- [ ] **Client setup for new surfaces** — extend `docs/client-setup.md` with Codex CLI via `/v1/responses` and Ollama-only tools via `/api/chat` (including the `stream` default and NDJSON note).
 - [ ] **Trim or relocate `docs/superpowers/`** — 18 phase plans/specs from June 2026; excluded from the site but add repo noise. Archive to a wiki, separate branch, or compress into `docs/architecture.md` history.
 - [ ] **TLS / reverse-proxy guide expansion** — Janus is HTTP-only; add Caddy/nginx/Tailscale Serve examples with auth headers and WebSocket/SSE notes for streaming clients.
 - [ ] **Client setup for Gemini-native tools** — inbound Gemini endpoint exists; ensure `client-setup.md` covers Cursor/Gemini CLI paths completely.
@@ -91,6 +103,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 ## Architecture & tech debt
 
 - [ ] **Move `_build_provider()` out of `app.py`** — called from lifespan and reload; belongs in `providers/` factory module for clearer boundaries.
+- [ ] **Encrypt `providers.api_key` at rest** — inventory `upstream_keys` are Fernet-encrypted (`inventory/key_encryption.py`) but gateway provider keys — now including Copilot OAuth tokens — are plaintext in the `providers` table. Reuse the same helpers (encrypt-on-write in `providers_db.py`, decrypt in `expand_gateway_provider`).
 - [x] **Reduce catalog duplication between `dashboard/catalog.py` and `inventory/catalog.py`** — different shapes (`CATALOG` dict vs list with detection endpoints); unify schema. *(Done 2026-07-05 — see "Unify provider catalogs" above.)*
 - [ ] **Inventory module packaging** — added `inventory/__init__.py`; consider same explicit exports pattern for other leaf packages if mypy/import clarity suffers.
 - [ ] **Structured logging** — request ID, attempt index, and fallback chain logged but not consistently structured for log aggregation.
@@ -109,6 +122,8 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 
 - Multi-user RBAC (single-user by design today).
 - Built-in HTTPS termination.
-- Webhook integrations (budget warn, key exhausted, provider down).
+- Webhook integrations (budget warn, key exhausted, quota near-exhaustion, provider down).
 - Provider auto-discovery from a single master API key (OpenRouter-style routing without manual prefix setup).
 - Mid-stream resume / partial output caching for long agent runs.
+- Savings tracker view — with subscription quotas + pricing data, show "what this month would have cost via paid APIs" (9router's cost-display framing) as a dashboard stat.
+- Anthropic-format upstream for Copilot/Claude-family OAuth providers once 8.4b lands (today all OAuth routing assumes OpenAI-compatible upstreams).
