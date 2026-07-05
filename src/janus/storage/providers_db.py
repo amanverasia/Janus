@@ -28,8 +28,10 @@ async def get_provider(db_path: str | Path, provider_id: str) -> dict[str, Any] 
 async def create_provider(db_path: str | Path, data: dict[str, Any]) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            """INSERT INTO providers (id, prefix, api_type, base_url, api_key, models)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO providers
+               (id, prefix, api_type, base_url, api_key, models,
+                quota_window, quota_limit, quota_metric)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"],
                 data["prefix"],
@@ -37,6 +39,9 @@ async def create_provider(db_path: str | Path, data: dict[str, Any]) -> None:
                 data["base_url"],
                 data.get("api_key"),
                 json.dumps(data.get("models", [])),
+                data.get("quota_window"),
+                data.get("quota_limit"),
+                data.get("quota_metric") or "requests",
             ),
         )
         await db.commit()
@@ -46,7 +51,8 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
     async with get_connection(db_path) as db:
         await db.execute(
             """UPDATE providers SET prefix = ?, api_type = ?, base_url = ?,
-               api_key = ?, models = ?, updated_at = datetime('now')
+               api_key = ?, models = ?, quota_window = ?, quota_limit = ?,
+               quota_metric = ?, updated_at = datetime('now')
                WHERE id = ?""",
             (
                 data["prefix"],
@@ -54,6 +60,9 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
                 data["base_url"],
                 data.get("api_key"),
                 json.dumps(data.get("models", [])),
+                data.get("quota_window"),
+                data.get("quota_limit"),
+                data.get("quota_metric") or "requests",
                 provider_id,
             ),
         )

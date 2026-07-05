@@ -145,7 +145,7 @@ async def _handle(
         upstream_payload = provider_adapter.build_upstream_request(canonical_req, target.model)
         providers: dict[str, Provider] = request.app.state.providers
         provider = providers[target.provider_config.id]
-        handler.record_request(target.account_id)
+        handler.record_attempt(target)
 
         try:
             if canonical_req.stream:
@@ -179,6 +179,9 @@ async def _handle(
                     finally:
                         usage = tracker.get_usage()
                         cost = compute_cost(usage, target.model, pricing_registry)
+                        handler.record_quota_tokens(
+                            target, usage.input_tokens + usage.output_tokens
+                        )
                         await record_usage(
                             db_path,
                             provider_id=target.provider_config.id,
@@ -230,6 +233,10 @@ async def _handle(
             from janus.storage.usage import record_usage
 
             cost = compute_cost(canonical_resp.usage, target.model, pricing_registry)
+            handler.record_quota_tokens(
+                target,
+                canonical_resp.usage.input_tokens + canonical_resp.usage.output_tokens,
+            )
             await record_usage(
                 db_path,
                 provider_id=target.provider_config.id,

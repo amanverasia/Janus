@@ -485,6 +485,22 @@ async def revoke_api_key(request: Request, key_id: int) -> HTMLResponse:
 # ---- Provider CRUD ----
 
 
+def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
+    from janus.storage.quotas import QUOTA_WINDOWS
+
+    window = params.get("quota_window", [""])[0].strip()
+    limit_str = params.get("quota_limit", [""])[0].strip()
+    metric = params.get("quota_metric", ["requests"])[0].strip()
+    limit = int(limit_str) if limit_str.isdigit() and int(limit_str) > 0 else None
+    if window not in QUOTA_WINDOWS or limit is None:
+        return {"quota_window": None, "quota_limit": None, "quota_metric": "requests"}
+    return {
+        "quota_window": window,
+        "quota_limit": limit,
+        "quota_metric": metric if metric in ("requests", "tokens") else "requests",
+    }
+
+
 @router.post("/api/providers", response_class=HTMLResponse)
 async def api_create_provider(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -506,6 +522,7 @@ async def api_create_provider(request: Request) -> HTMLResponse:
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": params.get("api_key", [""])[0] or None,
                 "models": models,
+                **_parse_quota_params(params),
             },
         )
     except KeyError:
@@ -545,6 +562,7 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": new_key,
                 "models": models,
+                **_parse_quota_params(params),
             },
         )
     except KeyError:
@@ -608,6 +626,28 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
         parsed["inventory_keys"] = await summarize_upstream_keys_for_inventory(
             db_path, inventory_id
         )
+        parsed["quota"] = None
+        if parsed.get("quota_window") and parsed.get("quota_limit"):
+            from janus.storage.quotas import describe_reset, get_window_usage
+
+            try:
+                usage = await get_window_usage(
+                    db_path, str(parsed["id"]), str(parsed["quota_window"])
+                )
+                metric = parsed.get("quota_metric") or "requests"
+                used = usage["tokens"] if metric == "tokens" else usage["requests"]
+                limit = int(parsed["quota_limit"])
+                parsed["quota"] = {
+                    "used": used,
+                    "limit": limit,
+                    "metric": metric,
+                    "window": parsed["quota_window"],
+                    "percent": min(round(used * 100 / limit), 100) if limit else 0,
+                    "exhausted": used >= limit,
+                    **describe_reset(str(parsed["quota_window"])),
+                }
+            except Exception:
+                parsed["quota"] = None
         providers.append(parsed)
     return providers
 

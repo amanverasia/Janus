@@ -8,6 +8,7 @@ from pathlib import Path
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
 from janus.storage.cooldowns import get_active_cooldowns, save_cooldown
+from janus.storage.quotas import get_window_usage, window_id
 from janus.storage.usage import get_request_counts_today
 
 COOLDOWN_DURATIONS: dict[str, float] = {
@@ -29,6 +30,8 @@ class FallbackHandler:
         self._request_times: dict[str, deque[float]] = {}
         self._daily_counts: dict[str, int] = {}
         self._daily_date: str = self._today()
+        self._quota_used: dict[str, int] = {}
+        self._quota_window_id: dict[str, str] = {}
 
     @staticmethod
     def _today() -> str:
@@ -53,6 +56,62 @@ class FallbackHandler:
         self._prune_window(times, now)
         self._daily_counts[account_id] = self._daily_counts.get(account_id, 0) + 1
 
+    def record_attempt(self, target: ResolvedTarget) -> None:
+        """Record an upstream attempt: rate-limit counters plus request-metric quota."""
+        self.record_request(target.account_id)
+        config = target.provider_config
+        if config.quota_window and config.quota_limit and config.quota_metric == "requests":
+            self._bump_quota(config.row_id, config.quota_window, 1)
+
+    def record_quota_tokens(self, target: ResolvedTarget, tokens: int) -> None:
+        """Record consumed tokens for providers with a token-metric quota."""
+        config = target.provider_config
+        if (
+            config.quota_window
+            and config.quota_limit
+            and config.quota_metric == "tokens"
+            and tokens > 0
+        ):
+            self._bump_quota(config.row_id, config.quota_window, tokens)
+
+    def _bump_quota(self, row_id: str, window: str, amount: int) -> None:
+        wid = window_id(window)
+        if self._quota_window_id.get(row_id) != wid:
+            self._quota_window_id[row_id] = wid
+            self._quota_used[row_id] = 0
+        self._quota_used[row_id] = self._quota_used.get(row_id, 0) + amount
+
+    def has_quota_headroom(self, target: ResolvedTarget) -> bool:
+        config = target.provider_config
+        if not config.quota_window or not config.quota_limit:
+            return True
+        row_id = config.row_id
+        if self._quota_window_id.get(row_id) != window_id(config.quota_window):
+            return True
+        return self._quota_used.get(row_id, 0) < config.quota_limit
+
+    def quota_used(self, row_id: str, window: str) -> int:
+        if self._quota_window_id.get(row_id) != window_id(window):
+            return 0
+        return self._quota_used.get(row_id, 0)
+
+    async def load_quota_usage(self) -> None:
+        if self.db_path is None:
+            return
+        seen: set[str] = set()
+        for configs in self.registry.providers.values():
+            for config in configs:
+                if not config.quota_window or not config.quota_limit:
+                    continue
+                row_id = config.row_id
+                if row_id in seen:
+                    continue
+                seen.add(row_id)
+                usage = await get_window_usage(self.db_path, row_id, config.quota_window)
+                metric = "tokens" if config.quota_metric == "tokens" else "requests"
+                self._quota_window_id[row_id] = window_id(config.quota_window)
+                self._quota_used[row_id] = usage[metric]
+
     def has_rate_headroom(self, target: ResolvedTarget) -> bool:
         rpm_limit = target.provider_config.rate_limit_rpm
         if rpm_limit is not None and rpm_limit > 0:
@@ -74,7 +133,10 @@ class FallbackHandler:
         headroom: list[ResolvedTarget] = []
         limited: list[ResolvedTarget] = []
         for target in accounts:
-            (headroom if self.has_rate_headroom(target) else limited).append(target)
+            if self.has_rate_headroom(target) and self.has_quota_headroom(target):
+                headroom.append(target)
+            else:
+                limited.append(target)
         return headroom + limited
 
     async def load_request_counts(self) -> None:

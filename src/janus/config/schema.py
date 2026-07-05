@@ -22,6 +22,14 @@ class ProviderConfig(BaseModel):
     upstream_key_id: str | None = None
     rate_limit_rpm: int | None = None
     rate_limit_rpd: int | None = None
+    quota_window: str | None = None  # "5h" | "daily" | "weekly" | "monthly"
+    quota_limit: int | None = None
+    quota_metric: str = "requests"  # "requests" | "tokens"
+
+    @property
+    def row_id(self) -> str:
+        """Provider DB-row id (strips the inventory-key suffix)."""
+        return self.id.split("::", 1)[0]
 
 
 class ComboConfig(BaseModel):

@@ -48,6 +48,21 @@
                     {% endif %}
                 </div>
             </div>
+            {% if provider.quota %}
+            <div>
+                <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Quota ({{ provider.quota.window }})</p>
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                        <div class="h-2 rounded-full {% if provider.quota.exhausted %}bg-red-500{% elif provider.quota.percent >= 80 %}bg-yellow-500{% else %}bg-green-500{% endif %}"
+                             style="width: {{ provider.quota.percent }}%"></div>
+                    </div>
+                    <span class="text-gray-300 text-xs whitespace-nowrap">{{ "{:,}".format(provider.quota.used) }} / {{ "{:,}".format(provider.quota.limit) }} {{ provider.quota.metric }}</span>
+                </div>
+                <p class="text-xs mt-1 {% if provider.quota.exhausted %}text-red-400{% else %}text-gray-500{% endif %}">
+                    {% if provider.quota.exhausted %}Exhausted — deprioritized in routing · {% endif %}resets in {{ provider.quota.resets_in }}
+                </p>
+            </div>
+            {% endif %}
             {% set inv = provider.inventory_keys %}
             {% if inv.total > 0 %}
             <div>
@@ -81,7 +96,10 @@
                     data-has-key="{{ 'true' if provider.api_key else 'false' }}"
                     data-inventory-total="{{ provider.inventory_keys.total }}"
                     data-inventory-routable="{{ provider.inventory_keys.routable }}"
-                    data-inventory-pending="{{ provider.inventory_keys.pending }}">Edit</button>
+                    data-inventory-pending="{{ provider.inventory_keys.pending }}"
+                    data-quota-window="{{ provider.quota_window or '' }}"
+                    data-quota-limit="{{ provider.quota_limit or '' }}"
+                    data-quota-metric="{{ provider.quota_metric or 'requests' }}">Edit</button>
             <button hx-post="/dashboard/api/providers/{{ provider.id }}/test"
                     hx-target="#test-status-{{ provider.id }}"
                     hx-swap="innerHTML"

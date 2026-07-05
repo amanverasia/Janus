@@ -69,6 +69,31 @@ as usual.
     Routing Copilot through third-party tooling may be subject to GitHub's
     terms of service. Use with your own account at your own discretion.
 
+## Subscription quotas
+
+Any provider can be given a **quota window** — useful for subscription plans
+(Copilot, Claude Pro-style 5-hour windows, monthly token allowances):
+
+| Field | Values |
+|---|---|
+| Window | `5h` (fixed 5-hour buckets), `daily`, `weekly` (Mon–Sun), `monthly` — all UTC |
+| Limit | Any positive integer |
+| Metric | `requests` or `tokens` (input + output) |
+
+Configure in the provider's Add/Edit form on the dashboard. The provider card
+then shows a usage bar with the current window's consumption and a reset
+countdown.
+
+**Enforcement is soft:** when a provider's quota is exhausted, its accounts are
+moved to the *end* of the fallback try-order (same mechanism as RPM/RPD rate
+limits) — requests are never blocked, so a quota-exhausted provider still works
+if it's the only option. In a combo, exhausting your subscription's quota means
+the next tier is tried first until the window resets.
+
+Consumption is counted from the `usage` table (shared across all inventory
+accounts of the provider) and seeded on startup/reload, so restarts don't lose
+window state.
+
 ## Inventory-backed routing
 
 When [upstream key inventory](inventory.md) has routable keys for a gateway

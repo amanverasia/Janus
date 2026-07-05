@@ -11,6 +11,9 @@ def expand_gateway_provider(
     upstream_keys: list[dict[str, Any]],
 ) -> list[ProviderConfig]:
     models = json.loads(row["models"]) if row["models"] else []
+    quota_window = row.get("quota_window") or None
+    quota_limit = row.get("quota_limit")
+    quota_metric = row.get("quota_metric") or "requests"
     if upstream_keys:
         return [
             ProviderConfig(
@@ -23,6 +26,9 @@ def expand_gateway_provider(
                 upstream_key_id=key["id"],
                 rate_limit_rpm=key.get("rate_limit_rpm"),
                 rate_limit_rpd=key.get("rate_limit_rpd"),
+                quota_window=quota_window,
+                quota_limit=quota_limit,
+                quota_metric=quota_metric,
             )
             for key in upstream_keys
         ]
@@ -34,5 +40,8 @@ def expand_gateway_provider(
             base_url=row["base_url"],
             api_key=row["api_key"],
             models=models,
+            quota_window=quota_window,
+            quota_limit=quota_limit,
+            quota_metric=quota_metric,
         )
     ]
