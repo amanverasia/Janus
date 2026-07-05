@@ -174,6 +174,23 @@ CREATE INDEX IF NOT EXISTS idx_upstream_models_provider ON upstream_models(provi
 CREATE INDEX IF NOT EXISTS idx_upstream_models_key ON upstream_models(upstream_key_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_key_history_key ON upstream_key_history(upstream_key_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_keys_key_hash ON upstream_keys(key_hash);
+
+CREATE TABLE IF NOT EXISTS request_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    client_format TEXT,
+    model TEXT,
+    provider_id TEXT,
+    account_id TEXT,
+    status INTEGER,
+    duration_ms INTEGER,
+    streamed INTEGER NOT NULL DEFAULT 0,
+    request_body TEXT,
+    response_body TEXT,
+    error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_request_logs_ts ON request_logs(timestamp);
 """
 
 _UPSTREAM_KEY_NEW_COLUMNS = [
@@ -187,6 +204,21 @@ _NEW_USAGE_COLUMNS = [
     ("client_key_id", "INTEGER"),
     ("client_key_label", "TEXT"),
 ]
+
+_NEW_PROVIDER_COLUMNS = [
+    ("quota_window", "TEXT"),
+    ("quota_limit", "INTEGER"),
+    ("quota_metric", "TEXT DEFAULT 'requests'"),
+]
+
+
+async def _migrate_provider_columns(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(providers)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    for col, col_type in _NEW_PROVIDER_COLUMNS:
+        if col not in existing:
+            await db.execute(f"ALTER TABLE providers ADD COLUMN {col} {col_type}")
 
 
 async def _migrate_upstream_key_columns(db: aiosqlite.Connection) -> None:
@@ -239,6 +271,7 @@ async def init_db(db_path: str | Path) -> None:
     async with aiosqlite.connect(str(db_path)) as db:
         await db.executescript(_SCHEMA)
         await _migrate_usage_columns(db)
+        await _migrate_provider_columns(db)
         await _migrate_upstream_key_columns(db)
         await db.commit()
     await seed_inventory_providers(db_path)

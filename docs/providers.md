@@ -28,21 +28,46 @@ accounts share that prefix, Janus tries them in order with automatic fallback.
 | `anthropic` | Direct Anthropic API |
 | `gemini` | Direct Google Gemini API |
 | `opencode_free` | OpenCode Zen free tier |
+| `github_copilot` | GitHub Copilot subscription (OAuth device-code flow) |
 
 Most providers use `openai_compat` — if a provider offers an "OpenAI-compatible"
 endpoint, that's the one to use.
 
 ## Dashboard catalog
 
-The dashboard **Providers** page includes a catalog of 14 known providers with
+The dashboard **Providers** page includes a catalog of 15 known providers with
 pre-filled defaults, logos (via Simple Icons), and one-click setup:
 
 OpenAI, Anthropic, Google Gemini, Groq, Together AI, DeepSeek, OpenRouter,
-Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, OpenCode Zen (Free), and
-Custom.
+Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, GitHub Copilot,
+OpenCode Zen (Free), and Custom.
 
 Each entry supports **Fetch Models** (auto-populate from upstream) and **Test
 Connection** (1-token probe with latency).
+
+## OAuth providers: GitHub Copilot
+
+Copilot is Janus's first OAuth (subscription) provider — it authenticates with
+your GitHub account instead of an API key:
+
+1. Dashboard → Providers → Add Provider → pick **GitHub Copilot** from the catalog
+   (or set API Type to `github_copilot`).
+2. Click **Connect GitHub Account** — Janus starts GitHub's device-code flow and
+   shows a one-time code.
+3. Open the verification URL, enter the code, and authorize. The resulting OAuth
+   token is filled into the API Key field automatically.
+4. Click **Create Provider**. Use models as `copilot/gpt-4o` etc. (**Fetch
+   Models** lists what your subscription includes.)
+
+Under the hood, Janus stores the long-lived GitHub OAuth token and exchanges it
+for short-lived Copilot session tokens automatically (refreshed before expiry
+behind a single-flight lock) — no manual re-login needed. The Copilot chat
+endpoint is OpenAI-compatible, so all formats, savers, combos, and fallback work
+as usual.
+
+!!! note "Terms of use"
+    Routing Copilot through third-party tooling may be subject to GitHub's
+    terms of service. Use with your own account at your own discretion.
 
 ## Inventory-backed routing
 

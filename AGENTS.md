@@ -51,7 +51,7 @@ Providers, combos, token savers, pricing overrides, and server settings live in 
 
 Hot-reload helpers in `dashboard/reload.py` rebuild in-memory state from DB after changes: `reload_providers`, `reload_combos`, `reload_savers`, `reload_pricing`. Dashboard mutation routes call these after writing to the DB.
 
-`src/janus/catalog.py` is the single source of truth for provider metadata (unified `PROVIDERS` dict with per-entry `inventory` and/or `gateway` blocks). `dashboard/catalog.py` (14 gateway providers for the "Add Provider" UI) and `inventory/catalog.py` (29 inventory providers with detection endpoints) derive their legacy shapes from it, as do the id bridges (`google`↔`gemini`, `dashscope`↔`qwen`) used by `routing/provider_provision.py` and `routing/inventory_bridge.py`. Add new providers to `catalog.py`, not the derived modules.
+`src/janus/catalog.py` is the single source of truth for provider metadata (unified `PROVIDERS` dict with per-entry `inventory` and/or `gateway` blocks). `dashboard/catalog.py` (15 gateway providers for the "Add Provider" UI) and `inventory/catalog.py` (29 inventory providers with detection endpoints) derive their legacy shapes from it, as do the id bridges (`google`↔`gemini`, `dashscope`↔`qwen`) used by `routing/provider_provision.py` and `routing/inventory_bridge.py`. Add new providers to `catalog.py`, not the derived modules.
 
 Provider edit endpoint preserves the existing API key when the field is left blank (fetches current value from DB). The `POST /dashboard/api/providers/fetch-models` endpoint calls upstream `/models` to auto-populate the models field.
 
@@ -68,7 +68,7 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 
 ## Adding a new token saver
 
-1. Implement `TokenSaver` protocol (`transform(req) -> CanonicalRequest`) in `src/janus/tokensavers/`.
+1. Implement `TokenSaver` protocol (`transform(req) -> CanonicalRequest`) in `src/janus/tokensavers/`. Savers that need I/O (e.g. `HeadroomSaver`) implement `AsyncTokenSaver` instead (`async transform` + `async close`) and run in the pipeline's `apply_async` stage, which `_handle()` awaits before the sync `apply`.
 2. Add construction logic to `reload_savers()` in **`src/janus/dashboard/reload.py`** (not `app.py`).
 3. Savers must be fail-safe — exceptions are caught by the pipeline and logged, never breaking the request.
 

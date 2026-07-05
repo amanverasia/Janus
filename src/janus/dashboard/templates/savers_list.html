@@ -40,6 +40,29 @@
         <div class="flex items-start justify-between gap-4">
             <div class="flex-1 min-w-0">
                 <div class="flex items-center space-x-3 mb-2">
+                    <h2 class="text-lg font-bold text-white">Headroom</h2>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-900 text-blue-200">External</span>
+                </div>
+                <p class="text-gray-400 text-sm mb-3">Routes the conversation through a locally running <a href="https://github.com/chopratejas/headroom" target="_blank" class="text-blue-400 hover:text-blue-300">Headroom</a> compression proxy (<code class="text-xs bg-gray-900 px-1 rounded">pip install "headroom-ai[proxy]" &amp;&amp; headroom proxy --port 8787</code>). Fails open — if Headroom is down, requests pass through unchanged.</p>
+                <label class="block text-xs text-gray-500 mb-1" for="headroom-url">Headroom URL</label>
+                <input type="text"
+                       id="headroom-url"
+                       value="{{ settings.saver_headroom_url }}"
+                       placeholder="http://localhost:8787"
+                       hx-post="/dashboard/api/settings"
+                       hx-swap="none"
+                       hx-trigger="change"
+                       hx-on:htmx:config-request="event.detail.parameters.key='saver_headroom_url'; event.detail.parameters.value=event.detail.elt.value"
+                       class="w-full max-w-sm px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 font-mono focus:outline-none focus:border-blue-500">
+            </div>
+            {{ saver_toggle("saver_headroom_enabled", settings.saver_headroom_enabled == 'true') }}
+        </div>
+    </div>
+
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-3 mb-2">
                     <h2 class="text-lg font-bold text-white">Ponytail</h2>
                 </div>
                 <p class="text-gray-400 text-sm mb-3">Summarizes older messages into a compact summary. Choose compression level:</p>

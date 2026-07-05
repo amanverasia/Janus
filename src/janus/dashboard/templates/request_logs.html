@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Request Logs - Janus{% endblock %}
+{% block request_logs_active %}bg-gray-700 text-white{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white">Request Logs</h1>
+    <div class="flex items-center gap-3">
+        <a href="/dashboard/api/request-logs/export"
+           class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">
+            Export JSON
+        </a>
+        <button hx-delete="/dashboard/api/request-logs"
+                hx-target="#request-logs-content"
+                hx-swap="innerHTML"
+                hx-confirm="Delete all captured request logs?"
+                class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors">
+            Clear
+        </button>
+    </div>
+</div>
+
+{% if not logging_enabled %}
+<div class="bg-yellow-900/30 border border-yellow-700 rounded-xl p-4 mb-6">
+    <p class="text-yellow-300 text-sm">
+        Request logging is <strong>disabled</strong>. New requests are not being captured.
+        Enable it in <a href="/dashboard/settings" class="underline hover:text-yellow-200">Settings</a>.
+    </p>
+</div>
+{% endif %}
+
+<div id="request-logs-content">
+    {% include "request_logs_partial.html" %}
+</div>
+{% endblock %}

@@ -150,6 +150,34 @@
         </div>
     </div>
 
+    <!-- Request Logging -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <h2 class="text-lg font-bold text-white">Request Logging (Debug)</h2>
+                <p class="text-gray-400 text-sm mt-1">
+                    When enabled, full request and response bodies are captured to the local
+                    database for troubleshooting. View them on the
+                    <a href="/dashboard/request-logs" class="text-blue-400 hover:text-blue-300">Request Logs</a> page.
+                </p>
+                <p class="text-gray-500 text-xs mt-2">
+                    Bodies are truncated at 64&nbsp;KB and only the most recent 500 requests are kept.
+                    Logs may contain prompts and completions — leave off unless debugging.
+                </p>
+            </div>
+            <label class="janus-toggle">
+                <input type="checkbox"
+                       id="request-logging-toggle"
+                       {% if request_logging_enabled %}checked{% endif %}
+                       hx-post="/dashboard/api/settings"
+                       hx-swap="none"
+                       hx-trigger="change"
+                       hx-on:htmx:config-request="event.detail.parameters.key='server_request_logging'; event.detail.parameters.value=event.detail.elt.checked ? 'true' : 'false'">
+                <span class="janus-toggle-track" aria-hidden="true"></span>
+            </label>
+        </div>
+    </div>
+
     <!-- Server Info -->
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <h2 class="text-lg font-bold text-white mb-4">Server</h2>

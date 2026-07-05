@@ -18,8 +18,9 @@ from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
 from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
 from janus.storage.upstream_keys import list_routable_upstream_keys
-from janus.tokensavers.base import TokenSaver
+from janus.tokensavers.base import AsyncTokenSaver, TokenSaver
 from janus.tokensavers.caveman import CavemanSaver
+from janus.tokensavers.headroom import HeadroomSaver
 from janus.tokensavers.pipeline import SaverPipeline
 from janus.tokensavers.ponytail import PonytailSaver
 from janus.tokensavers.rtk import RTKSaver
@@ -72,13 +73,19 @@ async def reload_savers(app: FastAPI) -> None:
     await ensure_saver_defaults(db_path)
     settings = resolve_saver_settings(await get_all_settings(db_path))
     savers: list[TokenSaver] = []
+    async_savers: list[AsyncTokenSaver] = []
+    if settings["saver_headroom_enabled"].lower() == "true":
+        async_savers.append(HeadroomSaver(base_url=settings["saver_headroom_url"]))
     if settings["saver_rtk_enabled"].lower() == "true":
         savers.append(RTKSaver())
     if settings["saver_caveman_enabled"].lower() == "true":
         savers.append(CavemanSaver())
     if settings["saver_ponytail_enabled"].lower() == "true":
         savers.append(PonytailSaver(level=settings["saver_ponytail_level"]))
-    app.state.saver_pipeline = SaverPipeline(savers)
+    old_pipeline: SaverPipeline | None = getattr(app.state, "saver_pipeline", None)
+    if old_pipeline is not None:
+        await old_pipeline.close()
+    app.state.saver_pipeline = SaverPipeline(savers, async_savers)
 
 
 async def reload_pricing(app: FastAPI) -> None:

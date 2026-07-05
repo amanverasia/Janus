@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import json
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -14,11 +16,13 @@ from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.base import FormatAdapter
 from janus.formats.gemini import GeminiAdapter
 from janus.formats.openai import OpenAIAdapter
+from janus.formats.openai_responses import OpenAIResponsesAdapter
 from janus.providers.base import Provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import FallbackHandler
 from janus.storage.budgets import get_budget_status
+from janus.storage.request_logs import record_request_log
 from janus.streaming.translator import translate_stream
 from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
@@ -29,13 +33,14 @@ router = APIRouter()
 
 FORMATS: dict[str, FormatAdapter] = {
     "openai": OpenAIAdapter(),
+    "openai_responses": OpenAIResponsesAdapter(),
     "anthropic": AnthropicAdapter(),
     "gemini": GeminiAdapter(),
 }
 
 
 def _resolve_format(name: str) -> FormatAdapter:
-    if name == "opencode_free":
+    if name in ("opencode_free", "github_copilot"):
         name = "openai"
     return FORMATS[name]
 
@@ -99,14 +104,31 @@ async def _handle(
     canonical_req = client_adapter.parse_request(body)
 
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
+    canonical_req = await saver_pipeline.apply_async(canonical_req)
     canonical_req = saver_pipeline.apply(canonical_req)
     canonical_req = canonical_req.model_copy(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
 
-    from janus.storage.settings import is_sticky_client_key_routing_enabled
+    from janus.storage.settings import (
+        get_all_settings,
+        request_logging_enabled,
+        sticky_client_key_routing_enabled,
+    )
 
-    sticky_routing = await is_sticky_client_key_routing_enabled(db_path)
+    settings = await get_all_settings(db_path)
+    sticky_routing = sticky_client_key_routing_enabled(settings)
+    log_requests = request_logging_enabled(settings)
+    start_time = time.monotonic()
+    logged_request_body: str | None = None
+    if log_requests:
+        try:
+            logged_request_body = json.dumps(body, ensure_ascii=False)
+        except (TypeError, ValueError):
+            logged_request_body = str(body)
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - start_time) * 1000)
 
     try:
         attempts = handler.resolve_attempts(
@@ -171,6 +193,18 @@ async def _handle(
                             client_key_label=client_key_label,
                             cost=cost,
                         )
+                        if log_requests:
+                            await record_request_log(
+                                db_path,
+                                client_format=client_format,
+                                model=canonical_req.model,
+                                provider_id=target.provider_config.id,
+                                account_id=target.account_id,
+                                status=200,
+                                duration_ms=_elapsed_ms(),
+                                streamed=True,
+                                request_body=logged_request_body,
+                            )
 
                 return StreamingResponse(_streaming_generator(), media_type="text/event-stream")
 
@@ -211,6 +245,25 @@ async def _handle(
                 cost=cost,
             )
 
+            if log_requests:
+                try:
+                    logged_response_body: str | None = json.dumps(
+                        client_payload, ensure_ascii=False
+                    )
+                except (TypeError, ValueError):
+                    logged_response_body = str(client_payload)
+                await record_request_log(
+                    db_path,
+                    client_format=client_format,
+                    model=canonical_req.model,
+                    provider_id=target.provider_config.id,
+                    account_id=target.account_id,
+                    status=result.status_code,
+                    duration_ms=_elapsed_ms(),
+                    request_body=logged_request_body,
+                    response_body=logged_response_body,
+                )
+
             return JSONResponse(content=client_payload)
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
@@ -218,6 +271,16 @@ async def _handle(
             last_error = f"{target.account_id}: {type(e).__name__}"
             continue
 
+    if log_requests:
+        await record_request_log(
+            db_path,
+            client_format=client_format,
+            model=canonical_req.model,
+            status=503,
+            duration_ms=_elapsed_ms(),
+            request_body=logged_request_body,
+            error=f"All providers exhausted: {last_error}",
+        )
     raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
 
 
@@ -260,6 +323,12 @@ async def health() -> dict[str, str]:
 async def chat_completions(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("openai", body, request)
+
+
+@router.post("/responses", dependencies=[Depends(require_api_key)])
+async def responses(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    return await _handle("openai_responses", body, request)
 
 
 @router.post("/messages", dependencies=[Depends(require_api_key)])

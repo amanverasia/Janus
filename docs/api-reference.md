@@ -1,10 +1,11 @@
 # API Reference
 
-Janus exposes three client-facing API surfaces plus utility endpoints:
+Janus exposes four client-facing API surfaces plus utility endpoints:
 
 | Surface | Base path | Format |
 |---|---|---|
 | OpenAI | `/v1/chat/completions` | OpenAI Chat Completions |
+| OpenAI Responses | `/v1/responses` | OpenAI Responses API |
 | Anthropic | `/v1/messages` | Anthropic Messages |
 | Gemini | `/v1beta/models/{model}:generateContent` | Gemini GenerateContent |
 | Utility | `/v1/health`, `/v1/models` | JSON |
@@ -119,6 +120,52 @@ data: [DONE]
     Streaming requests do **not** retry mid-stream. If the first provider fails
     before streaming begins, Janus falls back to the next account. Once streaming
     starts, it cannot be replayed.
+
+---
+
+## POST /v1/responses
+
+OpenAI Responses API format — the native protocol of Codex CLI and newer OpenAI
+SDK clients. Accepts the standard Responses request body and returns standard
+Responses output; Janus translates to whatever format the upstream provider
+speaks.
+
+### Request Body
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | `string` | `prefix/model` or a combo name |
+| `input` | `string \| array` | Prompt text, or a list of `message` / `function_call` / `function_call_output` items |
+| `instructions` | `string` | System prompt |
+| `stream` | `bool` | Stream via named SSE events (default `false`) |
+| `max_output_tokens` | `int` | Maximum tokens to generate |
+| `tools` | `array` | Flat function tool definitions (`{"type":"function","name",...}`) |
+| `tool_choice` | `string \| object` | `auto`, `none`, `required`, or `{"type":"function","name":...}` |
+| `reasoning` | `object` | `{"effort": "low" \| "medium" \| "high"}` |
+
+`store` and `previous_response_id` are accepted but ignored — Janus is stateless.
+
+### Non-Streaming
+
+```bash
+curl http://localhost:20128/v1/responses \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-janus-yourkey" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "input": "Hello!"
+  }'
+```
+
+Response — a `response` object with `output` items (`message`, `function_call`,
+`reasoning`) and `usage`.
+
+### Streaming
+
+With `"stream": true`, the response is `text/event-stream` using named events
+(`response.created`, `response.output_item.added`, `response.output_text.delta`,
+`response.function_call_arguments.delta`, …, `response.completed`). There is no
+`[DONE]` sentinel — the stream ends after `response.completed`.
 
 ---
 

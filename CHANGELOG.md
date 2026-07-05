@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GitHub Copilot OAuth provider** — first subscription/OAuth provider (Phase 8.4 of the 9router parity plan). New `api_type: github_copilot` with device-code login from the dashboard ("Connect GitHub Account" in Add Provider), automatic exchange of the long-lived GitHub OAuth token for short-lived Copilot session tokens (refreshed before expiry behind a single-flight lock), OpenAI-compatible routing (`copilot/gpt-4o`, ...), Fetch Models and Test Connection support. New dashboard endpoints `POST /dashboard/api/oauth/copilot/{start,poll}`
+- **Headroom token saver** — optional integration with an external [Headroom](https://github.com/chopratejas/headroom) compression proxy: when enabled, conversations are sent through `POST {url}/v1/compress` before any other saver and before routing. Fail-open (Headroom being down never breaks a request). Toggle + URL field on the Token Savers dashboard page (`saver_headroom_enabled`, `saver_headroom_url`). Phase 8.3 of the 9router parity plan
+- **Request logging / debug mode** — opt-in capture of full request/response bodies to SQLite (`request_logs` table, 64 KB body truncation, last 500 requests kept). New dashboard page `/dashboard/request-logs` with per-request JSON detail, export, and clear; toggle in Settings (`server_request_logging`, off by default). Streaming requests and all-providers-exhausted failures are captured too. Phase 8.2 of the 9router parity plan
+- **OpenAI Responses API endpoint** (`POST /v1/responses`) — Codex CLI and other Responses-API clients now work natively. New bidirectional format adapter (`formats/openai_responses.py`) translates `input` items, flat tool definitions, `function_call`/`function_call_output` round-trips, `max_output_tokens`, `reasoning.effort`, and streaming via named SSE events (`response.created` … `response.completed`). Phase 8.1 of the 9router feature-parity plan (`docs/superpowers/specs/2026-07-05-phase8-9router-parity.md`)
+
 ## [1.2.0] - 2026-07-05
 
 ### Added

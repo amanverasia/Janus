@@ -30,9 +30,9 @@ GATEWAY_FIELDS = {"id", "name", "icon", "logo", "api_type", "base_url", "prefix"
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 30
+    assert len(PROVIDERS) == 31
     assert len(inventory_entries()) == 29
-    assert len(gateway_entries()) == 14
+    assert len(gateway_entries()) == 15
 
 
 def test_inventory_view_derives_from_unified() -> None:

@@ -687,6 +687,18 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "default_models": [],
         }
     },
+    "github_copilot": {
+        "gateway": {
+            "id": "github_copilot",
+            "name": "GitHub Copilot",
+            "icon": "🐙",
+            "logo": "",
+            "api_type": "github_copilot",
+            "base_url": "https://api.githubcopilot.com",
+            "prefix": "copilot",
+            "default_models": ["gpt-4o", "gpt-4.1", "o4-mini", "claude-sonnet-4"],
+        }
+    },
 }
 
 GATEWAY_ORDER: list[str] = [
@@ -702,6 +714,7 @@ GATEWAY_ORDER: list[str] = [
     "perplexity",
     "xai",
     "qwen",
+    "github_copilot",
     "opencode_free",
     "custom",
 ]

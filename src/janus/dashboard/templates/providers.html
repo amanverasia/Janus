@@ -62,12 +62,13 @@
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-gray-400 text-sm mb-1">API Type</label>
-                    <select name="api_type" id="f-api_type"
+                    <select name="api_type" id="f-api_type" onchange="copilotConnectVisibility()"
                             class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
                         <option value="openai_compat">openai_compat</option>
                         <option value="anthropic">anthropic</option>
                         <option value="gemini">gemini</option>
                         <option value="opencode_free">opencode_free</option>
+                        <option value="github_copilot">github_copilot</option>
                     </select>
                 </div>
                 <div>
@@ -80,6 +81,13 @@
                 <label class="block text-gray-400 text-sm mb-1">API Key</label>
                 <input type="password" name="api_key" id="f-api_key" placeholder="sk-..."
                        class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                <div id="copilot-connect" class="hidden mt-2">
+                    <button type="button" onclick="startCopilotAuth()" id="copilot-connect-btn"
+                            class="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                        Connect GitHub Account
+                    </button>
+                    <div id="copilot-auth-status" class="hidden mt-2 p-3 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300"></div>
+                </div>
             </div>
             <div>
                 <div class="flex items-center justify-between mb-1">
@@ -125,6 +133,7 @@
                     <option value="anthropic">anthropic</option>
                     <option value="gemini">gemini</option>
                     <option value="opencode_free">opencode_free</option>
+                    <option value="github_copilot">github_copilot</option>
                 </select>
             </div>
             <div>
@@ -165,6 +174,68 @@ function fillProviderForm(key, apiType, baseUrl, prefix, models) {
     document.getElementById('f-api_type').value = apiType;
     document.getElementById('f-base_url').value = baseUrl;
     document.getElementById('f-models').value = models;
+    copilotConnectVisibility();
+}
+
+function copilotConnectVisibility() {
+    var isCopilot = document.getElementById('f-api_type').value === 'github_copilot';
+    document.getElementById('copilot-connect').classList.toggle('hidden', !isCopilot);
+}
+
+var copilotPollTimer = null;
+
+function startCopilotAuth() {
+    var statusEl = document.getElementById('copilot-auth-status');
+    var btn = document.getElementById('copilot-connect-btn');
+    if (copilotPollTimer) { clearInterval(copilotPollTimer); copilotPollTimer = null; }
+    btn.disabled = true;
+    btn.classList.add('opacity-50');
+    statusEl.textContent = 'Requesting device code...';
+    statusEl.classList.remove('hidden');
+
+    fetch('/dashboard/api/oauth/copilot/start', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                statusEl.textContent = 'Error: ' + data.error;
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                return;
+            }
+            statusEl.innerHTML = 'Open <a href="' + data.verification_uri + '" target="_blank" class="text-blue-400 underline">' +
+                data.verification_uri + '</a> and enter code: <strong class="text-white font-mono text-base">' +
+                data.user_code + '</strong><br><span class="text-gray-500">Waiting for authorization\u2026</span>';
+            var interval = Math.max((data.interval || 5) * 1000, 5000);
+            copilotPollTimer = setInterval(function() {
+                var body = new URLSearchParams();
+                body.append('device_code', data.device_code);
+                fetch('/dashboard/api/oauth/copilot/poll', {
+                    method: 'POST',
+                    body: body,
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'}
+                }).then(r => r.json()).then(poll => {
+                    if (poll.status === 'success') {
+                        clearInterval(copilotPollTimer);
+                        copilotPollTimer = null;
+                        document.getElementById('f-api_key').value = poll.access_token;
+                        statusEl.innerHTML = '<span class="text-green-400">Connected! Token filled in. Click Create Provider to finish.</span>';
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50');
+                    } else if (poll.status === 'error') {
+                        clearInterval(copilotPollTimer);
+                        copilotPollTimer = null;
+                        statusEl.innerHTML = '<span class="text-red-400">Authorization failed: ' + poll.error + '</span>';
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50');
+                    }
+                }).catch(function() {});
+            }, interval);
+        })
+        .catch(function() {
+            statusEl.textContent = 'Request failed';
+            btn.disabled = false;
+            btn.classList.remove('opacity-50');
+        });
 }
 
 function fetchModels(prefix) {

@@ -14,13 +14,29 @@ Living backlog from repo audit (2026-07-05). Items are grouped by area; order wi
 
 ---
 
+## Phase 8 — 9router feature parity (plan: `docs/superpowers/specs/2026-07-05-phase8-9router-parity.md`)
+
+Gap review vs [9router](https://github.com/decolua/9router) done 2026-07-05. Order = implementation order.
+
+- [x] **8.1 OpenAI Responses API format adapter** — `formats/openai_responses.py` (`/v1/responses` inbound). Codex CLI speaks this natively. Follows the six-method adapter recipe; register in `FORMATS`. *(Done 2026-07-05 — bidirectional adapter incl. streaming parser/emitter for future Codex upstream use; unit + integration tests.)*
+- [x] **8.2 Request logging / debug mode** — opt-in capture of full request/response (headers redacted, bodies truncated) to SQLite; dashboard viewer page + export; toggle in Settings. Off by default. *(Done 2026-07-05 — `storage/request_logs.py`, `/dashboard/request-logs`, `server_request_logging` setting; 64 KB truncation, 500-row retention, fire-and-forget writes.)*
+- [x] **8.3 Headroom token saver** — optional external `/v1/compress` proxy hop in `SaverPipeline` (fail-open, like all savers). Config: base URL + enable toggle. *(Done 2026-07-05 — `tokensavers/headroom.py`, `AsyncTokenSaver` protocol + `apply_async` pipeline stage, dashboard card with URL field.)*
+- [x] **8.4 OAuth provider framework** — token store (encrypted at rest), refresh-before-expiry loop, `OAuthProvider` executor base. First provider: GitHub Copilot (device-code flow, best documented). Follow-ons: Kiro, Codex/ChatGPT, Claude Code subscription. *(Done 2026-07-05 for Copilot — `providers/github_copilot.py` with device-flow helpers + session-token refresh (single-flight); long-lived GitHub token lives in `providers.api_key` (no separate oauth_tokens table needed — GitHub device-flow tokens have no refresh token/expiry); dashboard Connect flow + fetch-models/test branches. Follow-on OAuth providers (Kiro, Codex, Claude Code) still open, tracked below.)*
+- [ ] **8.4b Additional OAuth providers** — Kiro (free Claude), Codex/ChatGPT subscription, Claude Code subscription, Vertex service-account JSON. Each needs its own auth flow + executor; reuse the Copilot pattern (token exchange in executor, connect flow in dashboard). Consider encrypting `providers.api_key` at rest (reuse `inventory/key_encryption.py`).
+- [ ] **8.5 Subscription quota tracking** — per-provider quota windows (5h / daily / weekly / monthly) with reset countdowns in dashboard; feed window exhaustion into fallback ordering. Depends on 8.4.
+- [ ] **8.6 Ollama inbound format adapter** — `/api/chat` + `/api/tags` shims for tools that only support Ollama endpoints.
+
+Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first design; YAML export + DB copy is the answer), Cloudflare Workers deploy (Node-only), i18n READMEs.
+
+---
+
 ## Routing & gateway
 
 - [ ] **Smarter inventory account ordering** — today: `priority DESC`, then credits. Consider health status, recent 429s, and RPM headroom in sort/rotation.
 - [ ] **Streaming fallback story** — mid-stream errors cannot retry (by design). Document clearly for users; optionally explore safe reconnect patterns for idempotent short streams.
 - [ ] **Gateway-level rate limiting** — inventory submit is rate-limited; public `/v1/*` API is not. Add optional per-key RPM limits on the Janus API itself.
 - [ ] **Richer `/v1/health`** — today returns `{"status":"ok"}`. Add optional checks: DB reachable, provider count, inventory scheduler alive, last recheck age.
-- [ ] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types.
+- [ ] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types. *(Tracked as Phase 8.4 above.)*
 
 ---
 

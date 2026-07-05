@@ -8,7 +8,7 @@ exceptions are caught and logged, never breaking a request.
 The `SaverPipeline` runs enabled savers in sequence:
 
 ```
-RTK → Caveman → Ponytail
+Headroom (external) → RTK → Caveman → Ponytail
 ```
 
 ## RTK
@@ -78,6 +78,33 @@ token_savers:
     level: full   # lite | full | ultra
 ```
 
+## Headroom
+
+**Default: OFF** — requires a separately running [Headroom](https://github.com/chopratejas/headroom) proxy.
+
+Headroom is an external context-compression service. When enabled, Janus sends
+the conversation to Headroom's `POST /v1/compress` endpoint before any other
+saver runs, then continues normal routing with the compressed messages:
+
+```
+Client → Janus → Headroom /v1/compress → Janus → provider
+```
+
+Local setup:
+
+```bash
+pip install "headroom-ai[proxy]"
+headroom proxy --port 8787
+```
+
+Enable in Dashboard → Token Savers → Headroom. The URL is configurable
+(default `http://localhost:8787`) — for Docker use `http://headroom:8787`
+(same network) or `http://host.docker.internal:8787` (host machine).
+
+**Fail-open:** if Headroom is down, times out, or returns an error or malformed
+response, Janus sends the original uncompressed request. Headroom can never
+break a request.
+
 ## All savers together
 
 Savers stack — all enabled savers run in pipeline order. A full configuration:
@@ -113,6 +140,7 @@ tool output crashing your request pipeline.
 
 Toggle savers at runtime from `/dashboard/savers`:
 
+- Headroom on/off with proxy URL field
 - RTK on/off
 - Caveman on/off
 - Ponytail on/off with level selector (lite / full / ultra)

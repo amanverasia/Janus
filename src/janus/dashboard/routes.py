@@ -295,6 +295,56 @@ async def usage_page(request: Request) -> HTMLResponse:
     return _templates.TemplateResponse(request, "usage.html", context)
 
 
+@router.get("/request-logs", response_class=HTMLResponse)
+async def request_logs_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.request_logs import count_request_logs, list_request_logs
+    from janus.storage.settings import get_all_settings, request_logging_enabled
+
+    settings = await get_all_settings(db_path)
+    logs = await list_request_logs(db_path, limit=100)
+    context: dict[str, Any] = {
+        "request": request,
+        "logs": logs,
+        "total": await count_request_logs(db_path),
+        "logging_enabled": request_logging_enabled(settings),
+    }
+    return _templates.TemplateResponse(request, "request_logs.html", context)
+
+
+@router.get("/api/request-logs/export")
+async def api_export_request_logs(request: Request) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.request_logs import export_request_logs
+
+    logs = await export_request_logs(db_path)
+    return JSONResponse(
+        content=logs,
+        headers={"Content-Disposition": "attachment; filename=janus-request-logs.json"},
+    )
+
+
+@router.get("/api/request-logs/{log_id}")
+async def api_get_request_log(request: Request, log_id: int) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.request_logs import get_request_log
+
+    log = await get_request_log(db_path, log_id)
+    if log is None:
+        return JSONResponse(content={"error": "not found"}, status_code=404)
+    return JSONResponse(content=log)
+
+
+@router.delete("/api/request-logs", response_class=HTMLResponse)
+async def api_clear_request_logs(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.request_logs import clear_request_logs
+
+    await clear_request_logs(db_path)
+    context: dict[str, Any] = {"request": request, "logs": [], "total": 0}
+    return _templates.TemplateResponse(request, "request_logs_partial.html", context)
+
+
 @router.get("/analytics", response_class=HTMLResponse)
 async def analytics_page(
     request: Request,
@@ -662,6 +712,21 @@ async def api_fetch_models(request: Request) -> JSONResponse:
             )
             return JSONResponse({"models": models})
 
+        if api_type == "github_copilot":
+            from janus.providers.github_copilot import GitHubCopilotProvider
+
+            copilot = GitHubCopilotProvider(oauth_token=api_key or "", base_url=base_url)
+            try:
+                copilot_models = await copilot.list_models()
+            finally:
+                await copilot.close()
+            if not copilot_models:
+                return JSONResponse(
+                    {"error": "No models returned (is the GitHub token valid?)"},
+                    status_code=502,
+                )
+            return JSONResponse({"models": sorted(copilot_models)})
+
         return JSONResponse(
             {"error": f"Fetch not supported for api_type: {api_type}"}, status_code=400
         )
@@ -669,6 +734,47 @@ async def api_fetch_models(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Request timed out"}, status_code=504)
     except Exception as e:
         return JSONResponse({"error": str(type(e).__name__)}, status_code=502)
+
+
+@router.post("/api/oauth/copilot/start")
+async def api_copilot_oauth_start(request: Request) -> JSONResponse:
+    from janus.providers.github_copilot import start_device_flow
+
+    try:
+        data = await start_device_flow()
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "GitHub request timed out"}, status_code=504)
+    except Exception as e:
+        return JSONResponse({"error": str(type(e).__name__)}, status_code=502)
+    return JSONResponse(
+        {
+            "device_code": data["device_code"],
+            "user_code": data["user_code"],
+            "verification_uri": data["verification_uri"],
+            "interval": data["interval"],
+            "expires_in": data["expires_in"],
+        }
+    )
+
+
+@router.post("/api/oauth/copilot/poll")
+async def api_copilot_oauth_poll(request: Request) -> JSONResponse:
+    from urllib.parse import parse_qs
+
+    from janus.providers.github_copilot import poll_device_flow
+
+    body = await request.body()
+    params = parse_qs(body.decode())
+    device_code = params.get("device_code", [""])[0]
+    if not device_code:
+        return JSONResponse({"error": "Missing device_code"}, status_code=400)
+    try:
+        result = await poll_device_flow(device_code)
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "GitHub request timed out"}, status_code=504)
+    except Exception as e:
+        return JSONResponse({"error": str(type(e).__name__)}, status_code=502)
+    return JSONResponse(result)
 
 
 @router.post("/api/providers/{provider_id}/test")
@@ -725,6 +831,33 @@ async def api_test_connection(request: Request, provider_id: str) -> JSONRespons
                     params=params,
                     json=body,
                 )
+        elif api_type == "github_copilot":
+            from janus.providers.github_copilot import GitHubCopilotProvider
+
+            copilot = GitHubCopilotProvider(oauth_token=api_key or "", base_url=base_url)
+            try:
+                result = await copilot.call(
+                    {
+                        "model": model,
+                        "messages": [{"role": "user", "content": "hi"}],
+                        "max_tokens": 1,
+                    },
+                    stream=False,
+                )
+            finally:
+                await copilot.close()
+            latency_ms = round((time.perf_counter() - start) * 1000)
+            ok = result.status_code < 400
+            return JSONResponse(
+                {"ok": ok, "status": result.status_code, "latency_ms": latency_ms}
+                if ok
+                else {
+                    "ok": False,
+                    "status": result.status_code,
+                    "latency_ms": latency_ms,
+                    "error": str(result.json_data)[:200] if result.json_data else "",
+                }
+            )
         else:
             return JSONResponse(
                 {"error": f"Test not supported for api_type: {api_type}"}, status_code=400
@@ -990,6 +1123,7 @@ async def settings_page(request: Request) -> HTMLResponse:
     from janus.storage.settings import (
         ensure_server_defaults,
         get_all_settings,
+        request_logging_enabled,
         require_api_key_enabled,
         sticky_client_key_routing_enabled,
     )
@@ -1009,6 +1143,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         "dashboard_password_set": bool(settings.get(SETTINGS_PASSWORD_HASH)),
         "require_api_key_enabled": require_api_key_enabled(settings),
         "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
+        "request_logging_enabled": request_logging_enabled(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 

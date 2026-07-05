@@ -15,6 +15,7 @@ from janus.pricing.registry import PricingRegistry
 from janus.providers.anthropic import AnthropicProvider
 from janus.providers.base import Provider
 from janus.providers.gemini import GeminiProvider
+from janus.providers.github_copilot import GitHubCopilotProvider
 from janus.providers.openai_compat import OpenAICompatProvider
 from janus.providers.opencode_free import OpenCodeFreeProvider
 from janus.providers.registry import ProviderRegistry
@@ -32,6 +33,11 @@ def _build_provider(config: ProviderConfig) -> Provider:
         return AnthropicProvider(api_key=config.api_key or "", base_url=config.base_url)
     if config.api_type == "gemini":
         return GeminiProvider(api_key=config.api_key or "")
+    if config.api_type == "github_copilot":
+        return GitHubCopilotProvider(
+            oauth_token=config.api_key or "",
+            base_url=config.base_url,
+        )
     raise ValueError(f"Unknown api_type: {config.api_type}")
 
 

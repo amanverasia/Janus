@@ -61,6 +61,20 @@ Summary landing page:
 - Total requests, input tokens, output tokens
 - Per-model breakdown
 
+### Request Logs — `/dashboard/request-logs`
+
+Debug view of captured API requests (off by default — enable **Request Logging**
+in Settings):
+
+- Table of recent requests: time, format, model, provider, status, duration
+- Per-request JSON detail (full request/response bodies, truncated at 64 KB)
+- Export all logs as JSON; Clear button wipes the table
+- Only the most recent 500 requests are kept (pruned automatically)
+
+!!! warning "Sensitive content"
+    Captured bodies contain prompts and completions. Leave request logging off
+    unless actively debugging.
+
 ### Analytics — `/dashboard/analytics`
 
 Interactive Chart.js visualizations:
@@ -159,6 +173,7 @@ Each card shows the exact `export` commands for your server URL and auth setting
 ### Settings — `/dashboard/settings`
 
 - **Require API key** — runtime toggle (stored in DB, overrides YAML default)
+- **Request Logging** — capture full request/response bodies for debugging (off by default)
 - **Server info** — host, port, data directory
 - **Export Config** — download current DB state as YAML
 - **Reset to Defaults** — wipe DB tables and re-seed from `config.yaml` (danger zone)
@@ -205,9 +220,12 @@ Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.
 
 | Method | Path | Action |
 |---|---|---|
-| `POST` | `/dashboard/api/settings` | Update runtime settings (savers, require_api_key) |
+| `POST` | `/dashboard/api/settings` | Update runtime settings (savers, require_api_key, request logging) |
 | `GET` | `/dashboard/api/export` | Export DB config as YAML (JSON download) |
 | `POST` | `/dashboard/api/reset` | Reset DB and re-seed from YAML |
+| `GET` | `/dashboard/api/request-logs/export` | Export captured request logs as JSON |
+| `GET` | `/dashboard/api/request-logs/{id}` | Full detail for one captured request |
+| `DELETE` | `/dashboard/api/request-logs` | Clear all captured request logs |
 
 ### Pricing
 
