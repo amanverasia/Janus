@@ -123,6 +123,7 @@ async def _handle(
         upstream_payload = provider_adapter.build_upstream_request(canonical_req, target.model)
         providers: dict[str, Provider] = request.app.state.providers
         provider = providers[target.provider_config.id]
+        handler.record_request(target.account_id)
 
         try:
             if canonical_req.stream:

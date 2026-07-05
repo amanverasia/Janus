@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await reload_savers(app)
     await reload_pricing(app)
     await app.state.fallback_handler.load_cooldowns()
+    await app.state.fallback_handler.load_request_counts()
 
     from janus.inventory.scheduler import run_inventory_scheduler, scheduler_enabled
 

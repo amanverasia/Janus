@@ -51,6 +51,17 @@ async def record_usage(
         logger.warning("Failed to record usage: %s", e)
 
 
+async def get_request_counts_today(db_path: str | Path) -> dict[str, int]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT account_id, COUNT(*) FROM usage
+               WHERE date(timestamp) = date('now') AND account_id IS NOT NULL
+               GROUP BY account_id"""
+        ) as cur:
+            rows = await cur.fetchall()
+    return {str(row[0]): int(row[1]) for row in rows}
+
+
 async def get_usage_stats(db_path: str | Path) -> dict[str, Any]:
     async with get_connection(db_path) as db:
         async with db.execute(
