@@ -48,9 +48,9 @@ def test_sticky_rr_holds_head_for_limit_then_advances():
     registry = _three_account_registry()
     handler = FallbackHandler(registry)
     firsts = [
-        handler.resolve_attempts(
-            "ds/m1", strategy=AccountStrategy.STICKY_RR, sticky_limit=2
-        )[0].account_id
+        handler.resolve_attempts("ds/m1", strategy=AccountStrategy.STICKY_RR, sticky_limit=2)[
+            0
+        ].account_id
         for _ in range(5)
     ]
     assert firsts == ["ds-1", "ds-1", "ds-2", "ds-2", "ds-3"]

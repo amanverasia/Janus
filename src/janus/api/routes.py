@@ -113,9 +113,7 @@ async def _handle(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
     specific_model = (
-        canonical_req.model.split("/", 1)[1]
-        if "/" in canonical_req.model
-        else canonical_req.model
+        canonical_req.model.split("/", 1)[1] if "/" in canonical_req.model else canonical_req.model
     )
 
     from janus.storage.settings import (
