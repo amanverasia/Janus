@@ -76,8 +76,12 @@ CREATE TABLE IF NOT EXISTS pricing_overrides (
 );
 
 CREATE TABLE IF NOT EXISTS cooldowns (
-    account_id TEXT PRIMARY KEY,
-    expires_at REAL NOT NULL
+    account_id TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '__all__',
+    expires_at REAL NOT NULL,
+    error_type TEXT,
+    backoff_level INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, model)
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
@@ -265,6 +269,30 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
     )
 
 
+async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(cooldowns)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    if "model" in existing:
+        return
+    await db.execute(
+        """CREATE TABLE cooldowns_new (
+            account_id TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '__all__',
+            expires_at REAL NOT NULL,
+            error_type TEXT,
+            backoff_level INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (account_id, model)
+        )"""
+    )
+    await db.execute(
+        "INSERT INTO cooldowns_new (account_id, model, expires_at) "
+        "SELECT account_id, '__all__', expires_at FROM cooldowns"
+    )
+    await db.execute("DROP TABLE cooldowns")
+    await db.execute("ALTER TABLE cooldowns_new RENAME TO cooldowns")
+
+
 async def init_db(db_path: str | Path) -> None:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -273,6 +301,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_usage_columns(db)
         await _migrate_provider_columns(db)
         await _migrate_upstream_key_columns(db)
+        await _migrate_cooldowns_per_model(db)
         await db.commit()
     await seed_inventory_providers(db_path)
 
