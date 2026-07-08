@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — Janus{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-3xl font-bold text-white">🏆 Leaderboard</h1>
+    <div class="flex gap-3">
+      {% set periods = [(1, 'Today'), (7, 'Week'), (30, 'Month'), (0, 'All Time')] %}
+      {% for d, label in periods %}
+      <a href="/dashboard/leaderboard?days={{ d }}&sort={{ sort }}"
+         class="px-4 py-2 rounded-lg text-sm font-medium transition {{ 'bg-indigo-600 text-white' if days == d else 'bg-gray-700 text-gray-300 hover:bg-gray-600' }}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if leaderboard %}
+  <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-700/50 text-gray-400 text-xs uppercase tracking-wider">
+          <th class="py-3 px-4 text-left w-12">#</th>
+          <th class="py-3 px-4 text-left">API Key</th>
+          <th class="py-3 px-4 text-right">
+            <a href="/dashboard/leaderboard?days={{ days }}&sort=requests"
+               class="hover:text-white {{ 'text-indigo-400 font-bold' if sort == 'requests' }}">Requests</a>
+          </th>
+          <th class="py-3 px-4 text-right">
+            <a href="/dashboard/leaderboard?days={{ days }}&sort=tokens"
+               class="hover:text-white {{ 'text-indigo-400 font-bold' if sort == 'tokens' }}">Tokens</a>
+          </th>
+          <th class="py-3 px-4 text-right">Input ↓</th>
+          <th class="py-3 px-4 text-right">Output ↑</th>
+          <th class="py-3 px-4 text-right">
+            <a href="/dashboard/leaderboard?days={{ days }}&sort=cost"
+               class="hover:text-white {{ 'text-indigo-400 font-bold' if sort == 'cost' }}">Cost</a>
+          </th>
+          <th class="py-3 px-4 text-right">Success %</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-700">
+        {% for row in leaderboard %}
+        <tr class="hover:bg-gray-700/30 transition {{ 'bg-indigo-900/20' if row.rank <= 3 }}">
+          <td class="py-3 px-4 font-bold">
+            {% if row.rank == 1 %}🥇
+            {% elif row.rank == 2 %}🥈
+            {% elif row.rank == 3 %}🥉
+            {% else %}{{ row.rank }}{% endif %}
+          </td>
+          <td class="py-3 px-4 text-white font-medium max-w-[200px] truncate"
+              title="{{ row.key_name }}">{{ row.key_name }}</td>
+          <td class="py-3 px-4 text-right text-gray-300">{{ "{:,}".format(row.requests) }}</td>
+          <td class="py-3 px-4 text-right text-white font-mono">{{ "{:,}".format(row.tokens) }}</td>
+          <td class="py-3 px-4 text-right text-gray-400 font-mono text-xs">{{ "{:,}".format(row.input_tokens) }}</td>
+          <td class="py-3 px-4 text-right text-gray-400 font-mono text-xs">{{ "{:,}".format(row.output_tokens) }}</td>
+          <td class="py-3 px-4 text-right text-emerald-400 font-mono">${{ "%.4f"|format(row.cost) }}</td>
+          <td class="py-3 px-4 text-right">
+            <span class="font-mono {{ 'text-green-400' if row.success_pct >= 95 else 'text-yellow-400' if row.success_pct >= 80 else 'text-red-400' }}">
+              {{ "%.1f"|format(row.success_pct) }}%
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-gray-800 rounded-xl p-12 border border-gray-700 text-center">
+    <p class="text-gray-400 text-lg">No usage data yet.</p>
+    <p class="text-gray-500 text-sm mt-2">Send some requests through Janus to populate the leaderboard.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

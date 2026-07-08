@@ -216,6 +216,38 @@ def usage_by_key(
         typer.echo(f"  {name:<23} {r['requests']:>8} ${r['cost']:>10.4f}")
 
 
+@usage_app.command("leaderboard")
+def usage_leaderboard(
+    days: int = typer.Option(30, "--days", "-d", help="Number of days (0 = all time)"),
+    sort: str = typer.Option("tokens", "--sort", "-s", help="Sort by: tokens, cost, requests"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Number of entries to show"),
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Show the leaderboard — ranked API keys by usage."""
+    import asyncio
+
+    from janus.storage.analytics import get_leaderboard
+    from janus.storage.database import init_db
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    board = asyncio.run(get_leaderboard(db_path, days=days, sort_by=sort, limit=limit))
+    if not board:
+        typer.echo("No usage data yet. Send requests to populate the leaderboard.")
+        return
+    header = f"{'#':>3}  {'Key':<24}  {'Requests':>8}  {'Tokens':>12}  {'Cost':>10}  {'Success':>7}"
+    typer.echo(header)
+    typer.echo("-" * len(header))
+    for r in board:
+        name = r["key_name"]
+        if len(name) > 23:
+            name = name[:20] + "..."
+        typer.echo(
+            f"  {r['rank']:>2}.  {name:<23}  {r['requests']:>8}  {r['tokens']:>12,}  "
+            f"${r['cost']:>8.4f}  {r['success_pct']:>6.1f}%"
+        )
+
+
 @budgets_app.command("list")
 def budgets_list(
     config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),

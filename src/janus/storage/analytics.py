@@ -234,3 +234,58 @@ async def get_success_rate(db_path: str | Path, *, days: int = 30) -> dict[str, 
         "server_5xx": row["s5xx"] or 0,
         "total": row["total"] or 0,
     }
+
+
+async def get_leaderboard(
+    db_path: str | Path,
+    *,
+    days: int = 30,
+    sort_by: str = "tokens",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Leaderboard of API keys ranked by usage (tokens, cost, or requests)."""
+    sort_col = {"tokens": "tokens", "cost": "cost", "requests": "requests"}.get(sort_by, "tokens")
+    if days <= 0:
+        time_clause = "1=1"
+        time_params: tuple[str, ...] = ()
+    else:
+        time_clause = "u.timestamp >= datetime('now', ?)"
+        time_params = (f"-{days} days",)
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            f"""SELECT
+                   COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as key_name,
+                   COUNT(*) as requests,
+                   COALESCE(SUM(u.input_tokens), 0)
+                     + COALESCE(SUM(u.output_tokens), 0) as tokens,
+                   COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(u.output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(u.cost), 0.0) as cost,
+                   CASE WHEN COUNT(*) > 0
+                     THEN CAST(
+                       SUM(CASE WHEN u.status >= 200 AND u.status < 300 THEN 1 ELSE 0 END)
+                       AS REAL) / COUNT(*) * 100
+                     ELSE 0.0
+                   END as success_pct
+            FROM usage u
+            LEFT JOIN api_keys k ON u.client_key_id = k.id
+            WHERE {time_clause}
+            GROUP BY COALESCE(k.name, u.client_key_label, 'Direct (no API key)')
+            ORDER BY {sort_col} DESC
+            LIMIT ?""",
+            time_params + (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "rank": i + 1,
+            "key_name": row["key_name"],
+            "requests": row["requests"],
+            "tokens": row["tokens"],
+            "input_tokens": row["input_tokens"],
+            "output_tokens": row["output_tokens"],
+            "cost": round(row["cost"], 6),
+            "success_pct": round(row["success_pct"], 1),
+        }
+        for i, row in enumerate(rows)
+    ]
