@@ -326,6 +326,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "default_models": ["deepseek-chat", "deepseek-reasoner"],
         },
         "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+        "transports": {
+            "anthropic": "https://api.deepseek.com/anthropic/v1",
+        },
     },
     "xai": {
         "inventory": {

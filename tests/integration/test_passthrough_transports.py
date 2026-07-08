@@ -106,7 +106,8 @@ async def test_passthrough_same_format_skips_canonical(anthropic_app):
         data = r.json()
         assert data["content"][0]["text"] == "pong"
 
-    assert captured["body"]["messages"][0]["content"] == "ping"
+    # With A1 fix: build_upstream_request produces structured Anthropic blocks
+    assert captured["body"]["messages"][0]["content"][0]["text"] == "ping"
     assert captured["body"]["max_tokens"] == 1024
 
 

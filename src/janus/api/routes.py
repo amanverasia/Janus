@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from janus.canonical.models import Usage
 from janus.canonical.tool_calls import prepare_tool_messages
 from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.base import FormatAdapter
@@ -289,8 +290,8 @@ async def _handle(
             provider_p = providers_p.get(target.provider_config.id)
             if provider_p is not None:
                 handler.record_attempt(target)
-                native_body = {**body, "model": target.model}
-                native_stream = body.get("stream", False)
+                native_body = client_adapter.build_upstream_request(canonical_req, target.model)
+                native_stream = canonical_req.stream
                 native_media = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 try:
                     native_result = await provider_p.call(native_body, stream=native_stream)
@@ -323,18 +324,31 @@ async def _handle(
                                 yield (raw + "\n").encode() if isinstance(raw, str) else raw
 
                     return StreamingResponse(_native_stream(), media_type=native_media)
-                # Record usage + optional request log for non-streaming passthrough
+                # Record usage from parsed response + optional request log
                 from janus.pricing.calculator import compute_cost
                 from janus.storage.usage import record_usage
 
+                passthrough_usage = Usage(input_tokens=0, output_tokens=0)
+                if native_result.json_data:
+                    try:
+                        passthrough_usage = client_adapter.parse_upstream_response(
+                            native_result.json_data
+                        ).usage
+                    except Exception:
+                        pass
                 await record_usage(
                     db_path,
                     provider_id=target.provider_config.id,
                     model=target.model,
                     account_id=target.account_id,
+                    input_tokens=passthrough_usage.input_tokens,
+                    output_tokens=passthrough_usage.output_tokens,
+                    cache_creation_tokens=passthrough_usage.cache_creation_input_tokens,
+                    cache_read_tokens=passthrough_usage.cache_read_input_tokens,
                     status=200,
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
+                    cost=compute_cost(passthrough_usage, target.model, pricing_registry),
                 )
                 if log_requests:
                     await record_request_log(
