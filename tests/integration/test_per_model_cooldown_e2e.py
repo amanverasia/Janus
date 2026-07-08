@@ -4,7 +4,7 @@ import respx
 from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
-from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
+from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
 
 
 async def _seed_and_reload(app) -> None:
@@ -54,6 +54,36 @@ async def two_model_two_account_app(tmp_path):
     return app
 
 
+@pytest.fixture
+async def combo_two_account_app(tmp_path):
+    """A combo mapping to test/m1, served by two accounts."""
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="acct-a",
+                prefix="test",
+                api_type="openai_compat",
+                base_url="https://a.local/v1",
+                api_key="sk-a",
+                models=["m1"],
+            ),
+            ProviderConfig(
+                id="acct-b",
+                prefix="test",
+                api_type="openai_compat",
+                base_url="https://b.local/v1",
+                api_key="sk-b",
+                models=["m1"],
+            ),
+        ],
+        combos=[ComboConfig(name="combo1", models=["test/m1"])],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    return app
+
+
 def _completion(model: str) -> dict:
     return {
         "id": "r1",
@@ -97,3 +127,31 @@ async def test_per_model_cooldown_isolates_failed_model(two_model_two_account_ap
     # m1 on account A is cooled down; m2 on account A is unaffected.
     assert not handler.is_available(account_a, "m1")
     assert handler.is_available(account_a, "m2")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_combo_cooldown_lands_on_real_model_not_combo_name(combo_two_account_app):
+    app = combo_two_account_app
+    # Account A always rejects with 429; account B always succeeds.
+    respx.post("https://a.local/v1/chat/completions").mock(
+        return_value=httpx.Response(429, json={"error": "rate limited"})
+    )
+    respx.post("https://b.local/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion("m1"))
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "combo1", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert r.status_code == 200
+
+    handler = app.state.fallback_handler
+    targets = app.state.registry.lookup("test/m1")
+    assert targets is not None
+    account_a = next(t.account_id for t in targets if t.provider_config.id == "acct-a")
+
+    # The cooldown must land on the real model key ("m1"), not the combo name.
+    assert not handler.is_available(account_a, "m1")

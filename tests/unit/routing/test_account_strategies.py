@@ -1,6 +1,7 @@
 from janus.config.schema import ProviderConfig
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import AccountStrategy, FallbackHandler
+from janus.storage.settings import resolve_sticky_limit
 
 
 def _registry(*configs: ProviderConfig) -> ProviderRegistry:
@@ -72,3 +73,11 @@ def test_client_key_sticky_override_takes_precedence_over_strategy():
         sticky_client_key=True,
     )
     assert first[0].account_id == second[0].account_id == "ds-2"
+
+
+def test_resolve_sticky_limit_falls_back_to_default_on_non_numeric_value():
+    assert resolve_sticky_limit({"server_sticky_limit": "not-a-number"}) == 3
+
+
+def test_resolve_sticky_limit_parses_numeric_value():
+    assert resolve_sticky_limit({"server_sticky_limit": "5"}) == 5

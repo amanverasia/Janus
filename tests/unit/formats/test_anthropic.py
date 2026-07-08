@@ -145,6 +145,7 @@ def test_parse_thinking_and_tool_choice_request():
     req = AnthropicAdapter().parse_request(raw)
     assert req.thinking is not None
     assert req.thinking["type"] == "enabled"
+    assert req.thinking["budget_tokens"] == 2000
     assert isinstance(req.tool_choice, ToolChoiceSpecific)
     assert req.tool_choice.name == "read"
 

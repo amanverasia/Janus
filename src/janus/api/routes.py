@@ -112,9 +112,6 @@ async def _handle(
     canonical_req = canonical_req.model_copy(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
-    specific_model = (
-        canonical_req.model.split("/", 1)[1] if "/" in canonical_req.model else canonical_req.model
-    )
 
     from janus.storage.settings import (
         get_all_settings,
@@ -172,7 +169,7 @@ async def _handle(
                         handler.mark_cooldown(
                             target.account_id,
                             classify_error(result.status_code).value,
-                            model=specific_model,
+                            model=target.model,
                             retry_after=result.retry_after,
                         )
                         last_error = f"{target.account_id}: {result.status_code}"
@@ -230,7 +227,7 @@ async def _handle(
                                 request_body=logged_request_body,
                             )
                         if stream_ok:
-                            handler.mark_success(target.account_id, specific_model)
+                            handler.mark_success(target.account_id, target.model)
 
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 return StreamingResponse(_streaming_generator(), media_type=media_type)
@@ -241,7 +238,7 @@ async def _handle(
                     handler.mark_cooldown(
                         target.account_id,
                         classify_error(result.status_code).value,
-                        model=specific_model,
+                        model=target.model,
                         retry_after=result.retry_after,
                     )
                     last_error = f"{target.account_id}: {result.status_code}"
@@ -297,11 +294,11 @@ async def _handle(
                     response_body=logged_response_body,
                 )
 
-            handler.mark_success(target.account_id, specific_model)
+            handler.mark_success(target.account_id, target.model)
             return JSONResponse(content=client_payload)
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
-            handler.mark_cooldown(target.account_id, "network", model=specific_model)
+            handler.mark_cooldown(target.account_id, "network", model=target.model)
             last_error = f"{target.account_id}: {type(e).__name__}"
             continue
 

@@ -93,7 +93,10 @@ def resolve_account_strategy(settings: dict[str, str]) -> str:
 
 
 def resolve_sticky_limit(settings: dict[str, str]) -> int:
-    return int(resolve_server_settings(settings)["server_sticky_limit"])
+    try:
+        return int(resolve_server_settings(settings)["server_sticky_limit"])
+    except (ValueError, TypeError):
+        return 3
 
 
 def request_logging_enabled(settings: dict[str, str]) -> bool:
