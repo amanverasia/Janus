@@ -81,3 +81,35 @@ def test_resolve_sticky_limit_falls_back_to_default_on_non_numeric_value():
 
 def test_resolve_sticky_limit_parses_numeric_value():
     assert resolve_sticky_limit({"server_sticky_limit": "5"}) == 5
+
+
+def test_combo_round_robin_rotates_model_list() -> None:
+    from janus.config.schema import ComboConfig, ProviderConfig
+    from janus.providers.registry import ProviderRegistry
+    from janus.routing.fallback import FallbackHandler
+
+    registry = ProviderRegistry()
+    for account_id in ("a-1", "b-1", "c-1"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix=account_id[0],
+                api_type="openai_compat",
+                base_url="https://x.com",
+                api_key="k",
+                models=["m"],
+            )
+        )
+    registry.register_combo(ComboConfig(name="tri", models=["a/m", "b/m", "c/m"]))
+    handler = FallbackHandler(registry)
+
+    first = handler.resolve_attempts("tri", combo_strategy="round_robin")
+    second = handler.resolve_attempts("tri", combo_strategy="round_robin")
+    third = handler.resolve_attempts("tri", combo_strategy="round_robin")
+    fourth = handler.resolve_attempts("tri", combo_strategy="round_robin")
+
+    # Fallback (default) doesn't rotate; round_robin does.
+    assert [t.account_id for t in first] == ["a-1", "b-1", "c-1"]
+    assert [t.account_id for t in second] == ["b-1", "c-1", "a-1"]
+    assert [t.account_id for t in third] == ["c-1", "a-1", "b-1"]
+    assert [t.account_id for t in fourth] == ["a-1", "b-1", "c-1"]

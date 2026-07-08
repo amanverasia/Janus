@@ -31,6 +31,7 @@ class FallbackHandler:
         self._backoff: dict[tuple[str, str], int] = {}
         self._rotation_counters: dict[str, int] = {}
         self._sticky: dict[str, tuple[str, int]] = {}
+        self._combo_rotation: dict[str, int] = {}
         self._request_times: dict[str, deque[float]] = {}
         self._daily_counts: dict[str, int] = {}
         self._daily_date: str = self._today()
@@ -224,12 +225,18 @@ class FallbackHandler:
         strategy: AccountStrategy = AccountStrategy.ROUND_ROBIN,
         sticky_limit: int = 3,
         required_caps: frozenset[str] = frozenset(),
+        combo_strategy: str = "fallback",
+        combo_sticky_limit: int = 1,
     ) -> list[ResolvedTarget]:
         # Synchronous by design: the rotation-counter and sticky read-modify-writes
         # below have no await between read and write, so they are an atomic critical
         # section under the single-threaded event loop (no lock needed).
         combo_models = self.registry.lookup_combo(model_str)
         if combo_models is not None:
+            if combo_strategy == "round_robin" and len(combo_models) > 1:
+                idx = self._combo_rotation.get(model_str, 0) % len(combo_models)
+                self._combo_rotation[model_str] = idx + 1
+                combo_models = combo_models[idx:] + combo_models[:idx]
             if required_caps:
                 combo_models = reorder_combo_by_capabilities(combo_models, required_caps)
             all_attempts: list[ResolvedTarget] = []

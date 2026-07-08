@@ -27,6 +27,7 @@ class ProviderConfig(BaseModel):
     quota_window: str | None = None  # "5h" | "daily" | "weekly" | "monthly"
     quota_limit: int | None = None
     quota_metric: str = "requests"  # "requests" | "tokens"
+    transports: dict[str, str] | None = None  # format -> base_url for multi-format providers
 
     @property
     def row_id(self) -> str:
