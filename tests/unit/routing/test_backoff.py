@@ -1,4 +1,4 @@
-from janus.routing.errors import get_cooldown, RETRY_AFTER_CAP_S
+from janus.routing.errors import RETRY_AFTER_CAP_S, get_cooldown
 
 
 def test_rate_limit_backoff_escalates():
