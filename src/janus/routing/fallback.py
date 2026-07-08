@@ -7,16 +7,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
-from janus.storage.cooldowns import get_active_cooldowns, save_cooldown
+from janus.routing.errors import RETRY_AFTER_CAP_S, get_cooldown
+from janus.storage.cooldowns import delete_cooldown, get_active_cooldowns, save_cooldown
 from janus.storage.quotas import get_window_usage, window_id
 from janus.storage.usage import get_request_counts_today
-
-COOLDOWN_DURATIONS: dict[str, float] = {
-    "rate_limit": 60.0,
-    "server_error": 30.0,
-    "auth_error": 300.0,
-    "network": 15.0,
-}
 
 RPM_WINDOW_SECONDS = 60.0
 
@@ -25,7 +19,8 @@ class FallbackHandler:
     def __init__(self, registry: ProviderRegistry, db_path: str | Path | None = None) -> None:
         self.registry = registry
         self.db_path = db_path
-        self._cooldowns: dict[str, float] = {}
+        self._cooldowns: dict[tuple[str, str], float] = {}
+        self._backoff: dict[tuple[str, str], int] = {}
         self._rotation_counters: dict[str, int] = {}
         self._request_times: dict[str, deque[float]] = {}
         self._daily_counts: dict[str, int] = {}
@@ -173,9 +168,10 @@ class FallbackHandler:
         if combo_models is not None:
             all_attempts: list[ResolvedTarget] = []
             for m in combo_models:
+                _, _, specific = m.partition("/")
                 targets = self.registry.lookup(m)
                 if targets:
-                    available = [t for t in targets if self.is_available(t.account_id)]
+                    available = [t for t in targets if self.is_available(t.account_id, specific)]
                     all_attempts.extend(
                         self._deprioritize_rate_limited(
                             self._rotate_accounts(
@@ -193,7 +189,8 @@ class FallbackHandler:
         targets = self.registry.lookup(model_str)
         if targets is None:
             raise ValueError(f"Unknown model: {model_str}")
-        available = [t for t in targets if self.is_available(t.account_id)]
+        _, _, specific_model = model_str.partition("/")
+        available = [t for t in targets if self.is_available(t.account_id, specific_model)]
         if not available:
             raise ValueError(f"No available providers for '{model_str}' (all accounts cooled down)")
         return self._deprioritize_rate_limited(
@@ -209,34 +206,75 @@ class FallbackHandler:
         self,
         account_id: str,
         error_type: str,
+        model: str | None = None,
         retry_after: float | None = None,
         duration: float | None = None,
     ) -> None:
+        model_key = model or "__all__"
+        key = (account_id, model_key)
         if duration is not None:
-            cooldown = duration
+            cooldown, level = duration, self._backoff.get(key, 0)
         elif retry_after is not None:
-            cooldown = retry_after
+            cooldown, level = min(retry_after, RETRY_AFTER_CAP_S), 0
         else:
-            cooldown = COOLDOWN_DURATIONS.get(error_type, 60.0)
-        self._cooldowns[account_id] = time.time() + cooldown
+            cooldown, level = get_cooldown(error_type, self._backoff.get(key, 0))
+        self._backoff[key] = level
+        expires_at = time.time() + cooldown
+        self._cooldowns[key] = expires_at
         if self.db_path is not None:
-            self._persist_cooldown(account_id, self._cooldowns[account_id])
+            self._persist_cooldown(account_id, model_key, expires_at, error_type, level)
 
-    def _persist_cooldown(self, account_id: str, expires_at: float) -> None:
+    def mark_success(self, account_id: str, model: str | None = None) -> None:
+        for mk in {model or "__all__", "__all__"}:
+            self._cooldowns.pop((account_id, mk), None)
+            self._backoff.pop((account_id, mk), None)
+            if self.db_path is not None:
+                self._delete_cooldown(account_id, mk)
+
+    def _persist_cooldown(
+        self, account_id: str, model: str, expires_at: float, error_type: str, level: int
+    ) -> None:
         assert self.db_path is not None
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(save_cooldown(self.db_path, account_id, expires_at))
+        loop.create_task(
+            save_cooldown(
+                self.db_path,
+                account_id,
+                expires_at,
+                model=model,
+                error_type=error_type,
+                backoff_level=level,
+            )
+        )
+
+    def _delete_cooldown(self, account_id: str, model: str) -> None:
+        assert self.db_path is not None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(delete_cooldown(self.db_path, account_id, model))
 
     async def load_cooldowns(self) -> None:
         if self.db_path is None:
             return
-        self._cooldowns = await get_active_cooldowns(self.db_path)
+        active = await get_active_cooldowns(self.db_path)
+        for combined, (expires_at, level) in active.items():
+            account_id, _, model = combined.partition("::")
+            self._cooldowns[(account_id, model)] = expires_at
+            if level:
+                self._backoff[(account_id, model)] = level
 
-    def is_available(self, account_id: str) -> bool:
-        expiry = self._cooldowns.get(account_id)
-        if expiry is None:
-            return True
-        return time.time() >= expiry
+    def is_available(self, account_id: str, model: str | None = None) -> bool:
+        now = time.time()
+        all_exp = self._cooldowns.get((account_id, "__all__"))
+        if all_exp is not None and now < all_exp:
+            return False
+        if model is not None:
+            exp = self._cooldowns.get((account_id, model))
+            if exp is not None and now < exp:
+                return False
+        return True
