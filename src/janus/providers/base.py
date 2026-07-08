@@ -11,6 +11,7 @@ class RawResult:
     status_code: int
     json_data: dict[str, Any] | None = None
     lines: AsyncIterator[str] | None = None
+    retry_after: float | None = None
 
 
 def parse_error_body(body: bytes) -> dict[str, Any]:
@@ -24,6 +25,19 @@ def parse_error_body(body: bytes) -> dict[str, Any]:
     if isinstance(parsed, dict):
         return parsed
     return {"error": parsed}
+
+
+def parse_retry_after(headers: Any) -> float | None:
+    try:
+        raw = headers.get("retry-after") if hasattr(headers, "get") else None
+    except Exception:
+        return None
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 class Provider(Protocol):
