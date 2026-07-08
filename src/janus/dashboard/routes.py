@@ -29,6 +29,7 @@ from janus.storage.analytics import (
     Dimension,
     get_breakdown,
     get_flow,
+    get_leaderboard,
     get_spend_summary,
     get_success_rate,
 )
@@ -412,6 +413,29 @@ async def analytics_page(
         "dimension": dimension,
     }
     return _templates.TemplateResponse(request, "analytics.html", context)
+
+
+@router.get("/leaderboard", response_class=HTMLResponse)
+async def leaderboard_page(
+    request: Request,
+    days: int = 30,
+    sort: str = "tokens",
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    valid_sorts = ("tokens", "cost", "requests")
+    if sort not in valid_sorts:
+        sort = "tokens"
+    try:
+        board = await get_leaderboard(db_path, days=days, sort_by=sort)
+    except Exception:
+        board = []
+    context: dict[str, Any] = {
+        "request": request,
+        "leaderboard": board,
+        "days": days,
+        "sort": sort,
+    }
+    return _templates.TemplateResponse(request, "leaderboard.html", context)
 
 
 @router.get("/budgets", response_class=HTMLResponse)
