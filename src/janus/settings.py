@@ -1,3 +1,9 @@
+"""Pydantic environment-var settings (JANUS_* / .env) — server-process config.
+
+For runtime DB-stored settings (token savers, feature toggles, strategies), see
+``janus.storage.settings``.
+"""
+
 from __future__ import annotations
 
 from pydantic_settings import BaseSettings

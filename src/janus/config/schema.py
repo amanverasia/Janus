@@ -10,6 +10,8 @@ class ServerSettings(BaseModel):
     host: str = "127.0.0.1"
     require_api_key: bool = True
     data_dir: Path = Path.home() / ".janus"
+    account_strategy: str = "round_robin"  # "fill_first" | "round_robin" | "sticky_rr"
+    sticky_limit: int = 3
 
 
 class ProviderConfig(BaseModel):

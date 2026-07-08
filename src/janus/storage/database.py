@@ -369,6 +369,14 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
                 ("server_require_api_key", "true" if config.server.require_api_key else "false"),
             )
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                ("server_account_strategy", config.server.account_strategy),
+            )
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                ("server_sticky_limit", str(config.server.sticky_limit)),
+            )
 
         if await _table_is_empty(db, "pricing_overrides") and config.pricing:
             for model, rates in config.pricing.items():

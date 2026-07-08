@@ -1,3 +1,9 @@
+"""Runtime DB-stored settings (SQLite settings table) — feature toggles, strategies, limits.
+
+These are the live settings read/written via the dashboard, CLI, or YAML seed.
+For server-process configuration (port, host, data dir), see ``janus.settings``.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -67,11 +67,13 @@ usage_app = typer.Typer(help="Usage statistics")
 budgets_app = typer.Typer(help="Manage spending budgets")
 pricing_app = typer.Typer(help="View model pricing")
 inventory_app = typer.Typer(help="Upstream key inventory")
+settings_app = typer.Typer(help="View and change server settings")
 app.add_typer(keys_app, name="keys")
 app.add_typer(usage_app, name="usage")
 app.add_typer(budgets_app, name="budgets")
 app.add_typer(pricing_app, name="pricing")
 app.add_typer(inventory_app, name="inventory")
+app.add_typer(settings_app, name="settings")
 
 
 def _get_db_path(config: str) -> Path:
@@ -419,3 +421,86 @@ def inventory_migrate(
         summary = asyncio.run(verify_inventory(db_path))
         typer.echo("")
         typer.echo(format_inventory_verification(summary))
+
+
+_ALLOWED_SETTING_KEYS = {
+    "server_require_api_key",
+    "server_sticky_client_key_routing",
+    "server_request_logging",
+    "server_account_strategy",
+    "server_sticky_limit",
+    "saver_rtk_enabled",
+    "saver_caveman_enabled",
+    "saver_ponytail_enabled",
+    "saver_ponytail_level",
+    "saver_headroom_enabled",
+    "saver_headroom_url",
+}
+
+
+@settings_app.command("list")
+def settings_list(
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """List all server/saver settings."""
+    import asyncio
+
+    from janus.storage.database import init_db
+    from janus.storage.settings import (
+        ensure_saver_defaults,
+        ensure_server_defaults,
+        get_all_settings,
+    )
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    asyncio.run(ensure_server_defaults(db_path))
+    asyncio.run(ensure_saver_defaults(db_path))
+    settings = asyncio.run(get_all_settings(db_path))
+    hidden = {"dashboard_password_hash", "dashboard_session_secret"}
+    for key in sorted(settings):
+        if key in hidden:
+            continue
+        typer.echo(f"{key} = {settings[key]}")
+
+
+@settings_app.command("get")
+def settings_get(
+    key: str = typer.Argument(..., help="Setting key"),
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Print a single setting value."""
+    import asyncio
+
+    from janus.storage.database import init_db
+    from janus.storage.settings import get_setting
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    value = asyncio.run(get_setting(db_path, key))
+    if value is None:
+        typer.echo(f"{key} is not set")
+        raise typer.Exit(code=1)
+    typer.echo(value)
+
+
+@settings_app.command("set")
+def settings_set(
+    key: str = typer.Argument(..., help="Setting key"),
+    value: str = typer.Argument(..., help="Setting value"),
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Set a server/saver setting (takes effect on the next request)."""
+    import asyncio
+
+    from janus.storage.database import init_db
+    from janus.storage.settings import set_setting
+
+    if key not in _ALLOWED_SETTING_KEYS:
+        allowed = ", ".join(sorted(_ALLOWED_SETTING_KEYS))
+        typer.echo(f"Unknown setting '{key}'. Allowed keys: {allowed}")
+        raise typer.Exit(code=1)
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    asyncio.run(set_setting(db_path, key, value))
+    typer.echo(f"{key} = {value}")

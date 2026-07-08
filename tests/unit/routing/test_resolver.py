@@ -5,7 +5,6 @@ import pytest
 from janus.config.schema import ComboConfig, ProviderConfig
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
-from janus.routing.resolver import resolve
 
 
 def test_resolve_simple():
@@ -20,7 +19,7 @@ def test_resolve_simple():
             models=["glm-4.7"],
         )
     )
-    result = resolve("glm/glm-4.7", registry)
+    result = registry.lookup("glm/glm-4.7")
     assert result is not None
     assert len(result) == 1
     assert result[0].model == "glm-4.7"
@@ -29,7 +28,7 @@ def test_resolve_simple():
 
 def test_resolve_unknown():
     registry = ProviderRegistry()
-    assert resolve("no/model", registry) is None
+    assert registry.lookup("no/model") is None
 
 
 def test_resolve_single_model_multi_account():
