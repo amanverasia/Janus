@@ -117,6 +117,17 @@ def resolve_account_strategy(settings: dict[str, str]) -> str:
     return resolve_server_settings(settings)["server_account_strategy"]
 
 
+def resolve_combo_strategy(settings: dict[str, str]) -> str:
+    return settings.get("combo_strategy", "fallback")
+
+
+def resolve_combo_sticky_limit(settings: dict[str, str]) -> int:
+    try:
+        return int(settings.get("combo_sticky_limit", "1"))
+    except (ValueError, TypeError):
+        return 1
+
+
 def resolve_sticky_limit(settings: dict[str, str]) -> int:
     try:
         return int(resolve_server_settings(settings)["server_sticky_limit"])

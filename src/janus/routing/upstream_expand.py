@@ -14,6 +14,15 @@ def expand_gateway_provider(
     quota_window = row.get("quota_window") or None
     quota_limit = row.get("quota_limit")
     quota_metric = row.get("quota_metric") or "requests"
+    transports_raw = row.get("transports")
+    transports: dict[str, str] | None = None
+    if isinstance(transports_raw, str) and transports_raw:
+        try:
+            transports = json.loads(transports_raw)
+        except (json.JSONDecodeError, TypeError):
+            transports = None
+    elif isinstance(transports_raw, dict):
+        transports = transports_raw
     if upstream_keys:
         return [
             ProviderConfig(
@@ -29,6 +38,7 @@ def expand_gateway_provider(
                 quota_window=quota_window,
                 quota_limit=quota_limit,
                 quota_metric=quota_metric,
+                transports=transports,
             )
             for key in upstream_keys
         ]
@@ -43,5 +53,6 @@ def expand_gateway_provider(
             quota_window=quota_window,
             quota_limit=quota_limit,
             quota_metric=quota_metric,
+            transports=transports,
         )
     ]

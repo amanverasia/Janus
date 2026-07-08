@@ -19,8 +19,13 @@ from janus.formats.gemini import GeminiAdapter
 from janus.formats.ollama import OllamaAdapter
 from janus.formats.openai import OpenAIAdapter
 from janus.formats.openai_responses import OpenAIResponsesAdapter
-from janus.providers.base import Provider
-from janus.providers.registry import ProviderRegistry
+from janus.providers.base import (
+    Provider,
+    RawResult,
+    parse_error_body,
+    parse_retry_after,
+)
+from janus.providers.registry import ProviderRegistry, ResolvedTarget
 from janus.routing.capabilities import detect_required_capabilities
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import AccountStrategy, FallbackHandler
@@ -90,6 +95,73 @@ async def _check_budgets(
     return None
 
 
+def _passthrough_url(base_url: str, fmt: str) -> str:
+    base = base_url.rstrip("/")
+    if fmt == "anthropic":
+        return f"{base}/messages"
+    return f"{base}/chat/completions"
+
+
+async def _passthrough_call(
+    base_url: str,
+    fmt: str,
+    body: dict[str, Any],
+    stream: bool,
+    request: Request,
+    target: ResolvedTarget,
+) -> RawResult | None:
+    providers: dict[str, Provider] = request.app.state.providers
+    provider = providers.get(target.provider_config.id)
+    if provider is None:
+        return None
+    handler: FallbackHandler = request.app.state.fallback_handler
+    handler.record_attempt(target)
+    url = _passthrough_url(base_url, fmt)
+    client = getattr(provider, "_client", None)
+    if client is None:
+        return None
+    raw_headers = getattr(provider, "_headers", None)
+    if raw_headers is None:
+        headers: dict[str, str] = {}
+    elif callable(raw_headers):
+        headers = dict(raw_headers())
+    else:
+        headers = dict(raw_headers)
+    headers.setdefault("Content-Type", "application/json")
+    if stream:
+        headers["Accept"] = "text/event-stream"
+    if stream:
+        cm = client.stream("POST", url, json=body, headers=headers)
+        r = await cm.__aenter__()
+        if r.status_code >= 400:
+            err_body = await r.aread()
+            await cm.__aexit__(None, None, None)
+            return RawResult(
+                status_code=r.status_code,
+                json_data=parse_error_body(err_body),
+                retry_after=parse_retry_after(r.headers),
+            )
+
+        async def line_iter() -> AsyncIterator[str]:
+            try:
+                async for raw in r.aiter_lines():
+                    yield raw
+            finally:
+                await cm.__aexit__(None, None, None)
+
+        return RawResult(status_code=r.status_code, lines=line_iter())
+    r = await client.post(url, json=body, headers=headers)
+    try:
+        json_data = r.json()
+    except Exception:
+        json_data = {"error": r.text[:500]}
+    return RawResult(
+        status_code=r.status_code,
+        json_data=json_data,
+        retry_after=parse_retry_after(r.headers) if r.status_code >= 400 else None,
+    )
+
+
 async def _handle(
     client_format: str,
     body: dict[str, Any],
@@ -120,6 +192,8 @@ async def _handle(
         get_all_settings,
         request_logging_enabled,
         resolve_account_strategy,
+        resolve_combo_sticky_limit,
+        resolve_combo_strategy,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
@@ -132,6 +206,8 @@ async def _handle(
     except ValueError:
         strategy = AccountStrategy.ROUND_ROBIN
     sticky_limit = resolve_sticky_limit(settings)
+    combo_strat = resolve_combo_strategy(settings)
+    combo_csl = resolve_combo_sticky_limit(settings)
     start_time = time.monotonic()
     logged_request_body: str | None = None
     if log_requests:
@@ -152,6 +228,8 @@ async def _handle(
             strategy=strategy,
             sticky_limit=sticky_limit,
             required_caps=required_caps,
+            combo_strategy=combo_strat,
+            combo_sticky_limit=combo_csl,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -160,6 +238,119 @@ async def _handle(
     for target in attempts:
         if not handler.is_available(target.account_id, target.model):
             continue
+
+        # ── Multi-endpoint transport passthrough ──────────────────────
+        transports = target.provider_config.transports or {}
+        transport_base = transports.get(client_format, "")
+        if transport_base:
+            passthrough_body = {**body, "model": target.model}
+            pt_stream = body.get("stream", False)
+            media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
+            try:
+                result = await _passthrough_call(
+                    transport_base, client_format, passthrough_body, pt_stream, request, target
+                )
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                handler.mark_cooldown(target.account_id, "network", model=target.model)
+                last_error = f"{target.account_id}: {type(e).__name__}"
+                continue
+            if result is None:
+                continue
+            if result.status_code >= 400:
+                if is_fallback_eligible(result.status_code):
+                    handler.mark_cooldown(
+                        target.account_id,
+                        classify_error(result.status_code).value,
+                        model=target.model,
+                        retry_after=getattr(result, "retry_after", None),
+                    )
+                    last_error = f"{target.account_id}: {result.status_code}"
+                    continue
+                raise HTTPException(status_code=result.status_code, detail="Upstream error")
+            handler.mark_success(target.account_id, target.model)
+            if pt_stream:
+                lines = result.lines
+                if lines is None:
+                    raise HTTPException(status_code=502, detail="No stream from upstream")
+                _live_lines = lines
+
+                async def _pt_stream() -> AsyncIterator[bytes]:
+                    async for raw in _live_lines:
+                        if raw:
+                            yield (raw + "\n").encode() if isinstance(raw, str) else raw
+
+                return StreamingResponse(_pt_stream(), media_type=media_type)
+            return JSONResponse(content=result.json_data if result.json_data else {})
+        # ── End transport passthrough ───────────────────────────────────
+
+        # ── Native-format passthrough ──────────────────────────────────
+        if client_format == target.native_format:
+            providers_p: dict[str, Provider] = request.app.state.providers
+            provider_p = providers_p.get(target.provider_config.id)
+            if provider_p is not None:
+                handler.record_attempt(target)
+                native_body = {**body, "model": target.model}
+                native_stream = body.get("stream", False)
+                native_media = getattr(client_adapter, "stream_media_type", "text/event-stream")
+                try:
+                    native_result = await provider_p.call(native_body, stream=native_stream)
+                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                    handler.mark_cooldown(target.account_id, "network", model=target.model)
+                    last_error = f"{target.account_id}: {type(e).__name__}"
+                    continue
+                if native_result.status_code >= 400:
+                    if is_fallback_eligible(native_result.status_code):
+                        handler.mark_cooldown(
+                            target.account_id,
+                            classify_error(native_result.status_code).value,
+                            model=target.model,
+                            retry_after=getattr(native_result, "retry_after", None),
+                        )
+                        last_error = f"{target.account_id}: {native_result.status_code}"
+                        continue
+                    raise HTTPException(
+                        status_code=native_result.status_code, detail="Upstream error"
+                    )
+                handler.mark_success(target.account_id, target.model)
+                if native_stream:
+                    native_lines = native_result.lines
+                    if native_lines is None:
+                        raise HTTPException(status_code=502, detail="No stream from upstream")
+
+                    async def _native_stream() -> AsyncIterator[bytes]:
+                        async for raw in native_lines:
+                            if raw:
+                                yield (raw + "\n").encode() if isinstance(raw, str) else raw
+
+                    return StreamingResponse(_native_stream(), media_type=native_media)
+                # Record usage + optional request log for non-streaming passthrough
+                from janus.pricing.calculator import compute_cost
+                from janus.storage.usage import record_usage
+
+                await record_usage(
+                    db_path,
+                    provider_id=target.provider_config.id,
+                    model=target.model,
+                    account_id=target.account_id,
+                    status=200,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
+                )
+                if log_requests:
+                    await record_request_log(
+                        db_path,
+                        client_format=client_format,
+                        model=target.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=200,
+                        duration_ms=_elapsed_ms(),
+                    )
+                return JSONResponse(
+                    content=native_result.json_data if native_result.json_data else {}
+                )
+        # ── End native passthrough ─────────────────────────────────────
+
         provider_adapter = _resolve_format(target.native_format)
         upstream_payload = provider_adapter.build_upstream_request(canonical_req, target.model)
         providers: dict[str, Provider] = request.app.state.providers
