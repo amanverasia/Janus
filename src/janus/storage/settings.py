@@ -17,6 +17,8 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_require_api_key": "true",
     "server_sticky_client_key_routing": "false",
     "server_request_logging": "false",
+    "server_account_strategy": "round_robin",
+    "server_sticky_limit": "3",
 }
 
 
@@ -84,6 +86,14 @@ async def is_sticky_client_key_routing_enabled(db_path: str | Path) -> bool:
     await ensure_server_defaults(db_path)
     settings = await get_all_settings(db_path)
     return sticky_client_key_routing_enabled(settings)
+
+
+def resolve_account_strategy(settings: dict[str, str]) -> str:
+    return resolve_server_settings(settings)["server_account_strategy"]
+
+
+def resolve_sticky_limit(settings: dict[str, str]) -> int:
+    return int(resolve_server_settings(settings)["server_sticky_limit"])
 
 
 def request_logging_enabled(settings: dict[str, str]) -> bool:

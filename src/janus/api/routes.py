@@ -21,7 +21,7 @@ from janus.formats.openai_responses import OpenAIResponsesAdapter
 from janus.providers.base import Provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.errors import classify_error, is_fallback_eligible
-from janus.routing.fallback import FallbackHandler
+from janus.routing.fallback import AccountStrategy, FallbackHandler
 from janus.storage.budgets import get_budget_status
 from janus.storage.request_logs import record_request_log
 from janus.streaming.translator import translate_stream
@@ -120,12 +120,19 @@ async def _handle(
     from janus.storage.settings import (
         get_all_settings,
         request_logging_enabled,
+        resolve_account_strategy,
+        resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
 
     settings = await get_all_settings(db_path)
     sticky_routing = sticky_client_key_routing_enabled(settings)
     log_requests = request_logging_enabled(settings)
+    try:
+        strategy = AccountStrategy(resolve_account_strategy(settings))
+    except ValueError:
+        strategy = AccountStrategy.ROUND_ROBIN
+    sticky_limit = resolve_sticky_limit(settings)
     start_time = time.monotonic()
     logged_request_body: str | None = None
     if log_requests:
@@ -142,6 +149,8 @@ async def _handle(
             canonical_req.model,
             client_key_id=client_key_id,
             sticky_client_key=sticky_routing,
+            strategy=strategy,
+            sticky_limit=sticky_limit,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections import deque
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
@@ -15,6 +16,12 @@ from janus.storage.usage import get_request_counts_today
 RPM_WINDOW_SECONDS = 60.0
 
 
+class AccountStrategy(StrEnum):
+    FILL_FIRST = "fill_first"
+    ROUND_ROBIN = "round_robin"
+    STICKY_RR = "sticky_rr"
+
+
 class FallbackHandler:
     def __init__(self, registry: ProviderRegistry, db_path: str | Path | None = None) -> None:
         self.registry = registry
@@ -22,6 +29,7 @@ class FallbackHandler:
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._backoff: dict[tuple[str, str], int] = {}
         self._rotation_counters: dict[str, int] = {}
+        self._sticky: dict[str, tuple[str, int]] = {}
         self._request_times: dict[str, deque[float]] = {}
         self._daily_counts: dict[str, int] = {}
         self._daily_date: str = self._today()
@@ -157,12 +165,63 @@ class FallbackHandler:
         self._rotation_counters[pool_key] = index + 1
         return accounts[index:] + accounts[:index]
 
+    def _sticky_rotate(
+        self, pool_key: str, accounts: list[ResolvedTarget], sticky_limit: int
+    ) -> list[ResolvedTarget]:
+        account_ids = [a.account_id for a in accounts]
+        sticky = self._sticky.get(pool_key)
+        if sticky is not None:
+            head_id, count = sticky
+            if head_id in account_ids and count < sticky_limit:
+                self._sticky[pool_key] = (head_id, count + 1)
+                index = account_ids.index(head_id)
+                return accounts[index:] + accounts[:index]
+        rotated = self._rotate_accounts(pool_key, accounts)
+        self._sticky[pool_key] = (rotated[0].account_id, 1)
+        return rotated
+
+    def _order_by_strategy(
+        self,
+        pool_key: str,
+        accounts: list[ResolvedTarget],
+        strategy: AccountStrategy,
+        sticky_limit: int,
+    ) -> list[ResolvedTarget]:
+        if len(accounts) <= 1:
+            return accounts
+        if strategy is AccountStrategy.FILL_FIRST:
+            return accounts
+        if strategy is AccountStrategy.STICKY_RR:
+            return self._sticky_rotate(pool_key, accounts, sticky_limit)
+        return self._rotate_accounts(pool_key, accounts)
+
+    def _resolve_order(
+        self,
+        pool_key: str,
+        accounts: list[ResolvedTarget],
+        *,
+        client_key_id: int | None,
+        sticky_client_key: bool,
+        strategy: AccountStrategy,
+        sticky_limit: int,
+    ) -> list[ResolvedTarget]:
+        if sticky_client_key and client_key_id is not None:
+            return self._rotate_accounts(
+                pool_key,
+                accounts,
+                client_key_id=client_key_id,
+                sticky_client_key=sticky_client_key,
+            )
+        return self._order_by_strategy(pool_key, accounts, strategy, sticky_limit)
+
     def resolve_attempts(
         self,
         model_str: str,
         *,
         client_key_id: int | None = None,
         sticky_client_key: bool = False,
+        strategy: AccountStrategy = AccountStrategy.ROUND_ROBIN,
+        sticky_limit: int = 3,
     ) -> list[ResolvedTarget]:
         combo_models = self.registry.lookup_combo(model_str)
         if combo_models is not None:
@@ -174,11 +233,13 @@ class FallbackHandler:
                     available = [t for t in targets if self.is_available(t.account_id, specific)]
                     all_attempts.extend(
                         self._deprioritize_rate_limited(
-                            self._rotate_accounts(
+                            self._resolve_order(
                                 m,
                                 available,
                                 client_key_id=client_key_id,
                                 sticky_client_key=sticky_client_key,
+                                strategy=strategy,
+                                sticky_limit=sticky_limit,
                             )
                         )
                     )
@@ -194,11 +255,13 @@ class FallbackHandler:
         if not available:
             raise ValueError(f"No available providers for '{model_str}' (all accounts cooled down)")
         return self._deprioritize_rate_limited(
-            self._rotate_accounts(
+            self._resolve_order(
                 model_str,
                 available,
                 client_key_id=client_key_id,
                 sticky_client_key=sticky_client_key,
+                strategy=strategy,
+                sticky_limit=sticky_limit,
             )
         )
 
