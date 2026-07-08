@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 
@@ -28,6 +30,10 @@ def parse_error_body(body: bytes) -> dict[str, Any]:
 
 
 def parse_retry_after(headers: Any) -> float | None:
+    """Parse a Retry-After header (delay-seconds or HTTP-date) into seconds.
+
+    Returns the delay in seconds (>= 0), or None when absent/unparseable.
+    """
     try:
         raw = headers.get("retry-after") if hasattr(headers, "get") else None
     except Exception:
@@ -37,7 +43,14 @@ def parse_retry_after(headers: Any) -> float | None:
     try:
         return float(raw)
     except (TypeError, ValueError):
+        pass
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
         return None
+    if dt is None:
+        return None
+    return max(0.0, dt.timestamp() - time.time())
 
 
 class Provider(Protocol):

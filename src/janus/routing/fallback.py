@@ -225,6 +225,9 @@ class FallbackHandler:
         sticky_limit: int = 3,
         required_caps: frozenset[str] = frozenset(),
     ) -> list[ResolvedTarget]:
+        # Synchronous by design: the rotation-counter and sticky read-modify-writes
+        # below have no await between read and write, so they are an atomic critical
+        # section under the single-threaded event loop (no lock needed).
         combo_models = self.registry.lookup_combo(model_str)
         if combo_models is not None:
             if required_caps:
@@ -280,6 +283,7 @@ class FallbackHandler:
         model_key = model or "__all__"
         key = (account_id, model_key)
         if duration is not None:
+            # Explicit override: use the given duration and freeze the backoff level.
             cooldown, level = duration, self._backoff.get(key, 0)
         elif retry_after is not None:
             cooldown, level = min(retry_after, RETRY_AFTER_CAP_S), 0
@@ -292,7 +296,10 @@ class FallbackHandler:
             self._persist_cooldown(account_id, model_key, expires_at, error_type, level)
 
     def mark_success(self, account_id: str, model: str | None = None) -> None:
-        for mk in {model or "__all__", "__all__"}:
+        # A model-scoped success clears only that (account, model) cooldown.
+        # An account-level success (model=None) clears the account-wide __all__ lock.
+        keys = {"__all__"} if model is None else {model}
+        for mk in keys:
             self._cooldowns.pop((account_id, mk), None)
             self._backoff.pop((account_id, mk), None)
             if self.db_path is not None:

@@ -11,7 +11,9 @@ from janus.inventory.url_guard import (
 
 
 def test_inventory_providers_count():
-    assert len(INVENTORY_PROVIDERS) == 29
+    from janus.catalog import inventory_entries
+
+    assert len(INVENTORY_PROVIDERS) == len(inventory_entries())
 
 
 def test_get_inventory_provider():

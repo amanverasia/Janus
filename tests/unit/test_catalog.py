@@ -30,9 +30,37 @@ GATEWAY_FIELDS = {"id", "name", "icon", "logo", "api_type", "base_url", "prefix"
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 31
-    assert len(inventory_entries()) == 29
-    assert len(gateway_entries()) == 15
+    assert len(PROVIDERS) == 39
+    assert len(inventory_entries()) == 37
+    assert len(gateway_entries()) == 24
+
+
+def test_groq_default_model_is_valid() -> None:
+    # llama-3.3-70b-instruct does not exist on Groq; the versatile id is correct.
+    assert "llama-3.3-70b-versatile" in PROVIDERS["groq"]["gateway"]["default_models"]
+    assert "llama-3.3-70b-instruct" not in PROVIDERS["groq"]["gateway"]["default_models"]
+
+
+def test_cohere_is_routable() -> None:
+    assert "gateway" in PROVIDERS["cohere"]
+    assert PROVIDERS["cohere"]["gateway"]["prefix"] == "cohere"
+    assert PROVIDERS["cohere"]["gateway"]["api_type"] == "openai_compat"
+
+
+def test_new_9router_providers_present() -> None:
+    for pid in (
+        "cerebras",
+        "hyperbolic",
+        "nebius",
+        "chutes",
+        "venice",
+        "vercel-ai-gateway",
+        "volcengine-ark",
+        "byteplus",
+    ):
+        assert pid in PROVIDERS, pid
+        assert "gateway" in PROVIDERS[pid], pid
+        assert "inventory" in PROVIDERS[pid], pid
 
 
 def test_inventory_view_derives_from_unified() -> None:
@@ -51,7 +79,12 @@ def test_gateway_view_derives_from_unified() -> None:
 
 def test_id_bridges_are_derived() -> None:
     assert inventory_to_gateway_map() == {"google": "gemini", "dashscope": "qwen"}
-    assert prefix_to_inventory_map() == {"gemini": "google", "qwen": "dashscope"}
+    assert prefix_to_inventory_map() == {
+        "gemini": "google",
+        "qwen": "dashscope",
+        "ark": "volcengine-ark",
+        "vercel": "vercel-ai-gateway",
+    }
 
 
 def test_gateway_only_entries_have_no_inventory_block() -> None:
