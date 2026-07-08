@@ -20,8 +20,9 @@ from janus.formats.openai import OpenAIAdapter
 from janus.formats.openai_responses import OpenAIResponsesAdapter
 from janus.providers.base import Provider
 from janus.providers.registry import ProviderRegistry
+from janus.routing.capabilities import detect_required_capabilities
 from janus.routing.errors import classify_error, is_fallback_eligible
-from janus.routing.fallback import FallbackHandler
+from janus.routing.fallback import AccountStrategy, FallbackHandler
 from janus.storage.budgets import get_budget_status
 from janus.storage.request_logs import record_request_log
 from janus.streaming.translator import translate_stream
@@ -115,12 +116,19 @@ async def _handle(
     from janus.storage.settings import (
         get_all_settings,
         request_logging_enabled,
+        resolve_account_strategy,
+        resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
 
     settings = await get_all_settings(db_path)
     sticky_routing = sticky_client_key_routing_enabled(settings)
     log_requests = request_logging_enabled(settings)
+    try:
+        strategy = AccountStrategy(resolve_account_strategy(settings))
+    except ValueError:
+        strategy = AccountStrategy.ROUND_ROBIN
+    sticky_limit = resolve_sticky_limit(settings)
     start_time = time.monotonic()
     logged_request_body: str | None = None
     if log_requests:
@@ -132,11 +140,15 @@ async def _handle(
     def _elapsed_ms() -> int:
         return int((time.monotonic() - start_time) * 1000)
 
+    required_caps = detect_required_capabilities(canonical_req)
     try:
         attempts = handler.resolve_attempts(
             canonical_req.model,
             client_key_id=client_key_id,
             sticky_client_key=sticky_routing,
+            strategy=strategy,
+            sticky_limit=sticky_limit,
+            required_caps=required_caps,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -157,6 +169,8 @@ async def _handle(
                         handler.mark_cooldown(
                             target.account_id,
                             classify_error(result.status_code).value,
+                            model=target.model,
+                            retry_after=result.retry_after,
                         )
                         last_error = f"{target.account_id}: {result.status_code}"
                         continue
@@ -175,9 +189,11 @@ async def _handle(
                 from janus.storage.usage import record_usage
 
                 async def _streaming_generator() -> AsyncIterator[bytes]:
+                    stream_ok = False
                     try:
                         async for chunk in translate_stream(lines, tracker, emitter):
                             yield chunk
+                        stream_ok = True
                     finally:
                         usage = tracker.get_usage()
                         cost = compute_cost(usage, target.model, pricing_registry)
@@ -210,6 +226,8 @@ async def _handle(
                                 streamed=True,
                                 request_body=logged_request_body,
                             )
+                        if stream_ok:
+                            handler.mark_success(target.account_id, target.model)
 
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 return StreamingResponse(_streaming_generator(), media_type=media_type)
@@ -220,6 +238,8 @@ async def _handle(
                     handler.mark_cooldown(
                         target.account_id,
                         classify_error(result.status_code).value,
+                        model=target.model,
+                        retry_after=result.retry_after,
                     )
                     last_error = f"{target.account_id}: {result.status_code}"
                     continue
@@ -274,10 +294,11 @@ async def _handle(
                     response_body=logged_response_body,
                 )
 
+            handler.mark_success(target.account_id, target.model)
             return JSONResponse(content=client_payload)
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
-            handler.mark_cooldown(target.account_id, "network")
+            handler.mark_cooldown(target.account_id, "network", model=target.model)
             last_error = f"{target.account_id}: {type(e).__name__}"
             continue
 

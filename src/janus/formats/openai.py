@@ -28,10 +28,16 @@ from janus.canonical.models import (
     SystemBlock,
     TextPart,
     Tool,
+    ToolChoiceAuto,
+    ToolChoiceNone,
+    ToolChoiceRequired,
+    ToolChoiceSpecific,
+    ToolChoiceType,
     ToolFunction,
     ToolResult,
     ToolUse,
     Usage,
+    tool_result_text,
 )
 from janus.canonical.tool_calls import (
     fix_missing_tool_responses_openai,
@@ -305,6 +311,7 @@ class OpenAIAdapter:
             system=system,
             messages=messages,
             tools=tools,
+            tool_choice=self._parse_tool_choice(raw.get("tool_choice")),
             max_tokens=int(max_tokens) if max_tokens is not None else None,
             temperature=float(temperature) if temperature is not None else None,
             top_p=float(top_p) if top_p is not None else None,
@@ -313,6 +320,20 @@ class OpenAIAdapter:
             thinking=self._parse_thinking(raw),
             reasoning_effort=reasoning_effort,
         )
+
+    @staticmethod
+    def _parse_tool_choice(tc: Any) -> ToolChoiceType | None:
+        if tc == "auto":
+            return ToolChoiceAuto()
+        if tc == "none":
+            return ToolChoiceNone()
+        if tc == "required":
+            return ToolChoiceRequired()
+        if isinstance(tc, dict) and tc.get("type") == "function":
+            name = (tc.get("function") or {}).get("name")
+            if name:
+                return ToolChoiceSpecific(name=str(name))
+        return None
 
     @staticmethod
     def _parse_thinking(raw: dict[str, Any]) -> dict[str, str] | None:
@@ -433,11 +454,23 @@ class OpenAIAdapter:
             payload["stop"] = req.stop
         if req.tools:
             payload["tools"] = [self._build_tool_def(t) for t in req.tools]
+        if req.tool_choice is not None:
+            payload["tool_choice"] = self._build_tool_choice(req.tool_choice)
         if req.thinking is not None and "deepseek" in model.lower():
             payload["thinking"] = req.thinking
         if req.reasoning_effort is not None:
             payload["reasoning_effort"] = req.reasoning_effort
         return payload
+
+    @staticmethod
+    def _build_tool_choice(tc: ToolChoiceType) -> Any:
+        if isinstance(tc, ToolChoiceAuto):
+            return "auto"
+        if isinstance(tc, ToolChoiceNone):
+            return "none"
+        if isinstance(tc, ToolChoiceRequired):
+            return "required"
+        return {"type": "function", "function": {"name": tc.name}}
 
     def _build_upstream_messages(self, msg: Message) -> list[dict[str, Any]]:
         if msg.role == Role.TOOL:
@@ -459,7 +492,11 @@ class OpenAIAdapter:
         out: list[dict[str, Any]] = []
         for tr in tool_results:
             out.append(
-                {"role": "tool", "tool_call_id": tr.tool_use_id, "content": tr.content},
+                {
+                    "role": "tool",
+                    "tool_call_id": tr.tool_use_id,
+                    "content": tool_result_text(tr.content),
+                },
             )
         content = built.get("content")
         if content not in (None, "", []) or built.get("tool_calls"):
@@ -471,7 +508,11 @@ class OpenAIAdapter:
             parts = msg.content if isinstance(msg.content, list) else []
             results = [p for p in parts if isinstance(p, ToolResult)]
             tr = results[0] if results else ToolResult(tool_use_id="", content="")
-            return {"role": "tool", "tool_call_id": tr.tool_use_id, "content": tr.content}
+            return {
+                "role": "tool",
+                "tool_call_id": tr.tool_use_id,
+                "content": tool_result_text(tr.content),
+            }
 
         content: Any
         tool_uses: list[ToolUse] = []

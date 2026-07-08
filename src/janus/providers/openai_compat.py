@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from .base import RawResult
+from .base import RawResult, parse_error_body, parse_retry_after
 
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
@@ -34,17 +34,35 @@ class OpenAICompatProvider:
         if stream:
             return await self._call_stream(url, payload)
         r = await self._client.post(url, json=payload, headers=self._headers)
+        if r.status_code >= 400:
+            return RawResult(
+                status_code=r.status_code,
+                json_data=r.json(),
+                retry_after=parse_retry_after(r.headers),
+            )
         return RawResult(status_code=r.status_code, json_data=r.json())
 
     async def _call_stream(self, url: str, payload: dict[str, Any]) -> RawResult:
         payload = {**payload, "stream": True}
+        cm = self._client.stream("POST", url, json=payload, headers=self._headers)
+        r = await cm.__aenter__()
+        if r.status_code >= 400:
+            body = await r.aread()
+            await cm.__aexit__(None, None, None)
+            return RawResult(
+                status_code=r.status_code,
+                json_data=parse_error_body(body),
+                retry_after=parse_retry_after(r.headers),
+            )
 
         async def line_iter() -> AsyncIterator[str]:
-            async with self._client.stream("POST", url, json=payload, headers=self._headers) as r:
+            try:
                 async for raw_line in r.aiter_lines():
                     yield raw_line
+            finally:
+                await cm.__aexit__(None, None, None)
 
-        return RawResult(status_code=200, lines=line_iter())
+        return RawResult(status_code=r.status_code, lines=line_iter())
 
     async def close(self) -> None:
         await self._client.aclose()

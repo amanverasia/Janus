@@ -33,6 +33,7 @@ from janus.canonical.models import (
     ToolResult,
     ToolUse,
     Usage,
+    tool_result_text,
 )
 
 _DONE_TO_STOP: dict[str, str] = {
@@ -395,7 +396,9 @@ class OllamaAdapter:
         if msg.role == Role.TOOL:
             parts = msg.content if isinstance(msg.content, list) else []
             return [
-                {"role": "tool", "content": p.content} for p in parts if isinstance(p, ToolResult)
+                {"role": "tool", "content": tool_result_text(p.content)}
+                for p in parts
+                if isinstance(p, ToolResult)
             ]
 
         if isinstance(msg.content, str):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -15,6 +16,7 @@ class Role(StrEnum):
 class TextPart(BaseModel):
     type: Literal["text"] = "text"
     text: str
+    cache_control: dict[str, Any] | None = None
 
 
 class ImageSource(BaseModel):
@@ -29,6 +31,13 @@ class ImagePart(BaseModel):
     source: ImageSource
 
 
+class Reasoning(BaseModel):
+    type: Literal["reasoning"] = "reasoning"
+    text: str = ""
+    signature: str | None = None
+    redacted: bool = False
+
+
 class ToolUse(BaseModel):
     type: Literal["tool_use"] = "tool_use"
     id: str
@@ -39,13 +48,30 @@ class ToolUse(BaseModel):
 class ToolResult(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
-    content: str
+    content: str | list[ContentPart] = ""
+    is_error: bool = False
+    cache_control: dict[str, Any] | None = None
 
 
 ContentPart = Annotated[
-    TextPart | ImagePart | ToolUse | ToolResult,
+    TextPart | ImagePart | Reasoning | ToolUse | ToolResult,
     Field(discriminator="type"),
 ]
+
+ToolResult.model_rebuild()
+
+
+def tool_result_text(content: str | list[ContentPart]) -> str:
+    """Flatten a ToolResult's content to a string for text-only provider APIs.
+
+    Text parts are newline-joined; a non-text/list payload is JSON-encoded.
+    """
+    if isinstance(content, str):
+        return content
+    texts = [p.text for p in content if isinstance(p, TextPart)]
+    if texts and len(texts) == len(content):
+        return "\n".join(texts)
+    return json.dumps([p.model_dump() for p in content])
 
 
 class Message(BaseModel):
@@ -57,6 +83,7 @@ class Message(BaseModel):
 class SystemBlock(BaseModel):
     type: Literal["text"] = "text"
     text: str
+    cache_control: dict[str, Any] | None = None
 
 
 class ToolFunction(BaseModel):
@@ -68,6 +95,7 @@ class ToolFunction(BaseModel):
 class Tool(BaseModel):
     type: Literal["function"] = "function"
     function: ToolFunction
+    cache_control: dict[str, Any] | None = None
 
 
 class ToolChoiceAuto(BaseModel):
@@ -111,7 +139,7 @@ class CanonicalRequest(BaseModel):
     top_p: float | None = None
     stop: list[str] | None = None
     stream: bool = False
-    thinking: dict[str, str] | None = None
+    thinking: dict[str, Any] | None = None
     reasoning_effort: str | None = None
 
 

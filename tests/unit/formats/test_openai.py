@@ -16,6 +16,9 @@ from janus.canonical.models import (
     Role,
     SystemBlock,
     TextPart,
+    ToolChoiceNone,
+    ToolChoiceRequired,
+    ToolChoiceSpecific,
     ToolResult,
     ToolUse,
     Usage,
@@ -385,3 +388,46 @@ def test_emit_stream_reasoning_content() -> None:
     output = b"".join(chunks).decode()
     assert "reasoning_content" in output
     assert "Thinking" in output
+
+
+def test_parse_tool_choice_specific():
+    req = OpenAIAdapter().parse_request(
+        {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tool_choice": {"type": "function", "function": {"name": "search"}},
+        }
+    )
+    assert isinstance(req.tool_choice, ToolChoiceSpecific)
+    assert req.tool_choice.name == "search"
+
+
+def test_parse_tool_choice_required():
+    req = OpenAIAdapter().parse_request(
+        {
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tool_choice": "required",
+        }
+    )
+    assert isinstance(req.tool_choice, ToolChoiceRequired)
+
+
+def test_build_emits_tool_choice():
+    req = CanonicalRequest(
+        model="gpt-4o",
+        messages=[Message(role=Role.USER, content=[TextPart(text="hi")])],
+        tool_choice=ToolChoiceSpecific(name="search"),
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "gpt-4o")
+    assert payload["tool_choice"] == {"type": "function", "function": {"name": "search"}}
+
+
+def test_build_emits_tool_choice_none():
+    req = CanonicalRequest(
+        model="gpt-4o",
+        messages=[Message(role=Role.USER, content=[TextPart(text="hi")])],
+        tool_choice=ToolChoiceNone(),
+    )
+    payload = OpenAIAdapter().build_upstream_request(req, "gpt-4o")
+    assert payload["tool_choice"] == "none"

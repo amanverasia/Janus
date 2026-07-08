@@ -32,3 +32,23 @@ def is_fallback_eligible(error: int | Exception) -> bool:
     if isinstance(error, int):
         return error in (429, 401, 403) or error >= 500
     return False
+
+
+BACKOFF_BASE_MS = 2000
+BACKOFF_MAX_S = 300.0
+BACKOFF_MAX_LEVEL = 15
+RETRY_AFTER_CAP_S = 1800.0
+
+FIXED_COOLDOWNS: dict[str, float] = {
+    "server_error": 30.0,
+    "auth_error": 300.0,
+    "network": 15.0,
+}
+
+
+def get_cooldown(error_type: str, backoff_level: int = 0) -> tuple[float, int]:
+    if error_type == "rate_limit":
+        new_level = min(backoff_level + 1, BACKOFF_MAX_LEVEL)
+        secs = min(BACKOFF_BASE_MS * (2 ** (new_level - 1)) / 1000, BACKOFF_MAX_S)
+        return secs, new_level
+    return FIXED_COOLDOWNS.get(error_type, 60.0), 0
