@@ -8,6 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
+from janus.routing.capabilities import reorder_combo_by_capabilities
 from janus.routing.errors import RETRY_AFTER_CAP_S, get_cooldown
 from janus.storage.cooldowns import delete_cooldown, get_active_cooldowns, save_cooldown
 from janus.storage.quotas import get_window_usage, window_id
@@ -222,9 +223,12 @@ class FallbackHandler:
         sticky_client_key: bool = False,
         strategy: AccountStrategy = AccountStrategy.ROUND_ROBIN,
         sticky_limit: int = 3,
+        required_caps: frozenset[str] = frozenset(),
     ) -> list[ResolvedTarget]:
         combo_models = self.registry.lookup_combo(model_str)
         if combo_models is not None:
+            if required_caps:
+                combo_models = reorder_combo_by_capabilities(combo_models, required_caps)
             all_attempts: list[ResolvedTarget] = []
             for m in combo_models:
                 _, _, specific = m.partition("/")

@@ -42,6 +42,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "openai",
             "default_models": ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
         },
+        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
     "anthropic": {
         "inventory": {
@@ -70,6 +71,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "anthropic",
             "default_models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
         },
+        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
     "openrouter": {
         "inventory": {
@@ -127,6 +129,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "gemini",
             "default_models": ["gemini-2.5-pro", "gemini-2.0-flash"],
         },
+        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
     "groq": {
         "inventory": {
@@ -155,6 +158,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "groq",
             "default_models": ["llama-3.3-70b-instruct"],
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "together": {
         "inventory": {

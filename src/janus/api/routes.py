@@ -20,6 +20,7 @@ from janus.formats.openai import OpenAIAdapter
 from janus.formats.openai_responses import OpenAIResponsesAdapter
 from janus.providers.base import Provider
 from janus.providers.registry import ProviderRegistry
+from janus.routing.capabilities import detect_required_capabilities
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import AccountStrategy, FallbackHandler
 from janus.storage.budgets import get_budget_status
@@ -144,6 +145,7 @@ async def _handle(
     def _elapsed_ms() -> int:
         return int((time.monotonic() - start_time) * 1000)
 
+    required_caps = detect_required_capabilities(canonical_req)
     try:
         attempts = handler.resolve_attempts(
             canonical_req.model,
@@ -151,6 +153,7 @@ async def _handle(
             sticky_client_key=sticky_routing,
             strategy=strategy,
             sticky_limit=sticky_limit,
+            required_caps=required_caps,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
