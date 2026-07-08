@@ -323,6 +323,29 @@ async def _handle(
                                 yield (raw + "\n").encode() if isinstance(raw, str) else raw
 
                     return StreamingResponse(_native_stream(), media_type=native_media)
+                # Record usage + optional request log for non-streaming passthrough
+                from janus.pricing.calculator import compute_cost
+                from janus.storage.usage import record_usage
+
+                await record_usage(
+                    db_path,
+                    provider_id=target.provider_config.id,
+                    model=target.model,
+                    account_id=target.account_id,
+                    status=200,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
+                )
+                if log_requests:
+                    await record_request_log(
+                        db_path,
+                        client_format=client_format,
+                        model=target.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=200,
+                        duration_ms=_elapsed_ms(),
+                    )
                 return JSONResponse(
                     content=native_result.json_data if native_result.json_data else {}
                 )
