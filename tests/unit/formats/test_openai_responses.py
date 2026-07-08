@@ -400,9 +400,7 @@ def test_reasoning_part_does_not_crash_responses_build():
 
     req = CanonicalRequest(
         model="gpt-5",
-        messages=[
-            Message(role=Role.ASSISTANT, content=[Reasoning(text="t"), TextPart(text="hi")])
-        ],
+        messages=[Message(role=Role.ASSISTANT, content=[Reasoning(text="t"), TextPart(text="hi")])],
     )
     payload = OpenAIResponsesAdapter().build_upstream_request(req, "gpt-5")
     assert payload is not None

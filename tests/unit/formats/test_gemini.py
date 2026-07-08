@@ -82,9 +82,7 @@ def test_reasoning_part_does_not_crash_build():
 
     req = CanonicalRequest(
         model="gemini-2.5-pro",
-        messages=[
-            Message(role=Role.ASSISTANT, content=[Reasoning(text="t"), TextPart(text="hi")])
-        ],
+        messages=[Message(role=Role.ASSISTANT, content=[Reasoning(text="t"), TextPart(text="hi")])],
     )
     payload = GeminiAdapter().build_upstream_request(req, "gemini-2.5-pro")
     assert payload is not None
