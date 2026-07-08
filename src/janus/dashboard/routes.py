@@ -1291,6 +1291,10 @@ async def api_reset_to_defaults(request: Request) -> HTMLResponse:
         await db.execute("DELETE FROM settings")
         await db.commit()
 
+    from janus.storage.settings import invalidate_settings_cache
+
+    invalidate_settings_cache(db_path)
+
     await seed_from_config(db_path, request.app.state.config)
 
     from janus.dashboard.reload import (

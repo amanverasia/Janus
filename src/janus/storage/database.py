@@ -388,6 +388,10 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
 
         await db.commit()
 
+    from janus.storage.settings import invalidate_settings_cache
+
+    invalidate_settings_cache(db_path)
+
 
 async def seed_inventory_providers(db_path: str | Path) -> None:
     from janus.inventory.catalog import INVENTORY_PROVIDERS
