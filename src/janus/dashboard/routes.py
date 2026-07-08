@@ -1179,6 +1179,8 @@ async def settings_page(request: Request) -> HTMLResponse:
         get_all_settings,
         request_logging_enabled,
         require_api_key_enabled,
+        resolve_account_strategy,
+        resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
 
@@ -1198,6 +1200,8 @@ async def settings_page(request: Request) -> HTMLResponse:
         "require_api_key_enabled": require_api_key_enabled(settings),
         "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
         "request_logging_enabled": request_logging_enabled(settings),
+        "account_strategy": resolve_account_strategy(settings),
+        "sticky_limit": resolve_sticky_limit(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 

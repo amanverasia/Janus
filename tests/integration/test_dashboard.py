@@ -81,3 +81,29 @@ async def test_dashboard_usage(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/dashboard/usage")
         assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_settings_page_shows_account_strategy(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/settings")
+        assert r.status_code == 200
+        body = r.text
+        assert "Account Selection Strategy" in body
+        assert "server_account_strategy" in body
+        assert "server_sticky_limit" in body
+
+
+@pytest.mark.asyncio
+async def test_settings_post_updates_account_strategy(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=server_account_strategy&value=sticky_rr",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 200
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "server_account_strategy") == "sticky_rr"
