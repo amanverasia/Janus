@@ -6,6 +6,7 @@ from janus.canonical.events import (
     MessageDelta,
     MessageStart,
     MessageStop,
+    ReasoningDelta,
     TextBlockStart,
     TextDelta,
     ToolUseBlockStart,
@@ -50,6 +51,16 @@ def test_message_delta_with_usage():
 def test_message_stop():
     ev = MessageStop()
     assert ev.type == "message_stop"
+
+
+def test_reasoning_delta_carries_signature():
+    d = ReasoningDelta(index=1, text="", signature="abc")
+    assert d.signature == "abc"
+
+
+def test_reasoning_delta_signature_optional():
+    d = ReasoningDelta(index=1, text="think")
+    assert d.signature is None
 
 
 def test_event_discriminated_union():
