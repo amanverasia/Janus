@@ -75,3 +75,43 @@ def test_parse_upstream_response():
     assert isinstance(resp.content[0], TextPart)
     assert resp.content[0].text == "Hello!"
     assert resp.usage.input_tokens == 5
+
+
+def test_reasoning_part_does_not_crash_build():
+    from janus.canonical.models import Reasoning
+
+    req = CanonicalRequest(
+        model="gemini-2.5-pro",
+        messages=[
+            Message(role=Role.ASSISTANT, content=[Reasoning(text="t"), TextPart(text="hi")])
+        ],
+    )
+    payload = GeminiAdapter().build_upstream_request(req, "gemini-2.5-pro")
+    assert payload is not None
+    text_parts = [p for p in payload["contents"][0]["parts"] if "text" in p]
+    assert any(p["text"] == "hi" for p in text_parts)
+
+
+def test_tool_choice_required_maps_to_gemini_any():
+    from janus.canonical.models import ToolChoiceRequired
+
+    req = CanonicalRequest(
+        model="gemini-2.5-pro",
+        messages=[Message(role=Role.USER, content=[TextPart(text="hi")])],
+        tool_choice=ToolChoiceRequired(),
+    )
+    payload = GeminiAdapter().build_upstream_request(req, "gemini-2.5-pro")
+    mode = payload["tool_config"]["function_calling_config"]["mode"]
+    assert mode == "ANY"
+
+
+def test_tool_choice_none_maps_to_gemini_none():
+    from janus.canonical.models import ToolChoiceNone
+
+    req = CanonicalRequest(
+        model="gemini-2.5-pro",
+        messages=[Message(role=Role.USER, content=[TextPart(text="hi")])],
+        tool_choice=ToolChoiceNone(),
+    )
+    payload = GeminiAdapter().build_upstream_request(req, "gemini-2.5-pro")
+    assert payload["tool_config"]["function_calling_config"]["mode"] == "NONE"

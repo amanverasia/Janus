@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -47,7 +48,7 @@ class ToolUse(BaseModel):
 class ToolResult(BaseModel):
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
-    content: "str | list[ContentPart]" = ""
+    content: str | list[ContentPart] = ""
     is_error: bool = False
     cache_control: dict[str, Any] | None = None
 
@@ -58,6 +59,19 @@ ContentPart = Annotated[
 ]
 
 ToolResult.model_rebuild()
+
+
+def tool_result_text(content: str | list[ContentPart]) -> str:
+    """Flatten a ToolResult's content to a string for text-only provider APIs.
+
+    Text parts are newline-joined; a non-text/list payload is JSON-encoded.
+    """
+    if isinstance(content, str):
+        return content
+    texts = [p.text for p in content if isinstance(p, TextPart)]
+    if texts and len(texts) == len(content):
+        return "\n".join(texts)
+    return json.dumps([p.model_dump() for p in content])
 
 
 class Message(BaseModel):

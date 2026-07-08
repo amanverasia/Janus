@@ -312,9 +312,7 @@ class AnthropicAdapter:
 
         thinking_raw = raw.get("thinking")
         thinking = (
-            {k: str(v) for k, v in thinking_raw.items()}
-            if isinstance(thinking_raw, dict)
-            else None
+            {k: str(v) for k, v in thinking_raw.items()} if isinstance(thinking_raw, dict) else None
         )
 
         return CanonicalRequest(

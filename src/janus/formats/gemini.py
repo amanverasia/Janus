@@ -23,10 +23,16 @@ from janus.canonical.models import (
     SystemBlock,
     TextPart,
     Tool,
+    ToolChoiceAuto,
+    ToolChoiceNone,
+    ToolChoiceRequired,
+    ToolChoiceSpecific,
+    ToolChoiceType,
     ToolFunction,
     ToolResult,
     ToolUse,
     Usage,
+    tool_result_text,
 )
 from janus.streaming.sse import encode_sse
 
@@ -243,6 +249,7 @@ class GeminiAdapter:
             system=system,
             messages=messages,
             tools=tools,
+            tool_choice=self._parse_tool_choice(raw.get("tool_config")),
             max_tokens=gen_config.get("maxOutputTokens"),
             temperature=gen_config.get("temperature"),
             top_p=gen_config.get("topP"),
@@ -251,6 +258,23 @@ class GeminiAdapter:
             else None,
             stream=bool(raw.get("stream", False)),
         )
+
+    @staticmethod
+    def _parse_tool_choice(tc: Any) -> ToolChoiceType | None:
+        if not isinstance(tc, dict):
+            return None
+        fcc = tc.get("function_calling_config") or {}
+        mode = str(fcc.get("mode", "")).upper()
+        allowed = fcc.get("allowed_function_names") or []
+        if mode == "AUTO":
+            return ToolChoiceAuto()
+        if mode == "NONE":
+            return ToolChoiceNone()
+        if mode == "ANY":
+            if len(allowed) == 1:
+                return ToolChoiceSpecific(name=str(allowed[0]))
+            return ToolChoiceRequired()
+        return None
 
     @staticmethod
     def _parse_parts(parts: list[Any]) -> list[ContentPart]:
@@ -320,7 +344,25 @@ class GeminiAdapter:
                 }
             ]
 
+        if req.tool_choice is not None:
+            payload["tool_config"] = self._build_tool_config(req.tool_choice)
+
         return payload
+
+    @staticmethod
+    def _build_tool_config(tc: ToolChoiceType) -> dict[str, Any]:
+        if isinstance(tc, ToolChoiceAuto):
+            return {"function_calling_config": {"mode": "AUTO"}}
+        if isinstance(tc, ToolChoiceNone):
+            return {"function_calling_config": {"mode": "NONE"}}
+        if isinstance(tc, ToolChoiceSpecific):
+            return {
+                "function_calling_config": {
+                    "mode": "ANY",
+                    "allowed_function_names": [tc.name],
+                }
+            }
+        return {"function_calling_config": {"mode": "ANY"}}
 
     @staticmethod
     def _build_content(msg: Message) -> dict[str, Any]:
@@ -335,10 +377,11 @@ class GeminiAdapter:
             elif isinstance(part, ToolUse):
                 parts.append({"functionCall": {"name": part.name, "args": part.input}})
             elif isinstance(part, ToolResult):
+                content_str = tool_result_text(part.content)
                 try:
-                    response = json.loads(part.content)
+                    response = json.loads(content_str)
                 except (json.JSONDecodeError, TypeError):
-                    response = {"result": part.content}
+                    response = {"result": content_str}
                 parts.append({"functionResponse": {"id": part.tool_use_id, "response": response}})
         return {"role": role, "parts": parts}
 

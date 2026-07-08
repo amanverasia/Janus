@@ -37,6 +37,7 @@ from janus.canonical.models import (
     ToolResult,
     ToolUse,
     Usage,
+    tool_result_text,
 )
 from janus.canonical.tool_calls import (
     fix_missing_tool_responses_openai,
@@ -491,7 +492,11 @@ class OpenAIAdapter:
         out: list[dict[str, Any]] = []
         for tr in tool_results:
             out.append(
-                {"role": "tool", "tool_call_id": tr.tool_use_id, "content": tr.content},
+                {
+                    "role": "tool",
+                    "tool_call_id": tr.tool_use_id,
+                    "content": tool_result_text(tr.content),
+                },
             )
         content = built.get("content")
         if content not in (None, "", []) or built.get("tool_calls"):
@@ -503,7 +508,11 @@ class OpenAIAdapter:
             parts = msg.content if isinstance(msg.content, list) else []
             results = [p for p in parts if isinstance(p, ToolResult)]
             tr = results[0] if results else ToolResult(tool_use_id="", content="")
-            return {"role": "tool", "tool_call_id": tr.tool_use_id, "content": tr.content}
+            return {
+                "role": "tool",
+                "tool_call_id": tr.tool_use_id,
+                "content": tool_result_text(tr.content),
+            }
 
         content: Any
         tool_uses: list[ToolUse] = []

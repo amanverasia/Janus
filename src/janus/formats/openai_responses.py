@@ -38,6 +38,7 @@ from janus.canonical.models import (
     ToolResult,
     ToolUse,
     Usage,
+    tool_result_text,
 )
 
 _TEXT_PART_TYPES = ("input_text", "output_text", "text", "summary_text")
@@ -701,7 +702,7 @@ class OpenAIResponsesAdapter:
                         {
                             "type": "function_call_output",
                             "call_id": part.tool_use_id,
-                            "output": part.content,
+                            "output": tool_result_text(part.content),
                         }
                     )
             return items
@@ -732,7 +733,7 @@ class OpenAIResponsesAdapter:
                     {
                         "type": "function_call_output",
                         "call_id": part.tool_use_id,
-                        "output": part.content,
+                        "output": tool_result_text(part.content),
                     }
                 )
         if message_content:
