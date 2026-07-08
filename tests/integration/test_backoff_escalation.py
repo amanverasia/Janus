@@ -105,3 +105,52 @@ async def test_repeated_429_escalates_backoff_for_specific_model(two_account_app
 
     handler = two_account_app.state.fallback_handler
     assert handler._backoff[(account_a_id, "m1")] >= 2
+
+
+class _MidStreamFailure(httpx.AsyncByteStream):
+    async def __aiter__(self):
+        yield (
+            b'data: {"id":"r1","object":"chat.completion.chunk",'
+            b'"choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}\n\n'
+        )
+        raise httpx.ReadError("connection lost mid-stream")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_mid_stream_failure_does_not_mark_success(two_account_app):
+    targets = two_account_app.state.registry.lookup("test/m1")
+    account_a_id = next(t.account_id for t in targets if t.provider_config.id == "acct-a")
+
+    route_a = respx.post("https://a.local/v1/chat/completions").mock(
+        return_value=httpx.Response(200, stream=_MidStreamFailure())
+    )
+
+    handler = two_account_app.state.fallback_handler
+    original_mark_success = handler.mark_success
+    mark_success_calls: list[tuple[str, str | None]] = []
+
+    def _spy_mark_success(account_id: str, model: str | None = None) -> None:
+        mark_success_calls.append((account_id, model))
+        original_mark_success(account_id, model)
+
+    handler.mark_success = _spy_mark_success
+
+    async with AsyncClient(
+        transport=ASGITransport(app=two_account_app), base_url="http://test"
+    ) as client:
+        payload = {
+            "model": "test/m1",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+        }
+        with pytest.raises(httpx.ReadError):
+            async with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+                assert response.status_code == 200
+                async for _ in response.aiter_bytes():
+                    pass
+
+    assert route_a.call_count == 1
+    assert mark_success_calls == []
+    assert handler._cooldowns.get((account_a_id, "m1")) is None
+    assert handler._backoff.get((account_a_id, "m1")) is None

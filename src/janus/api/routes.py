@@ -182,9 +182,11 @@ async def _handle(
                 from janus.storage.usage import record_usage
 
                 async def _streaming_generator() -> AsyncIterator[bytes]:
+                    stream_ok = False
                     try:
                         async for chunk in translate_stream(lines, tracker, emitter):
                             yield chunk
+                        stream_ok = True
                     finally:
                         usage = tracker.get_usage()
                         cost = compute_cost(usage, target.model, pricing_registry)
@@ -217,7 +219,8 @@ async def _handle(
                                 streamed=True,
                                 request_body=logged_request_body,
                             )
-                        handler.mark_success(target.account_id, specific_model)
+                        if stream_ok:
+                            handler.mark_success(target.account_id, specific_model)
 
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 return StreamingResponse(_streaming_generator(), media_type=media_type)
