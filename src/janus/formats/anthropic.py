@@ -22,10 +22,16 @@ from janus.canonical.models import (
     ImagePart,
     ImageSource,
     Message,
+    Reasoning,
     Role,
     SystemBlock,
     TextPart,
     Tool,
+    ToolChoiceAuto,
+    ToolChoiceNone,
+    ToolChoiceRequired,
+    ToolChoiceSpecific,
+    ToolChoiceType,
     ToolFunction,
     ToolResult,
     ToolUse,
@@ -264,17 +270,41 @@ class AnthropicAdapter:
         top_p = raw.get("top_p")
         stop = raw.get("stop_sequences")
 
+        thinking_raw = raw.get("thinking")
+        thinking = (
+            {k: str(v) for k, v in thinking_raw.items()}
+            if isinstance(thinking_raw, dict)
+            else None
+        )
+
         return CanonicalRequest(
             model=model,
             system=system,
             messages=messages,
             tools=tools,
+            tool_choice=self._parse_tool_choice(raw.get("tool_choice")),
             max_tokens=int(max_tokens) if max_tokens is not None else None,
             temperature=float(temperature) if temperature is not None else None,
             top_p=float(top_p) if top_p is not None else None,
             stop=list(stop) if isinstance(stop, list) else None,
             stream=bool(raw.get("stream", False)),
+            thinking=thinking,
         )
+
+    @staticmethod
+    def _parse_tool_choice(tc: Any) -> ToolChoiceType | None:
+        if not isinstance(tc, dict):
+            return None
+        t = tc.get("type")
+        if t == "auto":
+            return ToolChoiceAuto()
+        if t == "any":
+            return ToolChoiceRequired()
+        if t == "none":
+            return ToolChoiceNone()
+        if t == "tool" and tc.get("name"):
+            return ToolChoiceSpecific(name=str(tc["name"]))
+        return None
 
     @staticmethod
     def _parse_tool_result_content(content: Any) -> str:
@@ -314,11 +344,20 @@ class AnthropicAdapter:
                         input=part.get("input") or {},
                     )
                 )
+            elif ptype in ("thinking", "redacted_thinking"):
+                parts.append(
+                    Reasoning(
+                        text=part.get("thinking", "") or part.get("data", ""),
+                        signature=part.get("signature"),
+                        redacted=ptype == "redacted_thinking",
+                    )
+                )
             elif ptype == "tool_result":
                 parts.append(
                     ToolResult(
                         tool_use_id=part.get("tool_use_id", ""),
                         content=AnthropicAdapter._parse_tool_result_content(part.get("content")),
+                        is_error=bool(part.get("is_error", False)),
                     )
                 )
             elif ptype == "image":
@@ -364,7 +403,21 @@ class AnthropicAdapter:
             payload["stop_sequences"] = req.stop
         if req.tools:
             payload["tools"] = [self._build_tool_def(t) for t in req.tools]
+        if req.thinking is not None:
+            payload["thinking"] = req.thinking
+        if req.tool_choice is not None:
+            payload["tool_choice"] = self._build_tool_choice(req.tool_choice)
         return payload
+
+    @staticmethod
+    def _build_tool_choice(tc: ToolChoiceType) -> dict[str, Any]:
+        if isinstance(tc, ToolChoiceAuto):
+            return {"type": "auto"}
+        if isinstance(tc, ToolChoiceRequired):
+            return {"type": "any"}
+        if isinstance(tc, ToolChoiceNone):
+            return {"type": "none"}
+        return {"type": "tool", "name": tc.name}
 
     @staticmethod
     def _build_message(msg: Message) -> dict[str, Any]:
@@ -376,18 +429,27 @@ class AnthropicAdapter:
         for part in msg.content:
             if isinstance(part, TextPart):
                 blocks.append({"type": "text", "text": part.text})
+            elif isinstance(part, Reasoning):
+                if part.redacted:
+                    blocks.append({"type": "redacted_thinking", "data": part.text})
+                else:
+                    thinking_block: dict[str, Any] = {"type": "thinking", "thinking": part.text}
+                    if part.signature:
+                        thinking_block["signature"] = part.signature
+                    blocks.append(thinking_block)
             elif isinstance(part, ToolUse):
                 blocks.append(
                     {"type": "tool_use", "id": part.id, "name": part.name, "input": part.input}
                 )
             elif isinstance(part, ToolResult):
-                blocks.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": part.tool_use_id,
-                        "content": part.content,
-                    }
-                )
+                tr_block: dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": part.tool_use_id,
+                    "content": part.content,
+                }
+                if part.is_error:
+                    tr_block["is_error"] = True
+                blocks.append(tr_block)
             elif isinstance(part, ImagePart):
                 source: dict[str, Any] = {"type": part.source.type}
                 if part.source.media_type:
@@ -417,6 +479,14 @@ class AnthropicAdapter:
             btype = block.get("type", "text")
             if btype == "text":
                 content.append(TextPart(text=block.get("text", "")))
+            elif btype in ("thinking", "redacted_thinking"):
+                content.append(
+                    Reasoning(
+                        text=block.get("thinking", "") or block.get("data", ""),
+                        signature=block.get("signature"),
+                        redacted=btype == "redacted_thinking",
+                    )
+                )
             elif btype == "tool_use":
                 content.append(
                     ToolUse(
@@ -446,6 +516,14 @@ class AnthropicAdapter:
         for part in resp.content:
             if isinstance(part, TextPart):
                 blocks.append({"type": "text", "text": part.text})
+            elif isinstance(part, Reasoning):
+                if part.redacted:
+                    blocks.append({"type": "redacted_thinking", "data": part.text})
+                else:
+                    rblock: dict[str, Any] = {"type": "thinking", "thinking": part.text}
+                    if part.signature:
+                        rblock["signature"] = part.signature
+                    blocks.append(rblock)
             elif isinstance(part, ToolUse):
                 blocks.append(
                     {"type": "tool_use", "id": part.id, "name": part.name, "input": part.input}
