@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -30,6 +31,8 @@ from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
 
 from .deps import require_api_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -82,8 +85,8 @@ async def _check_budgets(
                     status_code=429,
                     headers={"Retry-After": str(max(retry_after, 1))},
                 )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Budget check failed, allowing request: %s", e, exc_info=True)
     return None
 
 
