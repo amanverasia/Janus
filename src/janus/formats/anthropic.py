@@ -11,6 +11,8 @@ from janus.canonical.events import (
     MessageDelta,
     MessageStart,
     MessageStop,
+    ReasoningBlockStart,
+    ReasoningDelta,
     TextBlockStart,
     TextDelta,
     ToolUseBlockStart,
@@ -79,6 +81,8 @@ class AnthropicStreamParser:
             block_type = block.get("type", "text")
             if block_type == "text":
                 return [TextBlockStart(index=index)]
+            if block_type in ("thinking", "redacted_thinking"):
+                return [ReasoningBlockStart(index=index)]
             if block_type == "tool_use":
                 return [
                     ToolUseBlockStart(
@@ -95,6 +99,10 @@ class AnthropicStreamParser:
             delta_type = delta.get("type", "")
             if delta_type == "text_delta":
                 return [TextDelta(index=index, text=delta.get("text", ""))]
+            if delta_type == "thinking_delta":
+                return [ReasoningDelta(index=index, text=delta.get("thinking", ""))]
+            if delta_type == "signature_delta":
+                return [ReasoningDelta(index=index, text="", signature=delta.get("signature", ""))]
             if delta_type == "input_json_delta":
                 return [InputJsonDelta(index=index, partial_json=delta.get("partial_json", ""))]
             return []
@@ -171,6 +179,38 @@ class AnthropicStreamEmitter:
                     {
                         "index": event.index,
                         "content_block": {"type": "text", "text": ""},
+                    },
+                )
+            ]
+
+        if isinstance(event, ReasoningBlockStart):
+            return [
+                self._emit(
+                    "content_block_start",
+                    {
+                        "index": event.index,
+                        "content_block": {"type": "thinking", "thinking": ""},
+                    },
+                )
+            ]
+
+        if isinstance(event, ReasoningDelta):
+            if event.signature:
+                return [
+                    self._emit(
+                        "content_block_delta",
+                        {
+                            "index": event.index,
+                            "delta": {"type": "signature_delta", "signature": event.signature},
+                        },
+                    )
+                ]
+            return [
+                self._emit(
+                    "content_block_delta",
+                    {
+                        "index": event.index,
+                        "delta": {"type": "thinking_delta", "thinking": event.text},
                     },
                 )
             ]

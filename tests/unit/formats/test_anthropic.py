@@ -110,6 +110,30 @@ def test_emit_response():
     assert out["stop_reason"] == "end_turn"
 
 
+def test_stream_parses_thinking_and_signature():
+    raw = (FIXTURES / "anthropic_thinking_stream.txt").read_text()
+    parser = AnthropicAdapter().stream_parser()
+    events = []
+    for line in raw.split("\n"):
+        if line.startswith("data: "):
+            events.extend(parser.feed(line[6:]))
+    types = [e.type for e in events]
+    assert "reasoning_block_start" in types
+    assert "reasoning_delta" in types
+    sig_events = [e for e in events if e.type == "reasoning_delta" and e.signature]
+    assert sig_events and sig_events[0].signature == "sigABC"
+
+
+def test_emitter_serializes_reasoning_block():
+    from janus.canonical.events import ReasoningBlockStart, ReasoningDelta
+
+    emitter = AnthropicAdapter().stream_emitter()
+    out = b"".join(emitter.feed(ReasoningBlockStart(index=0)))
+    out += b"".join(emitter.feed(ReasoningDelta(index=0, text="hmm")))
+    assert b"thinking" in out
+    assert b"hmm" in out
+
+
 def test_parse_thinking_and_tool_choice_request():
     raw = {
         "model": "claude-sonnet-4-20250514",
