@@ -155,6 +155,8 @@ async def _handle(
 
     last_error = "Unknown error"
     for target in attempts:
+        if not handler.is_available(target.account_id, target.model):
+            continue
         provider_adapter = _resolve_format(target.native_format)
         upstream_payload = provider_adapter.build_upstream_request(canonical_req, target.model)
         providers: dict[str, Provider] = request.app.state.providers

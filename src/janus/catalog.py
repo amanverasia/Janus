@@ -105,6 +105,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "openrouter",
             "default_models": [],
         },
+        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
     "google": {
         "inventory": {
@@ -204,6 +205,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "Qwen/Qwen3-235B-A22B",
             ],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "perplexity": {
         "inventory": {
@@ -232,6 +234,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "perplexity",
             "default_models": ["sonar-pro", "sonar"],
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "cohere": {
         "inventory": {
@@ -293,6 +296,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "mistral",
             "default_models": ["mistral-large-latest", "mistral-medium-latest", "codestral-latest"],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "deepseek": {
         "inventory": {
@@ -321,6 +325,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "deepseek",
             "default_models": ["deepseek-chat", "deepseek-reasoner"],
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "xai": {
         "inventory": {
@@ -349,6 +354,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "xai",
             "default_models": ["grok-4", "grok-4-fast-reasoning", "grok-code-fast-1", "grok-3"],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "cerebras": {
         "inventory": {
@@ -653,6 +659,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "accounts/fireworks/models/qwen3-235b-a22b",
             ],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "nvidia": {
         "inventory": {
@@ -717,6 +724,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "qwen",
             "default_models": ["qwen-max", "qwen-plus", "qwen-turbo"],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "minimax": {
         "inventory": {
@@ -973,7 +981,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://api.githubcopilot.com",
             "prefix": "copilot",
             "default_models": ["gpt-4o", "gpt-4.1", "o4-mini", "claude-sonnet-4"],
-        }
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
 }
 

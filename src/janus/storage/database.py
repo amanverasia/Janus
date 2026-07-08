@@ -270,11 +270,17 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
 
 
 async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
+    # Rebuild the cooldowns table with a compound (account_id, model) PK.
+    # The whole sequence runs inside init_db's single uncommitted transaction
+    # (SQLite has transactional DDL), so a crash before commit rolls back with
+    # the original table intact. The leading DROP IF EXISTS also makes a retry
+    # safe if a prior partial run somehow left cooldowns_new behind.
     cursor = await db.execute("PRAGMA table_info(cooldowns)")
     rows = await cursor.fetchall()
     existing = {row[1] for row in rows}
     if "model" in existing:
         return
+    await db.execute("DROP TABLE IF EXISTS cooldowns_new")
     await db.execute(
         """CREATE TABLE cooldowns_new (
             account_id TEXT NOT NULL,
