@@ -255,6 +255,49 @@ async def test_gemini_inbound_stream(app):
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_gemini_inbound_bare_model_prefixed(tmp_path):
+    """A bare model name (no prefix) on /v1beta routes to the gemini prefix."""
+    provider = ProviderConfig(
+        id="gem",
+        prefix="gemini",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="sk-test",
+        models=["gemini-2.5-flash"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "gemini-2.5-flash",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "hi"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
+        r = await client.post("/v1beta/models/gemini-2.5-flash:generateContent", json=payload)
+        assert r.status_code == 200
+        assert r.json()["candidates"][0]["content"]["parts"][0]["text"] == "hi"
+
+
+@pytest.mark.asyncio
 async def test_gemini_inbound_bad_action(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post("/v1beta/models/test/test-m1:bogusAction", json={"contents": []})

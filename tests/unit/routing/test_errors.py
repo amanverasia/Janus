@@ -19,6 +19,22 @@ def test_classify_403():
     assert classify_error(403) == ErrorType.AUTH_ERROR
 
 
+def test_classify_402_payment_error():
+    assert classify_error(402) == ErrorType.PAYMENT_ERROR
+
+
+def test_classify_402_eligible():
+    assert is_fallback_eligible(402)
+
+
+def test_payment_error_cooldown_fixed():
+    from janus.routing.errors import get_cooldown
+
+    secs, level = get_cooldown("payment_error", backoff_level=0)
+    assert secs == 300.0
+    assert level == 0
+
+
 def test_classify_400_not_eligible():
     assert classify_error(400) == ErrorType.CLIENT_ERROR
     assert not is_fallback_eligible(400)

@@ -9,6 +9,7 @@ class ErrorType(enum.StrEnum):
     RATE_LIMIT = "rate_limit"
     SERVER_ERROR = "server_error"
     AUTH_ERROR = "auth_error"
+    PAYMENT_ERROR = "payment_error"
     NETWORK = "network"
     CLIENT_ERROR = "client_error"
     UNKNOWN = "unknown"
@@ -21,6 +22,8 @@ def classify_error(status_code: int) -> ErrorType:
         return ErrorType.SERVER_ERROR
     if status_code in (401, 403):
         return ErrorType.AUTH_ERROR
+    if status_code == 402:
+        return ErrorType.PAYMENT_ERROR
     if status_code >= 400:
         return ErrorType.CLIENT_ERROR
     return ErrorType.UNKNOWN
@@ -30,7 +33,7 @@ def is_fallback_eligible(error: int | Exception) -> bool:
     if isinstance(error, (httpx.TimeoutException, httpx.ConnectError)):
         return True
     if isinstance(error, int):
-        return error in (429, 401, 403) or error >= 500
+        return error in (429, 401, 403, 402) or error >= 500
     return False
 
 
@@ -42,6 +45,7 @@ RETRY_AFTER_CAP_S = 1800.0
 FIXED_COOLDOWNS: dict[str, float] = {
     "server_error": 30.0,
     "auth_error": 300.0,
+    "payment_error": 300.0,
     "network": 15.0,
 }
 

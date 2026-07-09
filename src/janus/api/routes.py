@@ -400,9 +400,7 @@ async def _handle(
                     caps=model_caps,
                     intent=attempt_thinking,
                 )
-                inject_reasoning_content(
-                    pt_body, provider=target.prefix, model=target.model
-                )
+                inject_reasoning_content(pt_body, provider=target.prefix, model=target.model)
                 pt_body = _apply_client_body_quirks(
                     pt_body,
                     client_format=client_format,
@@ -570,9 +568,7 @@ async def _handle(
                     caps=model_caps,
                     intent=attempt_thinking,
                 )
-                inject_reasoning_content(
-                    native_body, provider=target.prefix, model=target.model
-                )
+                inject_reasoning_content(native_body, provider=target.prefix, model=target.model)
                 native_body = _apply_client_body_quirks(
                     native_body,
                     client_format=client_format,
@@ -741,9 +737,7 @@ async def _handle(
             caps=model_caps,
             intent=attempt_thinking,
         )
-        inject_reasoning_content(
-            upstream_payload, provider=target.prefix, model=target.model
-        )
+        inject_reasoning_content(upstream_payload, provider=target.prefix, model=target.model)
         upstream_payload = _apply_client_body_quirks(
             upstream_payload,
             client_format=client_format,
@@ -1007,6 +1001,8 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
     if action not in ("generateContent", "streamGenerateContent"):
         raise HTTPException(status_code=404, detail=f"Unsupported action: {action}")
     body: dict[str, Any] = await request.json()
+    if "/" not in model:
+        model = f"gemini/{model}"
     body["model"] = model
     body["stream"] = action == "streamGenerateContent"
     return await _handle("gemini", body, request)

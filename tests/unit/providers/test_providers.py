@@ -50,6 +50,42 @@ async def test_gemini_provider():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_openai_compat_nonjson_error_body():
+    respx.post("https://test.com/v1/chat/completions").mock(
+        return_value=httpx.Response(502, text="<html>Bad Gateway</html>")
+    )
+    provider = OpenAICompatProvider(base_url="https://test.com/v1", api_key="sk-test")
+    result = await provider.call({"model": "m1", "messages": []}, stream=False)
+    assert result.status_code == 502
+    assert result.json_data == {"error": "<html>Bad Gateway</html>"}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_anthropic_nonjson_error_body():
+    respx.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(529, text="overloaded")
+    )
+    provider = AnthropicProvider(api_key="sk-ant-test")
+    result = await provider.call({"model": "c", "messages": [], "max_tokens": 100}, stream=False)
+    assert result.status_code == 529
+    assert result.json_data == {"error": "overloaded"}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_gemini_nonjson_error_body():
+    respx.post(url__regex=r".*generativelanguage\.googleapis\.com.*").mock(
+        return_value=httpx.Response(503, text="Service Unavailable")
+    )
+    provider = GeminiProvider(api_key="test-key")
+    result = await provider.call({"model": "gemini-2.0-flash", "contents": []}, stream=False)
+    assert result.status_code == 503
+    assert result.json_data == {"error": "Service Unavailable"}
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_opencode_free_provider():
     respx.post("https://opencode.ai/zen/v1/chat/completions").mock(
         return_value=httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
@@ -89,7 +125,6 @@ async def test_openai_compat_provider_reuses_client():
         await provider.close()
     finally:
         httpx.AsyncClient.__init__ = original_init
-
 
 
 @pytest.mark.asyncio
