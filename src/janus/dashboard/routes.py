@@ -804,7 +804,7 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
         )
         parsed["quota"] = None
         if parsed.get("quota_window") and parsed.get("quota_limit"):
-            from janus.storage.quotas import describe_reset, get_window_usage
+            from janus.storage.quotas import describe_reset, get_window_usage, quota_status
 
             try:
                 usage = await get_window_usage(
@@ -813,13 +813,15 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
                 metric = parsed.get("quota_metric") or "requests"
                 used = usage["tokens"] if metric == "tokens" else usage["requests"]
                 limit = int(parsed["quota_limit"])
+                status = quota_status(used, limit)
                 parsed["quota"] = {
                     "used": used,
                     "limit": limit,
                     "metric": metric,
                     "window": parsed["quota_window"],
                     "percent": min(round(used * 100 / limit), 100) if limit else 0,
-                    "exhausted": used >= limit,
+                    "exhausted": status == "exhausted",
+                    "status": status,
                     **describe_reset(str(parsed["quota_window"])),
                 }
             except Exception:
