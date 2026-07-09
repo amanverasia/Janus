@@ -63,13 +63,18 @@ Summary landing page:
 
 ### Request Logs — `/dashboard/request-logs`
 
-Debug view of captured API requests (off by default — enable **Request Logging**
-in Settings):
+Debug view of captured API requests (**off by default** — enable **Request
+Logging** under Settings, or set `server_request_logging=true`):
 
 - Table of recent requests: time, format, model, provider, status, duration
 - Per-request JSON detail (full request/response bodies, truncated at 64 KB)
+- Successful completions (stream + non-stream), exhausted fallbacks (`503`), and
+  non-fallback upstream errors (e.g. `400`) are recorded when logging is on
 - Export all logs as JSON; Clear button wipes the table
 - Only the most recent 500 requests are kept (pruned automatically)
+
+If the page is empty, logging is almost always still disabled — check the banner
+and the Settings toggle.
 
 !!! warning "Sensitive content"
     Captured bodies contain prompts and completions. Leave request logging off

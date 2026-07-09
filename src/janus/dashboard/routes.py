@@ -29,6 +29,7 @@ from janus.storage.analytics import (
     Dimension,
     get_breakdown,
     get_flow,
+    get_leaderboard,
     get_spend_summary,
     get_success_rate,
 )
@@ -59,6 +60,36 @@ except Exception:
 
 def _api_v1_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/v1"
+
+
+def _reject_unsafe_url(base_url: str) -> JSONResponse | None:
+    """Return a 400 JSONResponse if base_url is not a public http(s) address, else None.
+
+    Guards dashboard endpoints that send the user's API key to an arbitrary URL
+    against scheme abuse and SSRF to internal/private addresses.
+    """
+    import ipaddress
+    import socket
+
+    try:
+        parsed = httpx.URL(base_url)
+    except Exception:
+        return JSONResponse({"error": "Invalid URL"}, status_code=400)
+    if parsed.scheme not in ("http", "https"):
+        return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
+    try:
+        hostname = parsed.host
+        if hostname:
+            for _family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+                ip = ipaddress.ip_address(sockaddr[0])
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    return JSONResponse(
+                        {"error": "URLs pointing to internal/private addresses are not allowed"},
+                        status_code=400,
+                    )
+    except (socket.gaierror, ValueError):
+        pass
+    return None
 
 
 async def _ensure_db(request: Request) -> Path:
@@ -384,6 +415,29 @@ async def analytics_page(
     return _templates.TemplateResponse(request, "analytics.html", context)
 
 
+@router.get("/leaderboard", response_class=HTMLResponse)
+async def leaderboard_page(
+    request: Request,
+    days: int = 30,
+    sort: str = "tokens",
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    valid_sorts = ("tokens", "cost", "requests")
+    if sort not in valid_sorts:
+        sort = "tokens"
+    try:
+        board = await get_leaderboard(db_path, days=days, sort_by=sort)
+    except Exception:
+        board = []
+    context: dict[str, Any] = {
+        "request": request,
+        "leaderboard": board,
+        "days": days,
+        "sort": sort,
+    }
+    return _templates.TemplateResponse(request, "leaderboard.html", context)
+
+
 @router.get("/budgets", response_class=HTMLResponse)
 async def budgets_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -681,29 +735,9 @@ async def api_fetch_models(request: Request) -> JSONResponse:
         if provider:
             api_key = await _resolve_provider_api_key(db_path, provider)
 
-    allowed_schemes = ("http", "https")
-    try:
-        parsed = httpx.URL(base_url)
-    except Exception:
-        return JSONResponse({"error": "Invalid URL"}, status_code=400)
-    if parsed.scheme not in allowed_schemes:
-        return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
-    import ipaddress
-    import socket
-
-    try:
-        hostname = parsed.host
-        if hostname:
-            addr_info = socket.getaddrinfo(hostname, None)
-            for family, _, _, _, sockaddr in addr_info:
-                ip = ipaddress.ip_address(sockaddr[0])
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                    return JSONResponse(
-                        {"error": "URLs pointing to internal/private addresses are not allowed"},
-                        status_code=400,
-                    )
-    except (socket.gaierror, ValueError):
-        pass
+    unsafe = _reject_unsafe_url(base_url)
+    if unsafe is not None:
+        return unsafe
 
     try:
         if api_type == "openai_compat":
@@ -831,6 +865,10 @@ async def api_test_connection(request: Request, provider_id: str) -> JSONRespons
     api_type = provider["api_type"]
     base_url = provider["base_url"].rstrip("/")
     api_key = await _resolve_provider_api_key(db_path, provider)
+
+    unsafe = _reject_unsafe_url(base_url)
+    if unsafe is not None:
+        return unsafe
 
     try:
         start = time.perf_counter()
@@ -1165,6 +1203,8 @@ async def settings_page(request: Request) -> HTMLResponse:
         get_all_settings,
         request_logging_enabled,
         require_api_key_enabled,
+        resolve_account_strategy,
+        resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
 
@@ -1184,6 +1224,8 @@ async def settings_page(request: Request) -> HTMLResponse:
         "require_api_key_enabled": require_api_key_enabled(settings),
         "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
         "request_logging_enabled": request_logging_enabled(settings),
+        "account_strategy": resolve_account_strategy(settings),
+        "sticky_limit": resolve_sticky_limit(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 
@@ -1276,6 +1318,10 @@ async def api_reset_to_defaults(request: Request) -> HTMLResponse:
         await db.execute("DELETE FROM pricing_overrides")
         await db.execute("DELETE FROM settings")
         await db.commit()
+
+    from janus.storage.settings import invalidate_settings_cache
+
+    invalidate_settings_cache(db_path)
 
     await seed_from_config(db_path, request.app.state.config)
 

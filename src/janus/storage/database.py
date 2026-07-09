@@ -76,8 +76,12 @@ CREATE TABLE IF NOT EXISTS pricing_overrides (
 );
 
 CREATE TABLE IF NOT EXISTS cooldowns (
-    account_id TEXT PRIMARY KEY,
-    expires_at REAL NOT NULL
+    account_id TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '__all__',
+    expires_at REAL NOT NULL,
+    error_type TEXT,
+    backoff_level INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, model)
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
@@ -209,6 +213,7 @@ _NEW_PROVIDER_COLUMNS = [
     ("quota_window", "TEXT"),
     ("quota_limit", "INTEGER"),
     ("quota_metric", "TEXT DEFAULT 'requests'"),
+    ("transports", "TEXT"),
 ]
 
 
@@ -265,6 +270,36 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
     )
 
 
+async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
+    # Rebuild the cooldowns table with a compound (account_id, model) PK.
+    # The whole sequence runs inside init_db's single uncommitted transaction
+    # (SQLite has transactional DDL), so a crash before commit rolls back with
+    # the original table intact. The leading DROP IF EXISTS also makes a retry
+    # safe if a prior partial run somehow left cooldowns_new behind.
+    cursor = await db.execute("PRAGMA table_info(cooldowns)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    if "model" in existing:
+        return
+    await db.execute("DROP TABLE IF EXISTS cooldowns_new")
+    await db.execute(
+        """CREATE TABLE cooldowns_new (
+            account_id TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '__all__',
+            expires_at REAL NOT NULL,
+            error_type TEXT,
+            backoff_level INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (account_id, model)
+        )"""
+    )
+    await db.execute(
+        "INSERT INTO cooldowns_new (account_id, model, expires_at) "
+        "SELECT account_id, '__all__', expires_at FROM cooldowns"
+    )
+    await db.execute("DROP TABLE cooldowns")
+    await db.execute("ALTER TABLE cooldowns_new RENAME TO cooldowns")
+
+
 async def init_db(db_path: str | Path) -> None:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -273,6 +308,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_usage_columns(db)
         await _migrate_provider_columns(db)
         await _migrate_upstream_key_columns(db)
+        await _migrate_cooldowns_per_model(db)
         await db.commit()
     await seed_inventory_providers(db_path)
 
@@ -295,9 +331,17 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
         if await _table_is_empty(db, "providers") and config.providers:
             for pc in config.providers:
                 await db.execute(
-                    """INSERT INTO providers (id, prefix, api_type, base_url, api_key, models)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (pc.id, pc.prefix, pc.api_type, pc.base_url, pc.api_key, json.dumps(pc.models)),
+                    """INSERT INTO providers (id, prefix, api_type, base_url, api_key, models, transports)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        pc.id,
+                        pc.prefix,
+                        pc.api_type,
+                        pc.base_url,
+                        pc.api_key,
+                        json.dumps(pc.models),
+                        json.dumps(pc.transports) if pc.transports else None,
+                    ),
                 )
 
         if await _table_is_empty(db, "combos") and config.combos:
@@ -334,6 +378,14 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
                 ("server_require_api_key", "true" if config.server.require_api_key else "false"),
             )
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                ("server_account_strategy", config.server.account_strategy),
+            )
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                ("server_sticky_limit", str(config.server.sticky_limit)),
+            )
 
         if await _table_is_empty(db, "pricing_overrides") and config.pricing:
             for model, rates in config.pricing.items():
@@ -352,6 +404,10 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                 )
 
         await db.commit()
+
+    from janus.storage.settings import invalidate_settings_cache
+
+    invalidate_settings_cache(db_path)
 
 
 async def seed_inventory_providers(db_path: str | Path) -> None:

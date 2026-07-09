@@ -234,3 +234,93 @@ async def get_success_rate(db_path: str | Path, *, days: int = 30) -> dict[str, 
         "server_5xx": row["s5xx"] or 0,
         "total": row["total"] or 0,
     }
+
+
+async def get_leaderboard(
+    db_path: str | Path,
+    *,
+    days: int = 30,
+    sort_by: str = "tokens",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Leaderboard of API keys ranked by usage (tokens, cost, or requests).
+
+    Includes ALL active keys — even those with zero usage — so everyone
+    appears on the board. Keys with usage are ranked first by the sort metric;
+    keys with zero usage are appended alphabetically at the end.
+    """
+    sort_col = {"tokens": "tokens", "cost": "cost", "requests": "requests"}.get(sort_by, "tokens")
+    if days <= 0:
+        time_clause = "1=1"
+        time_params: tuple[str, ...] = ()
+    else:
+        time_clause = "u.timestamp >= datetime('now', ?)"
+        time_params = (f"-{days} days",)
+    async with get_connection(db_path) as db:
+        # Keys with usage in the time window.
+        async with db.execute(
+            f"""SELECT
+                   COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as key_name,
+                   MAX(k.id) as key_id,
+                   COUNT(*) as requests,
+                   COALESCE(SUM(u.input_tokens), 0)
+                     + COALESCE(SUM(u.output_tokens), 0) as tokens,
+                   COALESCE(SUM(u.input_tokens), 0) as input_tokens,
+                   COALESCE(SUM(u.output_tokens), 0) as output_tokens,
+                   COALESCE(SUM(u.cost), 0.0) as cost,
+                   CASE WHEN COUNT(*) > 0
+                     THEN CAST(
+                       SUM(CASE WHEN u.status >= 200 AND u.status < 300 THEN 1 ELSE 0 END)
+                       AS REAL) / COUNT(*) * 100
+                     ELSE 0.0
+                   END as success_pct
+            FROM usage u
+            LEFT JOIN api_keys k ON u.client_key_id = k.id
+            WHERE {time_clause}
+            GROUP BY COALESCE(k.name, u.client_key_label, 'Direct (no API key)')
+            ORDER BY {sort_col} DESC
+            LIMIT ?""",
+            time_params + (limit,),
+        ) as cur:
+            used_rows = await cur.fetchall()
+
+        # Active keys with zero usage in this window — append at the end.
+        used_names = {str(row["key_name"]) for row in used_rows}
+        async with db.execute(
+            "SELECT name as key_name, id as key_id FROM api_keys WHERE is_active = 1 ORDER BY name"
+        ) as cur:
+            all_keys = await cur.fetchall()
+        zero_keys = [
+            {"key_name": r["key_name"], "key_id": r["key_id"]}
+            for r in all_keys
+            if str(r["key_name"]) not in used_names
+        ]
+
+    result: list[dict[str, Any]] = []
+    for i, row in enumerate(used_rows):
+        result.append(
+            {
+                "rank": i + 1,
+                "key_name": row["key_name"],
+                "requests": row["requests"],
+                "tokens": row["tokens"],
+                "input_tokens": row["input_tokens"],
+                "output_tokens": row["output_tokens"],
+                "cost": round(row["cost"], 6),
+                "success_pct": round(row["success_pct"], 1),
+            }
+        )
+    for zk in zero_keys:
+        result.append(
+            {
+                "rank": len(result) + 1,
+                "key_name": zk["key_name"],
+                "requests": 0,
+                "tokens": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost": 0.0,
+                "success_pct": 0.0,
+            }
+        )
+    return result

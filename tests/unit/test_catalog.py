@@ -26,13 +26,61 @@ INVENTORY_FIELDS = {
     "routing_note",
 }
 
-GATEWAY_FIELDS = {"id", "name", "icon", "logo", "api_type", "base_url", "prefix", "default_models"}
+GATEWAY_FIELDS = {
+    "id",
+    "name",
+    "icon",
+    "logo",
+    "api_type",
+    "base_url",
+    "prefix",
+    "default_models",
+    "transports",
+    "default_headers",
+}
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 31
-    assert len(inventory_entries()) == 29
-    assert len(gateway_entries()) == 15
+    assert len(PROVIDERS) == 49
+    assert len(inventory_entries()) == 38
+    assert len(gateway_entries()) == 38
+
+
+def test_groq_default_model_is_valid() -> None:
+    # llama-3.3-70b-instruct does not exist on Groq; the versatile id is correct.
+    assert "llama-3.3-70b-versatile" in PROVIDERS["groq"]["gateway"]["default_models"]
+    assert "llama-3.3-70b-instruct" not in PROVIDERS["groq"]["gateway"]["default_models"]
+
+
+def test_cohere_is_routable() -> None:
+    assert "gateway" in PROVIDERS["cohere"]
+    assert PROVIDERS["cohere"]["gateway"]["prefix"] == "cohere"
+    assert PROVIDERS["cohere"]["gateway"]["api_type"] == "openai_compat"
+
+
+def test_new_9router_providers_present() -> None:
+    for pid in (
+        "cerebras",
+        "hyperbolic",
+        "nebius",
+        "chutes",
+        "venice",
+        "vercel-ai-gateway",
+        "volcengine-ark",
+        "byteplus",
+        "codex",
+        "kiro",
+        "cursor",
+        "antigravity",
+        "claude_oauth",
+        "xiaomi",
+        "xiaomi_tokenplan",
+        "mimo_free",
+    ):
+        assert pid in PROVIDERS, pid
+        assert "gateway" in PROVIDERS[pid], pid
+        if pid not in ("codex", "kiro", "cursor", "antigravity", "claude_oauth", "mimo_free"):
+            assert "inventory" in PROVIDERS[pid], pid
 
 
 def test_inventory_view_derives_from_unified() -> None:
@@ -46,18 +94,26 @@ def test_gateway_view_derives_from_unified() -> None:
     assert CATALOG == gateway_entries()
     assert list(CATALOG) == GATEWAY_ORDER
     for entry in CATALOG.values():
-        assert set(entry) | {"id"} == GATEWAY_FIELDS
+        assert GATEWAY_FIELDS - {"transports", "default_headers"} <= set(entry) | {"id"}
+        assert set(entry) | {"id"} <= GATEWAY_FIELDS
 
 
 def test_id_bridges_are_derived() -> None:
     assert inventory_to_gateway_map() == {"google": "gemini", "dashscope": "qwen"}
-    assert prefix_to_inventory_map() == {"gemini": "google", "qwen": "dashscope"}
+    assert prefix_to_inventory_map() == {
+        "gemini": "google",
+        "qwen": "dashscope",
+        "ark": "volcengine-ark",
+        "vercel": "vercel-ai-gateway",
+        "xmtp": "xiaomi_tokenplan",
+    }
 
 
 def test_gateway_only_entries_have_no_inventory_block() -> None:
-    assert "opencode_free" in PROVIDERS
-    assert "inventory" not in PROVIDERS["opencode_free"]
-    assert PROVIDERS["opencode_free"]["gateway"]["id"] == "opencode_free"
+    for pid in ("opencode_free", "mimo_free", "claude_oauth", "codex", "kiro", "cursor", "antigravity"):
+        assert pid in PROVIDERS
+        assert "inventory" not in PROVIDERS[pid]
+        assert PROVIDERS[pid]["gateway"]["id"] == pid
 
 
 def test_shared_entries_agree_on_base_urls_where_expected() -> None:

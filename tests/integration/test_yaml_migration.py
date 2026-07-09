@@ -112,3 +112,20 @@ async def test_seed_skips_if_data_exists(db, tmp_path):
     providers = await list_providers(db)
     assert len(providers) == 1
     assert providers[0]["id"] == "existing"
+
+
+async def test_seed_server_strategy_settings_from_config(db, tmp_path):
+    from janus.storage.database import seed_from_config
+
+    config = JanusConfig(
+        server=ServerSettings(
+            data_dir=tmp_path,
+            account_strategy="sticky_rr",
+            sticky_limit=7,
+            require_api_key=False,
+        ),
+    )
+    await seed_from_config(db, config)
+    assert await get_setting(db, "server_account_strategy") == "sticky_rr"
+    assert await get_setting(db, "server_sticky_limit") == "7"
+    assert await get_setting(db, "server_require_api_key") == "false"

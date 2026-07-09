@@ -91,12 +91,16 @@ class RTKSaver:
                 continue
             for i, part in enumerate(msg.content):
                 if isinstance(part, ToolResult):
+                    if part.is_error or not isinstance(part.content, str):
+                        continue
                     try:
                         compressed = _detect_and_compress(part.content)
                         msg.content[i] = ToolResult(
                             type="tool_result",
                             tool_use_id=part.tool_use_id,
                             content=compressed,
+                            is_error=part.is_error,
+                            cache_control=part.cache_control,
                         )
                     except Exception as e:
                         logger.warning("RTK compression failed: %s", e)

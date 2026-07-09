@@ -40,8 +40,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.openai.com/v1",
             "prefix": "openai",
-            "default_models": ["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"],
+            "default_models": ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "o4-mini", "o3"],
         },
+        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
     "anthropic": {
         "inventory": {
@@ -68,7 +69,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "anthropic",
             "base_url": "https://api.anthropic.com",
             "prefix": "anthropic",
-            "default_models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+            "default_models": [
+                "claude-sonnet-4-5-20250929",
+                "claude-haiku-4-5-20251001",
+                "claude-opus-4-5-20251101",
+                "claude-sonnet-4-6",
+                "claude-opus-4-6",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": True,
+            "tool_use": True,
+            "reasoning": True,
         },
     },
     "openrouter": {
@@ -98,7 +111,12 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://openrouter.ai/api/v1",
             "prefix": "openrouter",
             "default_models": [],
+            "default_headers": {
+                "HTTP-Referer": "https://janus.local",
+                "X-Title": "Janus",
+            },
         },
+        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
     "google": {
         "inventory": {
@@ -125,7 +143,20 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "gemini",
             "base_url": "https://generativelanguage.googleapis.com",
             "prefix": "gemini",
-            "default_models": ["gemini-2.5-pro", "gemini-2.0-flash"],
+            "default_models": [
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-pro",
+                "gemini-3-flash-preview",
+                "gemini-3.1-flash-lite",
+                "gemini-flash-latest",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": True,
+            "tool_use": True,
+            "reasoning": True,
         },
     },
     "groq": {
@@ -153,8 +184,14 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.groq.com/openai/v1",
             "prefix": "groq",
-            "default_models": ["llama-3.3-70b-instruct"],
+            "default_models": [
+                "llama-3.3-70b-versatile",
+                "meta-llama/llama-4-maverick-17b-128e-instruct",
+                "openai/gpt-oss-120b",
+                "qwen/qwen3-32b",
+            ],
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "together": {
         "inventory": {
@@ -181,8 +218,13 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.together.xyz/v1",
             "prefix": "together",
-            "default_models": [],
+            "default_models": [
+                "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+                "deepseek-ai/DeepSeek-R1",
+                "Qwen/Qwen3-235B-A22B",
+            ],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "perplexity": {
         "inventory": {
@@ -209,8 +251,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.perplexity.ai",
             "prefix": "perplexity",
-            "default_models": [],
+            "default_models": ["sonar-pro", "sonar"],
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "cohere": {
         "inventory": {
@@ -228,7 +271,22 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "billing_model": "postpaid",
             "is_direct": True,
             "routing_note": None,
-        }
+        },
+        "gateway": {
+            "id": "cohere",
+            "name": "Cohere",
+            "icon": "🔗",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.cohere.ai/v1",
+            "prefix": "cohere",
+            "default_models": [
+                "command-a-03-2025",
+                "command-r-plus-08-2024",
+                "command-r-08-2024",
+            ],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "mistral": {
         "inventory": {
@@ -255,8 +313,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.mistral.ai/v1",
             "prefix": "mistral",
-            "default_models": ["mistral-large-2411"],
+            "default_models": ["mistral-large-latest", "mistral-medium-latest", "codestral-latest"],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "deepseek": {
         "inventory": {
@@ -283,8 +342,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.deepseek.com/v1",
             "prefix": "deepseek",
-            "default_models": ["deepseek-chat", "deepseek-reasoner"],
+            "default_models": [
+                "deepseek-v4-pro",
+                "deepseek-v4-pro-max",
+                "deepseek-v4-pro-none",
+                "deepseek-v4-flash",
+                "deepseek-chat",
+                "deepseek-reasoner",
+            ],
+            "transports": {
+                "anthropic": "https://api.deepseek.com/anthropic/v1",
+            },
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "xai": {
         "inventory": {
@@ -311,8 +381,258 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.x.ai/v1",
             "prefix": "xai",
+            "default_models": [
+                "grok-4",
+                "grok-4-fast-reasoning",
+                "grok-code-fast-1",
+                "grok-3",
+                "grok-4.20-0309-non-reasoning",
+                "grok-4.20-0309-reasoning",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+            "search": True,
+        },
+    },
+    "cerebras": {
+        "inventory": {
+            "id": "cerebras",
+            "name": "cerebras",
+            "display_name": "Cerebras",
+            "base_url": "https://api.cerebras.ai/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "CEREBRAS_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "free_tier",
+            "is_direct": True,
+            "routing_note": None,
+        },
+        "gateway": {
+            "id": "cerebras",
+            "name": "Cerebras",
+            "icon": "🧠",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.cerebras.ai/v1",
+            "prefix": "cerebras",
+            "default_models": ["llama-3.3-70b", "qwen-3-32b", "gpt-oss-120b"],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+    },
+    "hyperbolic": {
+        "inventory": {
+            "id": "hyperbolic",
+            "name": "hyperbolic",
+            "display_name": "Hyperbolic",
+            "base_url": "https://api.hyperbolic.xyz/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "HYPERBOLIC_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": None,
+        },
+        "gateway": {
+            "id": "hyperbolic",
+            "name": "Hyperbolic",
+            "icon": "⚡",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.hyperbolic.xyz/v1",
+            "prefix": "hyperbolic",
+            "default_models": [
+                "deepseek-ai/DeepSeek-R1",
+                "deepseek-ai/DeepSeek-V3",
+                "meta-llama/Llama-3.3-70B-Instruct",
+            ],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+    },
+    "nebius": {
+        "inventory": {
+            "id": "nebius",
+            "name": "nebius",
+            "display_name": "Nebius AI",
+            "base_url": "https://api.studio.nebius.ai/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "NEBIUS_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": None,
+        },
+        "gateway": {
+            "id": "nebius",
+            "name": "Nebius AI",
+            "icon": "☁️",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.studio.nebius.ai/v1",
+            "prefix": "nebius",
+            "default_models": ["meta-llama/Llama-3.3-70B-Instruct"],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+    },
+    "chutes": {
+        "inventory": {
+            "id": "chutes",
+            "name": "chutes",
+            "display_name": "Chutes AI",
+            "base_url": "https://llm.chutes.ai/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "CHUTES_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": None,
+        },
+        "gateway": {
+            "id": "chutes",
+            "name": "Chutes AI",
+            "icon": "💧",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://llm.chutes.ai/v1",
+            "prefix": "chutes",
             "default_models": [],
         },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+    },
+    "venice": {
+        "inventory": {
+            "id": "venice",
+            "name": "venice",
+            "display_name": "Venice AI",
+            "base_url": "https://api.venice.ai/api/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "VENICE_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": "Private/uncensored inference. OpenAI-compatible.",
+        },
+        "gateway": {
+            "id": "venice",
+            "name": "Venice AI",
+            "icon": "🛡️",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.venice.ai/api/v1",
+            "prefix": "venice",
+            "default_models": ["qwen3-235b-a22b-instruct-2507", "llama-3.3-70b"],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+    },
+    "vercel-ai-gateway": {
+        "inventory": {
+            "id": "vercel-ai-gateway",
+            "name": "vercel-ai-gateway",
+            "display_name": "Vercel AI Gateway",
+            "base_url": "https://ai-gateway.vercel.sh/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "VERCEL_AI_GATEWAY_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": "/credits",
+            "billing_model": "prepaid",
+            "is_direct": False,
+            "routing_note": "Unified gateway; use provider/model ids like anthropic/claude-sonnet.",
+        },
+        "gateway": {
+            "id": "vercel-ai-gateway",
+            "name": "Vercel AI Gateway",
+            "icon": "▲",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://ai-gateway.vercel.sh/v1",
+            "prefix": "vercel",
+            "default_models": [],
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+    },
+    "volcengine-ark": {
+        "inventory": {
+            "id": "volcengine-ark",
+            "name": "volcengine-ark",
+            "display_name": "Volcengine Ark",
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "ARK_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": "Doubao / DeepSeek models via Volcengine Ark.",
+        },
+        "gateway": {
+            "id": "volcengine-ark",
+            "name": "Volcengine Ark",
+            "icon": "🌋",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+            "prefix": "ark",
+            "default_models": [],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
+    },
+    "byteplus": {
+        "inventory": {
+            "id": "byteplus",
+            "name": "byteplus",
+            "display_name": "BytePlus ModelArk",
+            "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "BYTEPLUS_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "free_tier",
+            "is_direct": True,
+            "routing_note": "Seed / Kimi / GLM models via BytePlus ModelArk.",
+        },
+        "gateway": {
+            "id": "byteplus",
+            "name": "BytePlus ModelArk",
+            "icon": "🅱️",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+            "prefix": "byteplus",
+            "default_models": [],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "huggingface": {
         "inventory": {
@@ -375,8 +695,13 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.fireworks.ai/inference/v1",
             "prefix": "fireworks",
-            "default_models": [],
+            "default_models": [
+                "accounts/fireworks/models/deepseek-v3p1",
+                "accounts/fireworks/models/llama-v3p3-70b-instruct",
+                "accounts/fireworks/models/qwen3-235b-a22b",
+            ],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "nvidia": {
         "inventory": {
@@ -412,7 +737,53 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "billing_model": "prepaid",
             "is_direct": True,
             "routing_note": None,
-        }
+        },
+        "gateway": {
+            "id": "moonshot",
+            "name": "Moonshot (Kimi)",
+            "icon": "🌙",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.moonshot.cn/v1",
+            "prefix": "moonshot",
+            "default_models": [
+                "kimi-k2.5",
+                "moonshot-v1-auto",
+                "moonshot-v1-8k",
+                "moonshot-v1-128k",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "kimi_coding": {
+        "gateway": {
+            "id": "kimi_coding",
+            "name": "Kimi Coding",
+            "icon": "🌙",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "prefix": "kimi",
+            "default_models": [
+                "kimi-k2.5",
+                "kimi-k2.5-thinking",
+                "kimi-k2.6",
+            ],
+            "transports": {
+                "anthropic": "https://api.kimi.com/coding/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "dashscope": {
         "inventory": {
@@ -441,6 +812,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "qwen",
             "default_models": ["qwen-max", "qwen-plus", "qwen-turbo"],
         },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "minimax": {
         "inventory": {
@@ -460,7 +832,57 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "routing_note": "OpenAI-compatible endpoint; if keys show invalid, "
             "re-add with the exact base URL via the custom "
             "field.",
-        }
+        },
+        "gateway": {
+            "id": "minimax",
+            "name": "MiniMax",
+            "icon": "🟣",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.minimaxi.com/v1",
+            "prefix": "minimax",
+            "default_models": [
+                "MiniMax-M2.7",
+                "MiniMax-M2.5",
+                "MiniMax-M2.1",
+                "MiniMax-M3",
+            ],
+            "transports": {
+                "anthropic": "https://api.minimaxi.com/anthropic/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "minimax_io": {
+        "gateway": {
+            "id": "minimax_io",
+            "name": "MiniMax (International)",
+            "icon": "🟣",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.minimax.io/v1",
+            "prefix": "minimax-io",
+            "default_models": [
+                "MiniMax-M2.7",
+                "MiniMax-M2.5",
+                "MiniMax-M2.1",
+                "MiniMax-M3",
+            ],
+            "transports": {
+                "anthropic": "https://api.minimax.io/anthropic/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "siliconflow": {
         "inventory": {
@@ -515,7 +937,57 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "is_direct": True,
             "routing_note": "GLM models. Validated via a chat probe (no public "
             "model-list endpoint).",
-        }
+        },
+        "gateway": {
+            "id": "zhipu",
+            "name": "Zhipu AI (GLM)",
+            "icon": "🟦",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "prefix": "zhipu",
+            "default_models": [
+                "glm-4.7",
+                "glm-4.6",
+                "glm-4-flash",
+                "glm-4.5",
+            ],
+            "transports": {
+                "anthropic": "https://open.bigmodel.cn/api/anthropic",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "glm_coding": {
+        "gateway": {
+            "id": "glm_coding",
+            "name": "GLM Coding (Z.ai)",
+            "icon": "🟦",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.z.ai/api/coding/paas/v4",
+            "prefix": "glm",
+            "default_models": [
+                "glm-5.2",
+                "glm-5.1",
+                "glm-4.7",
+                "glm-4.6",
+            ],
+            "transports": {
+                "anthropic": "https://api.z.ai/api/anthropic",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "xiaomi": {
         "inventory": {
@@ -532,10 +1004,83 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "credit_check_endpoint": None,
             "billing_model": "prepaid",
             "is_direct": True,
-            "routing_note": "Token-plan keys (tp- prefix). Regional endpoints: "
-            "token-plan-cn.xiaomimimo.com, "
-            "token-plan-sgp.xiaomimimo.com.",
-        }
+            "routing_note": "Xiaomi MiMo API keys (pay-as-you-go). OpenAI + Anthropic "
+            "transports at api.xiaomimimo.com.",
+        },
+        "gateway": {
+            "id": "xiaomi",
+            "name": "Xiaomi MiMo",
+            "icon": "📱",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.xiaomimimo.com/v1",
+            "prefix": "xiaomi",
+            "default_models": [
+                "mimo-v2.5-pro",
+                "mimo-v2.5",
+                "mimo-v2-omni",
+                "mimo-v2-flash",
+                "mimo-v2.5-pro-claude",
+            ],
+            "transports": {
+                "anthropic": "https://api.xiaomimimo.com/anthropic/v1",
+            },
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
+    },
+    "xiaomi_tokenplan": {
+        "inventory": {
+            "id": "xiaomi_tokenplan",
+            "name": "xiaomi_tokenplan",
+            "display_name": "Xiaomi MiMo (Token Plan)",
+            "base_url": "https://token-plan-sgp.xiaomimimo.com/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "XIAOMI_TOKENPLAN_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": "Token Plan keys (tp- prefix) are region-specific. "
+            "Set custom base URL per key: token-plan-sgp / token-plan-cn / "
+            "token-plan-ams.xiaomimimo.com/v1.",
+        },
+        "gateway": {
+            "id": "xiaomi_tokenplan",
+            "name": "Xiaomi MiMo (Token Plan)",
+            "icon": "📱",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://token-plan-sgp.xiaomimimo.com/v1",
+            "prefix": "xmtp",
+            "default_models": [
+                "mimo-v2.5-pro",
+                "mimo-v2.5",
+                "mimo-v2-pro",
+                "mimo-v2-omni",
+                "mimo-v2.5-tts",
+                "mimo-v2.5-asr",
+            ],
+            "transports": {
+                "anthropic": "https://token-plan-sgp.xiaomimimo.com/anthropic/v1",
+            },
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
+    },
+    "mimo_free": {
+        "gateway": {
+            "id": "mimo_free",
+            "name": "MiMo Code Free",
+            "icon": "🆓",
+            "logo": "",
+            "api_type": "mimo_free",
+            "base_url": "https://api.xiaomimimo.com/api/free-ai/openai/chat",
+            "prefix": "mmf",
+            "default_models": ["mimo-auto"],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "tavily": {
         "inventory": {
@@ -697,7 +1242,92 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://api.githubcopilot.com",
             "prefix": "copilot",
             "default_models": ["gpt-4o", "gpt-4.1", "o4-mini", "claude-sonnet-4"],
-        }
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+    },
+    "codex": {
+        "gateway": {
+            "id": "codex",
+            "name": "Codex (ChatGPT)",
+            "icon": "⚙️",
+            "logo": "",
+            "api_type": "codex",
+            "base_url": "https://chatgpt.com/backend-api/codex",
+            "prefix": "codex",
+            "default_models": ["gpt-5.1-codex", "o3", "o4-mini"],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "kiro": {
+        "gateway": {
+            "id": "kiro",
+            "name": "Kiro",
+            "icon": "☁️",
+            "logo": "",
+            "api_type": "kiro",
+            "base_url": "https://codewhisperer.us-east-1.amazonaws.com",
+            "prefix": "kiro",
+            "default_models": ["claude-sonnet-4", "claude-sonnet-4-thinking"],
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
+    },
+    "cursor": {
+        "gateway": {
+            "id": "cursor",
+            "name": "Cursor",
+            "icon": "🖱️",
+            "logo": "",
+            "api_type": "cursor",
+            "base_url": "https://api2.cursor.sh",
+            "prefix": "cursor",
+            "default_models": ["composer-1", "gpt-4o", "claude-sonnet-4"],
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+    },
+    "antigravity": {
+        "gateway": {
+            "id": "antigravity",
+            "name": "Antigravity / Gemini CLI",
+            "icon": "✨",
+            "logo": "",
+            "api_type": "antigravity",
+            "base_url": "https://cloudcode-pa.googleapis.com",
+            "prefix": "antigravity",
+            "default_models": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "claude_oauth": {
+        "gateway": {
+            "id": "claude_oauth",
+            "name": "Claude Code (OAuth)",
+            "icon": "🤖",
+            "logo": "anthropic.svg",
+            "api_type": "claude_oauth",
+            "base_url": "https://api.anthropic.com",
+            "prefix": "claude",
+            "default_models": [
+                "claude-sonnet-4-20250514",
+                "claude-opus-4-20250514",
+                "claude-haiku-4-5-20251001",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": True,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
 }
 
@@ -713,9 +1343,32 @@ GATEWAY_ORDER: list[str] = [
     "fireworks",
     "perplexity",
     "xai",
+    "cohere",
+    "cerebras",
+    "hyperbolic",
+    "nebius",
+    "chutes",
+    "venice",
+    "vercel-ai-gateway",
+    "volcengine-ark",
+    "byteplus",
     "qwen",
+    "minimax",
+    "minimax_io",
+    "moonshot",
+    "kimi_coding",
+    "zhipu",
+    "glm_coding",
     "github_copilot",
+    "codex",
+    "kiro",
+    "cursor",
+    "antigravity",
+    "claude_oauth",
     "opencode_free",
+    "xiaomi",
+    "xiaomi_tokenplan",
+    "mimo_free",
     "custom",
 ]
 
@@ -729,13 +1382,17 @@ def inventory_entries() -> dict[str, dict[str, Any]]:
 
 
 def gateway_entries() -> dict[str, dict[str, Any]]:
-    by_catalog_id = {
-        entry["gateway"]["id"]: {
-            key: deepcopy(value) for key, value in entry["gateway"].items() if key != "id"
-        }
-        for entry in PROVIDERS.values()
-        if "gateway" in entry
-    }
+    by_catalog_id: dict[str, dict[str, Any]] = {}
+    for entry in PROVIDERS.values():
+        if "gateway" not in entry:
+            continue
+        gw = entry["gateway"]
+        catalog_id = gw["id"]
+        item = {key: deepcopy(value) for key, value in gw.items() if key != "id"}
+        # Top-level multi-format transports (e.g. DeepSeek Anthropic endpoint)
+        if "transports" in entry and "transports" not in item:
+            item["transports"] = deepcopy(entry["transports"])
+        by_catalog_id[catalog_id] = item
     ordered = {cid: by_catalog_id.pop(cid) for cid in GATEWAY_ORDER if cid in by_catalog_id}
     ordered.update(by_catalog_id)
     return ordered

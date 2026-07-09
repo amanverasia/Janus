@@ -10,12 +10,16 @@ class ServerSettings(BaseModel):
     host: str = "127.0.0.1"
     require_api_key: bool = True
     data_dir: Path = Path.home() / ".janus"
+    account_strategy: str = "round_robin"  # "fill_first" | "round_robin" | "sticky_rr"
+    sticky_limit: int = 3
 
 
 class ProviderConfig(BaseModel):
     id: str
     prefix: str
-    api_type: str  # "openai_compat" | "anthropic" | "gemini" | "opencode_free" | "github_copilot"
+    # openai_compat | anthropic | gemini | opencode_free | github_copilot |
+    # codex | kiro | cursor | antigravity | claude_oauth
+    api_type: str
     base_url: str
     api_key: str | None = None
     models: list[str] = Field(default_factory=list)
@@ -25,6 +29,7 @@ class ProviderConfig(BaseModel):
     quota_window: str | None = None  # "5h" | "daily" | "weekly" | "monthly"
     quota_limit: int | None = None
     quota_metric: str = "requests"  # "requests" | "tokens"
+    transports: dict[str, str] | None = None  # format -> base_url for multi-format providers
 
     @property
     def row_id(self) -> str:

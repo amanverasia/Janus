@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 
@@ -10,6 +13,44 @@ class RawResult:
     status_code: int
     json_data: dict[str, Any] | None = None
     lines: AsyncIterator[str] | None = None
+    retry_after: float | None = None
+
+
+def parse_error_body(body: bytes) -> dict[str, Any]:
+    """Best-effort parse of an upstream error body into a dict for RawResult."""
+    if not body:
+        return {"error": "Upstream error"}
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return {"error": body.decode(errors="replace")[:500]}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"error": parsed}
+
+
+def parse_retry_after(headers: Any) -> float | None:
+    """Parse a Retry-After header (delay-seconds or HTTP-date) into seconds.
+
+    Returns the delay in seconds (>= 0), or None when absent/unparseable.
+    """
+    try:
+        raw = headers.get("retry-after") if hasattr(headers, "get") else None
+    except Exception:
+        return None
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if dt is None:
+        return None
+    return max(0.0, dt.timestamp() - time.time())
 
 
 class Provider(Protocol):

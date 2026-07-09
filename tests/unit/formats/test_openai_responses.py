@@ -392,3 +392,15 @@ def test_stream_parser_function_call():
     assert delta.partial_json == "{}"
     md = next(e for e in events if isinstance(e, MessageDelta))
     assert md.stop_reason == "tool_use"
+
+
+def test_reasoning_part_does_not_crash_responses_build():
+    from janus.canonical.models import CanonicalRequest, Message, Reasoning, Role, TextPart
+    from janus.formats.openai_responses import OpenAIResponsesAdapter
+
+    req = CanonicalRequest(
+        model="gpt-5",
+        messages=[Message(role=Role.ASSISTANT, content=[Reasoning(text="t"), TextPart(text="hi")])],
+    )
+    payload = OpenAIResponsesAdapter().build_upstream_request(req, "gpt-5")
+    assert payload is not None

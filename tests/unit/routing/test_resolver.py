@@ -4,8 +4,7 @@ import pytest
 
 from janus.config.schema import ComboConfig, ProviderConfig
 from janus.providers.registry import ProviderRegistry
-from janus.routing.fallback import FallbackHandler
-from janus.routing.resolver import resolve
+from janus.routing.fallback import AccountStrategy, FallbackHandler
 
 
 def test_resolve_simple():
@@ -20,7 +19,7 @@ def test_resolve_simple():
             models=["glm-4.7"],
         )
     )
-    result = resolve("glm/glm-4.7", registry)
+    result = registry.lookup("glm/glm-4.7")
     assert result is not None
     assert len(result) == 1
     assert result[0].model == "glm-4.7"
@@ -29,7 +28,7 @@ def test_resolve_simple():
 
 def test_resolve_unknown():
     registry = ProviderRegistry()
-    assert resolve("no/model", registry) is None
+    assert registry.lookup("no/model") is None
 
 
 def test_resolve_single_model_multi_account():
@@ -74,11 +73,13 @@ def test_sticky_routing_is_consistent_per_client_key():
         )
     handler = FallbackHandler(registry)
 
+    # With default round_robin, sticky client-key only staggers the start offset
+    # and still advances each request.
     first = handler.resolve_attempts("ds/m1", client_key_id=7, sticky_client_key=True)
     second = handler.resolve_attempts("ds/m1", client_key_id=7, sticky_client_key=True)
 
     assert [t.account_id for t in first] == ["ds-2", "ds-3", "ds-1"]
-    assert first[0].account_id == second[0].account_id
+    assert [t.account_id for t in second] == ["ds-3", "ds-1", "ds-2"]
 
 
 def test_sticky_routing_without_client_key_uses_round_robin():
@@ -118,8 +119,18 @@ def test_sticky_routing_different_client_keys_get_different_primaries():
         )
     handler = FallbackHandler(registry)
 
-    a = handler.resolve_attempts("ds/m1", client_key_id=1, sticky_client_key=True)
-    b = handler.resolve_attempts("ds/m1", client_key_id=2, sticky_client_key=True)
+    a = handler.resolve_attempts(
+        "ds/m1",
+        client_key_id=1,
+        sticky_client_key=True,
+        strategy=AccountStrategy.FILL_FIRST,
+    )
+    b = handler.resolve_attempts(
+        "ds/m1",
+        client_key_id=2,
+        sticky_client_key=True,
+        strategy=AccountStrategy.FILL_FIRST,
+    )
 
     assert a[0].account_id == "ds-2"
     assert b[0].account_id == "ds-3"

@@ -265,7 +265,7 @@ def detect_provider_from_key(key: str) -> str | None:
     if key.startswith("sk-cp-"):
         return "minimax"
     if key.startswith("tp-"):
-        return "xiaomi"
+        return "xiaomi_tokenplan"
     if key.startswith("tvly-"):
         return "tavily"
     if key.startswith("fc-"):

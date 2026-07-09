@@ -1,0 +1,162 @@
+from janus.config.schema import ProviderConfig
+from janus.providers.registry import ProviderRegistry
+from janus.routing.fallback import AccountStrategy, FallbackHandler
+from janus.storage.settings import resolve_sticky_limit
+
+
+def _registry(*configs: ProviderConfig) -> ProviderRegistry:
+    registry = ProviderRegistry()
+    for config in configs:
+        registry.register(config)
+    return registry
+
+
+def _config(account_id: str, **kwargs: object) -> ProviderConfig:
+    return ProviderConfig(
+        id=account_id,
+        prefix="ds",
+        api_type="openai_compat",
+        base_url="https://ds.com",
+        api_key="k",
+        models=["m1"],
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def _three_account_registry() -> ProviderRegistry:
+    return _registry(_config("ds-1"), _config("ds-2"), _config("ds-3"))
+
+
+def test_fill_first_always_returns_same_first_account():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    for _ in range(4):
+        attempts = handler.resolve_attempts("ds/m1", strategy=AccountStrategy.FILL_FIRST)
+        assert attempts[0].account_id == "ds-1"
+
+
+def test_round_robin_advances_first_account_each_call():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    firsts = [
+        handler.resolve_attempts("ds/m1", strategy=AccountStrategy.ROUND_ROBIN)[0].account_id
+        for _ in range(3)
+    ]
+    assert firsts == ["ds-1", "ds-2", "ds-3"]
+
+
+def test_sticky_rr_holds_head_for_limit_then_advances():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    firsts = [
+        handler.resolve_attempts("ds/m1", strategy=AccountStrategy.STICKY_RR, sticky_limit=2)[
+            0
+        ].account_id
+        for _ in range(5)
+    ]
+    assert firsts == ["ds-1", "ds-1", "ds-2", "ds-2", "ds-3"]
+
+
+def test_client_key_sticky_pins_only_under_fill_first():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    first = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.FILL_FIRST,
+        client_key_id=1,
+        sticky_client_key=True,
+    )
+    second = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.FILL_FIRST,
+        client_key_id=1,
+        sticky_client_key=True,
+    )
+    assert first[0].account_id == second[0].account_id == "ds-2"
+
+
+def test_client_key_sticky_still_round_robins_accounts():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    firsts = [
+        handler.resolve_attempts(
+            "ds/m1",
+            strategy=AccountStrategy.ROUND_ROBIN,
+            client_key_id=1,
+            sticky_client_key=True,
+        )[0].account_id
+        for _ in range(3)
+    ]
+    # client_key_id=1 phases pool to [ds-2, ds-3, ds-1], then RR advances.
+    assert firsts == ["ds-2", "ds-3", "ds-1"]
+
+
+def test_client_key_sticky_round_robin_counters_are_independent():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    a1 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=1,
+        sticky_client_key=True,
+    )[0].account_id
+    b1 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=2,
+        sticky_client_key=True,
+    )[0].account_id
+    a2 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=1,
+        sticky_client_key=True,
+    )[0].account_id
+    b2 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=2,
+        sticky_client_key=True,
+    )[0].account_id
+    assert [a1, a2] == ["ds-2", "ds-3"]
+    assert [b1, b2] == ["ds-3", "ds-1"]
+
+
+def test_resolve_sticky_limit_falls_back_to_default_on_non_numeric_value():
+    assert resolve_sticky_limit({"server_sticky_limit": "not-a-number"}) == 3
+
+
+def test_resolve_sticky_limit_parses_numeric_value():
+    assert resolve_sticky_limit({"server_sticky_limit": "5"}) == 5
+
+
+def test_combo_round_robin_rotates_model_list() -> None:
+    from janus.config.schema import ComboConfig, ProviderConfig
+    from janus.providers.registry import ProviderRegistry
+    from janus.routing.fallback import FallbackHandler
+
+    registry = ProviderRegistry()
+    for account_id in ("a-1", "b-1", "c-1"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix=account_id[0],
+                api_type="openai_compat",
+                base_url="https://x.com",
+                api_key="k",
+                models=["m"],
+            )
+        )
+    registry.register_combo(ComboConfig(name="tri", models=["a/m", "b/m", "c/m"]))
+    handler = FallbackHandler(registry)
+
+    first = handler.resolve_attempts("tri", combo_strategy="round_robin")
+    second = handler.resolve_attempts("tri", combo_strategy="round_robin")
+    third = handler.resolve_attempts("tri", combo_strategy="round_robin")
+    fourth = handler.resolve_attempts("tri", combo_strategy="round_robin")
+
+    # Fallback (default) doesn't rotate; round_robin does.
+    assert [t.account_id for t in first] == ["a-1", "b-1", "c-1"]
+    assert [t.account_id for t in second] == ["b-1", "c-1", "a-1"]
+    assert [t.account_id for t in third] == ["c-1", "a-1", "b-1"]
+    assert [t.account_id for t in fourth] == ["a-1", "b-1", "c-1"]
