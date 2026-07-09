@@ -224,6 +224,30 @@ async def _passthrough_call(
     )
 
 
+async def _maybe_log_client_error(
+    *,
+    log_requests: bool,
+    db_path: str | Path,
+    client_format: str,
+    model: str | None,
+    status: int,
+    request_body: str | None,
+    error: str,
+    max_rows: int = MAX_ROWS,
+) -> None:
+    if not log_requests:
+        return
+    await record_request_log(
+        db_path,
+        client_format=client_format,
+        model=model,
+        status=status,
+        request_body=request_body,
+        error=error[:2000],
+        max_rows=max_rows,
+    )
+
+
 async def _log_error_and_raise(
     *,
     log_requests: bool,
@@ -303,8 +327,40 @@ async def _handle(
     client_key_id = getattr(request.state, "client_key_id", None)
     client_key_label = getattr(request.state, "client_key_label", None)
 
+    from janus.storage.settings import (
+        get_all_settings,
+        request_logging_enabled,
+        resolve_account_strategy,
+        resolve_combo_sticky_limit,
+        resolve_combo_strategy,
+        resolve_request_log_retention,
+        resolve_sticky_limit,
+        sticky_client_key_routing_enabled,
+    )
+
+    settings = await get_all_settings(db_path)
+    log_requests = request_logging_enabled(settings)
+    retention = resolve_request_log_retention(settings)
+    logged_request_body: str | None = None
+    if log_requests:
+        try:
+            logged_request_body = json.dumps(body, ensure_ascii=False)
+        except (TypeError, ValueError):
+            logged_request_body = str(body)
+
     blocked_response = await _check_budgets(db_path, client_key_id)
     if blocked_response is not None:
+        model_raw = body.get("model")
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=model_raw if isinstance(model_raw, str) else None,
+            status=429,
+            request_body=logged_request_body,
+            error="budget_exceeded",
+            max_rows=retention,
+        )
         return blocked_response
 
     client_adapter = FORMATS[client_format]
@@ -325,6 +381,16 @@ async def _handle(
 
     allowed = key_allowed_models(request)
     if not model_allowed(canonical_req.model, allowed):
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=canonical_req.model,
+            status=403,
+            request_body=logged_request_body,
+            error=f"Model '{canonical_req.model}' is not allowed for this API key",
+            max_rows=retention,
+        )
         return JSONResponse(
             content={
                 "error": {
@@ -343,21 +409,7 @@ async def _handle(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
 
-    from janus.storage.settings import (
-        get_all_settings,
-        request_logging_enabled,
-        resolve_account_strategy,
-        resolve_combo_sticky_limit,
-        resolve_combo_strategy,
-        resolve_request_log_retention,
-        resolve_sticky_limit,
-        sticky_client_key_routing_enabled,
-    )
-
-    settings = await get_all_settings(db_path)
     sticky_routing = sticky_client_key_routing_enabled(settings)
-    log_requests = request_logging_enabled(settings)
-    retention = resolve_request_log_retention(settings)
     try:
         strategy = AccountStrategy(resolve_account_strategy(settings))
     except ValueError:
@@ -366,12 +418,6 @@ async def _handle(
     combo_strat = resolve_combo_strategy(settings)
     combo_csl = resolve_combo_sticky_limit(settings)
     start_time = time.monotonic()
-    logged_request_body: str | None = None
-    if log_requests:
-        try:
-            logged_request_body = json.dumps(body, ensure_ascii=False)
-        except (TypeError, ValueError):
-            logged_request_body = str(body)
 
     def _elapsed_ms() -> int:
         return int((time.monotonic() - start_time) * 1000)
@@ -389,6 +435,16 @@ async def _handle(
             combo_sticky_limit=combo_csl,
         )
     except ValueError as e:
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=canonical_req.model,
+            status=400,
+            request_body=logged_request_body,
+            error=str(e),
+            max_rows=retention,
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     last_error = "Unknown error"
@@ -466,7 +522,19 @@ async def _handle(
                 if pt_stream:
                     lines = result.lines
                     if lines is None:
-                        raise HTTPException(status_code=502, detail="No stream from upstream")
+                        await _log_error_and_raise(
+                            log_requests=log_requests,
+                            max_rows=retention,
+                            db_path=db_path,
+                            client_format=client_format,
+                            model=canonical_req.model,
+                            provider_id=target.provider_config.id,
+                            account_id=target.account_id,
+                            status=502,
+                            duration_ms=_elapsed_ms(),
+                            request_body=logged_request_body,
+                            detail="No stream from upstream",
+                        )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
                     _live_lines = lines
@@ -640,7 +708,19 @@ async def _handle(
                 if native_stream:
                     native_lines = native_result.lines
                     if native_lines is None:
-                        raise HTTPException(status_code=502, detail="No stream from upstream")
+                        await _log_error_and_raise(
+                            log_requests=log_requests,
+                            max_rows=retention,
+                            db_path=db_path,
+                            client_format=client_format,
+                            model=canonical_req.model,
+                            provider_id=target.provider_config.id,
+                            account_id=target.account_id,
+                            status=502,
+                            duration_ms=_elapsed_ms(),
+                            request_body=logged_request_body,
+                            detail="No stream from upstream",
+                        )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
                     _native_model = target.model

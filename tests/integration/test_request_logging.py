@@ -199,3 +199,39 @@ async def test_dashboard_page_shows_disabled_banner(app):
         r = await client.get("/dashboard/request-logs")
         assert r.status_code == 200
         assert "disabled" in r.text
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_enabled_records_model_not_allowed(app):
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    from janus.storage.api_keys import create_key
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped", can_login=False, allowed_models=["other/*"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert r.status_code == 403
+    logs = await list_request_logs(app.state.db_path)
+    assert len(logs) == 1
+    assert logs[0]["status"] == 403
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_enabled_records_unknown_model(app):
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "nope/missing", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert r.status_code == 400
+    logs = await list_request_logs(app.state.db_path)
+    assert any(log["status"] == 400 for log in logs)
