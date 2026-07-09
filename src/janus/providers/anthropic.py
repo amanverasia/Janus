@@ -10,6 +10,9 @@ from .base import RawResult, parse_error_body, parse_retry_after
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
 
+ANTHROPIC_API_VERSION = "2023-06-01"
+ANTHROPIC_BETA_HEADERS = "claude-code-20250219,interleaved-thinking-2025-05-14"
+
 
 class AnthropicProvider:
     name = "anthropic"
@@ -27,7 +30,8 @@ class AnthropicProvider:
         return {
             "Content-Type": "application/json",
             "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
+            "anthropic-version": ANTHROPIC_API_VERSION,
+            "anthropic-beta": ANTHROPIC_BETA_HEADERS,
         }
 
     async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:

@@ -89,3 +89,23 @@ async def test_openai_compat_provider_reuses_client():
         await provider.close()
     finally:
         httpx.AsyncClient.__init__ = original_init
+
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openai_compat_default_headers():
+    route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
+    )
+    provider = OpenAICompatProvider(
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-or",
+        default_headers={"HTTP-Referer": "https://janus.local", "X-Title": "Janus"},
+    )
+    await provider.call({"model": "m", "messages": []}, stream=False)
+    req = route.calls.last.request
+    assert req.headers.get("http-referer") == "https://janus.local"
+    assert req.headers.get("x-title") == "Janus"
+    assert req.headers.get("authorization") == "Bearer sk-or"
+    await provider.close()
