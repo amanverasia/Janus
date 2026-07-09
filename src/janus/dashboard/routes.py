@@ -33,7 +33,7 @@ from janus.storage.analytics import (
     get_spend_summary,
     get_success_rate,
 )
-from janus.storage.api_keys import create_key, list_keys, revoke_key
+from janus.storage.api_keys import create_key, list_keys, revoke_key, update_key
 from janus.storage.budgets import (
     create_or_update_budget,
     delete_budget,
@@ -41,6 +41,7 @@ from janus.storage.budgets import (
     get_budgets,
 )
 from janus.storage.database import init_db
+from janus.storage.key_access import parse_models_input
 from janus.storage.settings import get_setting, set_setting
 from janus.storage.usage import get_usage_stats
 
@@ -208,6 +209,16 @@ async def login_submit(
             "request": request,
             "next": next,
             "error": "Invalid API key",
+            "password_login_enabled": password_login_enabled,
+        }
+        return _templates.TemplateResponse(request, "login.html", context, status_code=401)
+    from janus.api.auth import key_can_login
+
+    if not key_can_login(request):
+        context = {
+            "request": request,
+            "next": next,
+            "error": "This API key cannot access the dashboard",
             "password_login_enabled": password_login_enabled,
         }
         return _templates.TemplateResponse(request, "login.html", context, status_code=401)
@@ -511,14 +522,84 @@ async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
 
 
 @router.post("/api/keys", response_class=HTMLResponse)
-async def create_api_key(request: Request, name: str = Form(...)) -> HTMLResponse:
+async def create_api_key(
+    request: Request,
+    name: str = Form(...),
+    can_login: str = Form(""),
+    login_field: str = Form(""),
+    allowed_models: str = Form(""),
+    daily_budget: str = Form(""),
+) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    new_key, _ = await create_key(db_path, name)
+    models = parse_models_input(allowed_models)
+    if login_field:
+        login_ok = can_login.lower() in {"on", "1", "true", "yes"}
+    else:
+        login_ok = True
+    new_key, record = await create_key(
+        db_path,
+        name,
+        can_login=login_ok,
+        allowed_models=models,
+    )
+    budget_text = daily_budget.strip()
+    if budget_text:
+        try:
+            limit = float(budget_text)
+        except ValueError:
+            limit = None
+        if limit is not None and limit > 0:
+            from janus.storage.budgets import create_or_update_budget
+
+            await create_or_update_budget(db_path, key_id=int(record["id"]), daily_limit=limit)
     keys = await list_keys(db_path)
     context: dict[str, Any] = {
         "request": request,
         "keys": keys,
         "new_key": new_key,
+    }
+    return _templates.TemplateResponse(request, "keys_partial.html", context)
+
+
+@router.post("/api/keys/{key_id}", response_class=HTMLResponse)
+async def update_api_key(
+    request: Request,
+    key_id: int,
+    name: str = Form(""),
+    can_login: str = Form(""),
+    login_field: str = Form(""),
+    allowed_models: str = Form(""),
+    models_field: str = Form(""),
+    clear_models: str = Form(""),
+    daily_budget: str = Form(""),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    kwargs: dict[str, Any] = {}
+    if name.strip():
+        kwargs["name"] = name.strip()
+    if login_field:
+        kwargs["can_login"] = can_login.lower() in {"on", "1", "true", "yes"}
+    if clear_models.lower() in {"on", "1", "true", "yes"}:
+        kwargs["allowed_models"] = None
+    elif models_field:
+        kwargs["allowed_models"] = parse_models_input(allowed_models)
+    if kwargs:
+        await update_key(db_path, key_id, **kwargs)
+    budget_text = daily_budget.strip()
+    if budget_text:
+        try:
+            limit = float(budget_text)
+        except ValueError:
+            limit = None
+        if limit is not None and limit > 0:
+            from janus.storage.budgets import create_or_update_budget
+
+            await create_or_update_budget(db_path, key_id=key_id, daily_limit=limit)
+    keys = await list_keys(db_path)
+    context: dict[str, Any] = {
+        "request": request,
+        "keys": keys,
+        "new_key": None,
     }
     return _templates.TemplateResponse(request, "keys_partial.html", context)
 

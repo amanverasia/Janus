@@ -27,8 +27,14 @@ x-goog-api-key: <key>
 
 Keys can be:
 
-- **Static** — listed in the `api_keys` section of `config.yaml`
+- **Static** — listed in the `api_keys` section of `config.yaml` (always full access)
 - **DB-managed** — created via `janus keys create` or the dashboard
+
+DB keys support scopes:
+
+- **Dashboard login** — `can_login` (default on). API-only keys authenticate for `/v1/*` but cannot open the dashboard.
+- **Model allowlist** — exact IDs (`openai/gpt-4o`) and prefix wildcards (`openai/*`). Empty/unset means all models. Disallowed models return `403` with `error.type = "model_not_allowed"`. `GET /v1/models` is filtered the same way.
+- **Daily budget** — optional per-key spend limit (see [Budgets](budgets.md)).
 
 When `require_api_key` is `false`, no authentication is required (suitable for
 local single-user setups).

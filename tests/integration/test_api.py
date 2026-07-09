@@ -589,3 +589,77 @@ async def test_usage_records_client_key_when_optional_auth(app, tmp_path):
     assert len(breakdown) == 1
     assert breakdown[0]["client_key"] == meta["name"]
     assert breakdown[0]["requests"] == 1
+
+
+@pytest.mark.asyncio
+async def test_models_filtered_by_key_allowlist(app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        app.state.db_path,
+        "restricted",
+        allowed_models=["test/test-m1"],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/v1/models", headers={"Authorization": f"Bearer {full_key}"})
+        assert r.status_code == 200
+        ids = [m["id"] for m in r.json()["data"]]
+        assert ids == ["test/test-m1"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_rejects_disallowed_model(app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        app.state.db_path,
+        "restricted",
+        allowed_models=["other/model"],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+        assert r.status_code == 403
+        body = r.json()
+        assert body["error"]["type"] == "model_not_allowed"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_allows_wildcard_model(app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        app.state.db_path,
+        "wildcard",
+        allowed_models=["test/*"],
+    )
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+        assert r.status_code == 200
