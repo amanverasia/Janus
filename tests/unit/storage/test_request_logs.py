@@ -88,3 +88,12 @@ async def test_export_and_clear(db):
 async def test_record_is_fail_safe(tmp_path):
     missing = tmp_path / "nonexistent" / "db.sqlite"
     await record_request_log(missing, model="m")
+
+
+@pytest.mark.asyncio
+async def test_record_respects_max_rows(tmp_path):
+    db = tmp_path / "t.db"
+    await init_db(db)
+    for i in range(5):
+        await record_request_log(db, client_format="openai", model=f"m{i}", status=200, max_rows=3)
+    assert await count_request_logs(db) == 3

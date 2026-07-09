@@ -48,7 +48,7 @@ from janus.routing.thinking import (
 from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
 from janus.storage.key_access import model_allowed
-from janus.storage.request_logs import record_request_log
+from janus.storage.request_logs import MAX_ROWS, record_request_log
 from janus.storage.usage import record_usage
 from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
 from janus.streaming.translator import translate_stream
@@ -237,6 +237,7 @@ async def _log_error_and_raise(
     request_body: str | None,
     detail: Any,
     response_body: Any = None,
+    max_rows: int = MAX_ROWS,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
     if log_requests:
@@ -262,6 +263,7 @@ async def _log_error_and_raise(
             request_body=request_body,
             response_body=resp_text,
             error=err_text[:2000],
+            max_rows=max_rows,
         )
     raise HTTPException(status_code=status, detail=detail)
 
@@ -347,6 +349,7 @@ async def _handle(
         resolve_account_strategy,
         resolve_combo_sticky_limit,
         resolve_combo_strategy,
+        resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
@@ -354,6 +357,7 @@ async def _handle(
     settings = await get_all_settings(db_path)
     sticky_routing = sticky_client_key_routing_enabled(settings)
     log_requests = request_logging_enabled(settings)
+    retention = resolve_request_log_retention(settings)
     try:
         strategy = AccountStrategy(resolve_account_strategy(settings))
     except ValueError:
@@ -447,6 +451,7 @@ async def _handle(
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -517,6 +522,7 @@ async def _handle(
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
+                                    max_rows=retention,
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
@@ -561,6 +567,7 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         response_body=pt_response_body,
+                        max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
                 return JSONResponse(content=result.json_data if result.json_data else {})
@@ -617,6 +624,7 @@ async def _handle(
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -687,6 +695,7 @@ async def _handle(
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
+                                    max_rows=retention,
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
@@ -736,6 +745,7 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         response_body=native_response_body,
+                        max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
                 return JSONResponse(
@@ -779,6 +789,7 @@ async def _handle(
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -794,6 +805,7 @@ async def _handle(
                 if lines is None:
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -845,6 +857,7 @@ async def _handle(
                                 duration_ms=_elapsed_ms(),
                                 streamed=True,
                                 request_body=logged_request_body,
+                                max_rows=retention,
                             )
                         if stream_ok:
                             handler.mark_success(target.account_id, target.model)
@@ -865,6 +878,7 @@ async def _handle(
                     continue
                 await _log_error_and_raise(
                     log_requests=log_requests,
+                    max_rows=retention,
                     db_path=db_path,
                     client_format=client_format,
                     model=canonical_req.model,
@@ -879,6 +893,7 @@ async def _handle(
             if result.json_data is None:
                 await _log_error_and_raise(
                     log_requests=log_requests,
+                    max_rows=retention,
                     db_path=db_path,
                     client_format=client_format,
                     model=canonical_req.model,
@@ -929,6 +944,7 @@ async def _handle(
                     duration_ms=_elapsed_ms(),
                     request_body=logged_request_body,
                     response_body=logged_response_body,
+                    max_rows=retention,
                 )
 
             handler.mark_success(target.account_id, target.model)
@@ -948,6 +964,7 @@ async def _handle(
             duration_ms=_elapsed_ms(),
             request_body=logged_request_body,
             error=f"All providers exhausted: {last_error}",
+            max_rows=retention,
         )
     raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
 

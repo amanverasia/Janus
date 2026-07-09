@@ -1285,6 +1285,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         request_logging_enabled,
         require_api_key_enabled,
         resolve_account_strategy,
+        resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
@@ -1305,6 +1306,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         "require_api_key_enabled": require_api_key_enabled(settings),
         "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
         "request_logging_enabled": request_logging_enabled(settings),
+        "request_log_retention": resolve_request_log_retention(settings),
         "account_strategy": resolve_account_strategy(settings),
         "sticky_limit": resolve_sticky_limit(settings),
     }
