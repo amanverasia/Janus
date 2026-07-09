@@ -32,6 +32,7 @@ class FallbackHandler:
         self._rotation_counters: dict[str, int] = {}
         self._sticky: dict[str, tuple[str, int]] = {}
         self._combo_rotation: dict[str, int] = {}
+        self._combo_sticky: dict[str, int] = {}
         self._request_times: dict[str, deque[float]] = {}
         self._daily_counts: dict[str, int] = {}
         self._daily_date: str = self._today()
@@ -155,6 +156,7 @@ class FallbackHandler:
         self._rotation_counters = dict(other._rotation_counters)
         self._sticky = dict(other._sticky)
         self._combo_rotation = dict(other._combo_rotation)
+        self._combo_sticky = dict(other._combo_sticky)
         self._request_times = {
             account_id: deque(times) for account_id, times in other._request_times.items()
         }
@@ -319,7 +321,15 @@ class FallbackHandler:
         if combo_models is not None:
             if combo_strategy == "round_robin" and len(combo_models) > 1:
                 idx = self._combo_rotation.get(model_str, 0) % len(combo_models)
-                self._combo_rotation[model_str] = idx + 1
+                if combo_sticky_limit > 1:
+                    used = self._combo_sticky.get(model_str, 0) + 1
+                    if used >= combo_sticky_limit:
+                        self._combo_rotation[model_str] = idx + 1
+                        self._combo_sticky[model_str] = 0
+                    else:
+                        self._combo_sticky[model_str] = used
+                else:
+                    self._combo_rotation[model_str] = idx + 1
                 combo_models = combo_models[idx:] + combo_models[:idx]
             if required_caps:
                 combo_models = reorder_combo_by_capabilities(combo_models, required_caps)

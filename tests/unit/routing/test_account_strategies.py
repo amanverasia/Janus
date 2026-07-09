@@ -160,3 +160,65 @@ def test_combo_round_robin_rotates_model_list() -> None:
     assert [t.account_id for t in second] == ["b-1", "c-1", "a-1"]
     assert [t.account_id for t in third] == ["c-1", "a-1", "b-1"]
     assert [t.account_id for t in fourth] == ["a-1", "b-1", "c-1"]
+
+
+def _two_model_combo_registry() -> "ProviderRegistry":
+    from janus.config.schema import ComboConfig, ProviderConfig
+    from janus.providers.registry import ProviderRegistry
+
+    registry = ProviderRegistry()
+    for account_id in ("a-1", "b-1"):
+        registry.register(
+            ProviderConfig(
+                id=account_id,
+                prefix=account_id[0],
+                api_type="openai_compat",
+                base_url="https://x.com",
+                api_key="k",
+                models=["m"],
+            )
+        )
+    registry.register_combo(ComboConfig(name="duo", models=["a/m", "b/m"]))
+    return registry
+
+
+def test_combo_round_robin_sticky_limit_holds_head_for_n_requests() -> None:
+    from janus.routing.fallback import FallbackHandler
+
+    registry = _two_model_combo_registry()
+    handler = FallbackHandler(registry)
+
+    firsts = [
+        handler.resolve_attempts("duo", combo_strategy="round_robin", combo_sticky_limit=3)[
+            0
+        ].account_id
+        for _ in range(9)
+    ]
+
+    assert firsts == [
+        "a-1",
+        "a-1",
+        "a-1",
+        "b-1",
+        "b-1",
+        "b-1",
+        "a-1",
+        "a-1",
+        "a-1",
+    ]
+
+
+def test_combo_round_robin_sticky_limit_one_alternates_every_request() -> None:
+    from janus.routing.fallback import FallbackHandler
+
+    registry = _two_model_combo_registry()
+    handler = FallbackHandler(registry)
+
+    firsts = [
+        handler.resolve_attempts("duo", combo_strategy="round_robin", combo_sticky_limit=1)[
+            0
+        ].account_id
+        for _ in range(4)
+    ]
+
+    assert firsts == ["a-1", "b-1", "a-1", "b-1"]
