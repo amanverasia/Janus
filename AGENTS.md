@@ -26,7 +26,7 @@ docker compose up -d                                         # Docker (persists 
 
 **Canonical intermediate model.** `formats/` and `providers/` never import or call each other — they only talk to `canonical/`. This is intentional (2N adapters instead of N² translators). Do not break this boundary.
 
-Request flow: client format → `parse_request` → `CanonicalRequest` → `SaverPipeline.apply` → budget check (`_check_budgets`) → `FallbackHandler.resolve_attempts` → per-attempt: `build_upstream_request` → upstream call → `parse_upstream_response` → `CanonicalResponse` → `emit_response` → `record_usage` (with cost). On 429/5xx/auth/network errors, the account is cooled down and the next attempt is tried.
+Request flow: client format → `parse_request` → `CanonicalRequest` → model allowlist check (per API key) → `SaverPipeline.apply` / `apply_async` → budget check (`_check_budgets`) → `FallbackHandler.resolve_attempts` → per-attempt: `build_upstream_request` → upstream call → `parse_upstream_response` → `CanonicalResponse` → `emit_response` → `record_usage` (with cost). On 429/5xx/auth/network errors, the account is cooled down and the next attempt is tried.
 
 ## Routing & fallback layer
 
@@ -94,18 +94,23 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 
 Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup via FastAPI lifespan (`app.py`). Schema migrations are idempotent — `init_db()` uses `PRAGMA table_info` + `ALTER TABLE ADD COLUMN` for new columns.
 
-- `storage/api_keys.py` — keys are `sk-janus-{32hex}`, stored as SHA256 hash. `verify_key()` returns `int | None` (DB row ID). The API-key gate (`api/deps.py`) checks both config `api_keys` (static list) AND DB keys. When a DB key is used, `request.state.client_key_id` is set.
+- `storage/api_keys.py` — keys are `sk-janus-{32hex}`, stored as SHA256 hash. `verify_key()` returns `int | None` (DB row ID). Columns include `can_login` (default 1) and `allowed_models` (JSON array or NULL = all models). `get_key_policy()` / `update_key()` manage scopes. Matching helpers live in `storage/key_access.py` (exact IDs + `prefix/*` wildcards).
+- The API-key gate (`api/deps.py` + `api/auth.py`) checks both config `api_keys` (static list) AND DB keys. On success, auth sets `request.state.client_key_id` (DB keys), `can_login`, and `allowed_models`. YAML static keys are unrestricted (`can_login=True`, no model filter).
+- Dashboard access (`dashboard/auth.py`) rejects keys with `can_login=0`. Login form shows "This API key cannot access the dashboard". Loopback and username/password login are unchanged.
+- Model allowlists are enforced in `_handle()` after parse (403 `model_not_allowed`) and filter `GET /v1/models`. Empty/NULL allowlist = all models.
 - `storage/usage.py` — `record_usage()` records per-request token usage (fire-and-forget). Streaming requests now also record via `StreamUsageTracker` + `finally` block. Params include `cost`, `cache_creation_tokens`, `cache_read_tokens`, `client_key_id`.
 - `storage/settings.py` — key-value settings store (`get_setting`, `set_setting`, `get_all_settings`).
 - `storage/providers_db.py` — provider CRUD (create, update, delete, toggle, list).
 - `storage/combos_db.py` — combo CRUD.
 - `storage/pricing_db.py` — pricing override CRUD.
 - CLI commands call `init_db()` inline before DB operations (see pattern in `cli.py`). Follow this if adding CLI subcommands that touch the DB.
+- CLI keys: `janus keys create/list/update/revoke` — create/update support `--no-login`, `--models`, `--daily-budget` / `--clear-models`.
 
 ## Pricing & budget enforcement
 
 - `PricingRegistry` merges builtin defaults (~28 models in `pricing/builtin.py`) with DB overrides from the `pricing_overrides` table (seeded from YAML `pricing:` section on first startup). Cost computed at recording time via `compute_cost(usage, model, registry)`. Unknown models cost $0.0 (not an error).
 - Budgets are daily spending limits in the `budgets` SQLite table. Per-key (`key_id` set) or global (`key_id = NULL`). Enforcement in `_handle()` before routing: warn at 80% (request proceeds), block at 100% (request rejected with `429` + `Retry-After`). Most restrictive wins. Fail-safe: DB errors don't block requests.
+- Per-key daily budgets can also be set when creating/updating a key (CLI `--daily-budget` or dashboard Keys form); both paths call `create_or_update_budget`.
 - CLI: `janus budgets list/set/delete`, `janus pricing list/show`.
 
 ## Config

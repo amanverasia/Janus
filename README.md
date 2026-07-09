@@ -296,7 +296,7 @@ janus inventory encrypt-keys                       # encrypt plaintext keys in D
 | `janus serve` | Start the gateway server |
 | `janus config-init` | Generate default config YAML |
 | `janus config-path` | Print config file path |
-| `janus keys create/list/revoke` | Manage API keys |
+| `janus keys create/list/update/revoke` | Manage API keys (scopes: `--no-login`, `--models`, `--daily-budget`) |
 | `janus usage stats/cost/by-key` | Usage and cost reports |
 | `janus budgets list/set/delete` | Manage spending budgets |
 | `janus pricing list/show` | View model pricing |

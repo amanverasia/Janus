@@ -36,7 +36,10 @@ To manage runtime config:
 - **Reset to Defaults** (Settings page) — wipe DB tables and re-seed from YAML
 
 Static `api_keys` in YAML are **not** seeded — they remain in the config file and
-are checked at auth time alongside DB-managed keys.
+are checked at auth time alongside DB-managed keys. YAML static keys always have
+full access (dashboard login + all models). Scopes (`can_login`, `allowed_models`)
+apply only to DB-managed `sk-janus-*` keys — see [API Reference](api-reference.md)
+and the Keys dashboard page.
 
 Runtime settings stored in the `settings` table:
 

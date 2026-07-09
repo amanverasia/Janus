@@ -1,6 +1,6 @@
 # Janus — TODO & improvements
 
-Living backlog from repo audit (2026-07-05); last updated 2026-07-05 after completing the Phase 8 9router-parity plan. Items are grouped by area; order within a section is rough priority.
+Living backlog from repo audit (2026-07-05); last updated 2026-07-09 after API key scopes landed. Items are grouped by area; order within a section is rough priority.
 
 ---
 
@@ -11,6 +11,7 @@ Living backlog from repo audit (2026-07-05); last updated 2026-07-05 after compl
 - [x] **Add `mkdocs build --strict` to CI** — docs workflow only runs on `docs/` changes; main CI (`ci.yml`) should fail if the published site would break. *(Done 2026-07-05.)*
 - [x] **Unify provider catalogs** — `dashboard/catalog.py` has 14 gateway providers; `inventory/catalog.py` has 29. Duplicated base URLs, models, and metadata drift easily. Single source or codegen sync. *(Done 2026-07-05 — unified into `src/janus/catalog.py`; both legacy modules and the id bridges now derive from it. Also fixed the missing `qwen`→`dashscope` prefix bridge so DashScope inventory keys route for the `qwen` prefix.)*
 - [x] **Use inventory rate limits in routing** — `rate_limit_rpm/tpm/rpd` are stored and shown in the UI but ignored by `routing/fallback.py` and `list_routable_upstream_keys()`. Skip or deprioritize keys near quota exhaustion during rotation. *(Done 2026-07-05 for RPM/RPD — accounts without headroom are moved to the end of the try-order; TPM enforcement deferred since token counts are only known post-response.)*
+- [x] **API key scopes** — per-key `can_login` (API-only vs dashboard) and `allowed_models` (exact IDs + `prefix/*`; empty = all), plus optional daily budget on key create/update. Spec: `docs/superpowers/specs/2026-07-09-api-key-scopes-design.md`. *(Done 2026-07-09 — storage columns + migration, `key_access` matching, auth/dashboard/API enforcement, CLI `keys update`, dashboard Keys UI.)*
 
 ---
 

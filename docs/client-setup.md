@@ -55,11 +55,21 @@ Any tool that accepts a custom OpenAI base URL works with Janus:
 
 ```bash
 janus keys create --name "my-key"
-# Created key: sk-janus-a1b2c3d4...
+# API Key (save this — shown once): sk-janus-a1b2c3d4...
 # ID: 1  Name: my-key
+# Login: yes
+# Models: all
 ```
 
-The full key is shown once. Use it in the `Authorization: Bearer <key>` header or as your `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`.
+Optional scopes:
+
+```bash
+# API-only key (cannot open the dashboard), limited models, $5/day budget
+janus keys create --name "agent" --no-login --models "openai/*,my-combo" --daily-budget 5
+janus keys update 1 --login --clear-models   # restore full access later
+```
+
+The full key is shown once. Use it in the `Authorization: Bearer <key>` header or as your `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`. Empty model allowlist means all models; patterns may be exact IDs or `prefix/*`.
 
 ## Gemini-Native Tools
 
