@@ -18,6 +18,12 @@ BUILTIN_PRICING: dict[str, ModelPricing] = {
     "gpt-4.1": ModelPricing(2.0, 8.0, 0.0, 0.5),
     "gpt-4.1-mini": ModelPricing(0.4, 1.6, 0.0, 0.1),
     "gpt-4.1-nano": ModelPricing(0.1, 0.4, 0.0, 0.025),
+    # xAI
+    "grok-4": ModelPricing(3.0, 15.0, 0.0, 0.75),
+    "grok-4-fast-reasoning": ModelPricing(0.2, 0.5, 0.0, 0.05),
+    "grok-code-fast-1": ModelPricing(0.2, 1.5, 0.0, 0.02),
+    "grok-3": ModelPricing(3.0, 15.0, 0.0, 0.75),
+    "grok-3-mini": ModelPricing(0.3, 0.5, 0.0, 0.07),
     # Google
     "gemini-2.5-pro": ModelPricing(1.25, 10.0, 0.0, 0.31),
     "gemini-2.0-flash": ModelPricing(0.1, 0.4, 0.0, 0.025),

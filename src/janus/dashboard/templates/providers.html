@@ -68,7 +68,14 @@
                         <option value="anthropic">anthropic</option>
                         <option value="gemini">gemini</option>
                         <option value="opencode_free">opencode_free</option>
+                    <option value="mimo_free">mimo_free</option>
+                        <option value="mimo_free">mimo_free</option>
                         <option value="github_copilot">github_copilot</option>
+                        <option value="codex">codex</option>
+                        <option value="kiro">kiro</option>
+                        <option value="cursor">cursor</option>
+                        <option value="antigravity">antigravity</option>
+                        <option value="claude_oauth">claude_oauth</option>
                     </select>
                 </div>
                 <div>
@@ -87,6 +94,12 @@
                         Connect GitHub Account
                     </button>
                     <div id="copilot-auth-status" class="hidden mt-2 p-3 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300"></div>
+                </div>
+                <div id="oauth-token-hint" class="hidden mt-2 p-3 bg-gray-900 border border-gray-700 rounded-lg text-xs text-gray-400">
+                    For OAuth providers (codex / kiro / antigravity / claude_oauth), paste either a bare access token
+                    or a JSON credential blob:
+                    <code class="text-gray-300">{&quot;access_token&quot;,&quot;refresh_token&quot;,&quot;expires_at&quot;}</code>.
+                    Janus refreshes tokens automatically when <code class="text-gray-300">refresh_token</code> is present.
                 </div>
             </div>
             <div>
@@ -155,6 +168,11 @@
                     <option value="gemini">gemini</option>
                     <option value="opencode_free">opencode_free</option>
                     <option value="github_copilot">github_copilot</option>
+                    <option value="codex">codex</option>
+                    <option value="kiro">kiro</option>
+                    <option value="cursor">cursor</option>
+                    <option value="antigravity">antigravity</option>
+                    <option value="claude_oauth">claude_oauth</option>
                 </select>
             </div>
             <div>
@@ -219,8 +237,12 @@ function fillProviderForm(key, apiType, baseUrl, prefix, models) {
 }
 
 function copilotConnectVisibility() {
-    var isCopilot = document.getElementById('f-api_type').value === 'github_copilot';
+    var apiType = document.getElementById('f-api_type').value;
+    var isCopilot = apiType === 'github_copilot';
     document.getElementById('copilot-connect').classList.toggle('hidden', !isCopilot);
+    var oauthTypes = ['codex', 'kiro', 'cursor', 'antigravity', 'claude_oauth', 'github_copilot'];
+    var hint = document.getElementById('oauth-token-hint');
+    if (hint) hint.classList.toggle('hidden', oauthTypes.indexOf(apiType) === -1);
 }
 
 var copilotPollTimer = null;

@@ -54,6 +54,18 @@ _FINISH_TO_STOP: dict[str, str] = {
 _STOP_TO_FINISH: dict[str, str] = {v: k for k, v in _FINISH_TO_STOP.items()}
 
 
+def _uses_max_completion_tokens(model: str) -> bool:
+    low = model.lower()
+    if "/" in low:
+        low = low.rsplit("/", 1)[-1]
+    return bool(
+        low.startswith(("gpt-5", "o1", "o3", "o4"))
+        or "-o1" in low
+        or "-o3" in low
+        or "-o4" in low
+    )
+
+
 class OpenAIStreamParser:
     """Parses OpenAI SSE chunks into canonical streaming events."""
 
@@ -445,7 +457,10 @@ class OpenAIAdapter:
             payload["stream"] = True
             payload["stream_options"] = {"include_usage": True}
         if req.max_tokens is not None:
-            payload["max_tokens"] = req.max_tokens
+            if _uses_max_completion_tokens(model):
+                payload["max_completion_tokens"] = req.max_tokens
+            else:
+                payload["max_tokens"] = req.max_tokens
         if req.temperature is not None:
             payload["temperature"] = req.temperature
         if req.top_p is not None:

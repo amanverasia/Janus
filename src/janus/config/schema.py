@@ -17,7 +17,9 @@ class ServerSettings(BaseModel):
 class ProviderConfig(BaseModel):
     id: str
     prefix: str
-    api_type: str  # "openai_compat" | "anthropic" | "gemini" | "opencode_free" | "github_copilot"
+    # openai_compat | anthropic | gemini | opencode_free | github_copilot |
+    # codex | kiro | cursor | antigravity | claude_oauth
+    api_type: str
     base_url: str
     api_key: str | None = None
     models: list[str] = Field(default_factory=list)

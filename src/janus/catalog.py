@@ -70,12 +70,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://api.anthropic.com",
             "prefix": "anthropic",
             "default_models": [
-                "claude-sonnet-4-20250514",
-                "claude-opus-4-20250514",
-                "claude-3-5-sonnet-20241022",
+                "claude-sonnet-4-5-20250929",
+                "claude-haiku-4-5-20251001",
+                "claude-opus-4-5-20251101",
+                "claude-sonnet-4-6",
+                "claude-opus-4-6",
             ],
         },
-        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
+        "capabilities": {
+            "vision": True,
+            "pdf": True,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "openrouter": {
         "inventory": {
@@ -104,6 +111,10 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://openrouter.ai/api/v1",
             "prefix": "openrouter",
             "default_models": [],
+            "default_headers": {
+                "HTTP-Referer": "https://janus.local",
+                "X-Title": "Janus",
+            },
         },
         "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
@@ -133,13 +144,20 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://generativelanguage.googleapis.com",
             "prefix": "gemini",
             "default_models": [
-                "gemini-2.5-pro",
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite",
-                "gemini-2.0-flash",
+                "gemini-2.5-pro",
+                "gemini-3-flash-preview",
+                "gemini-3.1-flash-lite",
+                "gemini-flash-latest",
             ],
         },
-        "capabilities": {"vision": True, "pdf": True, "tool_use": True},
+        "capabilities": {
+            "vision": True,
+            "pdf": True,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "groq": {
         "inventory": {
@@ -168,6 +186,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "groq",
             "default_models": [
                 "llama-3.3-70b-versatile",
+                "meta-llama/llama-4-maverick-17b-128e-instruct",
                 "openai/gpt-oss-120b",
                 "qwen/qwen3-32b",
             ],
@@ -323,12 +342,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.deepseek.com/v1",
             "prefix": "deepseek",
-            "default_models": ["deepseek-chat", "deepseek-reasoner"],
+            "default_models": [
+                "deepseek-v4-pro",
+                "deepseek-v4-pro-max",
+                "deepseek-v4-pro-none",
+                "deepseek-v4-flash",
+                "deepseek-chat",
+                "deepseek-reasoner",
+            ],
+            "transports": {
+                "anthropic": "https://api.deepseek.com/anthropic/v1",
+            },
         },
         "capabilities": {"vision": False, "pdf": False, "tool_use": True},
-        "transports": {
-            "anthropic": "https://api.deepseek.com/anthropic/v1",
-        },
     },
     "xai": {
         "inventory": {
@@ -355,9 +381,22 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "openai_compat",
             "base_url": "https://api.x.ai/v1",
             "prefix": "xai",
-            "default_models": ["grok-4", "grok-4-fast-reasoning", "grok-code-fast-1", "grok-3"],
+            "default_models": [
+                "grok-4",
+                "grok-4-fast-reasoning",
+                "grok-code-fast-1",
+                "grok-3",
+                "grok-4.20-0309-non-reasoning",
+                "grok-4.20-0309-reasoning",
+            ],
         },
-        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+            "search": True,
+        },
     },
     "cerebras": {
         "inventory": {
@@ -698,7 +737,28 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "billing_model": "prepaid",
             "is_direct": True,
             "routing_note": None,
-        }
+        },
+        "gateway": {
+            "id": "moonshot",
+            "name": "Moonshot (Kimi)",
+            "icon": "🌙",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.moonshot.cn/v1",
+            "prefix": "moonshot",
+            "default_models": [
+                "kimi-k2.5",
+                "moonshot-v1-auto",
+                "moonshot-v1-8k",
+                "moonshot-v1-128k",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "dashscope": {
         "inventory": {
@@ -747,7 +807,31 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "routing_note": "OpenAI-compatible endpoint; if keys show invalid, "
             "re-add with the exact base URL via the custom "
             "field.",
-        }
+        },
+        "gateway": {
+            "id": "minimax",
+            "name": "MiniMax",
+            "icon": "🟣",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.minimaxi.com/v1",
+            "prefix": "minimax",
+            "default_models": [
+                "MiniMax-M2.7",
+                "MiniMax-M2.5",
+                "MiniMax-M2.1",
+                "MiniMax-M3",
+            ],
+            "transports": {
+                "anthropic": "https://api.minimaxi.com/anthropic/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "siliconflow": {
         "inventory": {
@@ -802,7 +886,31 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "is_direct": True,
             "routing_note": "GLM models. Validated via a chat probe (no public "
             "model-list endpoint).",
-        }
+        },
+        "gateway": {
+            "id": "zhipu",
+            "name": "Zhipu AI (GLM)",
+            "icon": "🟦",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "prefix": "zhipu",
+            "default_models": [
+                "glm-4.7",
+                "glm-4.6",
+                "glm-4-flash",
+                "glm-4.5",
+            ],
+            "transports": {
+                "anthropic": "https://open.bigmodel.cn/api/anthropic",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
     },
     "xiaomi": {
         "inventory": {
@@ -819,10 +927,80 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "credit_check_endpoint": None,
             "billing_model": "prepaid",
             "is_direct": True,
-            "routing_note": "Token-plan keys (tp- prefix). Regional endpoints: "
-            "token-plan-cn.xiaomimimo.com, "
-            "token-plan-sgp.xiaomimimo.com.",
-        }
+            "routing_note": "Xiaomi MiMo API keys (pay-as-you-go). OpenAI + Anthropic "
+            "transports at api.xiaomimimo.com.",
+        },
+        "gateway": {
+            "id": "xiaomi",
+            "name": "Xiaomi MiMo",
+            "icon": "📱",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.xiaomimimo.com/v1",
+            "prefix": "xiaomi",
+            "default_models": [
+                "mimo-v2.5-pro",
+                "mimo-v2.5",
+                "mimo-v2-omni",
+                "mimo-v2-flash",
+            ],
+            "transports": {
+                "anthropic": "https://api.xiaomimimo.com/anthropic/v1",
+            },
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
+    },
+    "xiaomi_tokenplan": {
+        "inventory": {
+            "id": "xiaomi_tokenplan",
+            "name": "xiaomi_tokenplan",
+            "display_name": "Xiaomi MiMo (Token Plan)",
+            "base_url": "https://token-plan-sgp.xiaomimimo.com/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "XIAOMI_TOKENPLAN_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "prepaid",
+            "is_direct": True,
+            "routing_note": "Token Plan keys (tp- prefix) are region-specific. "
+            "Set custom base URL per key: token-plan-sgp / token-plan-cn / "
+            "token-plan-ams.xiaomimimo.com/v1.",
+        },
+        "gateway": {
+            "id": "xiaomi_tokenplan",
+            "name": "Xiaomi MiMo (Token Plan)",
+            "icon": "📱",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://token-plan-sgp.xiaomimimo.com/v1",
+            "prefix": "xmtp",
+            "default_models": [
+                "mimo-v2.5-pro",
+                "mimo-v2.5",
+                "mimo-v2-pro",
+                "mimo-v2-omni",
+            ],
+            "transports": {
+                "anthropic": "https://token-plan-sgp.xiaomimimo.com/anthropic/v1",
+            },
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
+    },
+    "mimo_free": {
+        "gateway": {
+            "id": "mimo_free",
+            "name": "MiMo Code Free",
+            "icon": "🆓",
+            "logo": "",
+            "api_type": "mimo_free",
+            "base_url": "https://api.xiaomimimo.com/api/free-ai/openai/chat",
+            "prefix": "mmf",
+            "default_models": ["mimo-auto"],
+        },
+        "capabilities": {"vision": False, "pdf": False, "tool_use": True},
     },
     "tavily": {
         "inventory": {
@@ -987,6 +1165,90 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         },
         "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
+    "codex": {
+        "gateway": {
+            "id": "codex",
+            "name": "Codex (ChatGPT)",
+            "icon": "⚙️",
+            "logo": "",
+            "api_type": "codex",
+            "base_url": "https://chatgpt.com/backend-api/codex",
+            "prefix": "codex",
+            "default_models": ["gpt-5.1-codex", "o3", "o4-mini"],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "kiro": {
+        "gateway": {
+            "id": "kiro",
+            "name": "Kiro",
+            "icon": "☁️",
+            "logo": "",
+            "api_type": "kiro",
+            "base_url": "https://codewhisperer.us-east-1.amazonaws.com",
+            "prefix": "kiro",
+            "default_models": ["claude-sonnet-4", "claude-sonnet-4-thinking"],
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
+    },
+    "cursor": {
+        "gateway": {
+            "id": "cursor",
+            "name": "Cursor",
+            "icon": "🖱️",
+            "logo": "",
+            "api_type": "cursor",
+            "base_url": "https://api2.cursor.sh",
+            "prefix": "cursor",
+            "default_models": ["composer-1", "gpt-4o", "claude-sonnet-4"],
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+    },
+    "antigravity": {
+        "gateway": {
+            "id": "antigravity",
+            "name": "Antigravity / Gemini CLI",
+            "icon": "✨",
+            "logo": "",
+            "api_type": "antigravity",
+            "base_url": "https://cloudcode-pa.googleapis.com",
+            "prefix": "antigravity",
+            "default_models": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "claude_oauth": {
+        "gateway": {
+            "id": "claude_oauth",
+            "name": "Claude Code (OAuth)",
+            "icon": "🤖",
+            "logo": "anthropic.svg",
+            "api_type": "claude_oauth",
+            "base_url": "https://api.anthropic.com",
+            "prefix": "claude",
+            "default_models": [
+                "claude-sonnet-4-20250514",
+                "claude-opus-4-20250514",
+                "claude-haiku-4-5-20251001",
+            ],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": True,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
 }
 
 GATEWAY_ORDER: list[str] = [
@@ -1011,8 +1273,19 @@ GATEWAY_ORDER: list[str] = [
     "volcengine-ark",
     "byteplus",
     "qwen",
+    "minimax",
+    "moonshot",
+    "zhipu",
     "github_copilot",
+    "codex",
+    "kiro",
+    "cursor",
+    "antigravity",
+    "claude_oauth",
     "opencode_free",
+    "xiaomi",
+    "xiaomi_tokenplan",
+    "mimo_free",
     "custom",
 ]
 
@@ -1026,13 +1299,17 @@ def inventory_entries() -> dict[str, dict[str, Any]]:
 
 
 def gateway_entries() -> dict[str, dict[str, Any]]:
-    by_catalog_id = {
-        entry["gateway"]["id"]: {
-            key: deepcopy(value) for key, value in entry["gateway"].items() if key != "id"
-        }
-        for entry in PROVIDERS.values()
-        if "gateway" in entry
-    }
+    by_catalog_id: dict[str, dict[str, Any]] = {}
+    for entry in PROVIDERS.values():
+        if "gateway" not in entry:
+            continue
+        gw = entry["gateway"]
+        catalog_id = gw["id"]
+        item = {key: deepcopy(value) for key, value in gw.items() if key != "id"}
+        # Top-level multi-format transports (e.g. DeepSeek Anthropic endpoint)
+        if "transports" in entry and "transports" not in item:
+            item["transports"] = deepcopy(entry["transports"])
+        by_catalog_id[catalog_id] = item
     ordered = {cid: by_catalog_id.pop(cid) for cid in GATEWAY_ORDER if cid in by_catalog_id}
     ordered.update(by_catalog_id)
     return ordered
