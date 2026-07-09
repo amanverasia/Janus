@@ -239,6 +239,7 @@ async def ensure_routing_providers(
                 "base_url": base_url,
                 "api_key": None,
                 "models": list(catalog.get("default_models") or []),
+                "transports": catalog.get("transports"),
             },
         )
         results.append(

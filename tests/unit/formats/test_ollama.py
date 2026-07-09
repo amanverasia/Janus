@@ -298,3 +298,21 @@ def test_stream_parser_tool_calls_and_thinking():
     assert json.loads(delta.partial_json) == {"path": "."}
     md = next(e for e in events if isinstance(e, MessageDelta))
     assert md.stop_reason == "tool_use"
+
+
+def test_reasoning_part_renders_as_text_in_ollama():
+    from janus.canonical.models import CanonicalRequest, Message, Reasoning, Role, TextPart
+    from janus.formats.ollama import OllamaAdapter
+
+    req = CanonicalRequest(
+        model="llama3",
+        messages=[
+            Message(role=Role.ASSISTANT, content=[Reasoning(text="pondering"), TextPart(text="hi")])
+        ],
+    )
+    payload = OllamaAdapter().build_upstream_request(req, "llama3")
+    assert payload is not None
+    # assistant message content should include the visible text, not crash on Reasoning
+    assistant = [m for m in payload["messages"] if m["role"] == "assistant"]
+    assert assistant
+    assert "hi" in assistant[0]["content"]

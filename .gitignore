@@ -85,3 +85,7 @@ site/
 
 # Cursor / Superpowers local artifacts
 .superpowers/
+
+# Janus runtime data
+janus-data/
+nohup.out

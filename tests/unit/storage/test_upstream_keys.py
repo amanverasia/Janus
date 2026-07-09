@@ -1,5 +1,6 @@
 import pytest
 
+from janus.catalog import inventory_entries
 from janus.storage.database import init_db, seed_inventory_providers
 from janus.storage.inventory_providers import get_inventory_provider, list_inventory_providers
 from janus.storage.upstream_keys import (
@@ -19,7 +20,7 @@ async def test_init_db_creates_inventory_tables(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)
     providers = await list_inventory_providers(db_path)
-    assert len(providers) == 29
+    assert len(providers) == len(inventory_entries())
     assert await get_inventory_provider(db_path, "openai") is not None
 
 
@@ -30,7 +31,7 @@ async def test_seed_inventory_providers_is_idempotent(tmp_path):
     first = await list_inventory_providers(db_path)
     await seed_inventory_providers(db_path)
     second = await list_inventory_providers(db_path)
-    assert len(first) == len(second) == 29
+    assert len(first) == len(second) == len(inventory_entries())
 
 
 @pytest.mark.asyncio

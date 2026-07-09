@@ -4,6 +4,29 @@ from dataclasses import dataclass
 
 from janus.config.schema import ComboConfig, ProviderConfig
 
+_API_TYPE_TO_NATIVE: dict[str, str] = {
+    "openai_compat": "openai",
+    "anthropic": "anthropic",
+    "gemini": "gemini",
+    "opencode_free": "openai",
+    "mimo_free": "openai",
+    "github_copilot": "openai",
+    "codex": "openai_responses",
+    "kiro": "openai",
+    "cursor": "openai",
+    "antigravity": "gemini",
+    "gemini_cli": "gemini",
+    "gemini-cli": "gemini",
+    "claude_oauth": "anthropic",
+    "claude": "anthropic",
+}
+
+
+def _native_format(api_type: str) -> str:
+    if api_type in _API_TYPE_TO_NATIVE:
+        return _API_TYPE_TO_NATIVE[api_type]
+    return api_type.replace("_compat", "")
+
 
 @dataclass
 class ResolvedTarget:
@@ -39,7 +62,7 @@ class ProviderRegistry:
             return None
         results: list[ResolvedTarget] = []
         for config in configs:
-            native = config.api_type.replace("_compat", "")
+            native = _native_format(config.api_type)
             results.append(
                 ResolvedTarget(
                     prefix=prefix,

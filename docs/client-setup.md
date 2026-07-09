@@ -87,9 +87,24 @@ Models are referenced as `{prefix}/{model}`:
 | `openai/gpt-4o` | OpenAI provider, model `gpt-4o` |
 | `anthropic/claude-sonnet-4-20250514` | Anthropic provider, model `claude-sonnet-4-20250514` |
 | `gemini/gemini-2.5-pro` | Gemini provider, model `gemini-2.5-pro` |
+| `codex/o3` | ChatGPT Codex Responses API |
+| `claude/claude-sonnet-4-20250514` | Claude Code OAuth account |
 | `best-effort` | Combo — tries each model in the combo chain |
 
 See [Combos](combos.md) for fallback chain configuration.
+
+## Subscription / OAuth providers
+
+GitHub Copilot supports **Connect GitHub Account** (device flow) in the Providers
+UI. For Codex, Kiro, Antigravity/Gemini CLI, and Claude Code OAuth, paste either:
+
+- a bare access token into the API key field, or
+- a JSON credential blob:
+  `{"access_token":"...","refresh_token":"...","expires_at":1710000000}`
+
+When `refresh_token` is present Janus refreshes access tokens automatically
+before expiry. Claude Code clients also get tool-dedupe + wire-shape
+normalization when talking to Anthropic-format upstreams.
 
 ## Remote / Docker setups
 

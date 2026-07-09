@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import logging
+
 from janus.canonical.models import Usage
 
 from .registry import PricingRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def compute_cost(usage: Usage, model: str, registry: PricingRegistry) -> float:
     pricing = registry.get(model)
     if pricing is None:
+        logger.debug("No pricing for model %s; recording cost as $0.00", model)
         return 0.0
     return (
         usage.input_tokens / 1_000_000 * pricing.input_per_mtok

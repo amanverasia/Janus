@@ -6,6 +6,12 @@ from typing import Any
 
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.key_checker import validate_key
+from janus.inventory.xiaomi_tokenplan import (
+    TOKENPLAN_PROVIDER_ID,
+    XIAOMI_PAYGO_PROVIDER_ID,
+    metadata_with_region,
+    region_id_for_base_url,
+)
 
 DETECT_CONCURRENCY = int(os.environ.get("DETECT_CONCURRENCY", "6"))
 
@@ -80,12 +86,48 @@ async def resolve_provider_for_key(
         provider_id = chosen_provider
         if provider_id == "custom" and custom_base_url:
             custom_meta = {"custom_base_url": custom_base_url.rstrip("/")}
+        elif provider_id == TOKENPLAN_PROVIDER_ID and custom_base_url:
+            region = region_id_for_base_url(custom_base_url) or "custom"
+            custom_meta = metadata_with_region(
+                None, region=region, base_url=custom_base_url.rstrip("/")
+            )
         return provider_id, custom_meta
 
     guess = detect_provider_from_key(key_value)
+
+    # Token Plan keys must never fall through to pay-as-you-go Xiaomi.
+    # Region is discovered during validate_key and returned as metadata.
+    if guess == TOKENPLAN_PROVIDER_ID or key_value.startswith("tp-"):
+        seed_meta: dict[str, Any] | None = None
+        if custom_base_url:
+            region = region_id_for_base_url(custom_base_url) or "custom"
+            seed_meta = metadata_with_region(
+                None, region=region, base_url=custom_base_url.rstrip("/")
+            )
+        result = await validate_key(
+            key_value,
+            TOKENPLAN_PROVIDER_ID,
+            seed_meta,
+            skip_probe=True,
+        )
+        if result.get("is_valid"):
+            meta = dict(result.get("metadata") or {})
+            if result.get("custom_base_url"):
+                meta["custom_base_url"] = str(result["custom_base_url"]).rstrip("/")
+            if result.get("tokenplan_region"):
+                meta["tokenplan_region"] = result["tokenplan_region"]
+            return TOKENPLAN_PROVIDER_ID, meta or seed_meta
+        # Still label as tokenplan even if all regions fail — never xiaomi paygo.
+        return TOKENPLAN_PROVIDER_ID, seed_meta
+
     order = [guess, *detectable_provider_ids(guess)] if guess else detectable_provider_ids(None)
+    # Drop paygo xiaomi when we already know this isn't a tokenplan key? keep normal.
+    # But never prefer xiaomi for non-tp keys unless it authenticates.
     confirmed = await find_authenticating_provider(key_value, order)
     if confirmed:
+        # Guard: if something authenticated as xiaomi paygo but key is tp-, rewrite
+        if confirmed == XIAOMI_PAYGO_PROVIDER_ID and key_value.startswith("tp-"):
+            return TOKENPLAN_PROVIDER_ID, None
         return confirmed, None
 
     if custom_base_url:

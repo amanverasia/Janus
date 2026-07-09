@@ -124,6 +124,9 @@ async def ingest_upstream_key(
     effective_base_url = base_url
     if resolved_provider == "custom":
         effective_base_url = (custom_meta or {}).get("custom_base_url") or base_url
+    elif custom_meta and custom_meta.get("custom_base_url"):
+        # Token Plan (and similar) region endpoints discovered during detection.
+        effective_base_url = str(custom_meta["custom_base_url"]).rstrip("/")
     if resolved_provider == "custom" and not effective_base_url:
         return {
             "key_masked": key_masked,
@@ -140,7 +143,11 @@ async def ingest_upstream_key(
             existing["id"],
             {
                 "provider_id": resolved_provider,
-                "custom_base_url": effective_base_url if resolved_provider == "custom" else None,
+                "custom_base_url": (
+                    effective_base_url
+                    if (resolved_provider == "custom" or effective_base_url)
+                    else None
+                ),
                 "metadata": custom_meta,
                 "status": "unidentified" if is_unidentified else "pending_validation",
                 "is_valid": 0,
@@ -172,12 +179,16 @@ async def ingest_upstream_key(
             "status": "exists",
         }
 
+    # Persist regional base URLs for Token Plan etc., not only custom providers.
+    persist_base = effective_base_url if (
+        resolved_provider == "custom" or effective_base_url
+    ) else None
     record = await create_upstream_key(
         db_path,
         provider_id=resolved_provider,
         key_value=key_value,
         key_label=entry.label,
-        custom_base_url=effective_base_url if resolved_provider == "custom" else None,
+        custom_base_url=persist_base,
         source_node=entry.source_node,
         metadata=custom_meta,
     )

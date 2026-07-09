@@ -46,7 +46,11 @@ def test_is_trusted_loopback() -> None:
     assert is_trusted_dashboard_client(_request(host="127.0.0.1")) is True
     assert is_trusted_dashboard_client(_request(host="::1")) is True
     assert is_trusted_dashboard_client(_request(host="testclient")) is True
-    assert is_trusted_dashboard_client(_request(host=None)) is True
+
+
+def test_unknown_client_is_not_trusted() -> None:
+    # BUG-002: a request with no client info must fail closed, not grant access.
+    assert is_trusted_dashboard_client(_request(host=None)) is False
 
 
 def test_is_trusted_remote() -> None:

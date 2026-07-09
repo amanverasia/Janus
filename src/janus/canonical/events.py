@@ -38,7 +38,8 @@ class ReasoningBlockStart(BaseModel):
 class ReasoningDelta(BaseModel):
     type: Literal["reasoning_delta"] = "reasoning_delta"
     index: int
-    text: str
+    text: str = ""
+    signature: str | None = None
 
 
 class InputJsonDelta(BaseModel):

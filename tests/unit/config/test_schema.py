@@ -6,6 +6,14 @@ def test_server_defaults():
     assert s.port == 20128
     assert s.host == "127.0.0.1"
     assert s.require_api_key is True
+    assert s.account_strategy == "round_robin"
+    assert s.sticky_limit == 3
+
+
+def test_server_strategy_configurable():
+    s = ServerSettings(account_strategy="sticky_rr", sticky_limit=5)
+    assert s.account_strategy == "sticky_rr"
+    assert s.sticky_limit == 5
 
 
 def test_provider_config_validation():

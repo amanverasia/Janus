@@ -181,6 +181,78 @@ async def test_check_upstream_key_updates_db_and_models(tmp_path):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_validate_key_xai_quota_exhausted_not_auth_failure():
+    body = {
+        "code": "permission-denied",
+        "error": (
+            "Your team has either used all available credits or reached its "
+            "monthly spending limit."
+        ),
+    }
+    respx.get("https://api.x.ai/v1/models").mock(return_value=Response(403, json=body))
+
+    result = await validate_key("xai-test-key", "xai", skip_probe=True)
+    assert result["is_valid"] is True
+    assert result["is_usable"] is False
+    assert result["usability_status"] == "no_quota"
+    assert result["credits_remaining"] == 0.0
+    assert result["health_status"] == "exhausted"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_validate_key_xai_probe_skips_media_models_and_uses_chat():
+    respx.get("https://api.x.ai/v1/models").mock(
+        return_value=Response(
+            200,
+            json={
+                "data": [
+                    {"id": "grok-imagine-image"},
+                    {"id": "grok-4.20-0309-non-reasoning"},
+                    {"id": "grok-4"},
+                ]
+            },
+        )
+    )
+    route = respx.post("https://api.x.ai/v1/chat/completions").mock(
+        return_value=Response(200, json={"id": "chatcmpl-xai"})
+    )
+
+    result = await validate_key("xai-test-key", "xai")
+    assert result["is_valid"] is True
+    assert result["is_usable"] is True
+    assert route.called
+    sent = route.calls.last.request
+    import json as _json
+
+    payload = _json.loads(sent.content.decode())
+    assert payload["model"] == "grok-4"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_validate_key_xai_probe_marks_quota_on_inference_403():
+    respx.get("https://api.x.ai/v1/models").mock(
+        return_value=Response(200, json={"data": [{"id": "grok-4"}]})
+    )
+    respx.post("https://api.x.ai/v1/chat/completions").mock(
+        return_value=Response(
+            403,
+            json={
+                "code": "permission-denied",
+                "error": "used all available credits or reached its monthly spending limit",
+            },
+        )
+    )
+
+    result = await validate_key("xai-test-key", "xai")
+    assert result["is_valid"] is True
+    assert result["is_usable"] is False
+    assert result["usability_status"] == "no_quota"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_check_upstream_key_marks_invalid(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)

@@ -2,6 +2,7 @@ from janus.canonical.models import (
     CanonicalRequest,
     ContentPart,  # noqa: F401
     Message,
+    Reasoning,
     Role,
     SystemBlock,
     TextPart,
@@ -69,3 +70,39 @@ def test_tools_and_tool_choice():
         ],
     )
     assert req.tools[0].function.name == "read"
+
+
+def test_reasoning_part_roundtrips():
+    r = Reasoning(text="thinking...", signature="sig123")
+    assert r.type == "reasoning"
+    assert r.text == "thinking..."
+    assert r.signature == "sig123"
+    assert r.redacted is False
+
+
+def test_reasoning_is_valid_content_part():
+    msg = Message(role=Role.ASSISTANT, content=[Reasoning(text="hmm"), TextPart(text="hi")])
+    assert isinstance(msg.content[0], Reasoning)
+    assert isinstance(msg.content[1], TextPart)
+
+
+def test_tool_result_is_error_and_list_content():
+    tr = ToolResult(
+        tool_use_id="t1",
+        content=[TextPart(text="a"), TextPart(text="b")],
+        is_error=True,
+    )
+    assert tr.is_error is True
+    assert isinstance(tr.content, list)
+    assert len(tr.content) == 2
+
+
+def test_tool_result_defaults():
+    tr = ToolResult(tool_use_id="t1")
+    assert tr.content == ""
+    assert tr.is_error is False
+
+
+def test_cache_control_on_text_part():
+    tp = TextPart(text="x", cache_control={"type": "ephemeral"})
+    assert tp.cache_control == {"type": "ephemeral"}
