@@ -85,6 +85,7 @@ site/
 
 # Cursor / Superpowers local artifacts
 .superpowers/
+*.local
 
 # Janus runtime data
 janus-data/
