@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,6 +20,7 @@ from janus.formats.gemini import GeminiAdapter
 from janus.formats.ollama import OllamaAdapter
 from janus.formats.openai import OpenAIAdapter
 from janus.formats.openai_responses import OpenAIResponsesAdapter
+from janus.pricing.calculator import compute_cost
 from janus.providers.base import (
     Provider,
     RawResult,
@@ -27,11 +28,27 @@ from janus.providers.base import (
     parse_retry_after,
 )
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
-from janus.routing.capabilities import detect_required_capabilities
+from janus.routing.capabilities import (
+    detect_required_capabilities,
+    get_capabilities_for_model,
+)
+from janus.routing.claude_normalize import normalize_claude_passthrough
+from janus.routing.client_detect import detect_client_tool, is_native_passthrough
 from janus.routing.errors import classify_error, is_fallback_eligible
 from janus.routing.fallback import AccountStrategy, FallbackHandler
+from janus.routing.modality import strip_unsupported_modalities
+from janus.routing.model_aliases import resolve_model_alias
+from janus.routing.prefetch import prefetch_remote_images
+from janus.routing.reasoning_inject import inject_reasoning_content
+from janus.routing.thinking import (
+    apply_thinking_to_payload,
+    resolve_thinking_intent,
+)
+from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
 from janus.storage.request_logs import record_request_log
+from janus.storage.usage import record_usage
+from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
 from janus.streaming.translator import translate_stream
 from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
@@ -52,8 +69,21 @@ FORMATS: dict[str, FormatAdapter] = {
 
 
 def _resolve_format(name: str) -> FormatAdapter:
-    if name in ("opencode_free", "github_copilot"):
-        name = "openai"
+    if name in (
+        "opencode_free",
+        "github_copilot",
+        "cursor",
+        "kiro",
+        "codex",
+    ):
+        # Specialized executors that still speak OpenAI-shaped JSON payloads
+        # (Codex uses Responses; map when native_format is codex via registry).
+        if name == "codex":
+            name = "openai_responses"
+        else:
+            name = "openai"
+    if name in ("antigravity", "gemini_cli", "gemini-cli"):
+        name = "gemini"
     return FORMATS[name]
 
 
@@ -103,6 +133,38 @@ def _passthrough_url(base_url: str, fmt: str) -> str:
     return f"{base}/chat/completions"
 
 
+def _passthrough_headers(
+    provider: Provider,
+    *,
+    fmt: str,
+    stream: bool,
+) -> dict[str, str]:
+    raw_headers = getattr(provider, "_headers", None)
+    if raw_headers is None:
+        headers: dict[str, str] = {}
+    elif callable(raw_headers):
+        headers = dict(raw_headers())
+    else:
+        headers = dict(raw_headers)
+    headers.setdefault("Content-Type", "application/json")
+    if stream:
+        headers["Accept"] = "text/event-stream"
+    if fmt == "anthropic":
+        api_key = getattr(provider, "api_key", None)
+        if not api_key:
+            auth = headers.get("Authorization") or headers.get("authorization")
+            if isinstance(auth, str) and auth.lower().startswith("bearer "):
+                api_key = auth.split(" ", 1)[1].strip() or None
+        if api_key:
+            headers.setdefault("x-api-key", str(api_key))
+        headers.setdefault("anthropic-version", "2023-06-01")
+        headers.setdefault(
+            "anthropic-beta",
+            "claude-code-20250219,interleaved-thinking-2025-05-14",
+        )
+    return headers
+
+
 async def _passthrough_call(
     base_url: str,
     fmt: str,
@@ -121,16 +183,7 @@ async def _passthrough_call(
     client = getattr(provider, "_client", None)
     if client is None:
         return None
-    raw_headers = getattr(provider, "_headers", None)
-    if raw_headers is None:
-        headers: dict[str, str] = {}
-    elif callable(raw_headers):
-        headers = dict(raw_headers())
-    else:
-        headers = dict(raw_headers)
-    headers.setdefault("Content-Type", "application/json")
-    if stream:
-        headers["Accept"] = "text/event-stream"
+    headers = _passthrough_headers(provider, fmt=fmt, stream=stream)
     if stream:
         cm = client.stream("POST", url, json=body, headers=headers)
         r = await cm.__aenter__()
@@ -163,6 +216,71 @@ async def _passthrough_call(
     )
 
 
+async def _log_error_and_raise(
+    *,
+    log_requests: bool,
+    db_path: str | Path,
+    client_format: str,
+    model: str | None,
+    provider_id: str | None,
+    account_id: str | None,
+    status: int,
+    duration_ms: int,
+    request_body: str | None,
+    detail: Any,
+    response_body: Any = None,
+) -> NoReturn:
+    """Record a non-fallback upstream error then raise HTTPException."""
+    if log_requests:
+        err_text = detail if isinstance(detail, str) else str(detail)
+        resp_text: str | None = None
+        if response_body is not None:
+            try:
+                resp_text = (
+                    response_body
+                    if isinstance(response_body, str)
+                    else json.dumps(response_body, ensure_ascii=False)
+                )
+            except (TypeError, ValueError):
+                resp_text = str(response_body)
+        await record_request_log(
+            db_path,
+            client_format=client_format,
+            model=model,
+            provider_id=provider_id,
+            account_id=account_id,
+            status=status,
+            duration_ms=duration_ms,
+            request_body=request_body,
+            response_body=resp_text,
+            error=err_text[:2000],
+        )
+    raise HTTPException(status_code=status, detail=detail)
+
+
+def _apply_client_body_quirks(
+    body: dict[str, Any],
+    *,
+    client_format: str,
+    client_tool: str | None,
+    model: str,
+    provider_prefix: str,
+) -> dict[str, Any]:
+    """Claude normalize + tool dedupe on final wire bodies."""
+    if client_format == "anthropic" or client_tool == "claude":
+        body = normalize_claude_passthrough(body, model)
+        tools = body.get("tools")
+        if isinstance(tools, list):
+            deduped, stripped = dedupe_tools(tools)
+            if stripped:
+                body["tools"] = deduped
+                logger.debug("Deduped tools for %s: %s", provider_prefix, stripped[:5])
+    # Mistral (and some OpenAI-compat gateways) reject Anthropic client_metadata.
+    if provider_prefix in {"mistral", "mistralai"} and "client_metadata" in body:
+        body = {k: v for k, v in body.items() if k != "client_metadata"}
+    return body
+
+
 async def _handle(
     client_format: str,
     body: dict[str, Any],
@@ -181,6 +299,19 @@ async def _handle(
 
     client_adapter = FORMATS[client_format]
     canonical_req = client_adapter.parse_request(body)
+
+    # Client detection (Claude Code / Codex / Gemini CLI / Copilot / …)
+    header_map = {k.lower(): v for k, v in request.headers.items()}
+    client_tool = detect_client_tool(header_map, body)
+    if client_tool:
+        logger.debug("Detected client tool: %s", client_tool)
+    # DeepSeek-TUI non-interactive mode can't parse SSE unless stream was explicit
+    if client_tool == "deepseek-tui" and body.get("stream") is not True:
+        body = {**body, "stream": False}
+        canonical_req = client_adapter.parse_request(body)
+
+    # Strip model thinking suffix like "gpt-4o(high)" → clean model + intent
+    canonical_req, thinking_intent = resolve_thinking_intent(canonical_req)
 
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
     canonical_req = await saver_pipeline.apply_async(canonical_req)
@@ -240,58 +371,216 @@ async def _handle(
         if not handler.is_available(target.account_id, target.model):
             continue
 
+        upstream_model, alias_intent = resolve_model_alias(target.prefix, target.model)
+        attempt_thinking = thinking_intent or alias_intent
+        model_caps = get_capabilities_for_model(target.prefix, target.model)
+        attempt_req = strip_unsupported_modalities(canonical_req, model_caps)
+        if target.native_format in ("gemini", "ollama", "antigravity", "kiro", "vertex"):
+            attempt_req = await prefetch_remote_images(attempt_req, target.native_format)
+
         # ── Multi-endpoint transport passthrough ──────────────────────
+        # Same-format alternate base URL (e.g. DeepSeek Anthropic endpoint).
+        # Rebuild from post-saver CanonicalRequest so RTK/Caveman still apply.
         transports = target.provider_config.transports or {}
         transport_base = transports.get(client_format, "")
         if transport_base:
-            passthrough_body = {**body, "model": target.model}
-            pt_stream = body.get("stream", False)
-            media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
-            try:
-                result = await _passthrough_call(
-                    transport_base, client_format, passthrough_body, pt_stream, request, target
+            providers_t: dict[str, Provider] = request.app.state.providers
+            if target.provider_config.id in providers_t:
+                pt_body = client_adapter.build_upstream_request(attempt_req, upstream_model)
+                apply_thinking_to_payload(
+                    pt_body,
+                    target_format=client_format,
+                    model=upstream_model,
+                    caps=model_caps,
+                    intent=attempt_thinking,
                 )
-            except (httpx.TimeoutException, httpx.ConnectError) as e:
-                handler.mark_cooldown(target.account_id, "network", model=target.model)
-                last_error = f"{target.account_id}: {type(e).__name__}"
-                continue
-            if result is None:
-                continue
-            if result.status_code >= 400:
-                if is_fallback_eligible(result.status_code):
-                    handler.mark_cooldown(
-                        target.account_id,
-                        classify_error(result.status_code).value,
-                        model=target.model,
-                        retry_after=getattr(result, "retry_after", None),
+                inject_reasoning_content(
+                    pt_body, provider=target.prefix, model=target.model
+                )
+                pt_body = _apply_client_body_quirks(
+                    pt_body,
+                    client_format=client_format,
+                    client_tool=client_tool,
+                    model=upstream_model,
+                    provider_prefix=target.prefix,
+                )
+                pt_stream = attempt_req.stream
+                media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
+                try:
+                    result = await _passthrough_call(
+                        transport_base, client_format, pt_body, pt_stream, request, target
                     )
-                    last_error = f"{target.account_id}: {result.status_code}"
+                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                    handler.mark_cooldown(target.account_id, "network", model=target.model)
+                    last_error = f"{target.account_id}: {type(e).__name__}"
                     continue
-                raise HTTPException(status_code=result.status_code, detail="Upstream error")
-            handler.mark_success(target.account_id, target.model)
-            if pt_stream:
-                lines = result.lines
-                if lines is None:
-                    raise HTTPException(status_code=502, detail="No stream from upstream")
-                _live_lines = lines
+                if result is None:
+                    continue
+                if result.status_code >= 400:
+                    if is_fallback_eligible(result.status_code):
+                        handler.mark_cooldown(
+                            target.account_id,
+                            classify_error(result.status_code).value,
+                            model=target.model,
+                            retry_after=getattr(result, "retry_after", None),
+                        )
+                        last_error = f"{target.account_id}: {result.status_code}"
+                        continue
+                    await _log_error_and_raise(
+                        log_requests=log_requests,
+                        db_path=db_path,
+                        client_format=client_format,
+                        model=canonical_req.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=result.status_code,
+                        duration_ms=_elapsed_ms(),
+                        request_body=logged_request_body,
+                        detail="Upstream error",
+                        response_body=result.json_data,
+                    )
+                if pt_stream:
+                    lines = result.lines
+                    if lines is None:
+                        raise HTTPException(status_code=502, detail="No stream from upstream")
+                    parser = client_adapter.stream_parser()
+                    tracker = StreamUsageTracker(parser)
+                    _live_lines = lines
+                    _pt_model = target.model
+                    _pt_provider = target.prefix
+                    _pt_is_openai = client_format == "openai"
 
-                async def _pt_stream() -> AsyncIterator[bytes]:
-                    async for raw in _live_lines:
-                        if raw:
-                            yield (raw + "\n").encode() if isinstance(raw, str) else raw
+                    async def _pt_stream() -> AsyncIterator[bytes]:
+                        stream_ok = False
+                        try:
+                            if _pt_is_openai:
+                                async for chunk in openai_passthrough_stream(
+                                    _live_lines,
+                                    tracker=tracker,
+                                    model=_pt_model,
+                                    provider=_pt_provider,
+                                ):
+                                    yield chunk
+                            else:
+                                async for chunk in generic_sse_passthrough(
+                                    _live_lines, tracker=tracker
+                                ):
+                                    yield chunk
+                            stream_ok = True
+                        finally:
+                            usage = tracker.get_usage()
+                            cost = compute_cost(usage, target.model, pricing_registry)
+                            handler.record_quota_tokens(
+                                target, usage.input_tokens + usage.output_tokens
+                            )
+                            await record_usage(
+                                db_path,
+                                provider_id=target.provider_config.id,
+                                model=target.model,
+                                account_id=target.account_id,
+                                input_tokens=usage.input_tokens,
+                                output_tokens=usage.output_tokens,
+                                cache_creation_tokens=usage.cache_creation_input_tokens,
+                                cache_read_tokens=usage.cache_read_input_tokens,
+                                status=200,
+                                client_key_id=client_key_id,
+                                client_key_label=client_key_label,
+                                cost=cost,
+                            )
+                            if log_requests:
+                                await record_request_log(
+                                    db_path,
+                                    client_format=client_format,
+                                    model=canonical_req.model,
+                                    provider_id=target.provider_config.id,
+                                    account_id=target.account_id,
+                                    status=200,
+                                    duration_ms=_elapsed_ms(),
+                                    streamed=True,
+                                    request_body=logged_request_body,
+                                )
+                            if stream_ok:
+                                handler.mark_success(target.account_id, target.model)
 
-                return StreamingResponse(_pt_stream(), media_type=media_type)
-            return JSONResponse(content=result.json_data if result.json_data else {})
+                    return StreamingResponse(_pt_stream(), media_type=media_type)
+
+                pt_usage = Usage(input_tokens=0, output_tokens=0)
+                if result.json_data:
+                    try:
+                        pt_usage = client_adapter.parse_upstream_response(result.json_data).usage
+                    except Exception:
+                        pass
+                await record_usage(
+                    db_path,
+                    provider_id=target.provider_config.id,
+                    model=target.model,
+                    account_id=target.account_id,
+                    input_tokens=pt_usage.input_tokens,
+                    output_tokens=pt_usage.output_tokens,
+                    cache_creation_tokens=pt_usage.cache_creation_input_tokens,
+                    cache_read_tokens=pt_usage.cache_read_input_tokens,
+                    status=200,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
+                    cost=compute_cost(pt_usage, target.model, pricing_registry),
+                )
+                handler.record_quota_tokens(target, pt_usage.input_tokens + pt_usage.output_tokens)
+                if log_requests:
+                    try:
+                        pt_response_body: str | None = json.dumps(
+                            result.json_data, ensure_ascii=False
+                        )
+                    except (TypeError, ValueError):
+                        pt_response_body = str(result.json_data)
+                    await record_request_log(
+                        db_path,
+                        client_format=client_format,
+                        model=canonical_req.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=200,
+                        duration_ms=_elapsed_ms(),
+                        request_body=logged_request_body,
+                        response_body=pt_response_body,
+                    )
+                handler.mark_success(target.account_id, target.model)
+                return JSONResponse(content=result.json_data if result.json_data else {})
         # ── End transport passthrough ───────────────────────────────────
 
         # ── Native-format passthrough ──────────────────────────────────
+        # Same wire format on both sides: build from the *post-saver*
+        # CanonicalRequest (so RTK/Caveman/Ponytail still apply), then either
+        # stream with full usage/log lifecycle or return JSON with usage.
         if client_format == target.native_format:
             providers_p: dict[str, Provider] = request.app.state.providers
             provider_p = providers_p.get(target.provider_config.id)
             if provider_p is not None:
                 handler.record_attempt(target)
-                native_body = client_adapter.build_upstream_request(canonical_req, target.model)
-                native_stream = canonical_req.stream
+                native_body = client_adapter.build_upstream_request(attempt_req, upstream_model)
+                apply_thinking_to_payload(
+                    native_body,
+                    target_format=target.native_format,
+                    model=upstream_model,
+                    caps=model_caps,
+                    intent=attempt_thinking,
+                )
+                inject_reasoning_content(
+                    native_body, provider=target.prefix, model=target.model
+                )
+                native_body = _apply_client_body_quirks(
+                    native_body,
+                    client_format=client_format,
+                    client_tool=client_tool,
+                    model=upstream_model,
+                    provider_prefix=target.prefix,
+                )
+                if is_native_passthrough(client_tool, target.prefix):
+                    logger.debug(
+                        "Client-native pair: %s → %s",
+                        client_tool,
+                        target.prefix,
+                    )
+                native_stream = attempt_req.stream
                 native_media = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 try:
                     native_result = await provider_p.call(native_body, stream=native_stream)
@@ -309,24 +598,83 @@ async def _handle(
                         )
                         last_error = f"{target.account_id}: {native_result.status_code}"
                         continue
-                    raise HTTPException(
-                        status_code=native_result.status_code, detail="Upstream error"
+                    await _log_error_and_raise(
+                        log_requests=log_requests,
+                        db_path=db_path,
+                        client_format=client_format,
+                        model=canonical_req.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=native_result.status_code,
+                        duration_ms=_elapsed_ms(),
+                        request_body=logged_request_body,
+                        detail="Upstream error",
+                        response_body=native_result.json_data,
                     )
-                handler.mark_success(target.account_id, target.model)
+
                 if native_stream:
                     native_lines = native_result.lines
                     if native_lines is None:
                         raise HTTPException(status_code=502, detail="No stream from upstream")
+                    parser = client_adapter.stream_parser()
+                    tracker = StreamUsageTracker(parser)
+                    _native_model = target.model
+                    _native_provider = target.prefix
+                    _native_is_openai = client_format == "openai"
 
                     async def _native_stream() -> AsyncIterator[bytes]:
-                        async for raw in native_lines:
-                            if raw:
-                                yield (raw + "\n").encode() if isinstance(raw, str) else raw
+                        stream_ok = False
+                        try:
+                            if _native_is_openai:
+                                async for chunk in openai_passthrough_stream(
+                                    native_lines,
+                                    tracker=tracker,
+                                    model=_native_model,
+                                    provider=_native_provider,
+                                ):
+                                    yield chunk
+                            else:
+                                async for chunk in generic_sse_passthrough(
+                                    native_lines, tracker=tracker
+                                ):
+                                    yield chunk
+                            stream_ok = True
+                        finally:
+                            usage = tracker.get_usage()
+                            cost = compute_cost(usage, target.model, pricing_registry)
+                            handler.record_quota_tokens(
+                                target, usage.input_tokens + usage.output_tokens
+                            )
+                            await record_usage(
+                                db_path,
+                                provider_id=target.provider_config.id,
+                                model=target.model,
+                                account_id=target.account_id,
+                                input_tokens=usage.input_tokens,
+                                output_tokens=usage.output_tokens,
+                                cache_creation_tokens=usage.cache_creation_input_tokens,
+                                cache_read_tokens=usage.cache_read_input_tokens,
+                                status=200,
+                                client_key_id=client_key_id,
+                                client_key_label=client_key_label,
+                                cost=cost,
+                            )
+                            if log_requests:
+                                await record_request_log(
+                                    db_path,
+                                    client_format=client_format,
+                                    model=canonical_req.model,
+                                    provider_id=target.provider_config.id,
+                                    account_id=target.account_id,
+                                    status=200,
+                                    duration_ms=_elapsed_ms(),
+                                    streamed=True,
+                                    request_body=logged_request_body,
+                                )
+                            if stream_ok:
+                                handler.mark_success(target.account_id, target.model)
 
                     return StreamingResponse(_native_stream(), media_type=native_media)
-                # Record usage from parsed response + optional request log
-                from janus.pricing.calculator import compute_cost
-                from janus.storage.usage import record_usage
 
                 passthrough_usage = Usage(input_tokens=0, output_tokens=0)
                 if native_result.json_data:
@@ -350,29 +698,59 @@ async def _handle(
                     client_key_label=client_key_label,
                     cost=compute_cost(passthrough_usage, target.model, pricing_registry),
                 )
+                handler.record_quota_tokens(
+                    target,
+                    passthrough_usage.input_tokens + passthrough_usage.output_tokens,
+                )
                 if log_requests:
+                    try:
+                        native_response_body: str | None = json.dumps(
+                            native_result.json_data, ensure_ascii=False
+                        )
+                    except (TypeError, ValueError):
+                        native_response_body = str(native_result.json_data)
                     await record_request_log(
                         db_path,
                         client_format=client_format,
-                        model=target.model,
+                        model=canonical_req.model,
                         provider_id=target.provider_config.id,
                         account_id=target.account_id,
                         status=200,
                         duration_ms=_elapsed_ms(),
+                        request_body=logged_request_body,
+                        response_body=native_response_body,
                     )
+                handler.mark_success(target.account_id, target.model)
                 return JSONResponse(
                     content=native_result.json_data if native_result.json_data else {}
                 )
         # ── End native passthrough ─────────────────────────────────────
 
         provider_adapter = _resolve_format(target.native_format)
-        upstream_payload = provider_adapter.build_upstream_request(canonical_req, target.model)
+        upstream_payload = provider_adapter.build_upstream_request(attempt_req, upstream_model)
+        apply_thinking_to_payload(
+            upstream_payload,
+            target_format=target.native_format,
+            model=upstream_model,
+            caps=model_caps,
+            intent=attempt_thinking,
+        )
+        inject_reasoning_content(
+            upstream_payload, provider=target.prefix, model=target.model
+        )
+        upstream_payload = _apply_client_body_quirks(
+            upstream_payload,
+            client_format=client_format,
+            client_tool=client_tool,
+            model=upstream_model,
+            provider_prefix=target.prefix,
+        )
         providers: dict[str, Provider] = request.app.state.providers
         provider = providers[target.provider_config.id]
         handler.record_attempt(target)
 
         try:
-            if canonical_req.stream:
+            if attempt_req.stream:
                 result = await provider.call(upstream_payload, stream=True)
                 if result.status_code >= 400:
                     if is_fallback_eligible(result.status_code):
@@ -384,19 +762,36 @@ async def _handle(
                         )
                         last_error = f"{target.account_id}: {result.status_code}"
                         continue
-                    raise HTTPException(
-                        status_code=result.status_code,
+                    await _log_error_and_raise(
+                        log_requests=log_requests,
+                        db_path=db_path,
+                        client_format=client_format,
+                        model=canonical_req.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=result.status_code,
+                        duration_ms=_elapsed_ms(),
+                        request_body=logged_request_body,
                         detail=(str(result.json_data) if result.json_data else "Upstream error"),
+                        response_body=result.json_data,
                     )
                 lines = result.lines
                 if lines is None:
-                    raise HTTPException(status_code=502, detail="No stream from upstream")
+                    await _log_error_and_raise(
+                        log_requests=log_requests,
+                        db_path=db_path,
+                        client_format=client_format,
+                        model=canonical_req.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        status=502,
+                        duration_ms=_elapsed_ms(),
+                        request_body=logged_request_body,
+                        detail="No stream from upstream",
+                    )
                 parser = provider_adapter.stream_parser()
                 emitter = client_adapter.stream_emitter()
                 tracker = StreamUsageTracker(parser)
-
-                from janus.pricing.calculator import compute_cost
-                from janus.storage.usage import record_usage
 
                 async def _streaming_generator() -> AsyncIterator[bytes]:
                     stream_ok = False
@@ -453,17 +848,34 @@ async def _handle(
                     )
                     last_error = f"{target.account_id}: {result.status_code}"
                     continue
-                raise HTTPException(
-                    status_code=result.status_code,
+                await _log_error_and_raise(
+                    log_requests=log_requests,
+                    db_path=db_path,
+                    client_format=client_format,
+                    model=canonical_req.model,
+                    provider_id=target.provider_config.id,
+                    account_id=target.account_id,
+                    status=result.status_code,
+                    duration_ms=_elapsed_ms(),
+                    request_body=logged_request_body,
                     detail=(str(result.json_data) if result.json_data else "Upstream error"),
+                    response_body=result.json_data,
                 )
             if result.json_data is None:
-                raise HTTPException(status_code=502, detail="Empty upstream response")
+                await _log_error_and_raise(
+                    log_requests=log_requests,
+                    db_path=db_path,
+                    client_format=client_format,
+                    model=canonical_req.model,
+                    provider_id=target.provider_config.id,
+                    account_id=target.account_id,
+                    status=502,
+                    duration_ms=_elapsed_ms(),
+                    request_body=logged_request_body,
+                    detail="Empty upstream response",
+                )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
-
-            from janus.pricing.calculator import compute_cost
-            from janus.storage.usage import record_usage
 
             cost = compute_cost(canonical_resp.usage, target.model, pricing_registry)
             handler.record_quota_tokens(

@@ -147,3 +147,43 @@ async def test_transport_routes_to_matching_format_endpoint(transport_app):
     assert r.status_code == 200
     assert route_an.called
     assert not route_oa.called
+
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_anthropic_transport_sets_x_api_key(transport_app):
+    captured: dict = {}
+
+    def _capture(request: httpx.Request) -> httpx.Response:
+        captured["headers"] = dict(request.headers)
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-20250514",
+                "content": [{"type": "text", "text": "ok"}],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 2, "output_tokens": 1},
+            },
+        )
+
+    respx.post("https://ds-anthropic.local/v1/messages").mock(side_effect=_capture)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=transport_app), base_url="http://test"
+    ) as client:
+        r = await client.post(
+            "/v1/messages",
+            json={
+                "model": "ds/claude-sonnet-4-20250514",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+    assert r.status_code == 200
+    assert captured["headers"].get("x-api-key") == "sk-ds"
+    assert captured["headers"].get("anthropic-version") == "2023-06-01"

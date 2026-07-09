@@ -155,6 +155,24 @@ async def test_enabled_records_exhausted_error(app):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_enabled_records_non_fallback_upstream_error(app):
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(400, json={"error": {"message": "bad request"}})
+    )
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 400
+    logs = await list_request_logs(app.state.db_path)
+    assert len(logs) == 1
+    assert logs[0]["status"] == 400
+    assert logs[0]["provider_id"] == "test"
+    assert logs[0]["error"]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_dashboard_page_and_clear(app):
     _mock_upstream()
     await set_setting(app.state.db_path, "server_request_logging", "true")
