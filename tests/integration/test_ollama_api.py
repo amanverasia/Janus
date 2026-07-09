@@ -207,3 +207,21 @@ async def test_ollama_tool_round_trip_to_openai_upstream(app):
     tool_msg = next(m for m in upstream["messages"] if m["role"] == "tool")
     assert tool_msg["tool_call_id"] == assistant_msg["tool_calls"][0]["id"]
     assert tool_msg["content"] == "a.txt"
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_known_model(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/api/show", json={"name": "test/test-m1"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["details"]["family"] == "janus"
+        assert "completion" in data["capabilities"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_unknown_model(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/api/show", json={"name": "nope/missing"})
+        assert r.status_code == 404
+        assert "not found" in r.json()["error"].lower()

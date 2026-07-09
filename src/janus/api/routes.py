@@ -1082,6 +1082,46 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
     return {"models": _ollama_model_entries(registry, key_allowed_models(request))}
 
 
+@ollama_router.post("/api/show", dependencies=[Depends(require_api_key)])
+async def ollama_show(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    name = (body.get("name") or body.get("model") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="model name required")
+    registry: ProviderRegistry = request.app.state.registry
+    entries = _ollama_model_entries(registry, key_allowed_models(request))
+    match = next((e for e in entries if e["name"] == name), None)
+    if match is None:
+        return JSONResponse(
+            content={"error": f"model '{name}' not found"},
+            status_code=404,
+        )
+    details: dict[str, Any] = {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "janus",
+        "families": ["janus"],
+        "parameter_size": "N/A",
+        "quantization_level": "gateway",
+    }
+    entry_details = match.get("details") or {}
+    if entry_details.get("format"):
+        details["format"] = entry_details["format"]
+    if entry_details.get("family"):
+        details["family"] = entry_details["family"]
+        details["families"] = [entry_details["family"]]
+    return JSONResponse(
+        content={
+            "modelfile": "",
+            "parameters": "",
+            "template": "{{ .Prompt }}",
+            "details": details,
+            "model_info": {},
+            "capabilities": ["completion"],
+        }
+    )
+
+
 @ollama_router.get("/api/version")
 async def ollama_version() -> dict[str, str]:
     return {"version": "0.6.0"}
