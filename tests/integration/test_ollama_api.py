@@ -225,3 +225,22 @@ async def test_ollama_show_unknown_model(app):
         r = await client.post("/api/show", json={"name": "nope/missing"})
         assert r.status_code == 404
         assert "not found" in r.json()["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_respects_key_allowlist(app):
+    from janus.storage.api_keys import create_key
+    from janus.storage.settings import set_setting
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped-show", can_login=False, allowed_models=["other/*"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/show",
+            json={"name": "test/test-m1"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 404
+        assert "not found" in r.json()["error"].lower()
