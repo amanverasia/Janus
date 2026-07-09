@@ -66,17 +66,23 @@ Step by step:
    accounts (including inventory-expanded keys), filtering out cooled-down
    accounts.
 6. **Per-attempt loop**: for each target:
+   - Optional client/model quirks: thinking intent, modality strip, image
+     prefetch, tool dedupe, Claude Code normalize, reasoning-content inject.
    - `build_upstream_request` converts the `CanonicalRequest` to the provider's
-     native format.
+     native format (or transport/native passthrough rebuilds from the post-saver
+     canonical body).
    - The provider executes the HTTP call (streaming or non-streaming).
    - `parse_upstream_response` converts the provider response to a
-     `CanonicalResponse`.
+     `CanonicalResponse` (skipped on same-format passthrough).
 7. **On success**: `emit_response` converts the `CanonicalResponse` back to the
    client's format. `record_usage` stores token counts and computed cost.
+   Streaming records usage after the stream completes.
 8. **On fallback-eligible error**: the account is cooled down and the next
    attempt is tried.
 9. **If all attempts fail**: the client receives `HTTP 503` with an
-   `All providers exhausted` message.
+   `All providers exhausted` message. When request logging is enabled, terminal
+   4xx/5xx failures (non-fallback) and exhausted routes are written to
+   `request_logs`.
 
 ## Format adapters
 
@@ -105,14 +111,20 @@ canonical round-trip.
 
 ## Provider executors
 
-Four provider types are supported, built by `_build_provider()` in `app.py`:
+Provider types are built by `_build_provider()` in `app.py`:
 
 | `api_type` | Provider class | Use case |
 |---|---|---|
 | `openai_compat` | `OpenAICompatProvider` | Any OpenAI-compatible API (OpenAI, Groq, DeepSeek, Together, ...) |
-| `anthropic` | `AnthropicProvider` | Anthropic native API |
+| `anthropic` | `AnthropicProvider` | Anthropic native API (API key) |
 | `gemini` | `GeminiProvider` | Google Gemini native API |
 | `opencode_free` | `OpenCodeFreeProvider` | OpenCode Zen free tier |
+| `github_copilot` | `GitHubCopilotProvider` | GitHub Copilot (device OAuth) |
+| `codex` | `CodexProvider` | ChatGPT Codex Responses API + OAuth refresh |
+| `kiro` | `KiroProvider` | AWS Kiro / CodeWhisperer + social refresh |
+| `cursor` | `CursorProvider` | Cursor subscription shell |
+| `antigravity` / `gemini_cli` | `AntigravityProvider` | Gemini CLI / Antigravity v1internal + Google OAuth |
+| `claude_oauth` | `ClaudeOAuthProvider` | Claude Code subscription OAuth |
 
 The `Provider` protocol requires:
 
@@ -123,6 +135,64 @@ async def close(self) -> None: ...
 
 `RawResult` carries either `json_data` (non-streaming) or `lines` (an
 `AsyncIterator[str]` of SSE lines for streaming).
+
+## Streaming paths
+
+Streaming has three modes, chosen in `_handle()` after the upstream call
+succeeds:
+
+| Mode | When | Module |
+|---|---|---|
+| **OpenAI passthrough** | Client format is `openai` and the upstream body is already OpenAI Chat Completions SSE (native or transport path) | `streaming/passthrough.py` → `openai_passthrough_stream` |
+| **Generic SSE passthrough** | Same client/provider wire format but not OpenAI Chat Completions (Anthropic, Gemini, Responses, …) | `streaming/passthrough.py` → `generic_sse_passthrough` |
+| **Translate** | Client format ≠ provider format | `streaming/translator.py` → `translate_stream` via parser + emitter |
+
+### OpenAI passthrough (9router-style)
+
+Same-format OpenAI streams do **not** go through the canonical event round-trip.
+`openai_passthrough_stream` re-emits upstream SSE with these guarantees:
+
+1. **Framing** — httpx `aiter_lines()` drops trailing newlines and yields empty
+   strings for blank SSE separators. The passthrough restores `\n\n` between
+   events so clients parse complete SSE frames.
+2. **Normalization** — inject `object` / `created` when missing; fix too-short
+   or generic `id` values; strip Azure `*_filter_results`; drop empty
+   `delta.tool_calls: []` (breaks AI SDK reasoning tracking).
+3. **Garbage filter** — non-JSON `data:` lines (HTML error pages, plain-text
+   rate-limit messages) are dropped; empty deltas with no finish/usage/role
+   are skipped.
+4. **Usage** — finish chunks without usage get accumulated tracker usage
+   attached; `StreamUsageTracker` still drives post-stream `record_usage`.
+5. **Termination** — if upstream never sent a non-null `finish_reason`, Janus
+   synthesizes `finish_reason: stop`. If `[DONE]` is missing, Janus emits it
+   (except Gemini-family providers that reject the sentinel).
+
+This is what fixed pi/opencode's `Stream ended without finish_reason` on
+DeepSeek V4 Pro native passthrough.
+
+### Translate path
+
+Cross-format streams use `translate_stream(upstream_lines, parser, emitter)`:
+
+```
+upstream SSE line → StreamParser.feed → CanonicalEvent(s)
+                  → StreamEmitter.feed → client SSE bytes
+stream end        → parser.finish + emitter.finish (includes [DONE] for OpenAI)
+```
+
+OpenAI client emitters always end with `data: [DONE]\n\n` via `emitter.finish()`.
+
+### Lifecycle on stream complete
+
+Regardless of mode, the stream generator's `finally` block:
+
+1. Reads `tracker.get_usage()` (upstream usage or tiktoken estimate)
+2. `compute_cost` + `record_usage`
+3. Optional `record_request_log` when `server_request_logging` is on
+4. `handler.mark_success` only if the stream finished without error
+
+Mid-stream errors do **not** retry another account (partial output can't be
+replayed).
 
 ## Routing layer
 
