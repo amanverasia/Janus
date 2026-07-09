@@ -1086,6 +1086,8 @@ def _ollama_generate_to_chat(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _ollama_chat_json_to_generate(data: dict[str, Any]) -> dict[str, Any]:
+    if "message" not in data and "done" not in data:
+        return data
     out = dict(data)
     message = out.pop("message", None) or {}
     out["response"] = message.get("content") or ""
