@@ -1030,15 +1030,10 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
 ollama_router = APIRouter()
 
 
-@ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
-async def ollama_chat(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
-    return await _handle("ollama", body, request)
-
-
-@ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])
-async def ollama_tags(request: Request) -> dict[str, Any]:
-    registry: ProviderRegistry = request.app.state.registry
+def _ollama_model_entries(
+    registry: ProviderRegistry,
+    allowed_models: list[str] | None = None,
+) -> list[dict[str, Any]]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     models: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -1046,19 +1041,22 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
         for config in configs:
             for model in config.models:
                 name = f"{prefix}/{model}"
-                if name not in seen:
-                    seen.add(name)
-                    models.append(
-                        {
-                            "name": name,
-                            "model": name,
-                            "modified_at": now,
-                            "size": 0,
-                            "digest": "",
-                            "details": {"family": "janus", "format": "gateway"},
-                        }
-                    )
+                if name in seen or not model_allowed(name, allowed_models):
+                    continue
+                seen.add(name)
+                models.append(
+                    {
+                        "name": name,
+                        "model": name,
+                        "modified_at": now,
+                        "size": 0,
+                        "digest": "",
+                        "details": {"family": "janus", "format": "gateway"},
+                    }
+                )
     for combo_name in registry.combos:
+        if not model_allowed(combo_name, allowed_models):
+            continue
         models.append(
             {
                 "name": combo_name,
@@ -1069,7 +1067,19 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
                 "details": {"family": "janus", "format": "combo"},
             }
         )
-    return {"models": models}
+    return models
+
+
+@ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
+async def ollama_chat(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    return await _handle("ollama", body, request)
+
+
+@ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])
+async def ollama_tags(request: Request) -> dict[str, Any]:
+    registry: ProviderRegistry = request.app.state.registry
+    return {"models": _ollama_model_entries(registry, key_allowed_models(request))}
 
 
 @ollama_router.get("/api/version")

@@ -132,6 +132,23 @@ async def test_ollama_tags_lists_models_and_combos(app):
 
 
 @pytest.mark.asyncio
+async def test_ollama_tags_filters_by_key_allowlist(app, tmp_path):
+    from janus.storage.api_keys import create_key
+    from janus.storage.settings import set_setting
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped", can_login=False, allowed_models=["test/test-m1"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/api/tags", headers={"Authorization": f"Bearer {key}"})
+        assert r.status_code == 200
+        names = {m["name"] for m in r.json()["models"]}
+        assert "test/test-m1" in names
+        assert "stack" not in names
+
+
+@pytest.mark.asyncio
 async def test_ollama_version(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/api/version")
