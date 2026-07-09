@@ -1070,10 +1070,85 @@ def _ollama_model_entries(
     return models
 
 
+def _ollama_generate_to_chat(body: dict[str, Any]) -> dict[str, Any]:
+    prompt = body.get("prompt") or ""
+    user_msg: dict[str, Any] = {"role": "user", "content": prompt}
+    if body.get("images"):
+        user_msg["images"] = body["images"]
+    chat: dict[str, Any] = {
+        "model": body.get("model"),
+        "messages": [user_msg],
+        "stream": body.get("stream", True),
+    }
+    if body.get("options") is not None:
+        chat["options"] = body["options"]
+    return chat
+
+
+def _ollama_chat_json_to_generate(data: dict[str, Any]) -> dict[str, Any]:
+    out = dict(data)
+    message = out.pop("message", None) or {}
+    out["response"] = message.get("content") or ""
+    return out
+
+
+def _ollama_chat_ndjson_to_generate(line: str) -> str:
+    raw = line.strip()
+    if not raw:
+        return line
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError:
+        return line
+    if "message" in obj:
+        msg = obj.pop("message") or {}
+        obj["response"] = msg.get("content") or ""
+    return json.dumps(obj, ensure_ascii=False) + "\n"
+
+
 @ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
 async def ollama_chat(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("ollama", body, request)
+
+
+@ollama_router.post("/api/generate", dependencies=[Depends(require_api_key)])
+async def ollama_generate(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    if not body.get("model"):
+        raise HTTPException(status_code=400, detail="model required")
+    chat_body = _ollama_generate_to_chat(body)
+    response = await _handle("ollama", chat_body, request)
+    if isinstance(response, StreamingResponse):
+        async def _remap() -> AsyncIterator[bytes]:
+            async for chunk in response.body_iterator:
+                text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+                for part in text.splitlines(keepends=True):
+                    if not part.strip():
+                        continue
+                    line = part if part.endswith("\n") else part + "\n"
+                    yield _ollama_chat_ndjson_to_generate(line).encode()
+
+        return StreamingResponse(
+            _remap(),
+            media_type=response.media_type or "application/x-ndjson",
+            status_code=response.status_code,
+        )
+    if isinstance(response, JSONResponse):
+        data = json.loads(bytes(response.body).decode())
+        return JSONResponse(
+            content=_ollama_chat_json_to_generate(data), status_code=response.status_code
+        )
+    try:
+        raw = bytes(response.body) if hasattr(response, "body") else b""
+        if raw:
+            data = json.loads(raw.decode())
+            return JSONResponse(
+                content=_ollama_chat_json_to_generate(data), status_code=response.status_code
+            )
+    except Exception:
+        pass
+    return response
 
 
 @ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])

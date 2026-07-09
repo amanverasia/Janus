@@ -228,6 +228,57 @@ async def test_ollama_show_unknown_model(app):
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_ollama_generate_nonstream(app):
+    _mock_upstream()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/generate",
+            json={"model": "test/test-m1", "prompt": "hi", "stream": False},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["done"] is True
+        assert data["response"] == "Hello!"
+        assert "message" not in data
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ollama_generate_stream_ndjson(app):
+    import json
+
+    sse_body = (
+        'data: {"id":"r1","object":"chat.completion.chunk","model":"test-m1",'
+        '"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n\n'
+        'data: {"id":"r1","object":"chat.completion.chunk","model":"test-m1",'
+        '"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with client.stream(
+            "POST",
+            "/api/generate",
+            json={"model": "test/test-m1", "prompt": "hi"},
+        ) as response:
+            assert response.status_code == 200
+            body = b""
+            async for chunk in response.aiter_bytes():
+                body += chunk
+    lines = [json.loads(line) for line in body.decode().strip().split("\n") if line]
+    assert any(line.get("response") == "Hi" for line in lines)
+    assert lines[-1]["done"] is True
+    assert "message" not in lines[0]
+
+
+@pytest.mark.asyncio
 async def test_ollama_show_respects_key_allowlist(app):
     from janus.storage.api_keys import create_key
     from janus.storage.settings import set_setting
