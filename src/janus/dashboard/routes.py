@@ -274,11 +274,18 @@ async def providers_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     from janus.dashboard.catalog import get_catalog
 
+    providers = await _enrich_providers(db_path)
+    quota_warnings = [
+        p
+        for p in providers
+        if p.get("is_enabled") and p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
+    ]
     context: dict[str, Any] = {
         "request": request,
-        "providers": await _enrich_providers(db_path),
+        "providers": providers,
         "catalog": get_catalog(),
         "logo_map": get_provider_logo_map(),
+        "quota_warnings": quota_warnings,
     }
     return _templates.TemplateResponse(request, "providers.html", context)
 
@@ -677,6 +684,12 @@ def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
     }
 
 
+@router.get("/api/providers/partial", response_class=HTMLResponse)
+async def api_providers_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    return await _providers_partial(request, db_path)
+
+
 @router.post("/api/providers", response_class=HTMLResponse)
 async def api_create_provider(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -831,10 +844,17 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
 
 
 async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
+    providers = await _enrich_providers(db_path)
+    quota_warnings = [
+        p
+        for p in providers
+        if p.get("is_enabled") and p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
+    ]
     context: dict[str, Any] = {
         "request": request,
-        "providers": await _enrich_providers(db_path),
+        "providers": providers,
         "logo_map": get_provider_logo_map(),
+        "quota_warnings": quota_warnings,
     }
     return _templates.TemplateResponse(request, "providers_partial.html", context)
 
