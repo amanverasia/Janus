@@ -9,6 +9,7 @@ from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
 from janus.storage.combos_db import list_combos
 from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.providers_db import list_providers
+from janus.storage.quotas import describe_reset, get_window_usage, quota_status
 from janus.storage.upstream_keys import list_routable_upstream_keys
 
 
@@ -37,6 +38,25 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
         routable = await list_routable_upstream_keys(db_path, inventory_id)
         models = json.loads(row["models"]) if row["models"] else []
 
+        quota: dict[str, Any] | None = None
+        if row.get("quota_window") and row.get("quota_limit"):
+            usage = await get_window_usage(db_path, str(row["id"]), str(row["quota_window"]))
+            metric = row.get("quota_metric") or "requests"
+            used = usage["tokens"] if metric == "tokens" else usage["requests"]
+            limit = int(row["quota_limit"])
+            status = quota_status(used, limit)
+            quota = {
+                "window": row["quota_window"],
+                "used": used,
+                "limit": limit,
+                "metric": metric,
+                "status": status,
+                "percent": min(round(used * 100 / limit), 100) if limit else 0,
+                "exhausted": status == "exhausted",
+                **describe_reset(str(row["quota_window"])),
+            }
+        quota_exhausted = quota is not None and quota["exhausted"]
+
         accounts: list[dict[str, Any]] = []
         if routable:
             for index, key in enumerate(routable, start=1):
@@ -55,6 +75,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
                         "source": "inventory",
                         "cooldown_active": cooldown_active,
                         "cooldown_seconds": cooldown_seconds,
+                        "quota_deprioritized": quota_exhausted,
                     }
                 )
         elif row.get("api_key"):
@@ -73,6 +94,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
                     "source": "config",
                     "cooldown_active": cooldown_active,
                     "cooldown_seconds": cooldown_seconds,
+                    "quota_deprioritized": quota_exhausted,
                 }
             )
 
@@ -84,6 +106,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
                 "models": models,
                 "account_count": len(accounts),
                 "accounts": accounts,
+                "quota": quota,
             }
         )
 
@@ -99,10 +122,17 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
     }
     cooled_count = len(cooled_accounts)
 
+    quota_warnings = [
+        p
+        for p in providers
+        if p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
+    ]
+
     return {
         "providers": providers,
         "combos": combos,
         "cooldown_count": cooled_count,
+        "quota_warnings": quota_warnings,
         "rotation_note": (
             "Within each provider prefix, Janus tries accounts in the order shown "
             "(priority DESC, then credits). Account strategy (fill-first / round-robin / "

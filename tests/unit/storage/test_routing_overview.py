@@ -93,3 +93,81 @@ async def test_get_routing_overview_reports_per_model_cooldown(tmp_path) -> None
     assert account["cooldown_active"] is True
     assert 0 < account["cooldown_seconds"] <= 100
     assert overview["cooldown_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_routing_overview_includes_quota_status(tmp_path) -> None:
+    from janus.storage.database import init_db
+    from janus.storage.providers_db import create_provider
+    from janus.storage.usage import record_usage
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await create_provider(
+        db_path,
+        {
+            "id": "sub",
+            "prefix": "sub",
+            "api_type": "openai_compat",
+            "base_url": "https://fake.local/v1",
+            "api_key": "sk-test",
+            "models": ["m1"],
+            "quota_window": "daily",
+            "quota_limit": 10,
+            "quota_metric": "requests",
+        },
+    )
+    for _ in range(3):
+        await record_usage(db_path, provider_id="sub", model="m1")
+
+    overview = await get_routing_overview(db_path)
+    provider = overview["providers"][0]
+    assert provider["quota"] is not None
+    assert "status" in provider["quota"]
+    assert provider["quota"]["used"] == 3
+    assert provider["quota"]["limit"] == 10
+    assert provider["quota"]["status"] == "ok"
+    assert overview["quota_warnings"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_routing_overview_quota_warnings_and_deprioritized(tmp_path) -> None:
+    from janus.storage.database import init_db
+    from janus.storage.providers_db import create_provider
+    from janus.storage.usage import record_usage
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await create_provider(
+        db_path,
+        {
+            "id": "sub",
+            "prefix": "sub",
+            "api_type": "openai_compat",
+            "base_url": "https://fake.local/v1",
+            "api_key": "sk-test",
+            "models": ["m1"],
+            "quota_window": "daily",
+            "quota_limit": 10,
+            "quota_metric": "requests",
+        },
+    )
+    for _ in range(8):
+        await record_usage(db_path, provider_id="sub", model="m1")
+
+    overview = await get_routing_overview(db_path)
+    provider = overview["providers"][0]
+    assert provider["quota"]["status"] == "warning"
+    assert len(overview["quota_warnings"]) == 1
+    assert overview["quota_warnings"][0]["id"] == "sub"
+    assert provider["accounts"][0]["quota_deprioritized"] is False
+
+    for _ in range(2):
+        await record_usage(db_path, provider_id="sub", model="m1")
+
+    overview = await get_routing_overview(db_path)
+    provider = overview["providers"][0]
+    assert provider["quota"]["status"] == "exhausted"
+    assert len(overview["quota_warnings"]) == 1
+    assert overview["quota_warnings"][0]["quota"]["status"] == "exhausted"
+    assert provider["accounts"][0]["quota_deprioritized"] is True
