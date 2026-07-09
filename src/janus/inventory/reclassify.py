@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
-from janus.inventory.key_checker import check_upstream_key, validate_key
-from janus.inventory.provider_detection import detectable_provider_ids
-from janus.inventory.url_guard import detect_provider_from_key
+from janus.inventory.key_checker import check_upstream_key
+from janus.inventory.provider_detection import resolve_provider_for_key
+from janus.inventory.xiaomi_tokenplan import TOKENPLAN_PROVIDER_ID
 from janus.storage.upstream_keys import list_upstream_keys, update_upstream_key
 
 
@@ -23,48 +22,88 @@ async def reclassify_upstream_keys(
         candidates = [key for key in keys if key.get("status") == "invalid"]
 
     moved: list[dict[str, str]] = []
+    region_fixed: list[dict[str, str]] = []
     unchanged: list[str] = []
 
     for key in candidates:
-        guess = detect_provider_from_key(key["key_value"])
-        order = [guess, *detectable_provider_ids(guess)] if guess else detectable_provider_ids(None)
-        found: str | None = None
-        for provider_id in order:
-            try:
-                result = await validate_key(key["key_value"], provider_id, skip_probe=True)
-            except Exception:
-                continue
-            if result.get("is_valid"):
-                found = provider_id
-                break
+        key_value = str(key["key_value"])
+        existing_base = key.get("custom_base_url")
+        found, meta = await resolve_provider_for_key(
+            key_value,
+            chosen_provider="auto",
+            custom_base_url=existing_base,
+        )
+        new_base = None
+        if meta and meta.get("custom_base_url"):
+            new_base = str(meta["custom_base_url"]).rstrip("/")
 
-        if found and found != key["provider_id"]:
-            moved.append(
-                {
-                    "id": key["id"],
-                    "key_masked": key["key_masked"],
-                    "from": key["provider_id"],
-                    "to": found,
-                }
-            )
-            if not dry_run:
-                await update_upstream_key(
-                    db_path,
-                    key["id"],
+        changed_provider = found and found != key["provider_id"]
+        changed_region = bool(new_base and new_base != (existing_base or None))
+
+        if not changed_provider and not changed_region:
+            # For tokenplan invalid keys, still re-check with region discovery
+            if (
+                key.get("provider_id") == TOKENPLAN_PROVIDER_ID
+                or key_value.startswith("tp-")
+            ) and key.get("status") == "invalid":
+                if not dry_run:
+                    await update_upstream_key(
+                        db_path,
+                        key["id"],
+                        {
+                            "provider_id": TOKENPLAN_PROVIDER_ID,
+                            "custom_base_url": new_base or existing_base,
+                            "metadata": meta,
+                            "status": "pending_validation",
+                            "last_error": None,
+                        },
+                    )
+                    await check_upstream_key(db_path, key["id"])
+                region_fixed.append(
                     {
-                        "provider_id": found,
-                        "status": "pending_validation",
-                        "last_error": None,
-                    },
+                        "id": key["id"],
+                        "key_masked": key["key_masked"],
+                        "provider_id": TOKENPLAN_PROVIDER_ID,
+                        "base_url": new_base or existing_base or "",
+                    }
                 )
-                asyncio.create_task(check_upstream_key(db_path, key["id"]))
+            else:
+                unchanged.append(key["id"])
+            continue
+
+        entry = {
+            "id": key["id"],
+            "key_masked": key["key_masked"],
+            "from": key["provider_id"],
+            "to": found,
+            "base_url": new_base or existing_base or "",
+        }
+        if changed_provider:
+            moved.append(entry)
         else:
-            unchanged.append(key["id"])
+            region_fixed.append(entry)
+
+        if not dry_run:
+            await update_upstream_key(
+                db_path,
+                key["id"],
+                {
+                    "provider_id": found,
+                    "custom_base_url": new_base or existing_base,
+                    "metadata": meta,
+                    "status": "pending_validation",
+                    "is_valid": 0,
+                    "is_usable": 0,
+                    "usability_status": "unknown",
+                    "last_error": None,
+                },
+            )
+            await check_upstream_key(db_path, key["id"])
 
     return {
-        "dry_run": dry_run,
-        "scope": scope,
-        "examined": len(candidates),
+        "scanned": len(candidates),
         "moved": moved,
-        "unchanged_count": len(unchanged),
+        "region_fixed": region_fixed,
+        "unchanged": len(unchanged),
+        "dry_run": dry_run,
     }

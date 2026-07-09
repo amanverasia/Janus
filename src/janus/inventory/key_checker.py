@@ -16,6 +16,12 @@ from janus.inventory.catalog import get_inventory_provider
 from janus.inventory.currency import normalize_credits_to_usd
 from janus.inventory.model_catalog import enrich_model_with_catalog
 from janus.inventory.url_guard import BlockedUrlError, safe_fetch
+from janus.inventory.xiaomi_tokenplan import (
+    TOKENPLAN_PROVIDER_ID,
+    metadata_with_region,
+    region_id_for_base_url,
+    tokenplan_region_base_urls,
+)
 from janus.storage.upstream_keys import (
     get_upstream_key,
     record_upstream_key_history,
@@ -87,19 +93,40 @@ OPENAI_COMPAT_PROVIDERS = {
 
 CHEAP_PROBE_MODELS: dict[str, str] = {
     "openai": "gpt-4.1-nano",
-    "anthropic": "claude-3-5-haiku-20241022",
+    "anthropic": "claude-haiku-4-5-20251001",
     "groq": "llama-3.1-8b-instant",
     "deepseek": "deepseek-chat",
-    "xai": "grok-2-1212",
+    "xai": "grok-4",
     "mistral": "mistral-small-latest",
     "together": "meta-llama/Llama-3.2-3B-Instruct-Turbo",
     "fireworks": "accounts/fireworks/models/llama-v3p1-8b-instruct",
     "nvidia": "meta/llama-3.1-8b-instruct",
     "moonshot": "moonshot-v1-8k",
     "dashscope": "qwen-turbo",
+    "minimax": "MiniMax-M2.5",
+    "zhipu": "glm-4-flash",
     "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
     "stepfun": "step-1-flash",
 }
+
+_MEDIA_MODEL_MARKERS = (
+    "image",
+    "tts",
+    "whisper",
+    "embed",
+    "moderation",
+    "realtime",
+    "sora",
+    "video",
+    "audio",
+    "imagine",
+)
+
+_QUOTA_ERROR_RE = re.compile(
+    r"quota|insufficient|billing|exceeded|credit|balance|spending\s*limit|"
+    r"permission-denied|used all available|monthly spending",
+    re.I,
+)
 
 CHAT_PROBE: dict[str, dict[str, Any]] = {
     "perplexity": {
@@ -343,10 +370,9 @@ def _get_headers_for_provider(provider: dict[str, Any], key: str) -> dict[str, s
 
 
 def _get_base_url(provider: dict[str, Any], metadata: dict[str, Any] | None = None) -> str:
-    base_url = provider.get("base_url") or ""
-    if not base_url and metadata and metadata.get("custom_base_url"):
-        base_url = str(metadata["custom_base_url"]).rstrip("/")
-    return base_url
+    if metadata and metadata.get("custom_base_url"):
+        return str(metadata["custom_base_url"]).rstrip("/")
+    return provider.get("base_url") or ""
 
 
 def _get_check_url(provider: dict[str, Any], key: str, metadata: dict[str, Any] | None) -> str:
@@ -435,13 +461,74 @@ def _parse_credit_check_response(
                 result["metadata"] = meta
 
 
+def _model_ids_from_result(models: list[dict[str, Any]] | None) -> list[str]:
+    ids: list[str] = []
+    if not models:
+        return ids
+    for item in models:
+        mid = item.get("model_id") if isinstance(item, dict) else None
+        if mid is None and isinstance(item, dict):
+            mid = item.get("id")
+        if mid is not None:
+            ids.append(str(mid))
+    return ids
+
+
+def _is_chat_probe_model(model_id: str) -> bool:
+    low = model_id.lower()
+    return not any(marker in low for marker in _MEDIA_MODEL_MARKERS)
+
+
 def _get_probe_model(provider_id: str, models: list[dict[str, Any]] | None) -> str | None:
-    if provider_id in CHEAP_PROBE_MODELS:
-        return CHEAP_PROBE_MODELS[provider_id]
-    if models:
-        model_id = models[0].get("model_id")
-        return str(model_id) if model_id is not None else None
-    return None
+    model_ids = _model_ids_from_result(models)
+    preferred = CHEAP_PROBE_MODELS.get(provider_id)
+    if preferred and (not model_ids or preferred in model_ids):
+        return preferred
+    for mid in model_ids:
+        if _is_chat_probe_model(mid):
+            return mid
+    if preferred:
+        return preferred
+    return model_ids[0] if model_ids else None
+
+
+def _body_error_text(body: Any) -> str:
+    if not isinstance(body, dict):
+        return str(body or "")[:300]
+    err = body.get("error")
+    if isinstance(err, dict):
+        parts = [err.get("code"), err.get("type"), err.get("message"), err.get("error")]
+        return " ".join(str(p) for p in parts if p)[:300]
+    if isinstance(err, str):
+        code = body.get("code")
+        return f"{code or ''} {err}".strip()[:300]
+    code = body.get("code")
+    message = body.get("message") or body.get("error")
+    return f"{code or ''} {message or ''}".strip()[:300]
+
+
+def _looks_like_quota_error(status: int, body: Any) -> bool:
+    if status == 402:
+        return True
+    if status not in {403, 429}:
+        text = _body_error_text(body)
+        return bool(text and _QUOTA_ERROR_RE.search(text))
+    text = _body_error_text(body)
+    return bool(text and _QUOTA_ERROR_RE.search(text))
+
+
+def _quota_exhausted_result(body: Any) -> dict[str, Any]:
+    message = _body_error_text(body) or "Credits or spending limit exhausted"
+    result: dict[str, Any] = {
+        "is_valid": True,
+        "is_usable": False,
+        "usability_status": "no_quota",
+        "usability_note": message[:200],
+        "credits_remaining": 0.0,
+        "error": message[:200],
+    }
+    compute_health_status(result)
+    return result
 
 
 async def _probe_usability(
@@ -509,25 +596,22 @@ async def _probe_usability(
 
     status = response["status"]
     body = response["body"]
-    err_obj = body.get("error") if isinstance(body, dict) else body
-    if not isinstance(err_obj, dict):
-        err_obj = {}
-    code = err_obj.get("code") or err_obj.get("type") or ""
-    message = str(err_obj.get("message") or json.dumps(response["body"] or {}))[:200]
-    combined = f"{code} {message}"
+    message = _body_error_text(body) or str(body or "")[:200]
+    combined = message
 
     if status in {200, 201}:
         result["is_usable"] = True
         result["usability_status"] = "usable"
         result["usability_note"] = f"Inference OK (probed {probe_model})"
+    elif _looks_like_quota_error(status, body):
+        result["is_usable"] = False
+        result["usability_status"] = "no_quota"
+        result["usability_note"] = message
+        result["credits_remaining"] = 0.0
     elif status in {401, 403}:
         result["is_usable"] = False
         result["usability_status"] = "auth_failed"
         result["usability_note"] = f"Auth rejected on inference: {message}"
-    elif re.search(r"quota|insufficient|billing|exceeded|credit|balance", combined, re.I):
-        result["is_usable"] = False
-        result["usability_status"] = "no_quota"
-        result["usability_note"] = message
     elif status == 429:
         result["is_usable"] = False
         result["usability_status"] = "rate_limited"
@@ -695,6 +779,100 @@ def _parse_models_from_body(provider: dict[str, Any], body: Any) -> list[dict[st
     return []
 
 
+
+async def _validate_tokenplan_key(
+    provider: dict[str, Any],
+    key_value: str,
+    metadata: dict[str, Any] | None,
+    *,
+    skip_probe: bool,
+) -> dict[str, Any]:
+    """Probe Token Plan regional endpoints until one authenticates.
+
+    Keys are cluster-specific (sgp / cn / ams). Prefer a known custom_base_url
+    first, then walk the region list. On success, return metadata so callers
+    can persist the working region as custom_base_url.
+    """
+    meta = dict(metadata or {})
+    preferred = str(meta.get("custom_base_url") or "").rstrip("/") or None
+    candidates: list[tuple[str, str]] = []
+    if preferred:
+        region = region_id_for_base_url(preferred) or "custom"
+        candidates.append((region, preferred))
+    for region, base in tokenplan_region_base_urls():
+        if preferred and base.rstrip("/") == preferred:
+            continue
+        candidates.append((region, base))
+
+    last_error = "Auth failed on all Token Plan regions"
+    for region, base in candidates:
+        region_meta = metadata_with_region(meta, region=region, base_url=base)
+        result = await _validate_openai_compat_health(
+            provider, key_value, region_meta, skip_probe=skip_probe
+        )
+        if result.get("is_valid"):
+            result_meta = dict(result.get("metadata") or {})
+            result_meta.update(region_meta)
+            result["metadata"] = result_meta
+            result["custom_base_url"] = base
+            result["tokenplan_region"] = region
+            return result
+        last_error = str(result.get("error") or last_error)
+    return {"is_valid": False, "error": last_error}
+
+
+async def _validate_openai_compat_health(
+    provider: dict[str, Any],
+    key_value: str,
+    metadata: dict[str, Any] | None,
+    *,
+    skip_probe: bool,
+) -> dict[str, Any]:
+    """Single-endpoint OpenAI-compat health check (models list + optional probe)."""
+    url = _get_check_url(provider, key_value, metadata)
+    headers = _get_headers_for_provider(provider, key_value)
+    result = await _fetch_with_headers(url, headers=headers)
+
+    if result["status"] in {200, 201}:
+        check_result: dict[str, Any] = {"is_valid": True}
+        rate_limits = _extract_rate_limits(result["headers"])
+        if rate_limits["rpm"] is not None:
+            check_result["rate_limit_rpm"] = rate_limits["rpm"]
+        if rate_limits["tpm"] is not None:
+            check_result["rate_limit_tpm"] = rate_limits["tpm"]
+        if rate_limits["rpd"] is not None:
+            check_result["rate_limit_rpd"] = rate_limits["rpd"]
+        if result["body"] is not None:
+            models = _parse_models_from_body(provider, result["body"])
+            if models:
+                check_result["models"] = models
+        compute_health_status(check_result)
+        if USABILITY_PROBE_ENABLED and not skip_probe:
+            await _probe_usability(key_value, provider, metadata, check_result)
+        else:
+            check_result["is_usable"] = check_result["is_valid"]
+            check_result["usability_status"] = "unknown"
+        return check_result
+
+    if result["status"] in {401, 403}:
+        if _looks_like_quota_error(result["status"], result.get("body")):
+            return _quota_exhausted_result(result.get("body"))
+        return {"is_valid": False, "error": f"Auth failed ({result['status']})"}
+    if result["status"] == 429:
+        limits = _extract_rate_limits(result["headers"])
+        partial: dict[str, Any] = {
+            "is_valid": True,
+            "partial_check": True,
+            "error": "Rate limited during check",
+        }
+        if limits["rpm"] is not None:
+            partial["rate_limit_rpm"] = limits["rpm"]
+        if limits["tpm"] is not None:
+            partial["rate_limit_tpm"] = limits["tpm"]
+        return partial
+    return {"is_valid": False, "error": f"HTTP {result['status']}"}
+
+
 async def validate_key(
     key_value: str,
     provider_id: str,
@@ -707,6 +885,11 @@ async def validate_key(
         return {"is_valid": False, "error": f"Unknown provider: {provider_id}"}
 
     try:
+        if provider_id == TOKENPLAN_PROVIDER_ID:
+            return await _validate_tokenplan_key(
+                provider, key_value, metadata, skip_probe=skip_probe
+            )
+
         if provider_id in CHAT_VALIDATED_PROVIDERS:
             return await _validate_via_chat(provider, key_value, metadata)
 
@@ -783,6 +966,8 @@ async def validate_key(
             return check_result
 
         if result["status"] in {401, 403}:
+            if _looks_like_quota_error(result["status"], result.get("body")):
+                return _quota_exhausted_result(result.get("body"))
             return {"is_valid": False, "error": f"Auth failed ({result['status']})"}
         if result["status"] == 429:
             limits = _extract_rate_limits(result["headers"])
@@ -889,28 +1074,34 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
             merged_meta = metadata
             if result.get("metadata"):
                 merged_meta = {**metadata, **result["metadata"]}
+            custom_base = result.get("custom_base_url") or (
+                merged_meta.get("custom_base_url") if isinstance(merged_meta, dict) else None
+            )
+            update_fields: dict[str, Any] = {
+                "status": final_status,
+                "is_valid": 1,
+                "credits_remaining": result.get("credits_remaining"),
+                "credits_total": result.get("credits_total"),
+                "credits_used": result.get("credits_used"),
+                "rate_limit_rpm": result.get("rate_limit_rpm"),
+                "rate_limit_tpm": result.get("rate_limit_tpm"),
+                "rate_limit_rpd": result.get("rate_limit_rpd"),
+                "health_status": result.get("health_status", "healthy"),
+                "health_warnings": result.get("health_warnings"),
+                "is_usable": 1 if result.get("is_usable") else 0,
+                "usability_status": result.get("usability_status", "unknown"),
+                "usability_note": result.get("usability_note"),
+                "metadata": merged_meta if merged_meta else None,
+                "last_checked_at": _now(),
+                "last_error": None,
+            }
+            if custom_base:
+                update_fields["custom_base_url"] = str(custom_base).rstrip("/")
 
             await update_upstream_key(
                 db_path,
                 key_id,
-                {
-                    "status": final_status,
-                    "is_valid": 1,
-                    "credits_remaining": result.get("credits_remaining"),
-                    "credits_total": result.get("credits_total"),
-                    "credits_used": result.get("credits_used"),
-                    "rate_limit_rpm": result.get("rate_limit_rpm"),
-                    "rate_limit_tpm": result.get("rate_limit_tpm"),
-                    "rate_limit_rpd": result.get("rate_limit_rpd"),
-                    "health_status": result.get("health_status", "healthy"),
-                    "health_warnings": result.get("health_warnings"),
-                    "is_usable": 1 if result.get("is_usable") else 0,
-                    "usability_status": result.get("usability_status", "unknown"),
-                    "usability_note": result.get("usability_note"),
-                    "metadata": merged_meta if merged_meta else None,
-                    "last_checked_at": _now(),
-                    "last_error": None,
-                },
+                update_fields,
             )
 
             models = result.get("models")
