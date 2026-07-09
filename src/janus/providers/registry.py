@@ -37,6 +37,13 @@ class ResolvedTarget:
     account_id: str
 
 
+# Client-facing prefix aliases → registered gateway prefix.
+# e.g. "mimo/mimo-v2.5" routes like "xiaomi/mimo-v2.5".
+PREFIX_ALIASES: dict[str, str] = {
+    "mimo": "xiaomi",
+}
+
+
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, list[ProviderConfig]] = {}
@@ -57,6 +64,7 @@ class ProviderRegistry:
         if "/" not in model_str:
             return None
         prefix, rest = model_str.split("/", 1)
+        prefix = PREFIX_ALIASES.get(prefix, prefix)
         configs = self._providers.get(prefix)
         if not configs:
             return None

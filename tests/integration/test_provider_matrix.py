@@ -246,7 +246,7 @@ def test_every_gateway_entry_registers_and_resolves() -> None:
             loop.close()
         except Exception:
             pass
-    assert count == 35
+    assert count == 38
 
 
 def test_alias_api_types_build() -> None:

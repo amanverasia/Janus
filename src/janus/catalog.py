@@ -760,6 +760,31 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "reasoning": True,
         },
     },
+    "kimi_coding": {
+        "gateway": {
+            "id": "kimi_coding",
+            "name": "Kimi Coding",
+            "icon": "🌙",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "prefix": "kimi",
+            "default_models": [
+                "kimi-k2.5",
+                "kimi-k2.5-thinking",
+                "kimi-k2.6",
+            ],
+            "transports": {
+                "anthropic": "https://api.kimi.com/coding/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
     "dashscope": {
         "inventory": {
             "id": "dashscope",
@@ -824,6 +849,32 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             ],
             "transports": {
                 "anthropic": "https://api.minimaxi.com/anthropic/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "minimax_io": {
+        "gateway": {
+            "id": "minimax_io",
+            "name": "MiniMax (International)",
+            "icon": "🟣",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.minimax.io/v1",
+            "prefix": "minimax-io",
+            "default_models": [
+                "MiniMax-M2.7",
+                "MiniMax-M2.5",
+                "MiniMax-M2.1",
+                "MiniMax-M3",
+            ],
+            "transports": {
+                "anthropic": "https://api.minimax.io/anthropic/v1",
             },
         },
         "capabilities": {
@@ -912,6 +963,32 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "reasoning": True,
         },
     },
+    "glm_coding": {
+        "gateway": {
+            "id": "glm_coding",
+            "name": "GLM Coding (Z.ai)",
+            "icon": "🟦",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.z.ai/api/coding/paas/v4",
+            "prefix": "glm",
+            "default_models": [
+                "glm-5.2",
+                "glm-5.1",
+                "glm-4.7",
+                "glm-4.6",
+            ],
+            "transports": {
+                "anthropic": "https://api.z.ai/api/anthropic",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
     "xiaomi": {
         "inventory": {
             "id": "xiaomi",
@@ -943,6 +1020,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "mimo-v2.5",
                 "mimo-v2-omni",
                 "mimo-v2-flash",
+                "mimo-v2.5-pro-claude",
             ],
             "transports": {
                 "anthropic": "https://api.xiaomimimo.com/anthropic/v1",
@@ -982,6 +1060,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "mimo-v2.5",
                 "mimo-v2-pro",
                 "mimo-v2-omni",
+                "mimo-v2.5-tts",
+                "mimo-v2.5-asr",
             ],
             "transports": {
                 "anthropic": "https://token-plan-sgp.xiaomimimo.com/anthropic/v1",
@@ -1274,8 +1354,11 @@ GATEWAY_ORDER: list[str] = [
     "byteplus",
     "qwen",
     "minimax",
+    "minimax_io",
     "moonshot",
+    "kimi_coding",
     "zhipu",
+    "glm_coding",
     "github_copilot",
     "codex",
     "kiro",

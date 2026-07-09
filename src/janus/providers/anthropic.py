@@ -11,7 +11,16 @@ _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
 
 ANTHROPIC_API_VERSION = "2023-06-01"
+# Core betas always sent (matches 9router CLAUDE_API_HEADERS).
 ANTHROPIC_BETA_HEADERS = "claude-code-20250219,interleaved-thinking-2025-05-14"
+# Extended Claude Code fingerprint (9router CLAUDE_CLI_SPOOF_HEADERS) — adaptive
+# effort, prompt caching, advanced tools. Safe on official Anthropic API.
+ANTHROPIC_CLI_BETA_HEADERS = (
+    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
+    "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
+    "advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,"
+    "fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
+)
 
 
 class AnthropicProvider:
@@ -31,7 +40,7 @@ class AnthropicProvider:
             "Content-Type": "application/json",
             "x-api-key": self.api_key,
             "anthropic-version": ANTHROPIC_API_VERSION,
-            "anthropic-beta": ANTHROPIC_BETA_HEADERS,
+            "anthropic-beta": ANTHROPIC_CLI_BETA_HEADERS,
         }
 
     async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:

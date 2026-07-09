@@ -109,6 +109,22 @@ CHEAP_PROBE_MODELS: dict[str, str] = {
     "stepfun": "step-1-flash",
 }
 
+# Inventory providers that may authenticate on more than one regional base.
+# Order is preference: preferred custom_base_url wins first, then this list.
+# Working base is persisted as custom_base_url (same pattern as Xiaomi Token Plan).
+MULTI_BASE_CANDIDATES: dict[str, list[str]] = {
+    # CN (minimaxi.com) vs international (minimax.io).
+    "minimax": [
+        "https://api.minimaxi.com/v1",
+        "https://api.minimax.io/v1",
+    ],
+    # CN platform vs global moonshot.ai (not kimi.com coding — that is a separate gateway).
+    "moonshot": [
+        "https://api.moonshot.cn/v1",
+        "https://api.moonshot.ai/v1",
+    ],
+}
+
 _MEDIA_MODEL_MARKERS = (
     "image",
     "tts",
@@ -873,6 +889,42 @@ async def _validate_openai_compat_health(
     return {"is_valid": False, "error": f"HTTP {result['status']}"}
 
 
+async def _validate_multi_base_key(
+    provider: dict[str, Any],
+    key_value: str,
+    metadata: dict[str, Any] | None,
+    bases: list[str],
+    *,
+    skip_probe: bool,
+) -> dict[str, Any]:
+    """Probe alternate OpenAI-compat bases (CN vs intl) and persist the winner."""
+    meta = dict(metadata or {})
+    preferred = str(meta.get("custom_base_url") or "").rstrip("/") or None
+    candidates: list[str] = []
+    if preferred:
+        candidates.append(preferred)
+    for base in bases:
+        b = base.rstrip("/")
+        if preferred and b == preferred:
+            continue
+        candidates.append(b)
+    last_error = "Auth failed on all regional bases"
+    for base in candidates:
+        region_meta = dict(meta)
+        region_meta["custom_base_url"] = base
+        result = await _validate_openai_compat_health(
+            provider, key_value, region_meta, skip_probe=skip_probe
+        )
+        if result.get("is_valid"):
+            result_meta = dict(result.get("metadata") or {})
+            result_meta["custom_base_url"] = base
+            result["metadata"] = result_meta
+            result["custom_base_url"] = base
+            return result
+        last_error = str(result.get("error") or last_error)
+    return {"is_valid": False, "error": last_error}
+
+
 async def validate_key(
     key_value: str,
     provider_id: str,
@@ -888,6 +940,16 @@ async def validate_key(
         if provider_id == TOKENPLAN_PROVIDER_ID:
             return await _validate_tokenplan_key(
                 provider, key_value, metadata, skip_probe=skip_probe
+            )
+
+        multi_bases = MULTI_BASE_CANDIDATES.get(provider_id)
+        if multi_bases:
+            return await _validate_multi_base_key(
+                provider,
+                key_value,
+                metadata,
+                multi_bases,
+                skip_probe=skip_probe,
             )
 
         if provider_id in CHAT_VALIDATED_PROVIDERS:
