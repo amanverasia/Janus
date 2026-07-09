@@ -11,16 +11,40 @@
     <form hx-post="/dashboard/api/keys"
           hx-target="#keys-content"
           hx-swap="innerHTML"
-          class="flex items-center gap-3">
-        <input type="text"
-               name="name"
-               placeholder="Key name (e.g. production)"
-               required
-               class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
-        <button type="submit"
-                class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors cursor-pointer">
-            Generate Key
-        </button>
+          class="space-y-4">
+        <input type="hidden" name="login_field" value="1">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input type="text"
+                   name="name"
+                   placeholder="Key name (e.g. production)"
+                   required
+                   class="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
+            <button type="submit"
+                    class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors cursor-pointer">
+                Generate Key
+            </button>
+        </div>
+        <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+            <input type="checkbox" name="can_login" value="on" checked
+                   class="rounded border-gray-600 bg-gray-900 text-blue-600 focus:ring-blue-500">
+            Allow dashboard login
+        </label>
+        <div>
+            <label class="block text-sm text-gray-400 mb-1">Allowed models (empty = all)</label>
+            <textarea name="allowed_models"
+                      rows="2"
+                      placeholder="openai/gpt-4o, openai/*, my-combo"
+                      class="w-full bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono text-sm"></textarea>
+        </div>
+        <div>
+            <label class="block text-sm text-gray-400 mb-1">Daily budget USD (optional)</label>
+            <input type="number"
+                   name="daily_budget"
+                   step="0.01"
+                   min="0"
+                   placeholder="e.g. 5.00"
+                   class="w-full sm:w-48 bg-gray-900 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
+        </div>
     </form>
 </div>
 

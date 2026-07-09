@@ -4,7 +4,12 @@ from urllib.parse import quote
 
 from fastapi import Header, HTTPException, Query, Request
 
-from janus.api.auth import authenticate_api_key, extract_api_key, is_trusted_dashboard_client
+from janus.api.auth import (
+    authenticate_api_key,
+    extract_api_key,
+    is_trusted_dashboard_client,
+    key_can_login,
+)
 from janus.dashboard.credentials import (
     SESSION_COOKIE,
     SETTINGS_USERNAME,
@@ -47,7 +52,7 @@ async def require_dashboard_access(
     if is_trusted_dashboard_client(request):
         return
     key = extract_api_key(request, authorization, x_goog_api_key, key_query)
-    if await authenticate_api_key(request, key):
+    if await authenticate_api_key(request, key) and key_can_login(request):
         return
     if await authenticate_dashboard_session(request):
         return
