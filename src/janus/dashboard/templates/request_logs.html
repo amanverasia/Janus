@@ -11,7 +11,7 @@
             Export JSON
         </a>
         <button hx-delete="/dashboard/api/request-logs"
-                hx-target="#request-logs-content"
+                hx-target="#request-logs-table"
                 hx-swap="innerHTML"
                 hx-confirm="Delete all captured request logs?"
                 class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors">
@@ -29,7 +29,7 @@
 </div>
 {% endif %}
 
-<div id="request-logs-content">
+<div id="request-logs-table">
     {% include "request_logs_partial.html" %}
 </div>
 {% endblock %}

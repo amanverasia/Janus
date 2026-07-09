@@ -337,21 +337,61 @@ async def usage_page(request: Request) -> HTMLResponse:
     return _templates.TemplateResponse(request, "usage.html", context)
 
 
+def _clamp_page_size(limit: int) -> int:
+    return max(1, min(limit, 200))
+
+
+async def _request_logs_context(
+    db_path: Path, *, limit: int = 100, offset: int = 0
+) -> dict[str, Any]:
+    from janus.storage.request_logs import count_request_logs, list_request_logs
+    from janus.storage.settings import get_all_settings, resolve_request_log_retention
+
+    limit = _clamp_page_size(limit)
+    total = await count_request_logs(db_path)
+    if offset < 0:
+        offset = 0
+    if total and offset >= total:
+        offset = max(0, ((total - 1) // limit) * limit)
+    logs = await list_request_logs(db_path, limit=limit, offset=offset)
+    settings = await get_all_settings(db_path)
+    return {
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "page": (offset // limit) + 1 if limit else 1,
+        "total_pages": max(1, (total + limit - 1) // limit) if limit else 1,
+        "retention_max": resolve_request_log_retention(settings),
+    }
+
+
 @router.get("/request-logs", response_class=HTMLResponse)
 async def request_logs_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.request_logs import count_request_logs, list_request_logs
     from janus.storage.settings import get_all_settings, request_logging_enabled
 
     settings = await get_all_settings(db_path)
-    logs = await list_request_logs(db_path, limit=100)
-    context: dict[str, Any] = {
-        "request": request,
-        "logs": logs,
-        "total": await count_request_logs(db_path),
-        "logging_enabled": request_logging_enabled(settings),
-    }
+    context = await _request_logs_context(db_path)
+    context["request"] = request
+    context["logging_enabled"] = request_logging_enabled(settings)
     return _templates.TemplateResponse(request, "request_logs.html", context)
+
+
+@router.get("/api/request-logs/partial", response_class=HTMLResponse)
+async def api_request_logs_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    try:
+        limit = int(request.query_params.get("limit", "100"))
+    except ValueError:
+        limit = 100
+    try:
+        offset = int(request.query_params.get("offset", "0"))
+    except ValueError:
+        offset = 0
+    ctx = await _request_logs_context(db_path, limit=limit, offset=offset)
+    ctx["request"] = request
+    return _templates.TemplateResponse(request, "request_logs_partial.html", ctx)
 
 
 @router.get("/api/request-logs/export")
@@ -383,8 +423,9 @@ async def api_clear_request_logs(request: Request) -> HTMLResponse:
     from janus.storage.request_logs import clear_request_logs
 
     await clear_request_logs(db_path)
-    context: dict[str, Any] = {"request": request, "logs": [], "total": 0}
-    return _templates.TemplateResponse(request, "request_logs_partial.html", context)
+    ctx = await _request_logs_context(db_path)
+    ctx["request"] = request
+    return _templates.TemplateResponse(request, "request_logs_partial.html", ctx)
 
 
 @router.get("/analytics", response_class=HTMLResponse)
