@@ -123,9 +123,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
     cooled_count = len(cooled_accounts)
 
     quota_warnings = [
-        p
-        for p in providers
-        if p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
+        p for p in providers if p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
     ]
 
     return {

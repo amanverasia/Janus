@@ -278,7 +278,11 @@ async def providers_page(request: Request) -> HTMLResponse:
     quota_warnings = [
         p
         for p in providers
-        if p.get("is_enabled") and p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
+        if (
+            p.get("is_enabled")
+            and p.get("quota")
+            and p["quota"]["status"] in ("warning", "exhausted")
+        )
     ]
     context: dict[str, Any] = {
         "request": request,
@@ -848,7 +852,11 @@ async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
     quota_warnings = [
         p
         for p in providers
-        if p.get("is_enabled") and p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
+        if (
+            p.get("is_enabled")
+            and p.get("quota")
+            and p["quota"]["status"] in ("warning", "exhausted")
+        )
     ]
     context: dict[str, Any] = {
         "request": request,

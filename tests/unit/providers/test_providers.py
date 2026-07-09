@@ -91,7 +91,6 @@ async def test_openai_compat_provider_reuses_client():
         httpx.AsyncClient.__init__ = original_init
 
 
-
 @pytest.mark.asyncio
 @respx.mock
 async def test_openai_compat_default_headers():

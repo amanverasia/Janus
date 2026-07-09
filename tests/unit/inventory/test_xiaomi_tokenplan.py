@@ -59,15 +59,11 @@ async def test_resolve_tp_key_never_returns_paygo_xiaomi() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_resolve_tp_key_returns_region_metadata() -> None:
-    respx.get(TOKENPLAN_REGIONS["sgp"] + "/models").mock(
-        return_value=httpx.Response(401, json={})
-    )
+    respx.get(TOKENPLAN_REGIONS["sgp"] + "/models").mock(return_value=httpx.Response(401, json={}))
     respx.get(TOKENPLAN_REGIONS["cn"] + "/models").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "mimo-v2.5"}]})
     )
-    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(
-        return_value=httpx.Response(401, json={})
-    )
+    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(return_value=httpx.Response(401, json={}))
     provider_id, meta = await resolve_provider_for_key("tp-cn-working-keyxxxx")
     assert provider_id == TOKENPLAN_PROVIDER_ID
     assert meta is not None
@@ -80,15 +76,11 @@ async def test_resolve_tp_key_returns_region_metadata() -> None:
 async def test_ingest_persists_tokenplan_region(tmp_path) -> None:
     db = tmp_path / "t.db"
     await init_db(db)
-    respx.get(TOKENPLAN_REGIONS["sgp"] + "/models").mock(
-        return_value=httpx.Response(401, json={})
-    )
+    respx.get(TOKENPLAN_REGIONS["sgp"] + "/models").mock(return_value=httpx.Response(401, json={}))
     respx.get(TOKENPLAN_REGIONS["cn"] + "/models").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "mimo-v2.5"}]})
     )
-    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(
-        return_value=httpx.Response(401, json={})
-    )
+    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(return_value=httpx.Response(401, json={}))
     result = await ingest_upstream_key(
         db,
         KeyIngestEntry(key="tp-cn-working-keyxxxx"),

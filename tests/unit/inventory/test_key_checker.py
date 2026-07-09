@@ -185,8 +185,7 @@ async def test_validate_key_xai_quota_exhausted_not_auth_failure():
     body = {
         "code": "permission-denied",
         "error": (
-            "Your team has either used all available credits or reached its "
-            "monthly spending limit."
+            "Your team has either used all available credits or reached its monthly spending limit."
         ),
     }
     respx.get("https://api.x.ai/v1/models").mock(return_value=Response(403, json=body))

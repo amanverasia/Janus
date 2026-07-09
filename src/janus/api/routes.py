@@ -1219,6 +1219,7 @@ async def ollama_generate(request: Request) -> Response:
     chat_body = _ollama_generate_to_chat(body)
     response = await _handle("ollama", chat_body, request)
     if isinstance(response, StreamingResponse):
+
         async def _remap() -> AsyncIterator[bytes]:
             async for chunk in response.body_iterator:
                 text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)

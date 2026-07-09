@@ -453,9 +453,10 @@ def get_model_capabilities(
         if p in ("gemini", "antigravity", "gemini-cli") and result.get("thinking_format") is None:
             if result.get("reasoning"):
                 result["thinking_format"] = "gemini-budget"
-        if p in ("openai", "codex", "github_copilot", "github-copilot", "xai") and result.get(
-            "thinking_format"
-        ) is None:
+        if (
+            p in ("openai", "codex", "github_copilot", "github-copilot", "xai")
+            and result.get("thinking_format") is None
+        ):
             if result.get("reasoning"):
                 result["thinking_format"] = "openai"
 

@@ -43,8 +43,7 @@ async def reclassify_upstream_keys(
         if not changed_provider and not changed_region:
             # For tokenplan invalid keys, still re-check with region discovery
             if (
-                key.get("provider_id") == TOKENPLAN_PROVIDER_ID
-                or key_value.startswith("tp-")
+                key.get("provider_id") == TOKENPLAN_PROVIDER_ID or key_value.startswith("tp-")
             ) and key.get("status") == "invalid":
                 if not dry_run:
                     await update_upstream_key(

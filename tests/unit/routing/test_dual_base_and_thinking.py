@@ -1,10 +1,10 @@
 from janus.catalog import gateway_entries
-from janus.providers.registry import PREFIX_ALIASES, ProviderRegistry
 from janus.config.schema import ProviderConfig
+from janus.providers.anthropic import ANTHROPIC_CLI_BETA_HEADERS
+from janus.providers.registry import PREFIX_ALIASES, ProviderRegistry
 from janus.routing.model_aliases import resolve_model_alias
 from janus.routing.model_caps import get_model_capabilities
 from janus.routing.thinking import apply_thinking_to_payload
-from janus.providers.anthropic import ANTHROPIC_CLI_BETA_HEADERS
 
 
 def test_dual_base_gateways_exist() -> None:

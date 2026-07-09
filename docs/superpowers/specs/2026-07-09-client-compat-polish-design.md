@@ -1,7 +1,7 @@
 # Client Compatibility Polish Design
 
 > **Date:** 2026-07-09
-> **Status:** Approved — awaiting implementation plan
+> **Status:** Implemented (2026-07-09)
 > **Backlog:** `todo.md` — Ollama surface completeness, request-log follow-ups, Quota UX round 2
 
 ## Goal
