@@ -331,7 +331,8 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
         if await _table_is_empty(db, "providers") and config.providers:
             for pc in config.providers:
                 await db.execute(
-                    """INSERT INTO providers (id, prefix, api_type, base_url, api_key, models, transports)
+                    """INSERT INTO providers
+                       (id, prefix, api_type, base_url, api_key, models, transports)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         pc.id,

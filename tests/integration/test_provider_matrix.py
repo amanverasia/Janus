@@ -28,8 +28,8 @@ from janus.providers.cursor import CursorProvider
 from janus.providers.gemini import GeminiProvider
 from janus.providers.github_copilot import GitHubCopilotProvider
 from janus.providers.kiro import KiroProvider
-from janus.providers.openai_compat import OpenAICompatProvider
 from janus.providers.mimo_free import MimoFreeProvider
+from janus.providers.openai_compat import OpenAICompatProvider
 from janus.providers.opencode_free import OpenCodeFreeProvider
 from janus.providers.registry import ProviderRegistry, _native_format
 

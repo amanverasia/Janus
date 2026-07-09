@@ -74,7 +74,8 @@ def _apply_deepseek_v4_pro_alias(
     body["thinking"] = {"type": thinking_type}
     extra = body.get("extra_body")
     if isinstance(extra, dict):
-        prev = extra.get("thinking") if isinstance(extra.get("thinking"), dict) else {}
+        raw_prev = extra.get("thinking")
+        prev = raw_prev if isinstance(raw_prev, dict) else {}
         body["extra_body"] = {
             **extra,
             "thinking": {**prev, "type": thinking_type},

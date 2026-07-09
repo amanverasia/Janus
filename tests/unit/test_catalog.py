@@ -110,7 +110,8 @@ def test_id_bridges_are_derived() -> None:
 
 
 def test_gateway_only_entries_have_no_inventory_block() -> None:
-    for pid in ("opencode_free", "mimo_free", "claude_oauth", "codex", "kiro", "cursor", "antigravity"):
+    ids = ("opencode_free", "mimo_free", "claude_oauth", "codex", "kiro", "cursor", "antigravity")
+    for pid in ids:
         assert pid in PROVIDERS
         assert "inventory" not in PROVIDERS[pid]
         assert PROVIDERS[pid]["gateway"]["id"] == pid
