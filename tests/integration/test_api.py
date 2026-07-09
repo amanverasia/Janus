@@ -366,6 +366,65 @@ async def test_fallback_on_429(tmp_path):
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_fallback_on_disguised_rate_limit_body(tmp_path):
+    """A 400 with a 'quota exceeded' body text should fall back, not 400 the client."""
+    provider1 = ProviderConfig(
+        id="t1",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="k1",
+        models=["m1"],
+    )
+    provider2 = ProviderConfig(
+        id="t2",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake2.local/v1",
+        api_key="k2",
+        models=["m1"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider1, provider2],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(400, json={"error": "Quota exceeded for this account"})
+    )
+    respx.post("https://fake2.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r",
+                "object": "chat.completion",
+                "model": "m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+        assert r.json()["choices"][0]["message"]["content"] == "ok"
+
+
+@pytest.mark.asyncio
 async def test_all_providers_exhaustured_returns_503(tmp_path):
     provider = ProviderConfig(
         id="t1",
@@ -393,6 +452,43 @@ async def test_all_providers_exhaustured_returns_503(tmp_path):
             }
             r = await client.post("/v1/chat/completions", json=payload)
             assert r.status_code == 503
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_all_accounts_cooled_down_returns_503_with_retry_after(tmp_path):
+    """Once the only account is cooled down, subsequent requests short-circuit to
+    503 + Retry-After without hitting the upstream again."""
+    provider = ProviderConfig(
+        id="t1",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="k1",
+        models=["m1"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            429, json={"error": "rate limited"}, headers={"Retry-After": "120"}
+        )
+    )
+    payload = {"model": "test/m1", "messages": [{"role": "user", "content": "hi"}]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r1 = await client.post("/v1/chat/completions", json=payload)
+        assert r1.status_code == 503
+
+        r2 = await client.post("/v1/chat/completions", json=payload)
+        assert r2.status_code == 503
+        assert "Retry-After" in r2.headers
+        retry_after = int(r2.headers["Retry-After"])
+        assert 0 < retry_after <= 120
 
 
 @pytest.mark.asyncio

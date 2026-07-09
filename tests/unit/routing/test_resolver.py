@@ -4,7 +4,7 @@ import pytest
 
 from janus.config.schema import ComboConfig, ProviderConfig
 from janus.providers.registry import ProviderRegistry
-from janus.routing.fallback import AccountStrategy, FallbackHandler
+from janus.routing.fallback import AccountStrategy, AllAccountsCooledDown, FallbackHandler
 
 
 def test_resolve_simple():
@@ -317,7 +317,7 @@ def test_all_accounts_exhausted_raises():
     )
     handler = FallbackHandler(registry)
     handler.mark_cooldown("x", "rate_limit", duration=9999.0)
-    with pytest.raises(ValueError, match="No available"):
+    with pytest.raises(AllAccountsCooledDown, match="No available"):
         handler.resolve_attempts("x/m")
 
 
@@ -326,6 +326,65 @@ def test_unknown_model_raises():
     handler = FallbackHandler(registry)
     with pytest.raises(ValueError, match="Unknown model"):
         handler.resolve_attempts("no/such")
+
+
+def test_all_accounts_cooled_down_carries_retry_after():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="x",
+            prefix="x",
+            api_type="openai_compat",
+            base_url="https://x.com",
+            api_key="k",
+            models=["m"],
+        )
+    )
+    handler = FallbackHandler(registry)
+    handler.mark_cooldown("x", "rate_limit", duration=120.0)
+    with pytest.raises(AllAccountsCooledDown) as exc_info:
+        handler.resolve_attempts("x/m")
+    assert 0 < exc_info.value.retry_after <= 120.0
+
+
+def test_all_accounts_cooled_down_combo_carries_retry_after():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="a",
+            prefix="a",
+            api_type="openai_compat",
+            base_url="https://a.com",
+            api_key="k",
+            models=["b"],
+        )
+    )
+    registry.register_combo(ComboConfig(name="combo1", models=["a/b"]))
+    handler = FallbackHandler(registry)
+    handler.mark_cooldown("a", "rate_limit", duration=60.0)
+    with pytest.raises(AllAccountsCooledDown) as exc_info:
+        handler.resolve_attempts("combo1")
+    assert 0 < exc_info.value.retry_after <= 60.0
+
+
+def test_all_accounts_cooled_down_min_retry_after():
+    """Even a near-expired cooldown reports at least MIN_RETRY_AFTER_S."""
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="x",
+            prefix="x",
+            api_type="openai_compat",
+            base_url="https://x.com",
+            api_key="k",
+            models=["m"],
+        )
+    )
+    handler = FallbackHandler(registry)
+    handler.mark_cooldown("x", "rate_limit", duration=0.001)
+    with pytest.raises(AllAccountsCooledDown) as exc_info:
+        handler.resolve_attempts("x/m")
+    assert exc_info.value.retry_after >= 1.0
 
 
 def test_retry_after_override():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+from typing import Any
 
 import httpx
 
@@ -35,6 +36,54 @@ def is_fallback_eligible(error: int | Exception) -> bool:
     if isinstance(error, int):
         return error in (429, 401, 403, 402) or error >= 500
     return False
+
+
+BODY_RATE_LIMIT_MARKERS: tuple[str, ...] = (
+    "rate limit",
+    "too many requests",
+    "quota exceeded",
+    "capacity",
+    "overloaded",
+    "resource exhausted",
+)
+
+
+def _error_body_text(body: dict[str, Any] | None) -> str:
+    if not body:
+        return ""
+    error = body.get("error")
+    if error is None:
+        return ""
+    if isinstance(error, str):
+        text = error
+    else:
+        try:
+            text = str(error)
+        except Exception:
+            return ""
+    # Normalize enum-style codes like "RESOURCE_EXHAUSTED" so they match the
+    # space-separated markers below.
+    return text.lower().replace("_", " ")[:2000]
+
+
+def refine_error_type(status_code: int, body: dict[str, Any] | None) -> ErrorType:
+    """Classify by status, then upgrade to RATE_LIMIT if the body text says so.
+
+    Some providers disguise rate limits as a 400 (or even 200-wrapped) error
+    with a body like {"error": "quota exceeded"}. Status-only classification
+    misses these, so we also inspect the body text for well-known markers.
+    """
+    error_type = classify_error(status_code)
+    text = _error_body_text(body)
+    if text and any(marker in text for marker in BODY_RATE_LIMIT_MARKERS):
+        return ErrorType.RATE_LIMIT
+    return error_type
+
+
+def is_fallback_eligible_refined(status_code: int, body: dict[str, Any] | None) -> bool:
+    if is_fallback_eligible(status_code):
+        return True
+    return refine_error_type(status_code, body) == ErrorType.RATE_LIMIT
 
 
 BACKOFF_BASE_MS = 2000

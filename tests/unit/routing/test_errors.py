@@ -1,6 +1,12 @@
 import httpx
 
-from janus.routing.errors import ErrorType, classify_error, is_fallback_eligible
+from janus.routing.errors import (
+    ErrorType,
+    classify_error,
+    is_fallback_eligible,
+    is_fallback_eligible_refined,
+    refine_error_type,
+)
 
 
 def test_classify_429():
@@ -58,3 +64,41 @@ def test_network_error_eligible():
 
 def test_timeout_eligible():
     assert is_fallback_eligible(httpx.TimeoutException("test"))
+
+
+def test_refine_400_with_rate_limit_text_becomes_rate_limit():
+    body = {"error": "Rate limit exceeded, please slow down"}
+    assert refine_error_type(400, body) == ErrorType.RATE_LIMIT
+    assert is_fallback_eligible_refined(400, body)
+
+
+def test_refine_400_plain_stays_client_error():
+    body = {"error": "invalid request: missing field 'model'"}
+    assert refine_error_type(400, body) == ErrorType.CLIENT_ERROR
+    assert not is_fallback_eligible_refined(400, body)
+
+
+def test_refine_400_no_body_stays_client_error():
+    assert refine_error_type(400, None) == ErrorType.CLIENT_ERROR
+    assert not is_fallback_eligible_refined(400, None)
+
+
+def test_refine_429_stays_rate_limit():
+    assert refine_error_type(429, {"error": "anything"}) == ErrorType.RATE_LIMIT
+    assert is_fallback_eligible_refined(429, {"error": "anything"})
+
+
+def test_refine_quota_exceeded_marker():
+    body = {"error": {"message": "Quota Exceeded for this billing period"}}
+    assert refine_error_type(400, body) == ErrorType.RATE_LIMIT
+    assert is_fallback_eligible_refined(400, body)
+
+
+def test_refine_overloaded_marker():
+    body = {"error": "Server overloaded, try again later"}
+    assert refine_error_type(503, body) == ErrorType.RATE_LIMIT
+
+
+def test_refine_resource_exhausted_marker():
+    body = {"error": "RESOURCE_EXHAUSTED: too many tokens"}
+    assert refine_error_type(400, body) == ErrorType.RATE_LIMIT

@@ -34,8 +34,13 @@ from janus.routing.capabilities import (
 )
 from janus.routing.claude_normalize import normalize_claude_passthrough
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
-from janus.routing.errors import classify_error, is_fallback_eligible
-from janus.routing.fallback import AccountStrategy, FallbackHandler
+from janus.routing.errors import (
+    classify_error,
+    is_fallback_eligible,
+    is_fallback_eligible_refined,
+    refine_error_type,
+)
+from janus.routing.fallback import AccountStrategy, AllAccountsCooledDown, FallbackHandler
 from janus.routing.modality import strip_unsupported_modalities
 from janus.routing.model_aliases import resolve_model_alias
 from janus.routing.prefetch import prefetch_remote_images
@@ -369,6 +374,14 @@ async def _handle(
             combo_strategy=combo_strat,
             combo_sticky_limit=combo_csl,
         )
+    except AllAccountsCooledDown as e:
+        retry_after = e.retry_after
+        raise HTTPException(
+            status_code=503,
+            detail=f"All accounts for '{canonical_req.model}' are cooling down; "
+            f"retry after {int(retry_after)}s",
+            headers={"Retry-After": str(int(retry_after))},
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -421,10 +434,10 @@ async def _handle(
                 if result is None:
                     continue
                 if result.status_code >= 400:
-                    if is_fallback_eligible(result.status_code):
+                    if is_fallback_eligible_refined(result.status_code, result.json_data):
                         handler.mark_cooldown(
                             target.account_id,
-                            classify_error(result.status_code).value,
+                            refine_error_type(result.status_code, result.json_data).value,
                             model=target.model,
                             retry_after=getattr(result, "retry_after", None),
                         )
@@ -591,10 +604,14 @@ async def _handle(
                     last_error = f"{target.account_id}: {type(e).__name__}"
                     continue
                 if native_result.status_code >= 400:
-                    if is_fallback_eligible(native_result.status_code):
+                    if is_fallback_eligible_refined(
+                        native_result.status_code, native_result.json_data
+                    ):
                         handler.mark_cooldown(
                             target.account_id,
-                            classify_error(native_result.status_code).value,
+                            refine_error_type(
+                                native_result.status_code, native_result.json_data
+                            ).value,
                             model=target.model,
                             retry_after=getattr(native_result, "retry_after", None),
                         )
@@ -839,10 +856,10 @@ async def _handle(
 
             result = await provider.call(upstream_payload, stream=False)
             if result.status_code >= 400:
-                if is_fallback_eligible(result.status_code):
+                if is_fallback_eligible_refined(result.status_code, result.json_data):
                     handler.mark_cooldown(
                         target.account_id,
-                        classify_error(result.status_code).value,
+                        refine_error_type(result.status_code, result.json_data).value,
                         model=target.model,
                         retry_after=result.retry_after,
                     )
