@@ -107,3 +107,39 @@ async def test_authenticate_db_key(tmp_path) -> None:
     req = _request(config=cfg)
     req.app.state.db_path = db_path
     assert await authenticate_api_key(req, full_key) is True
+    assert req.state.can_login is True
+    assert req.state.allowed_models is None
+
+
+@pytest.mark.asyncio
+async def test_authenticate_db_key_loads_scopes(tmp_path) -> None:
+    from janus.storage.api_keys import create_key
+    from janus.storage.database import init_db
+
+    cfg = JanusConfig(server=ServerSettings(data_dir=tmp_path))
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    full_key, _ = await create_key(
+        db_path,
+        "scoped",
+        can_login=False,
+        allowed_models=["openai/*"],
+    )
+    req = _request(config=cfg)
+    req.app.state.db_path = db_path
+    assert await authenticate_api_key(req, full_key) is True
+    assert req.state.can_login is False
+    assert req.state.allowed_models == ["openai/*"]
+
+
+@pytest.mark.asyncio
+async def test_authenticate_static_yaml_key_unrestricted(tmp_path) -> None:
+    cfg = JanusConfig(
+        server=ServerSettings(data_dir=tmp_path),
+        api_keys=["sk-static"],
+    )
+    req = _request(config=cfg)
+    req.app.state.db_path = tmp_path / "janus.db"
+    assert await authenticate_api_key(req, "sk-static") is True
+    assert req.state.can_login is True
+    assert req.state.allowed_models is None

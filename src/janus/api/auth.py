@@ -38,17 +38,34 @@ async def is_require_api_key_enabled(request: Request) -> bool:
     return bool(request.app.state.config.server.require_api_key)
 
 
+def key_can_login(request: Request) -> bool:
+    return bool(getattr(request.state, "can_login", True))
+
+
+def key_allowed_models(request: Request) -> list[str] | None:
+    return getattr(request.state, "allowed_models", None)
+
+
 async def authenticate_api_key(request: Request, key: str | None) -> bool:
     if not key:
         return False
     if key in request.app.state.config.api_keys:
         request.state.client_key_label = _label_for_config_key(key)
+        request.state.can_login = True
+        request.state.allowed_models = None
         return True
-    from janus.storage.api_keys import verify_key
+    from janus.storage.api_keys import get_key_policy, verify_key
 
     key_id = await verify_key(request.app.state.db_path, key)
     if key_id is not None:
         request.state.client_key_id = key_id
+        policy = await get_key_policy(request.app.state.db_path, key_id)
+        if policy is not None:
+            request.state.can_login = policy["can_login"]
+            request.state.allowed_models = policy["allowed_models"]
+        else:
+            request.state.can_login = True
+            request.state.allowed_models = None
         return True
     return False
 

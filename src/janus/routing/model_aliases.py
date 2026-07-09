@@ -23,6 +23,13 @@ _PROVIDER_ALIASES: dict[str, dict[str, tuple[str, dict[str, Any] | None]]] = {
         "deepseek-v4-pro-max": ("deepseek-v4-pro", {"mode": "level", "level": "max"}),
         "deepseek-v4-pro-none": ("deepseek-v4-pro", {"mode": "none"}),
     },
+    "xiaomi": {
+        # Convenience Claude-compat id → real paygo model.
+        "mimo-v2.5-pro-claude": ("mimo-v2.5-pro", None),
+    },
+    "xmtp": {
+        "mimo-v2.5-pro-claude": ("mimo-v2.5-pro", None),
+    },
 }
 
 

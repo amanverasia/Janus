@@ -106,10 +106,13 @@ CLAUDE_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
 CLAUDE_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-ANTIGRAVITY_CLIENT_ID = os.getenv("ANTIGRAVITY_CLIENT_ID", "")
-ANTIGRAVITY_CLIENT_SECRET = os.getenv("ANTIGRAVITY_CLIENT_SECRET", "")
-GOOGLE_CLI_CLIENT_ID = os.getenv("GOOGLE_CLI_CLIENT_ID", "")
-GOOGLE_CLI_CLIENT_SECRET = os.getenv("GOOGLE_CLI_CLIENT_SECRET", "")
+
+# Google OAuth clients are public desktop/CLI apps, but must not be hard-coded in
+# the repo (GitHub push protection). Set via env when using Antigravity / Gemini CLI.
+ANTIGRAVITY_CLIENT_ID = os.environ.get("JANUS_ANTIGRAVITY_CLIENT_ID", "")
+ANTIGRAVITY_CLIENT_SECRET = os.environ.get("JANUS_ANTIGRAVITY_CLIENT_SECRET", "")
+GOOGLE_CLI_CLIENT_ID = os.environ.get("JANUS_GOOGLE_CLI_CLIENT_ID", "")
+GOOGLE_CLI_CLIENT_SECRET = os.environ.get("JANUS_GOOGLE_CLI_CLIENT_SECRET", "")
 
 KIRO_SOCIAL_REFRESH_URL = "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken"
 KIRO_IDC_TOKEN_URL = "https://oidc.us-east-1.amazonaws.com/token"

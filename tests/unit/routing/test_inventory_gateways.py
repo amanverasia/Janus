@@ -11,7 +11,8 @@ def test_minimax_moonshot_zhipu_gateways_exist():
     assert gws["moonshot"]["prefix"] == "moonshot"
     assert gws["zhipu"]["prefix"] == "zhipu"
     assert gws["minimax"]["api_type"] == "openai_compat"
-    assert any(t.get("format") == "anthropic" for t in gws["minimax"].get("transports", []))
+    assert gws["minimax"].get("transports", {}).get("anthropic")
+    assert gws["zhipu"].get("transports", {}).get("anthropic")
 
 
 def test_inventory_ids_map_to_themselves_when_same():

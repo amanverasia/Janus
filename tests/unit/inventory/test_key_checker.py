@@ -269,3 +269,14 @@ async def test_check_upstream_key_marks_invalid(tmp_path):
     assert updated["status"] == "invalid"
     assert updated["is_valid"] == 0
     assert updated["last_error"] is not None
+
+
+def test_multi_base_candidates_minimax_and_moonshot() -> None:
+    from janus.inventory.key_checker import MULTI_BASE_CANDIDATES
+
+    assert "minimax" in MULTI_BASE_CANDIDATES
+    assert any("minimaxi.com" in b for b in MULTI_BASE_CANDIDATES["minimax"])
+    assert any("minimax.io" in b for b in MULTI_BASE_CANDIDATES["minimax"])
+    assert "moonshot" in MULTI_BASE_CANDIDATES
+    # Coding host is a separate gateway — not an inventory multi-base candidate.
+    assert not any("kimi.com" in b for b in MULTI_BASE_CANDIDATES["moonshot"])

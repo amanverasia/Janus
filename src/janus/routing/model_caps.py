@@ -173,13 +173,40 @@ PATTERN_CAPABILITIES: list[tuple[str, dict[str, Any]]] = [
         },
     ),
     (
-        "gemini-3*",
+        "gemini-3*pro*",
         {
             "vision": True,
+            "audio_input": True,
             "reasoning": True,
             "thinking_format": "gemini-level",
             "thinking_can_disable": False,
             "search": True,
+            "context_window": 1_048_576,
+            "max_output": 65_535,
+        },
+    ),
+    (
+        "gemini-3*",
+        {
+            "vision": True,
+            "audio_input": True,
+            "reasoning": True,
+            "thinking_format": "gemini-level",
+            "thinking_can_disable": False,
+            "search": True,
+            "context_window": 1_048_576,
+            "max_output": 65_536,
+        },
+    ),
+    (
+        "gemini-2.5*",
+        {
+            "vision": True,
+            "reasoning": True,
+            "thinking_format": "gemini-budget",
+            "search": True,
+            "context_window": 1_048_576,
+            "max_output": 65_536,
         },
     ),
     (
@@ -228,21 +255,83 @@ PATTERN_CAPABILITIES: list[tuple[str, dict[str, Any]]] = [
         {"reasoning": True, "thinking_format": "qwen", "tool_use": True},
     ),
     (
+        "kimi*k2*",
+        {
+            "vision": True,
+            "reasoning": True,
+            "thinking_format": "kimi",
+            "thinking_can_disable": False,
+            "context_window": 262_144,
+            "max_output": 32_000,
+        },
+    ),
+    (
         "kimi*",
         {
             "vision": True,
             "reasoning": True,
             "thinking_format": "kimi",
             "thinking_can_disable": False,
+            "context_window": 262_144,
+        },
+    ),
+    (
+        "minimax-m3*",
+        {
+            "vision": True,
+            "reasoning": True,
+            "thinking_format": "minimax",
+            "thinking_can_disable": True,
+            "context_window": 1_048_576,
+            "max_output": 512_000,
+        },
+    ),
+    (
+        "minimax-m2*",
+        {
+            "reasoning": True,
+            "thinking_format": "minimax",
+            "thinking_can_disable": False,
+            "context_window": 204_800,
+            "max_output": 131_072,
         },
     ),
     (
         "minimax*",
-        {"reasoning": True, "thinking_format": "minimax"},
+        {
+            "reasoning": True,
+            "thinking_format": "minimax",
+            "thinking_can_disable": False,
+            "context_window": 200_000,
+            "max_output": 131_072,
+        },
+    ),
+    (
+        "glm-5*",
+        {
+            "reasoning": True,
+            "thinking_format": "zai",
+            "thinking_can_disable": False,
+            "context_window": 200_000,
+            "max_output": 128_000,
+        },
+    ),
+    (
+        "glm-4.7*",
+        {
+            "reasoning": True,
+            "thinking_format": "zai",
+            "context_window": 200_000,
+            "max_output": 128_000,
+        },
     ),
     (
         "glm*",
-        {"reasoning": True, "thinking_format": "zai"},
+        {
+            "reasoning": True,
+            "thinking_format": "zai",
+            "context_window": 200_000,
+        },
     ),
     (
         "codex*",
@@ -260,8 +349,26 @@ PATTERN_CAPABILITIES: list[tuple[str, dict[str, Any]]] = [
             "reasoning": True,
             "tool_use": True,
             "thinking_format": "openai",
-            "context_window": 256_000,
+            "context_window": 1_000_000,
             "max_output": 32_000,
+        },
+    ),
+    (
+        "mimo-v2.5*tts*",
+        {
+            "vision": False,
+            "audio_output": True,
+            "tool_use": False,
+            "context_window": 32_000,
+        },
+    ),
+    (
+        "mimo-v2.5*asr*",
+        {
+            "vision": False,
+            "audio_input": True,
+            "tool_use": False,
+            "context_window": 32_000,
         },
     ),
     (
@@ -270,8 +377,21 @@ PATTERN_CAPABILITIES: list[tuple[str, dict[str, Any]]] = [
             "vision": True,
             "reasoning": True,
             "tool_use": True,
-            "context_window": 256_000,
+            "thinking_format": "openai",
+            "context_window": 1_000_000,
             "max_output": 32_000,
+        },
+    ),
+    (
+        "mimo-v2-omni*",
+        {
+            "vision": True,
+            "audio_input": True,
+            "audio_output": True,
+            "reasoning": True,
+            "tool_use": True,
+            "context_window": 256_000,
+            "max_output": 16_000,
         },
     ),
     (

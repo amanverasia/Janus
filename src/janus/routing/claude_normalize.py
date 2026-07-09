@@ -44,6 +44,7 @@ def normalize_claude_passthrough(body: dict[str, Any], model: str = "") -> dict[
         return body
 
     thinking = body.get("thinking")
+    # Haiku rejects adaptive thinking — rewrite to fixed budget (9router).
     if (
         isinstance(thinking, dict)
         and thinking.get("type") == "adaptive"
@@ -54,6 +55,17 @@ def normalize_claude_passthrough(body: dict[str, Any], model: str = "") -> dict[
     if _ADAPTIVE_UNSUPPORTED.search(model or ""):
         out_cfg = body.get("output_config")
         if isinstance(out_cfg, dict) and "effort" in out_cfg:
+            out_cfg = dict(out_cfg)
+            out_cfg.pop("effort", None)
+            if out_cfg:
+                body["output_config"] = out_cfg
+            else:
+                body.pop("output_config", None)
+    else:
+        # Non-Haiku: keep adaptive + output_config.effort (effort beta header).
+        # Drop empty effort only.
+        out_cfg = body.get("output_config")
+        if isinstance(out_cfg, dict) and out_cfg.get("effort") in (None, ""):
             out_cfg = dict(out_cfg)
             out_cfg.pop("effort", None)
             if out_cfg:

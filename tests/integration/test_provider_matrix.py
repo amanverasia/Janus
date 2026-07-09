@@ -246,7 +246,7 @@ def test_every_gateway_entry_registers_and_resolves() -> None:
             loop.close()
         except Exception:
             pass
-    assert count == 35
+    assert count == 38
 
 
 def test_alias_api_types_build() -> None:
@@ -615,6 +615,7 @@ async def test_mimo_free_openai_native(tmp_path: Any) -> None:
     assert body["messages"][0]["role"] == "system"
     assert "MiMoCode" in body["messages"][0]["content"]
 
+@respx.mock
 async def test_github_copilot_exchanges_token_then_chats(tmp_path: Any) -> None:
     base = "https://api.individual.githubcopilot.com"
     cfg = _cfg(

@@ -46,21 +46,22 @@ def expand_gateway_provider(
     transports: dict[str, str] | None = None
     if isinstance(transports_raw, str) and transports_raw:
         try:
-            parsed = json.loads(transports_raw)
+            transports_raw = json.loads(transports_raw)
         except (json.JSONDecodeError, TypeError):
-            parsed = None
-        if isinstance(parsed, list):
-            transports = {
-                item["format"]: item["base_url"] for item in parsed
-            }
-        elif isinstance(parsed, dict):
-            transports = parsed
+            transports_raw = None
+    if isinstance(transports_raw, dict):
+        transports = {str(k): str(v) for k, v in transports_raw.items() if v}
     elif isinstance(transports_raw, list):
-        transports = {
-            item["format"]: item["base_url"] for item in transports_raw
-        }
-    elif isinstance(transports_raw, dict):
-        transports = transports_raw
+        # Accept list[{format, base_url}] from older seed/UI shapes.
+        parsed: dict[str, str] = {}
+        for item in transports_raw:
+            if not isinstance(item, dict):
+                continue
+            fmt = item.get("format")
+            url = item.get("base_url") or item.get("url")
+            if fmt and url:
+                parsed[str(fmt)] = str(url)
+        transports = parsed or None
     if upstream_keys:
         configs: list[ProviderConfig] = []
         for key in upstream_keys:

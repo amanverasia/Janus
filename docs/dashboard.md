@@ -150,8 +150,9 @@ Settings are stored in the DB and take effect immediately.
 
 ### API Keys — `/dashboard/keys`
 
-- **Key list** — ID, prefix, name, status (active/revoked)
-- **Create** — HTMX form; full `sk-janus-...` key shown **once**
+- **Key list** — ID, prefix, name, login permission, model allowlist, status (active/revoked)
+- **Create** — HTMX form with optional dashboard login, allowed models (`exact` or `prefix/*`), and daily budget; full `sk-janus-...` key shown **once**
+- **Edit** — update name, login, models, or daily budget
 - **Revoke** — deactivate key
 
 ### Tool Setup — `/dashboard/tools`
@@ -193,7 +194,8 @@ Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.
 
 | Method | Path | Action |
 |---|---|---|
-| `POST` | `/dashboard/api/keys` | Create an API key |
+| `POST` | `/dashboard/api/keys` | Create an API key (optional login/models/budget) |
+| `POST` | `/dashboard/api/keys/{id}` | Update key scopes / optional daily budget |
 | `DELETE` | `/dashboard/api/keys/{id}` | Revoke an API key |
 
 ### Budgets

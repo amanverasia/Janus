@@ -66,6 +66,41 @@ async def test_dashboard_keys_create(app):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_keys_create_with_scopes(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/dashboard/api/keys",
+            data={
+                "name": "scoped",
+                "login_field": "1",
+                "can_login": "",
+                "allowed_models": "test/*, combo",
+                "daily_budget": "2.5",
+            },
+        )
+        assert r.status_code == 200
+        assert "sk-janus-" in r.text
+        assert "No" in r.text or "api" in r.text.lower()
+        assert "test/*" in r.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_login_rejects_api_only_key(app):
+    from janus.storage.api_keys import create_key
+    from janus.storage.database import init_db
+
+    await init_db(app.state.db_path)
+    full_key, _ = await create_key(app.state.db_path, "api-only", can_login=False)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/dashboard/login",
+            data={"api_key": full_key, "next": "/dashboard"},
+        )
+        assert r.status_code == 401
+        assert "cannot access the dashboard" in r.text
+
+
+@pytest.mark.asyncio
 async def test_dashboard_keys_revoke(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Create a key first

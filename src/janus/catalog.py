@@ -70,9 +70,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://api.anthropic.com",
             "prefix": "anthropic",
             "default_models": [
-                "claude-sonnet-4-20250514",
-                "claude-opus-4-20250514",
-                "claude-3-5-sonnet-20241022",
+                "claude-sonnet-4-5-20250929",
+                "claude-haiku-4-5-20251001",
+                "claude-opus-4-5-20251101",
+                "claude-sonnet-4-6",
+                "claude-opus-4-6",
             ],
         },
         "capabilities": {
@@ -142,11 +144,12 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "base_url": "https://generativelanguage.googleapis.com",
             "prefix": "gemini",
             "default_models": [
-                "gemini-2.5-pro",
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite",
-                "gemini-2.0-flash",
+                "gemini-2.5-pro",
                 "gemini-3-flash-preview",
+                "gemini-3.1-flash-lite",
+                "gemini-flash-latest",
             ],
         },
         "capabilities": {
@@ -745,20 +748,35 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "prefix": "moonshot",
             "default_models": [
                 "kimi-k2.5",
-                "kimi-latest",
                 "moonshot-v1-auto",
+                "moonshot-v1-8k",
                 "moonshot-v1-128k",
             ],
-            "transports": [
-                {
-                    "format": "openai",
-                    "base_url": "https://api.kimi.com/coding/v1",
-                },
-                {
-                    "format": "anthropic",
-                    "base_url": "https://api.kimi.com/coding",
-                },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "kimi_coding": {
+        "gateway": {
+            "id": "kimi_coding",
+            "name": "Kimi Coding",
+            "icon": "🌙",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.kimi.com/coding/v1",
+            "prefix": "kimi",
+            "default_models": [
+                "kimi-k2.5",
+                "kimi-k2.5-thinking",
+                "kimi-k2.6",
             ],
+            "transports": {
+                "anthropic": "https://api.kimi.com/coding/v1",
+            },
         },
         "capabilities": {
             "vision": True,
@@ -829,16 +847,35 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "MiniMax-M2.1",
                 "MiniMax-M3",
             ],
-            "transports": [
-                {
-                    "format": "openai",
-                    "base_url": "https://api.minimaxi.com/v1",
-                },
-                {
-                    "format": "anthropic",
-                    "base_url": "https://api.minimaxi.com/anthropic",
-                },
+            "transports": {
+                "anthropic": "https://api.minimaxi.com/anthropic/v1",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "minimax_io": {
+        "gateway": {
+            "id": "minimax_io",
+            "name": "MiniMax (International)",
+            "icon": "🟣",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.minimax.io/v1",
+            "prefix": "minimax-io",
+            "default_models": [
+                "MiniMax-M2.7",
+                "MiniMax-M2.5",
+                "MiniMax-M2.1",
+                "MiniMax-M3",
             ],
+            "transports": {
+                "anthropic": "https://api.minimax.io/anthropic/v1",
+            },
         },
         "capabilities": {
             "vision": True,
@@ -915,16 +952,35 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "glm-4-flash",
                 "glm-4.5",
             ],
-            "transports": [
-                {
-                    "format": "openai",
-                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
-                },
-                {
-                    "format": "anthropic",
-                    "base_url": "https://open.bigmodel.cn/api/anthropic",
-                },
+            "transports": {
+                "anthropic": "https://open.bigmodel.cn/api/anthropic",
+            },
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
+    "glm_coding": {
+        "gateway": {
+            "id": "glm_coding",
+            "name": "GLM Coding (Z.ai)",
+            "icon": "🟦",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://api.z.ai/api/coding/paas/v4",
+            "prefix": "glm",
+            "default_models": [
+                "glm-5.2",
+                "glm-5.1",
+                "glm-4.7",
+                "glm-4.6",
             ],
+            "transports": {
+                "anthropic": "https://api.z.ai/api/anthropic",
+            },
         },
         "capabilities": {
             "vision": True,
@@ -964,6 +1020,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "mimo-v2.5",
                 "mimo-v2-omni",
                 "mimo-v2-flash",
+                "mimo-v2.5-pro-claude",
             ],
             "transports": {
                 "anthropic": "https://api.xiaomimimo.com/anthropic/v1",
@@ -1003,6 +1060,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "mimo-v2.5",
                 "mimo-v2-pro",
                 "mimo-v2-omni",
+                "mimo-v2.5-tts",
+                "mimo-v2.5-asr",
             ],
             "transports": {
                 "anthropic": "https://token-plan-sgp.xiaomimimo.com/anthropic/v1",
@@ -1295,8 +1354,11 @@ GATEWAY_ORDER: list[str] = [
     "byteplus",
     "qwen",
     "minimax",
+    "minimax_io",
     "moonshot",
+    "kimi_coding",
     "zhipu",
+    "glm_coding",
     "github_copilot",
     "codex",
     "kiro",

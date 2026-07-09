@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from janus.api.auth import key_allowed_models
 from janus.canonical.models import Usage
 from janus.canonical.tool_calls import prepare_tool_messages
 from janus.formats.anthropic import AnthropicAdapter
@@ -46,6 +47,7 @@ from janus.routing.thinking import (
 )
 from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
+from janus.storage.key_access import model_allowed
 from janus.storage.request_logs import record_request_log
 from janus.storage.usage import record_usage
 from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
@@ -160,7 +162,13 @@ def _passthrough_headers(
         headers.setdefault("anthropic-version", "2023-06-01")
         headers.setdefault(
             "anthropic-beta",
-            "claude-code-20250219,interleaved-thinking-2025-05-14",
+            (
+                "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
+                "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
+                "advanced-tool-use-2025-11-20,effort-2025-11-24,"
+                "structured-outputs-2025-12-15,fast-mode-2026-02-01,"
+                "redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
+            ),
         )
     return headers
 
@@ -313,6 +321,19 @@ async def _handle(
     # Strip model thinking suffix like "gpt-4o(high)" → clean model + intent
     canonical_req, thinking_intent = resolve_thinking_intent(canonical_req)
 
+    allowed = key_allowed_models(request)
+    if not model_allowed(canonical_req.model, allowed):
+        return JSONResponse(
+            content={
+                "error": {
+                    "message": f"Model '{canonical_req.model}' is not allowed for this API key",
+                    "type": "model_not_allowed",
+                    "model": canonical_req.model,
+                }
+            },
+            status_code=403,
+        )
+
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
     canonical_req = await saver_pipeline.apply_async(canonical_req)
     canonical_req = saver_pipeline.apply(canonical_req)
@@ -394,9 +415,7 @@ async def _handle(
                     caps=model_caps,
                     intent=attempt_thinking,
                 )
-                inject_reasoning_content(
-                    pt_body, provider=target.prefix, model=target.model
-                )
+                inject_reasoning_content(pt_body, provider=target.prefix, model=target.model)
                 pt_body = _apply_client_body_quirks(
                     pt_body,
                     client_format=client_format,
@@ -564,9 +583,7 @@ async def _handle(
                     caps=model_caps,
                     intent=attempt_thinking,
                 )
-                inject_reasoning_content(
-                    native_body, provider=target.prefix, model=target.model
-                )
+                inject_reasoning_content(native_body, provider=target.prefix, model=target.model)
                 native_body = _apply_client_body_quirks(
                     native_body,
                     client_format=client_format,
@@ -735,9 +752,7 @@ async def _handle(
             caps=model_caps,
             intent=attempt_thinking,
         )
-        inject_reasoning_content(
-            upstream_payload, provider=target.prefix, model=target.model
-        )
+        inject_reasoning_content(upstream_payload, provider=target.prefix, model=target.model)
         upstream_payload = _apply_client_body_quirks(
             upstream_payload,
             client_format=client_format,
@@ -940,6 +955,7 @@ async def _handle(
 @router.get("/models", dependencies=[Depends(require_api_key)])
 async def list_models(request: Request) -> dict[str, Any]:
     registry: ProviderRegistry = request.app.state.registry
+    allowed = key_allowed_models(request)
     data: list[dict[str, Any]] = []
     for prefix, configs in registry.providers.items():
         models_seen: set[str] = set()
@@ -947,15 +963,20 @@ async def list_models(request: Request) -> dict[str, Any]:
             for model in config.models:
                 if model not in models_seen:
                     models_seen.add(model)
+                    model_id = f"{prefix}/{model}"
+                    if not model_allowed(model_id, allowed):
+                        continue
                     data.append(
                         {
-                            "id": f"{prefix}/{model}",
+                            "id": model_id,
                             "object": "model",
                             "created": 0,
                             "owned_by": config.id,
                         }
                     )
     for combo_name in registry.combos:
+        if not model_allowed(combo_name, allowed):
+            continue
         data.append(
             {
                 "id": combo_name,

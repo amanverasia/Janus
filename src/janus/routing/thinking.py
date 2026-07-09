@@ -87,12 +87,20 @@ def parse_thinking_suffix(model: str) -> tuple[str, dict[str, Any] | None]:
 
 
 def extract_thinking(req: CanonicalRequest) -> dict[str, Any] | None:
+    # output_config.effort (Claude adaptive) is higher priority when present on
+    # the original client body; CanonicalRequest may only carry thinking/effort.
     if req.thinking and isinstance(req.thinking, dict):
         t = req.thinking
         ttype = t.get("type")
         if ttype == "disabled":
             return {"mode": "none"}
-        if ttype in ("adaptive", "enabled"):
+        # Adaptive without budget → auto (provider maps to effort / adaptive).
+        if ttype == "adaptive":
+            budget = t.get("budget_tokens")
+            if isinstance(budget, (int, float)) and budget > 0:
+                return {"mode": "budget", "budget": int(budget)}
+            return {"mode": "auto"}
+        if ttype == "enabled":
             budget = t.get("budget_tokens")
             if isinstance(budget, (int, float)) and budget > 0:
                 return {"mode": "budget", "budget": int(budget)}
@@ -251,9 +259,15 @@ def _apply_format(
         if none and can_disable:
             payload["thinking"] = {"type": "disabled"}
             return
+        # Adaptive thinking + discrete effort (Claude 4.5+ / effort beta).
+        payload["thinking"] = {"type": "adaptive"}
         level = _to_level(eff)
+        if level == "auto" or level is None:
+            return
         if level == "xhigh":
             level = "high"
+        if level == "minimal":
+            level = "low"
         payload["output_config"] = {"effort": level}
         return
 
@@ -272,23 +286,38 @@ def _apply_format(
         return
 
     if fmt == "gemini-level":
+        # Gemini 3.x uses thinkingLevel enum; cannot fully disable → minimal.
         level = "minimal" if none else effort_to_thinking_level(_to_level(eff) or "high")
+        if level not in ("minimal", "low", "medium", "high"):
+            level = "high"
         _set_gemini_thinking(
             payload,
-            {"thinkingLevel": level, "includeThoughts": level != "minimal"},
+            {
+                "thinkingLevel": level,
+                "includeThoughts": level != "minimal",
+            },
         )
         return
 
     if fmt == "gemini-budget":
+        # Gemini 2.x thinkingBudget: 0 disables, -1 dynamic, >0 fixed budget.
         if none and can_disable:
             _set_gemini_thinking(
                 payload, {"thinkingBudget": 0, "includeThoughts": False}
             )
             return
+        if eff["mode"] == "auto":
+            _set_gemini_thinking(
+                payload, {"thinkingBudget": -1, "includeThoughts": True}
+            )
+            return
         budget = _to_budget(eff, caps)
         _set_gemini_thinking(
             payload,
-            {"thinkingBudget": budget if budget is not None else -1, "includeThoughts": True},
+            {
+                "thinkingBudget": budget if budget is not None else -1,
+                "includeThoughts": True,
+            },
         )
         return
 
@@ -337,9 +366,11 @@ def _apply_format(
         return
 
     if fmt == "minimax":
-        payload["thinking"] = {
-            "type": "disabled" if none and can_disable else "adaptive"
-        }
+        # M3 adaptive; M2.x often cannot disable (can_disable clamp).
+        if none and can_disable:
+            payload["thinking"] = {"type": "disabled"}
+        else:
+            payload["thinking"] = {"type": "adaptive"}
         return
 
     if fmt in ("hunyuan",):

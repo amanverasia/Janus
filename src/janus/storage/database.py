@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS api_keys (
     key_hash TEXT NOT NULL UNIQUE,
     prefix TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,
+    can_login INTEGER NOT NULL DEFAULT 1,
+    allowed_models TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -216,6 +218,11 @@ _NEW_PROVIDER_COLUMNS = [
     ("transports", "TEXT"),
 ]
 
+_API_KEY_NEW_COLUMNS = [
+    ("can_login", "INTEGER NOT NULL DEFAULT 1"),
+    ("allowed_models", "TEXT"),
+]
+
 
 async def _migrate_provider_columns(db: aiosqlite.Connection) -> None:
     cursor = await db.execute("PRAGMA table_info(providers)")
@@ -270,6 +277,15 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
     )
 
 
+async def _migrate_api_key_columns(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(api_keys)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    for col, col_type in _API_KEY_NEW_COLUMNS:
+        if col not in existing:
+            await db.execute(f"ALTER TABLE api_keys ADD COLUMN {col} {col_type}")
+
+
 async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
     # Rebuild the cooldowns table with a compound (account_id, model) PK.
     # The whole sequence runs inside init_db's single uncommitted transaction
@@ -309,6 +325,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_provider_columns(db)
         await _migrate_upstream_key_columns(db)
         await _migrate_cooldowns_per_model(db)
+        await _migrate_api_key_columns(db)
         await db.commit()
     await seed_inventory_providers(db_path)
 

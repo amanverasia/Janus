@@ -19,6 +19,8 @@
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">ID</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Prefix</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Login</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Models</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Created</th>
                 <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
@@ -26,10 +28,24 @@
         </thead>
         <tbody class="divide-y divide-gray-700">
             {% for key in keys %}
-            <tr class="hover:bg-gray-700">
+            <tr class="hover:bg-gray-700 align-top">
                 <td class="px-4 py-3 text-sm text-gray-300 font-mono">{{ key.id }}</td>
                 <td class="px-4 py-3 text-sm text-white">{{ key.name }}</td>
                 <td class="px-4 py-3 text-sm text-gray-400 font-mono">{{ key.prefix }}…</td>
+                <td class="px-4 py-3 text-sm">
+                    {% if key.can_login %}
+                    <span class="text-green-300">Yes</span>
+                    {% else %}
+                    <span class="text-gray-400">No</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-300 font-mono max-w-xs truncate" title="{% if key.allowed_models %}{{ key.allowed_models | join(', ') }}{% else %}All models{% endif %}">
+                    {% if key.allowed_models %}
+                    {{ key.allowed_models | join(', ') }}
+                    {% else %}
+                    <span class="text-gray-500">All</span>
+                    {% endif %}
+                </td>
                 <td class="px-4 py-3">
                     {% if key.is_active %}
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200">Active</span>
@@ -38,8 +54,38 @@
                     {% endif %}
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-400">{{ key.created_at }}</td>
-                <td class="px-4 py-3 text-right">
+                <td class="px-4 py-3 text-right space-y-2">
                     {% if key.is_active %}
+                    <details class="text-left inline-block">
+                        <summary class="inline-flex items-center px-3 py-1 border border-gray-600 rounded-md text-xs font-medium text-gray-300 hover:bg-gray-800 cursor-pointer list-none">
+                            Edit
+                        </summary>
+                        <form hx-post="/dashboard/api/keys/{{ key.id }}"
+                              hx-target="#keys-content"
+                              hx-swap="innerHTML"
+                              class="mt-2 p-3 bg-gray-900 border border-gray-700 rounded-lg space-y-2 min-w-[16rem]">
+                            <input type="hidden" name="login_field" value="1">
+                            <input type="hidden" name="models_field" value="1">
+                            <input type="text" name="name" value="{{ key.name }}"
+                                   class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white">
+                            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                                <input type="checkbox" name="can_login" value="on"
+                                       {% if key.can_login %}checked{% endif %}
+                                       class="rounded border-gray-600 bg-gray-800 text-blue-600">
+                                Allow dashboard login
+                            </label>
+                            <textarea name="allowed_models" rows="2"
+                                      placeholder="Empty = all models"
+                                      class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white font-mono">{% if key.allowed_models %}{{ key.allowed_models | join(', ') }}{% endif %}</textarea>
+                            <input type="number" name="daily_budget" step="0.01" min="0"
+                                   placeholder="Daily budget USD"
+                                   class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white">
+                            <button type="submit"
+                                    class="w-full px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs cursor-pointer">
+                                Save
+                            </button>
+                        </form>
+                    </details>
                     <button hx-delete="/dashboard/api/keys/{{ key.id }}"
                             hx-target="#keys-content"
                             hx-swap="innerHTML"
