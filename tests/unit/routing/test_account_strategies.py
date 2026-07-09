@@ -57,7 +57,7 @@ def test_sticky_rr_holds_head_for_limit_then_advances():
     assert firsts == ["ds-1", "ds-1", "ds-2", "ds-2", "ds-3"]
 
 
-def test_client_key_sticky_override_takes_precedence_over_strategy():
+def test_client_key_sticky_pins_only_under_fill_first():
     registry = _three_account_registry()
     handler = FallbackHandler(registry)
     first = handler.resolve_attempts(
@@ -73,6 +73,53 @@ def test_client_key_sticky_override_takes_precedence_over_strategy():
         sticky_client_key=True,
     )
     assert first[0].account_id == second[0].account_id == "ds-2"
+
+
+def test_client_key_sticky_still_round_robins_accounts():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    firsts = [
+        handler.resolve_attempts(
+            "ds/m1",
+            strategy=AccountStrategy.ROUND_ROBIN,
+            client_key_id=1,
+            sticky_client_key=True,
+        )[0].account_id
+        for _ in range(3)
+    ]
+    # client_key_id=1 phases pool to [ds-2, ds-3, ds-1], then RR advances.
+    assert firsts == ["ds-2", "ds-3", "ds-1"]
+
+
+def test_client_key_sticky_round_robin_counters_are_independent():
+    registry = _three_account_registry()
+    handler = FallbackHandler(registry)
+    a1 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=1,
+        sticky_client_key=True,
+    )[0].account_id
+    b1 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=2,
+        sticky_client_key=True,
+    )[0].account_id
+    a2 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=1,
+        sticky_client_key=True,
+    )[0].account_id
+    b2 = handler.resolve_attempts(
+        "ds/m1",
+        strategy=AccountStrategy.ROUND_ROBIN,
+        client_key_id=2,
+        sticky_client_key=True,
+    )[0].account_id
+    assert [a1, a2] == ["ds-2", "ds-3"]
+    assert [b1, b2] == ["ds-3", "ds-1"]
 
 
 def test_resolve_sticky_limit_falls_back_to_default_on_non_numeric_value():

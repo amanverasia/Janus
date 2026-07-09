@@ -129,12 +129,15 @@
             <div class="flex-1 min-w-0">
                 <h2 class="text-lg font-bold text-white">Sticky Client-Key Routing</h2>
                 <p class="text-gray-400 text-sm mt-1">
-                    When enabled, each Janus API key always routes to the same upstream account
-                    for a given model. Improves provider cache hits and makes per-key spend
-                    easier to reconcile. When disabled, accounts rotate round-robin per request.
+                    When enabled with <span class="text-gray-300">fill-first</span>, each Janus
+                    API key is pinned to a stable upstream account (better cache hits, easier
+                    per-key spend). With <span class="text-gray-300">round-robin</span> /
+                    <span class="text-gray-300">sticky round-robin</span>, each Janus key still
+                    rotates across the multi-key pool, just on its own staggered counter so
+                    different clients start on different accounts.
                 </p>
                 <p class="text-gray-500 text-xs mt-2">
-                    Requests without a Janus API key still use round-robin.
+                    Requests without a Janus API key share the global rotation counter.
                 </p>
             </div>
             <label class="janus-toggle">

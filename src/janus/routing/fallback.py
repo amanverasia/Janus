@@ -150,6 +150,45 @@ class FallbackHandler:
         self._daily_date = self._today()
         self._daily_counts = await get_request_counts_today(self.db_path)
 
+    def adopt_runtime_state(self, other: FallbackHandler) -> None:
+        """Preserve in-memory rotation/rate state across provider reloads."""
+        self._rotation_counters = dict(other._rotation_counters)
+        self._sticky = dict(other._sticky)
+        self._combo_rotation = dict(other._combo_rotation)
+        self._request_times = {
+            account_id: deque(times) for account_id, times in other._request_times.items()
+        }
+        self._daily_counts = dict(other._daily_counts)
+        self._daily_date = other._daily_date
+        self._quota_used = dict(other._quota_used)
+        self._quota_window_id = dict(other._quota_window_id)
+        # Cooldowns/backoff are also reloaded from DB; keep live values as a baseline.
+        self._cooldowns = dict(other._cooldowns)
+        self._backoff = dict(other._backoff)
+
+    @staticmethod
+    def _client_pool_key(
+        pool_key: str,
+        *,
+        client_key_id: int | None,
+        sticky_client_key: bool,
+    ) -> str:
+        if sticky_client_key and client_key_id is not None:
+            return f"{pool_key}::ck{client_key_id}"
+        return pool_key
+
+    def _phase_accounts(
+        self,
+        accounts: list[ResolvedTarget],
+        *,
+        client_key_id: int | None,
+        sticky_client_key: bool,
+    ) -> list[ResolvedTarget]:
+        if not (sticky_client_key and client_key_id is not None) or len(accounts) <= 1:
+            return accounts
+        index = client_key_id % len(accounts)
+        return accounts[index:] + accounts[:index]
+
     def _rotate_accounts(
         self,
         pool_key: str,
@@ -160,26 +199,51 @@ class FallbackHandler:
     ) -> list[ResolvedTarget]:
         if len(accounts) <= 1:
             return accounts
-        if sticky_client_key and client_key_id is not None:
-            index = client_key_id % len(accounts)
-            return accounts[index:] + accounts[:index]
-        index = self._rotation_counters.get(pool_key, 0) % len(accounts)
-        self._rotation_counters[pool_key] = index + 1
-        return accounts[index:] + accounts[:index]
+        phased = self._phase_accounts(
+            accounts,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
+        counter_key = self._client_pool_key(
+            pool_key,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
+        index = self._rotation_counters.get(counter_key, 0) % len(phased)
+        self._rotation_counters[counter_key] = index + 1
+        return phased[index:] + phased[:index]
 
     def _sticky_rotate(
-        self, pool_key: str, accounts: list[ResolvedTarget], sticky_limit: int
+        self,
+        pool_key: str,
+        accounts: list[ResolvedTarget],
+        sticky_limit: int,
+        *,
+        client_key_id: int | None = None,
+        sticky_client_key: bool = False,
     ) -> list[ResolvedTarget]:
-        account_ids = [a.account_id for a in accounts]
-        sticky = self._sticky.get(pool_key)
+        phased = self._phase_accounts(
+            accounts,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
+        counter_key = self._client_pool_key(
+            pool_key,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
+        account_ids = [a.account_id for a in phased]
+        sticky = self._sticky.get(counter_key)
         if sticky is not None:
             head_id, count = sticky
             if head_id in account_ids and count < sticky_limit:
-                self._sticky[pool_key] = (head_id, count + 1)
+                self._sticky[counter_key] = (head_id, count + 1)
                 index = account_ids.index(head_id)
-                return accounts[index:] + accounts[:index]
-        rotated = self._rotate_accounts(pool_key, accounts)
-        self._sticky[pool_key] = (rotated[0].account_id, 1)
+                return phased[index:] + phased[:index]
+        index = self._rotation_counters.get(counter_key, 0) % len(phased)
+        self._rotation_counters[counter_key] = index + 1
+        rotated = phased[index:] + phased[:index]
+        self._sticky[counter_key] = (rotated[0].account_id, 1)
         return rotated
 
     def _order_by_strategy(
@@ -188,14 +252,34 @@ class FallbackHandler:
         accounts: list[ResolvedTarget],
         strategy: AccountStrategy,
         sticky_limit: int,
+        *,
+        client_key_id: int | None = None,
+        sticky_client_key: bool = False,
     ) -> list[ResolvedTarget]:
         if len(accounts) <= 1:
             return accounts
         if strategy is AccountStrategy.FILL_FIRST:
+            if sticky_client_key and client_key_id is not None:
+                return self._phase_accounts(
+                    accounts,
+                    client_key_id=client_key_id,
+                    sticky_client_key=True,
+                )
             return accounts
         if strategy is AccountStrategy.STICKY_RR:
-            return self._sticky_rotate(pool_key, accounts, sticky_limit)
-        return self._rotate_accounts(pool_key, accounts)
+            return self._sticky_rotate(
+                pool_key,
+                accounts,
+                sticky_limit,
+                client_key_id=client_key_id,
+                sticky_client_key=sticky_client_key,
+            )
+        return self._rotate_accounts(
+            pool_key,
+            accounts,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
 
     def _resolve_order(
         self,
@@ -207,14 +291,14 @@ class FallbackHandler:
         strategy: AccountStrategy,
         sticky_limit: int,
     ) -> list[ResolvedTarget]:
-        if sticky_client_key and client_key_id is not None:
-            return self._rotate_accounts(
-                pool_key,
-                accounts,
-                client_key_id=client_key_id,
-                sticky_client_key=sticky_client_key,
-            )
-        return self._order_by_strategy(pool_key, accounts, strategy, sticky_limit)
+        return self._order_by_strategy(
+            pool_key,
+            accounts,
+            strategy,
+            sticky_limit,
+            client_key_id=client_key_id,
+            sticky_client_key=sticky_client_key,
+        )
 
     def resolve_attempts(
         self,

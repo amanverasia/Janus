@@ -53,7 +53,11 @@ async def reload_providers(app: FastAPI) -> None:
 
     app.state.providers = new_providers
     app.state.registry = registry
-    app.state.fallback_handler = FallbackHandler(registry, db_path=db_path)
+    old_handler: FallbackHandler | None = getattr(app.state, "fallback_handler", None)
+    handler = FallbackHandler(registry, db_path=db_path)
+    if isinstance(old_handler, FallbackHandler):
+        handler.adopt_runtime_state(old_handler)
+    app.state.fallback_handler = handler
     await app.state.fallback_handler.load_cooldowns()
     await app.state.fallback_handler.load_request_counts()
     await app.state.fallback_handler.load_quota_usage()
