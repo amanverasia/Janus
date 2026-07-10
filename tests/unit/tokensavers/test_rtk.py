@@ -182,6 +182,36 @@ def test_find_detection_requires_path_like_lines_not_just_no_colons():
         assert f"item number {i}" in result
 
 
+def test_find_detection_ignores_prose_with_slashes():
+    # Slash-containing prose ("read/write", "and/or") must not be mistaken for
+    # `find` output just because it contains "/" somewhere in the line.
+    lines = [
+        f"You can use read/write or on/off toggles depending on the setup {i} today please"
+        for i in range(12)
+    ]
+    text = "\n".join(lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    result = _detect_and_compress(text)
+    assert result == text
+    for i in range(12):
+        assert f"setup {i} today" in result
+
+
+def test_find_detection_ignores_dot_bulleted_prose():
+    # Lines that merely start with "." (dot-bulleted prose) must not be mistaken
+    # for `find` output just because they start with a dot.
+    lines = [
+        f". item {i} bullet point in a list with a leading dot bullet marker style"
+        for i in range(12)
+    ]
+    text = "\n".join(lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    result = _detect_and_compress(text)
+    assert result == text
+    for i in range(12):
+        assert f". item {i} bullet" in result
+
+
 def test_find_detection_still_fires_for_genuine_path_listing():
     lines = [f"./src/some/deeper/pkg/directory/module{i}.py" for i in range(15)]
     lines += ["./src/some/deeper/pkg/other/thing.py"]

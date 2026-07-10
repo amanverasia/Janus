@@ -347,7 +347,9 @@ def _is_grep_output(window: str) -> bool:
 
 def _is_path_like(line: str) -> bool:
     stripped = line.strip()
-    return stripped.startswith((".", "/")) or "/" in stripped
+    if not stripped or " " in stripped:
+        return False
+    return bool(re.match(r"^\.{0,2}/", stripped)) or "/" in stripped
 
 
 def _is_find_output(window: str) -> bool:
