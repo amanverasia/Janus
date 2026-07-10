@@ -345,11 +345,16 @@ def _is_grep_output(window: str) -> bool:
     return count >= 5
 
 
+def _is_path_like(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith((".", "/")) or "/" in stripped
+
+
 def _is_find_output(window: str) -> bool:
     lines = [line for line in window.split("\n") if line.strip()]
     if len(lines) < 10:
         return False
-    return all(":" not in line for line in lines)
+    return all(":" not in line and _is_path_like(line) for line in lines)
 
 
 def _detect_and_compress(text: str) -> str:

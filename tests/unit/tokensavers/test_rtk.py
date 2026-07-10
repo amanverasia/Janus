@@ -166,6 +166,33 @@ def test_compress_find_output_groups_by_dir_and_caps():
     assert "module14.py" not in result  # beyond the 10-per-dir cap
 
 
+def test_find_detection_requires_path_like_lines_not_just_no_colons():
+    # Prose lines with no colons and no path separators must NOT be mistaken for
+    # `find` output, or compress_find_output would silently drop items beyond
+    # FIND_PER_DIR_MAX. Regression for the misdetection bug.
+    lines = [
+        f"item number {i} in a plain list without any special characters at all here"
+        for i in range(12)
+    ]
+    text = "\n".join(lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    result = _detect_and_compress(text)
+    assert result == text
+    for i in range(12):
+        assert f"item number {i}" in result
+
+
+def test_find_detection_still_fires_for_genuine_path_listing():
+    lines = [f"./src/some/deeper/pkg/directory/module{i}.py" for i in range(15)]
+    lines += ["./src/some/deeper/pkg/other/thing.py"]
+    text = "\n".join(lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    result = _detect_and_compress(text)
+    assert len(result) < len(text)
+    assert "module0.py" in result
+    assert "module14.py" not in result  # beyond the 10-per-dir cap
+
+
 def test_compress_tree_output_caps_lines_with_summary():
     lines = [f"├── file{i}.py" for i in range(300)]
     text = "\n".join(lines)
