@@ -1043,6 +1043,30 @@ async def _combos_partial(request: Request, db_path: Path) -> HTMLResponse:
 # ---- Token Savers ----
 
 
+def _saver_display_stats(raw_stats: dict[str, dict[str, int]]) -> dict[str, dict[str, Any]]:
+    """Build per-saver display stats: saved KB, request count, avg % saved.
+
+    Savings are clamped at >= 0 for display (prompt-injecting savers like
+    Caveman/Ponytail can have negative raw savings); the underlying raw sums
+    in the pipeline's stats dict are left untouched.
+    """
+    display: dict[str, dict[str, Any]] = {}
+    for name, counters in raw_stats.items():
+        requests = counters.get("requests", 0)
+        if requests <= 0:
+            continue
+        bytes_before = counters.get("bytes_before", 0)
+        bytes_after = counters.get("bytes_after", 0)
+        saved_bytes = max(0, bytes_before - bytes_after)
+        avg_pct = (saved_bytes / bytes_before * 100) if bytes_before else 0.0
+        display[name] = {
+            "requests": requests,
+            "saved_kb": saved_bytes / 1024,
+            "avg_pct": avg_pct,
+        }
+    return display
+
+
 async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
     from janus.storage.settings import (
         ensure_saver_defaults,
@@ -1052,7 +1076,10 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
 
     await ensure_saver_defaults(db_path)
     settings = resolve_saver_settings(await get_all_settings(db_path))
-    return {"request": request, "settings": settings}
+    saver_pipeline = getattr(request.app.state, "saver_pipeline", None)
+    raw_stats = getattr(saver_pipeline, "stats", {}) if saver_pipeline is not None else {}
+    saver_stats = _saver_display_stats(raw_stats)
+    return {"request": request, "settings": settings, "saver_stats": saver_stats}
 
 
 @router.get("/savers", response_class=HTMLResponse)

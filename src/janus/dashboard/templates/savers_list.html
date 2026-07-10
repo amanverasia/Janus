@@ -10,6 +10,16 @@
 </label>
 {% endmacro %}
 
+{% macro saver_savings(class_name) %}
+{% set s = saver_stats.get(class_name) if saver_stats else None %}
+{% if s %}
+<p class="text-gray-500 text-xs mt-2">
+    saved {{ "%.1f"|format(s.saved_kb) }} KB across {{ s.requests }} request{{ "s" if s.requests != 1 else "" }}
+    ({{ "%.1f"|format(s.avg_pct) }}% avg) — since restart
+</p>
+{% endif %}
+{% endmacro %}
+
 <div class="space-y-4">
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <div class="flex items-center justify-between gap-4">
@@ -19,6 +29,7 @@
                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200">Recommended</span>
                 </div>
                 <p class="text-gray-400 text-sm">Recursive Token Kompression — compresses conversation history to reduce input tokens. No quality loss for long conversations.</p>
+                {{ saver_savings("RTKSaver") }}
             </div>
             {{ saver_toggle("saver_rtk_enabled", settings.saver_rtk_enabled == 'true') }}
         </div>
@@ -31,6 +42,7 @@
                     <h2 class="text-lg font-bold text-white">Caveman</h2>
                 </div>
                 <p class="text-gray-400 text-sm">Strips filler words, pleasantries, and verbose phrasing from requests. Aggressive token savings, may affect nuance.</p>
+                {{ saver_savings("CavemanSaver") }}
             </div>
             {{ saver_toggle("saver_caveman_enabled", settings.saver_caveman_enabled == 'true') }}
         </div>
@@ -54,6 +66,7 @@
                        hx-trigger="change"
                        hx-on:htmx:config-request="event.detail.parameters.key='saver_headroom_url'; event.detail.parameters.value=event.detail.elt.value"
                        class="w-full max-w-sm px-3 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-300 font-mono focus:outline-none focus:border-blue-500">
+                {{ saver_savings("HeadroomSaver") }}
             </div>
             {{ saver_toggle("saver_headroom_enabled", settings.saver_headroom_enabled == 'true') }}
         </div>
@@ -78,6 +91,7 @@
                     </button>
                     {% endfor %}
                 </div>
+                {{ saver_savings("PonytailSaver") }}
             </div>
             {{ saver_toggle("saver_ponytail_enabled", settings.saver_ponytail_enabled == 'true') }}
         </div>

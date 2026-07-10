@@ -88,9 +88,11 @@ async def reload_savers(app: FastAPI) -> None:
     if settings["saver_ponytail_enabled"].lower() == "true":
         savers.append(PonytailSaver(level=settings["saver_ponytail_level"]))
     old_pipeline: SaverPipeline | None = getattr(app.state, "saver_pipeline", None)
+    new_pipeline = SaverPipeline(savers, async_savers)
     if old_pipeline is not None:
+        new_pipeline.adopt_stats(old_pipeline)
         await old_pipeline.close()
-    app.state.saver_pipeline = SaverPipeline(savers, async_savers)
+    app.state.saver_pipeline = new_pipeline
 
 
 async def reload_pricing(app: FastAPI) -> None:
