@@ -301,6 +301,33 @@ provider with `allowed_models=["m-allowed"]`: request for `prefix/m-blocked` →
 `prefix/m-allowed` → 200; `/v1/models` hides blocked models; DB migration round-trip
 (create provider with allowlist via providers_db, reload, enforced).
 
+## Task 9 — Request-log "User" column (client key attribution)
+
+**Files:** `src/janus/storage/request_logs.py`, `src/janus/storage/database.py`,
+`src/janus/api/routes.py`, `src/janus/dashboard/templates/request_logs.html` +
+`request_logs_partial.html`, tests (extend `tests/integration/test_request_logging.py`).
+
+**User story:** the Monitor tab's Request Log shows Model/Provider/Status per call, but not
+WHO called. Each Janus API key has a label; show it as a "User" column beside Model.
+
+- DB: idempotent migration adding `client_key_id INTEGER` and `client_key_label TEXT`
+  (nullable) to `request_logs` (PRAGMA table_info pattern).
+- `record_request_log(...)`: new kwargs `client_key_id: int | None = None`,
+  `client_key_label: str | None = None`, inserted with the row.
+  `list_request_logs`/`get_request_log` SELECT them too.
+- `routes.py`: every `record_request_log(` call site inside `_handle` (streaming finally
+  blocks, non-stream paths, the final 503, and `_log_error_and_raise`) passes
+  `client_key_id=client_key_id, client_key_label=client_key_label`. `_log_error_and_raise`
+  gains the two params threaded from its callers.
+- Dashboard: "User" column beside Model in both templates — display
+  `client_key_label or (('key #' ~ client_key_id) if client_key_id else '—')`. Detail view
+  (if any) shows it too.
+- Anonymous access (require_api_key off) → both NULL → shows "—".
+
+**Tests:** integration — request with an API key whose label is set → log row carries
+label; anonymous request → NULL/"—"; template renders the column (extend the existing
+request-logs dashboard test).
+
 ---
 
 ## Deferred (recorded in todo.md, not this phase)
