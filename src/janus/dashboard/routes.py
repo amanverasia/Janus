@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -1108,8 +1109,10 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "combo_strategy": lambda v: _require_choice(v, VALID_COMBO_STRATEGIES),
     "combo_sticky_limit": lambda v: _require_int(v, min_value=1),
     "combo_fusion_min_panel": lambda v: _require_int(v, min_value=1),
-    "combo_fusion_straggler_grace_s": lambda v: _require_float(v, min_value=0),
-    "combo_fusion_hard_timeout_s": lambda v: _require_float(v, min_value=0),
+    "combo_fusion_straggler_grace_s": lambda v: _require_float(v, min_value=0, max_value=3600),
+    "combo_fusion_hard_timeout_s": lambda v: _require_float(
+        v, min_value=0, max_value=3600, exclusive_min=True
+    ),
     "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
     "server_sticky_limit": lambda v: _require_int(v, min_value=1),
 }
@@ -1129,13 +1132,26 @@ def _require_int(value: str, *, min_value: int) -> None:
         raise ValueError(f"must be >= {min_value}")
 
 
-def _require_float(value: str, *, min_value: float) -> None:
+def _require_float(
+    value: str,
+    *,
+    min_value: float,
+    max_value: float | None = None,
+    exclusive_min: bool = False,
+) -> None:
     try:
         parsed = float(value)
     except ValueError as e:
         raise ValueError("must be a number") from e
-    if parsed < min_value:
+    if not math.isfinite(parsed):
+        raise ValueError("must be a finite number")
+    if exclusive_min:
+        if parsed <= min_value:
+            raise ValueError(f"must be > {min_value}")
+    elif parsed < min_value:
         raise ValueError(f"must be >= {min_value}")
+    if max_value is not None and parsed > max_value:
+        raise ValueError(f"must be <= {max_value}")
 
 
 @router.post("/api/settings", response_class=HTMLResponse)

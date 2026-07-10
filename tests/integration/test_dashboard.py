@@ -222,11 +222,35 @@ async def test_settings_post_rejects_invalid_combo_fusion_timeout(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.get("/dashboard/settings")
         before = await get_setting(app.state.db_path, "combo_fusion_hard_timeout_s")
-        r = await client.post(
-            "/dashboard/api/settings",
-            content="key=combo_fusion_hard_timeout_s&value=not-a-float",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        assert r.status_code == 400
+        for bad in ("not-a-float", "nan", "inf", "-inf", "0", "-5", "3601"):
+            r = await client.post(
+                "/dashboard/api/settings",
+                content=f"key=combo_fusion_hard_timeout_s&value={bad}",
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            assert r.status_code == 400, f"value {bad!r} should be rejected"
     db_path = app.state.db_path
     assert await get_setting(db_path, "combo_fusion_hard_timeout_s") == before
+
+
+@pytest.mark.asyncio
+async def test_settings_post_combo_fusion_grace_bounds(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.get("/dashboard/settings")
+        for bad in ("nan", "inf", "-1", "3601"):
+            r = await client.post(
+                "/dashboard/api/settings",
+                content=f"key=combo_fusion_straggler_grace_s&value={bad}",
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            assert r.status_code == 400, f"value {bad!r} should be rejected"
+        # Grace of exactly 0 is valid (no straggler window).
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_fusion_straggler_grace_s&value=0",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 200
+    assert await get_setting(app.state.db_path, "combo_fusion_straggler_grace_s") == "0"
