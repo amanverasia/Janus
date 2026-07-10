@@ -1,0 +1,16 @@
+<div>
+    <h2 class="text-sm font-semibold text-white">Pricing Catalog Sync</h2>
+    {% if sync_status.last_sync_ago %}
+    <p class="text-sm {{ 'text-amber-300' if sync_status.stale else 'text-gray-300' }} mt-1">
+        Catalog: {{ catalog_count }} models, synced {{ sync_status.last_sync_ago }}
+        {% if sync_status.stale %}<span class="text-amber-400">(stale — consider syncing)</span>{% endif %}
+    </p>
+    {% else %}
+    <p class="text-sm text-amber-300 mt-1">Catalog has never been synced. Sync now to fetch live pricing.</p>
+    {% endif %}
+    <p id="pricing-sync-result" class="text-xs mt-2 text-gray-500"></p>
+</div>
+<button id="pricing-sync-btn" type="button" onclick="syncPricingNow()"
+        class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap">
+    Sync now
+</button>

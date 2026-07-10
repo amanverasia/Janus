@@ -62,6 +62,34 @@ async def get_request_counts_today(db_path: str | Path) -> dict[str, int]:
     return {str(row[0]): int(row[1]) for row in rows}
 
 
+async def get_unpriced_models(db_path: str | Path, days: int = 30) -> list[dict[str, Any]]:
+    """Models seen in usage within the last ``days`` days that have zero total cost
+    but nonzero token volume -- candidates for a missing pricing entry.
+
+    Returns request counts and token sums, ordered by total tokens descending.
+    Callers should further filter out models that the *current* pricing
+    registry actually resolves (via ``registry.get``), since a model can have
+    old $0 usage rows from before a catalog sync even though it's priced now.
+    """
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT model,
+                      COUNT(*) as requests,
+                      COALESCE(SUM(input_tokens), 0) as input_tokens,
+                      COALESCE(SUM(output_tokens), 0) as output_tokens
+               FROM usage
+               WHERE timestamp >= datetime('now', ?)
+                 AND model IS NOT NULL
+               GROUP BY model
+               HAVING COALESCE(SUM(cost), 0.0) = 0.0
+                  AND (COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)) > 0
+               ORDER BY (input_tokens + output_tokens) DESC""",
+            (f"-{days} days",),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
 async def get_usage_stats(db_path: str | Path) -> dict[str, Any]:
     async with get_connection(db_path) as db:
         async with db.execute(

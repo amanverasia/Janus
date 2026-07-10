@@ -1,0 +1,9 @@
+{% macro source_badge(source) %}
+{%- if source == 'override' -%}
+<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-900 text-blue-200">override</span>
+{%- elif source == 'catalog' -%}
+<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-200">catalog</span>
+{%- else -%}
+<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-gray-300">builtin</span>
+{%- endif -%}
+{% endmacro %}
