@@ -102,3 +102,25 @@ def test_refine_overloaded_marker():
 def test_refine_resource_exhausted_marker():
     body = {"error": "RESOURCE_EXHAUSTED: too many tokens"}
     assert refine_error_type(400, body) == ErrorType.RATE_LIMIT
+
+
+def test_refine_list_body_with_quota_exceeded_marker():
+    body = [{"message": "quota exceeded"}]
+    assert refine_error_type(400, body) == ErrorType.RATE_LIMIT
+    assert is_fallback_eligible_refined(400, body)
+
+
+def test_refine_bare_string_body_rate_limit():
+    body = "Rate limit exceeded"
+    assert refine_error_type(400, body) == ErrorType.RATE_LIMIT
+    assert is_fallback_eligible_refined(400, body)
+
+
+def test_refine_int_body_no_crash_falls_back_to_status():
+    assert refine_error_type(400, 12345) == ErrorType.CLIENT_ERROR
+    assert not is_fallback_eligible_refined(400, 12345)
+
+
+def test_refine_none_body_unchanged():
+    assert refine_error_type(400, None) == ErrorType.CLIENT_ERROR
+    assert not is_fallback_eligible_refined(400, None)

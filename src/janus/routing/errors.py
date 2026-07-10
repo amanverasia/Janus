@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import enum
+import json
 from typing import Any
 
 import httpx
@@ -48,9 +49,25 @@ BODY_RATE_LIMIT_MARKERS: tuple[str, ...] = (
 )
 
 
-def _error_body_text(body: dict[str, Any] | None) -> str:
+def _error_body_text(body: Any | None) -> str:
     if not body:
         return ""
+    if not isinstance(body, dict):
+        # Upstream providers don't always wrap errors in {"error": ...} -
+        # some return a bare string, a list of error objects, or (rarely) a
+        # number. Serialize whatever we got so marker matching still works,
+        # without ever raising.
+        if isinstance(body, str):
+            text = body
+        else:
+            try:
+                text = json.dumps(body)
+            except Exception:
+                try:
+                    text = str(body)
+                except Exception:
+                    return ""
+        return text.lower().replace("_", " ")[:2000]
     error = body.get("error")
     if error is None:
         return ""
@@ -66,7 +83,7 @@ def _error_body_text(body: dict[str, Any] | None) -> str:
     return text.lower().replace("_", " ")[:2000]
 
 
-def refine_error_type(status_code: int, body: dict[str, Any] | None) -> ErrorType:
+def refine_error_type(status_code: int, body: Any | None) -> ErrorType:
     """Classify by status, then upgrade to RATE_LIMIT if the body text says so.
 
     Some providers disguise rate limits as a 400 (or even 200-wrapped) error
@@ -80,7 +97,7 @@ def refine_error_type(status_code: int, body: dict[str, Any] | None) -> ErrorTyp
     return error_type
 
 
-def is_fallback_eligible_refined(status_code: int, body: dict[str, Any] | None) -> bool:
+def is_fallback_eligible_refined(status_code: int, body: Any | None) -> bool:
     if is_fallback_eligible(status_code):
         return True
     return refine_error_type(status_code, body) == ErrorType.RATE_LIMIT
