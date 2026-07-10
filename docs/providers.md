@@ -94,6 +94,42 @@ Consumption is counted from the `usage` table (shared across all inventory
 accounts of the provider) and seeded on startup/reload, so restarts don't lose
 window state.
 
+## Model allowlist
+
+Every provider has an optional `allowed_models` field — set on the Add/Edit
+Provider form in the dashboard as a comma-separated list. It restricts which
+of the provider's models clients are permitted to route to:
+
+- Entries can be **exact model names** (`claude-opus-4-7`) or **`fnmatch`
+  globs** (`claude-opus-*`).
+- **Empty (the default) means no restriction** — all of the provider's
+  configured models are routable.
+
+Use it to expose only a subset of a provider's catalog — for example, a
+provider entry with `models: [claude-opus-4-7, claude-haiku-4-5]` and
+`allowed_models: claude-opus-*` routes `claude-opus-4-7` but rejects
+`claude-haiku-4-5`, letting you keep a broad `models` list for Fetch Models
+while limiting what's actually reachable.
+
+**Enforcement:**
+
+- A request for a blocked model is rejected at routing time with `HTTP 400`
+  (the same "unknown model" path as an unregistered model — the provider
+  simply doesn't offer a route for it).
+- Blocked models are hidden from `GET /v1/models` and the Ollama `GET
+  /api/tags` listing, so clients never see them offered in the first place.
+
+!!! note "Not the same as a key's model allowlist"
+    This is a **per-provider** allowlist — it governs which models a given
+    upstream provider account exposes, regardless of who's asking. It's
+    different from the **per-API-key** `allowed_models` scope (set on
+    Janus-issued keys via the dashboard Keys page or `janus keys create
+    --models`), which restricts what a specific *client* may request
+    and uses `prefix/*` wildcards rather than `fnmatch` globs. A disallowed
+    model on a key returns `403` (`model_not_allowed`), not `400`. See
+    [Configuration](configuration.md) and [API Reference](api-reference.md#authentication)
+    for the key-scope version.
+
 ## Inventory-backed routing
 
 When [upstream key inventory](inventory.md) has routable keys for a gateway

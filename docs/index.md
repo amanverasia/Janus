@@ -13,10 +13,13 @@ either side needing to know the other exists.
 
 - **One endpoint, every provider** — point your tools at a single URL, route to OpenAI, Anthropic, Gemini, Groq, DeepSeek, Copilot, and more
 - **Automatic fallback** — if one provider is rate-limited or down, Janus rotates to the next automatically
+- **Fusion combos** — fan a request out to a panel of models in parallel and synthesize one answer with a judge model
 - **Key inventory** — store and route across many upstream API keys with validation, credit checks, and multi-account expansion
 - **Cost tracking** — per-request cost estimation with builtin model prices, budgets, and subscription quota windows
-- **Token savings** — RTK compression, optional Headroom proxy, and prompt savers before routing
+- **Token savings** — RTK compression, optional Headroom proxy, and prompt savers before routing, with per-saver savings metrics on the dashboard
+- **Per-provider model allowlists** — expose only selected models from a provider, by exact name or glob
 - **Client-native surfaces** — Chat Completions, Responses (Codex), Anthropic, Gemini, and Ollama endpoints
+- **Request-log user attribution** — captured requests show which API key made each call
 - **No cloud, no telemetry** — runs entirely on your machine, your keys never leave your system
 
 ## Quick Start
