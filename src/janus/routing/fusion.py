@@ -261,29 +261,34 @@ async def collect_panel(
     grace_deadline: float | None = None
     ok = 0
     pending: set[asyncio.Task[PanelAnswer | None]] = set(tasks)
-    while pending:
-        now = time.monotonic()
-        timeout = deadline - now
-        if grace_deadline is not None:
-            timeout = min(timeout, grace_deadline - now)
-        if timeout <= 0:
-            break
-        done, pending = await asyncio.wait(
-            pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in done:
-            try:
-                answer = task.result()
-            except Exception:
-                continue
-            if answer is not None and answer.text:
-                ok += 1
-        if ok >= min_panel and grace_deadline is None:
-            grace_deadline = time.monotonic() + straggler_grace_s
-    for task in pending:
-        task.cancel()
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
+    try:
+        while pending:
+            now = time.monotonic()
+            timeout = deadline - now
+            if grace_deadline is not None:
+                timeout = min(timeout, grace_deadline - now)
+            if timeout <= 0:
+                break
+            done, pending = await asyncio.wait(
+                pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                try:
+                    answer = task.result()
+                except Exception:
+                    continue
+                if answer is not None and answer.text:
+                    ok += 1
+            if ok >= min_panel and grace_deadline is None:
+                grace_deadline = time.monotonic() + straggler_grace_s
+    finally:
+        # Runs on the happy path AND on cancellation (e.g. client disconnect):
+        # never leave panel tasks running unattended, burning tokens until
+        # their individual hard_timeout_s wait_for caps.
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     answers: list[PanelAnswer] = []
     for task in tasks:

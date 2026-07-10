@@ -270,6 +270,47 @@ async def test_collect_panel_hard_timeout_cuts_everything():
     assert time.monotonic() - start < 2.0
 
 
+async def test_collect_panel_cancellation_cancels_pending_panel_tasks():
+    """If the caller of collect_panel is itself cancelled (e.g. client
+    disconnect propagating up through the request handler), the panel tasks
+    it was awaiting must not be left running — the finally block must still
+    cancel and drain `pending` even though asyncio.wait raised CancelledError.
+    """
+    cleaned_up = []
+
+    async def _panel_coro(name: str, delay: float) -> PanelAnswer | None:
+        try:
+            await asyncio.sleep(delay)
+            return _answer(name, "late")
+        finally:
+            cleaned_up.append(name)
+
+    tasks = [
+        asyncio.create_task(_panel_coro("a/m1", 30.0)),
+        asyncio.create_task(_panel_coro("b/m2", 30.0)),
+    ]
+
+    async def _runner() -> list[PanelAnswer]:
+        return await collect_panel(
+            tasks, min_panel=2, straggler_grace_s=1.0, hard_timeout_s=90.0
+        )
+
+    runner_task = asyncio.create_task(_runner())
+    # Let collect_panel start its asyncio.wait on the still-pending panel tasks.
+    await asyncio.sleep(0.01)
+    assert not runner_task.done()
+
+    runner_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await runner_task
+
+    # The finally block in collect_panel must have cancelled + awaited the
+    # panel tasks rather than leaving them running to spend tokens.
+    assert tasks[0].cancelled()
+    assert tasks[1].cancelled()
+    assert sorted(cleaned_up) == ["a/m1", "b/m2"]
+
+
 # ---------------------------------------------------------------------------
 # run_fusion decision logic (panel calls faked via monkeypatch)
 # ---------------------------------------------------------------------------
