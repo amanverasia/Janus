@@ -80,9 +80,7 @@ def expand_gateway_provider(
                     quota_window=quota_window,
                     quota_limit=quota_limit,
                     quota_metric=quota_metric,
-                    transports=_region_aligned_transports(
-                        transports, base_url, row["base_url"]
-                    ),
+                    transports=_region_aligned_transports(transports, base_url, row["base_url"]),
                 )
             )
         return configs

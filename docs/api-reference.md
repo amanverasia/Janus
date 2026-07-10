@@ -8,7 +8,7 @@ Janus exposes five client-facing API surfaces plus utility endpoints:
 | OpenAI Responses | `/v1/responses` | OpenAI Responses API |
 | Anthropic | `/v1/messages` | Anthropic Messages |
 | Gemini | `/v1beta/models/{model}:generateContent` | Gemini GenerateContent |
-| Ollama | `/api/chat`, `/api/tags` | Ollama chat (NDJSON streaming) |
+| Ollama | `/api/chat`, `/api/generate`, `/api/show`, `/api/tags`, `/api/version` | Ollama chat & completions (NDJSON streaming) |
 | Utility | `/v1/health`, `/v1/models` | JSON |
 
 ## Authentication
@@ -357,11 +357,55 @@ Streaming responses are `application/x-ndjson` — one JSON object per line,
 ending with a `"done": true` object carrying `done_reason`,
 `prompt_eval_count`, and `eval_count`.
 
-### GET /api/tags
+---
 
-Lists models and combos in Ollama's `tags` shape (`{"models": [{"name": ...}]}`)
-so Ollama clients can discover what's routable. `GET /api/version` is also
-provided for client handshakes.
+## POST /api/generate (Ollama)
+
+Ollama completion format — bare `prompt` instead of `messages`. Janus translates
+to chat internally and remaps the response to Ollama's `generate` shape (`response`
+field instead of `message`).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model` | `string` | `prefix/model` or a combo name |
+| `prompt` | `string` | Completion prompt |
+| `stream` | `bool` | Defaults to **`true`**; NDJSON chunks with `response` deltas |
+| `options` | `object` | Same as `/api/chat` (`num_predict`, `temperature`, etc.) |
+
+```bash
+curl http://localhost:20128/api/generate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-janus-yourkey" \
+  -d '{
+    "model": "openai/gpt-4o",
+    "prompt": "Hello!",
+    "stream": false
+  }'
+```
+
+Non-streaming responses include `"done": true` and `"response": "..."`. Streaming
+uses `application/x-ndjson` with per-chunk `response` text and a final `"done": true`
+line.
+
+---
+
+## POST /api/show (Ollama)
+
+Model metadata handshake for Ollama clients. Accepts `name` (or `model`) and returns
+stub metadata for routable models/combos; unknown or allowlist-blocked models return
+`404`.
+
+```bash
+curl http://localhost:20128/api/show \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-janus-yourkey" \
+  -d '{"name": "openai/gpt-4o"}'
+```
+
+Response includes `details`, `capabilities` (`completion`), and a minimal `template`.
+`GET /api/tags` lists models in Ollama's tags shape; `GET /api/version` returns a
+static version for client handshakes (no auth required). Both respect the API key
+model allowlist when auth is enabled.
 
 ---
 

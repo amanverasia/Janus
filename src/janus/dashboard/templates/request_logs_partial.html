@@ -35,8 +35,24 @@
             {% endfor %}
         </tbody>
     </table>
-    <div class="px-4 py-3 bg-gray-900 border-t border-gray-700">
-        <p class="text-xs text-gray-500">Showing {{ logs | length }} of {{ total }} captured requests (max 500 kept).</p>
+    <div class="px-4 py-3 bg-gray-900 border-t border-gray-700 flex items-center justify-between gap-4">
+        <p class="text-xs text-gray-500">
+            Showing {{ logs | length }} of {{ total }} (page {{ page }}/{{ total_pages }}, max {{ retention_max }} kept).
+        </p>
+        <div class="flex gap-2">
+            {% if offset > 0 %}
+            <button class="text-xs text-blue-400 hover:text-blue-300"
+                    hx-get="/dashboard/api/request-logs/partial?limit={{ limit }}&offset={{ offset - limit if offset - limit > 0 else 0 }}"
+                    hx-target="#request-logs-table"
+                    hx-swap="innerHTML">Prev</button>
+            {% endif %}
+            {% if offset + limit < total %}
+            <button class="text-xs text-blue-400 hover:text-blue-300"
+                    hx-get="/dashboard/api/request-logs/partial?limit={{ limit }}&offset={{ offset + limit }}"
+                    hx-target="#request-logs-table"
+                    hx-swap="innerHTML">Next</button>
+            {% endif %}
+        </div>
     </div>
     {% else %}
     <div class="px-6 py-12 text-center">

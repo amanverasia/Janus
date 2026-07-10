@@ -61,6 +61,7 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 1. Create `src/janus/formats/<name>.py` implementing all six methods: `parse_request`, `build_upstream_request`, `parse_upstream_response`, `emit_response`, `stream_parser`, `stream_emitter`.
 2. Register in the `FORMATS` dict in `src/janus/api/routes.py`.
 3. If the format streams something other than SSE (e.g. Ollama's NDJSON), set a `stream_media_type` class attribute on the adapter — `_handle()` uses it for the `StreamingResponse` content type (default `text/event-stream`).
+4. Ollama also has route-level shims in `api/routes.py` (`POST /api/show`, `POST /api/generate`) that translate to/from the chat adapter; `GET /api/tags` respects key model allowlists.
 
 ## Adding a new provider executor
 
@@ -99,7 +100,7 @@ Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup
 - Dashboard access (`dashboard/auth.py`) rejects keys with `can_login=0`. Login form shows "This API key cannot access the dashboard". Loopback and username/password login are unchanged.
 - Model allowlists are enforced in `_handle()` after parse (403 `model_not_allowed`) and filter `GET /v1/models`. Empty/NULL allowlist = all models.
 - `storage/usage.py` — `record_usage()` records per-request token usage (fire-and-forget). Streaming requests now also record via `StreamUsageTracker` + `finally` block. Params include `cost`, `cache_creation_tokens`, `cache_read_tokens`, `client_key_id`.
-- `storage/settings.py` — key-value settings store (`get_setting`, `set_setting`, `get_all_settings`).
+- `storage/settings.py` — key-value settings store (`get_setting`, `set_setting`, `get_all_settings`). Request-log retention: `server_request_log_retention` (default 500, clamp 50–5000) via `resolve_request_log_retention()`.
 - `storage/providers_db.py` — provider CRUD (create, update, delete, toggle, list).
 - `storage/combos_db.py` — combo CRUD.
 - `storage/pricing_db.py` — pricing override CRUD.

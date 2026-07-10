@@ -38,8 +38,7 @@ def test_strip_vision_when_unsupported():
     types = [getattr(p, "type", None) for p in out.messages[0].content]
     assert "image" not in types
     assert any(
-        isinstance(p, TextPart) and "image omitted" in p.text
-        for p in out.messages[0].content
+        isinstance(p, TextPart) and "image omitted" in p.text for p in out.messages[0].content
     )
 
 

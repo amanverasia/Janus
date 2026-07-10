@@ -20,6 +20,19 @@
 </div>
 {% endif %}
 
+{% if overview.quota_warnings %}
+<div class="mb-6 bg-amber-900/30 border border-amber-700 rounded-lg p-4 text-amber-200 text-sm">
+    <p class="font-medium mb-2">Subscription quota near or at limit</p>
+    <ul class="list-disc list-inside space-y-1">
+        {% for p in overview.quota_warnings %}
+        <li><span class="font-mono">{{ p.prefix }}</span>:
+            {{ "{:,}".format(p.quota.used) }} / {{ "{:,}".format(p.quota.limit) }} {{ p.quota.metric }}
+            ({{ p.quota.status }}) · resets in {{ p.quota.resets_in }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 <div class="space-y-6 mb-8">
     <h2 class="text-lg font-bold text-white">Provider account pools</h2>
     {% if overview.providers %}
@@ -35,6 +48,12 @@
             </div>
             <div class="text-right text-sm">
                 <p class="text-gray-400">{{ provider.account_count }} routable account(s)</p>
+                {% if provider.quota %}
+                <p class="text-xs mt-1 {% if provider.quota.status == 'exhausted' %}text-red-400{% elif provider.quota.status == 'warning' %}text-amber-400{% else %}text-gray-400{% endif %}">
+                    Quota: {{ "{:,}".format(provider.quota.used) }} / {{ "{:,}".format(provider.quota.limit) }} {{ provider.quota.metric }}
+                    ({{ provider.quota.status }}) · resets in {{ provider.quota.resets_in }}
+                </p>
+                {% endif %}
                 {% if provider.models %}
                 <p class="text-gray-500 text-xs mt-1 max-w-md truncate" title="{{ provider.models | join(', ') }}">
                     Models: {{ provider.models | join(', ') }}
@@ -76,6 +95,8 @@
                     {% endif %}
                     {% if account.cooldown_active %}
                     <p class="text-red-400 text-xs mt-1">cooldown ~{{ account.cooldown_seconds | int }}s</p>
+                    {% elif account.quota_deprioritized %}
+                    <p class="text-amber-400 text-xs mt-1">deprioritized (quota)</p>
                     {% else %}
                     <p class="text-green-500 text-xs mt-1">available</p>
                     {% endif %}

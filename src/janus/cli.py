@@ -550,6 +550,7 @@ _ALLOWED_SETTING_KEYS = {
     "server_require_api_key",
     "server_sticky_client_key_routing",
     "server_request_logging",
+    "server_request_log_retention",
     "server_account_strategy",
     "server_sticky_limit",
     "saver_rtk_enabled",

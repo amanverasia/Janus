@@ -59,10 +59,7 @@ def _uses_max_completion_tokens(model: str) -> bool:
     if "/" in low:
         low = low.rsplit("/", 1)[-1]
     return bool(
-        low.startswith(("gpt-5", "o1", "o3", "o4"))
-        or "-o1" in low
-        or "-o3" in low
-        or "-o4" in low
+        low.startswith(("gpt-5", "o1", "o3", "o4")) or "-o1" in low or "-o3" in low or "-o4" in low
     )
 
 

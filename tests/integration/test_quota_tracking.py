@@ -147,6 +147,41 @@ async def test_update_provider_quota_fields(app):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_providers_partial_endpoint(app):
+    _mock_upstream()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await _create_quota_provider(client, limit=10)
+        r = await client.get("/dashboard/api/providers/partial")
+        assert r.status_code == 200
+        assert "provider-card-sub" in r.text
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_quota_warning_banner_at_eighty_percent(app):
+    _mock_upstream()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await _create_quota_provider(client, limit=10)
+        payload = {"model": "sub/m1", "messages": [{"role": "user", "content": "hi"}]}
+        for _ in range(8):
+            r = await client.post("/v1/chat/completions", json=payload)
+            assert r.status_code == 200
+
+        r = await client.get("/dashboard/api/providers/partial")
+        assert r.status_code == 200
+        assert "Subscription quota near or at limit" in r.text
+        assert "quota-warning-banner" in r.text
+        assert "sub" in r.text
+        assert "8 / 10 requests" in r.text
+        assert "warning" in r.text
+
+        r = await client.get("/dashboard/providers")
+        assert r.status_code == 200
+        assert "Subscription quota near or at limit" in r.text
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_invalid_quota_params_stored_as_none(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(

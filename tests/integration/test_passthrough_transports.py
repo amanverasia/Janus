@@ -149,7 +149,6 @@ async def test_transport_routes_to_matching_format_endpoint(transport_app):
     assert not route_oa.called
 
 
-
 @pytest.mark.asyncio
 @respx.mock
 async def test_anthropic_transport_sets_x_api_key(transport_app):

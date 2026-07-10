@@ -180,9 +180,9 @@ async def ingest_upstream_key(
         }
 
     # Persist regional base URLs for Token Plan etc., not only custom providers.
-    persist_base = effective_base_url if (
-        resolved_provider == "custom" or effective_base_url
-    ) else None
+    persist_base = (
+        effective_base_url if (resolved_provider == "custom" or effective_base_url) else None
+    )
     record = await create_upstream_key(
         db_path,
         provider_id=resolved_provider,

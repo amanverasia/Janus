@@ -6,6 +6,7 @@ from janus.storage.database import init_db
 from janus.storage.quotas import (
     describe_reset,
     get_window_usage,
+    quota_status,
     window_id,
     window_reset,
     window_start,
@@ -72,3 +73,10 @@ async def test_get_window_usage_empty(tmp_path):
     await init_db(db)
     usage = await get_window_usage(db, "copilot", "monthly")
     assert usage == {"requests": 0, "tokens": 0}
+
+
+def test_quota_status_thresholds():
+    assert quota_status(79, 100) == "ok"
+    assert quota_status(80, 100) == "warning"
+    assert quota_status(100, 100) == "exhausted"
+    assert quota_status(0, 0) == "exhausted"

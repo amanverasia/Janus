@@ -132,6 +132,23 @@ async def test_ollama_tags_lists_models_and_combos(app):
 
 
 @pytest.mark.asyncio
+async def test_ollama_tags_filters_by_key_allowlist(app, tmp_path):
+    from janus.storage.api_keys import create_key
+    from janus.storage.settings import set_setting
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped", can_login=False, allowed_models=["test/test-m1"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/api/tags", headers={"Authorization": f"Bearer {key}"})
+        assert r.status_code == 200
+        names = {m["name"] for m in r.json()["models"]}
+        assert "test/test-m1" in names
+        assert "stack" not in names
+
+
+@pytest.mark.asyncio
 async def test_ollama_version(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/api/version")
@@ -190,3 +207,112 @@ async def test_ollama_tool_round_trip_to_openai_upstream(app):
     tool_msg = next(m for m in upstream["messages"] if m["role"] == "tool")
     assert tool_msg["tool_call_id"] == assistant_msg["tool_calls"][0]["id"]
     assert tool_msg["content"] == "a.txt"
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_known_model(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/api/show", json={"name": "test/test-m1"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["details"]["family"] == "janus"
+        assert "completion" in data["capabilities"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_unknown_model(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/api/show", json={"name": "nope/missing"})
+        assert r.status_code == 404
+        assert "not found" in r.json()["error"].lower()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ollama_generate_nonstream(app):
+    _mock_upstream()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/generate",
+            json={"model": "test/test-m1", "prompt": "hi", "stream": False},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["done"] is True
+        assert data["response"] == "Hello!"
+        assert "message" not in data
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_ollama_generate_stream_ndjson(app):
+    import json
+
+    sse_body = (
+        'data: {"id":"r1","object":"chat.completion.chunk","model":"test-m1",'
+        '"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n\n'
+        'data: {"id":"r1","object":"chat.completion.chunk","model":"test-m1",'
+        '"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+        "data: [DONE]\n\n"
+    )
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            content=sse_body.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with client.stream(
+            "POST",
+            "/api/generate",
+            json={"model": "test/test-m1", "prompt": "hi"},
+        ) as response:
+            assert response.status_code == 200
+            body = b""
+            async for chunk in response.aiter_bytes():
+                body += chunk
+    lines = [json.loads(line) for line in body.decode().strip().split("\n") if line]
+    assert any(line.get("response") == "Hi" for line in lines)
+    assert lines[-1]["done"] is True
+    assert "message" not in lines[0]
+
+
+@pytest.mark.asyncio
+async def test_ollama_generate_disallowed_model_no_response_key(app):
+    from janus.storage.api_keys import create_key
+    from janus.storage.settings import set_setting
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped-generate", can_login=False, allowed_models=["other/*"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/generate",
+            json={"model": "test/test-m1", "prompt": "hi", "stream": False},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+        data = r.json()
+        assert "error" in data
+        assert "response" not in data
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_respects_key_allowlist(app):
+    from janus.storage.api_keys import create_key
+    from janus.storage.settings import set_setting
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped-show", can_login=False, allowed_models=["other/*"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/show",
+            json={"name": "test/test-m1"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 404
+        assert "not found" in r.json()["error"].lower()

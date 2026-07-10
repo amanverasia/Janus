@@ -88,6 +88,26 @@ route it — the upstream provider does not need to be Gemini.
 If `require_api_key` is enabled, Janus accepts the standard Gemini auth styles:
 the `x-goog-api-key` header or the `?key=` query parameter.
 
+## Ollama-Only Tools
+
+Point Ollama-native clients at Janus (base URL `http://localhost:20128`, not under
+`/v1`):
+
+```bash
+export OLLAMA_HOST=http://localhost:20128
+```
+
+If `require_api_key` is enabled:
+
+```bash
+export OLLAMA_API_KEY=sk-janus-yourkey
+```
+
+Clients use `POST /api/chat` (messages), `POST /api/generate` (bare prompt), or
+`POST /api/show` (model metadata handshake). `GET /api/tags` lists routable models;
+`GET /api/version` is available for client handshakes. Streaming defaults to
+**on** with `application/x-ndjson` output.
+
 ## Model Naming
 
 Models are referenced as `{prefix}/{model}`:

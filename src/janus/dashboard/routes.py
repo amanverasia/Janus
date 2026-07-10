@@ -274,11 +274,22 @@ async def providers_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     from janus.dashboard.catalog import get_catalog
 
+    providers = await _enrich_providers(db_path)
+    quota_warnings = [
+        p
+        for p in providers
+        if (
+            p.get("is_enabled")
+            and p.get("quota")
+            and p["quota"]["status"] in ("warning", "exhausted")
+        )
+    ]
     context: dict[str, Any] = {
         "request": request,
-        "providers": await _enrich_providers(db_path),
+        "providers": providers,
         "catalog": get_catalog(),
         "logo_map": get_provider_logo_map(),
+        "quota_warnings": quota_warnings,
     }
     return _templates.TemplateResponse(request, "providers.html", context)
 
@@ -337,21 +348,61 @@ async def usage_page(request: Request) -> HTMLResponse:
     return _templates.TemplateResponse(request, "usage.html", context)
 
 
+def _clamp_page_size(limit: int) -> int:
+    return max(1, min(limit, 200))
+
+
+async def _request_logs_context(
+    db_path: Path, *, limit: int = 100, offset: int = 0
+) -> dict[str, Any]:
+    from janus.storage.request_logs import count_request_logs, list_request_logs
+    from janus.storage.settings import get_all_settings, resolve_request_log_retention
+
+    limit = _clamp_page_size(limit)
+    total = await count_request_logs(db_path)
+    if offset < 0:
+        offset = 0
+    if total and offset >= total:
+        offset = max(0, ((total - 1) // limit) * limit)
+    logs = await list_request_logs(db_path, limit=limit, offset=offset)
+    settings = await get_all_settings(db_path)
+    return {
+        "logs": logs,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "page": (offset // limit) + 1 if limit else 1,
+        "total_pages": max(1, (total + limit - 1) // limit) if limit else 1,
+        "retention_max": resolve_request_log_retention(settings),
+    }
+
+
 @router.get("/request-logs", response_class=HTMLResponse)
 async def request_logs_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.request_logs import count_request_logs, list_request_logs
     from janus.storage.settings import get_all_settings, request_logging_enabled
 
     settings = await get_all_settings(db_path)
-    logs = await list_request_logs(db_path, limit=100)
-    context: dict[str, Any] = {
-        "request": request,
-        "logs": logs,
-        "total": await count_request_logs(db_path),
-        "logging_enabled": request_logging_enabled(settings),
-    }
+    context = await _request_logs_context(db_path)
+    context["request"] = request
+    context["logging_enabled"] = request_logging_enabled(settings)
     return _templates.TemplateResponse(request, "request_logs.html", context)
+
+
+@router.get("/api/request-logs/partial", response_class=HTMLResponse)
+async def api_request_logs_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    try:
+        limit = int(request.query_params.get("limit", "100"))
+    except ValueError:
+        limit = 100
+    try:
+        offset = int(request.query_params.get("offset", "0"))
+    except ValueError:
+        offset = 0
+    ctx = await _request_logs_context(db_path, limit=limit, offset=offset)
+    ctx["request"] = request
+    return _templates.TemplateResponse(request, "request_logs_partial.html", ctx)
 
 
 @router.get("/api/request-logs/export")
@@ -383,8 +434,9 @@ async def api_clear_request_logs(request: Request) -> HTMLResponse:
     from janus.storage.request_logs import clear_request_logs
 
     await clear_request_logs(db_path)
-    context: dict[str, Any] = {"request": request, "logs": [], "total": 0}
-    return _templates.TemplateResponse(request, "request_logs_partial.html", context)
+    ctx = await _request_logs_context(db_path)
+    ctx["request"] = request
+    return _templates.TemplateResponse(request, "request_logs_partial.html", ctx)
 
 
 @router.get("/analytics", response_class=HTMLResponse)
@@ -636,6 +688,12 @@ def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
     }
 
 
+@router.get("/api/providers/partial", response_class=HTMLResponse)
+async def api_providers_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    return await _providers_partial(request, db_path)
+
+
 @router.post("/api/providers", response_class=HTMLResponse)
 async def api_create_provider(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -763,7 +821,7 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
         )
         parsed["quota"] = None
         if parsed.get("quota_window") and parsed.get("quota_limit"):
-            from janus.storage.quotas import describe_reset, get_window_usage
+            from janus.storage.quotas import describe_reset, get_window_usage, quota_status
 
             try:
                 usage = await get_window_usage(
@@ -772,13 +830,15 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
                 metric = parsed.get("quota_metric") or "requests"
                 used = usage["tokens"] if metric == "tokens" else usage["requests"]
                 limit = int(parsed["quota_limit"])
+                status = quota_status(used, limit)
                 parsed["quota"] = {
                     "used": used,
                     "limit": limit,
                     "metric": metric,
                     "window": parsed["quota_window"],
                     "percent": min(round(used * 100 / limit), 100) if limit else 0,
-                    "exhausted": used >= limit,
+                    "exhausted": status == "exhausted",
+                    "status": status,
                     **describe_reset(str(parsed["quota_window"])),
                 }
             except Exception:
@@ -788,10 +848,21 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
 
 
 async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
+    providers = await _enrich_providers(db_path)
+    quota_warnings = [
+        p
+        for p in providers
+        if (
+            p.get("is_enabled")
+            and p.get("quota")
+            and p["quota"]["status"] in ("warning", "exhausted")
+        )
+    ]
     context: dict[str, Any] = {
         "request": request,
-        "providers": await _enrich_providers(db_path),
+        "providers": providers,
         "logo_map": get_provider_logo_map(),
+        "quota_warnings": quota_warnings,
     }
     return _templates.TemplateResponse(request, "providers_partial.html", context)
 
@@ -1285,6 +1356,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         request_logging_enabled,
         require_api_key_enabled,
         resolve_account_strategy,
+        resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
@@ -1305,6 +1377,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         "require_api_key_enabled": require_api_key_enabled(settings),
         "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
         "request_logging_enabled": request_logging_enabled(settings),
+        "request_log_retention": resolve_request_log_retention(settings),
         "account_strategy": resolve_account_strategy(settings),
         "sticky_limit": resolve_sticky_limit(settings),
     }

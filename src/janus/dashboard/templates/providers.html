@@ -11,7 +11,10 @@
     </button>
 </div>
 
-<div id="providers-grid">
+<div id="providers-grid"
+     hx-get="/dashboard/api/providers/partial"
+     hx-trigger="load, every 8s"
+     hx-swap="innerHTML">
     {% include "providers_partial.html" %}
 </div>
 
