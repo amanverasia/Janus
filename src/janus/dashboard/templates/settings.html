@@ -197,6 +197,110 @@
         </div>
     </div>
 
+    <!-- Combo Routing -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-lg font-bold text-white">Combo Routing</h2>
+            <p class="text-gray-400 text-sm mt-1">
+                How Janus routes requests across the models in a combo.
+                <span class="text-gray-300">Fallback</span> tries each model in order until one
+                succeeds; <span class="text-gray-300">round-robin</span> rotates across models
+                (honoring the sticky limit below); <span class="text-gray-300">fusion</span> fans
+                the request out to a panel of models and merges their answers with a judge model.
+            </p>
+            <div class="flex flex-wrap items-end gap-4 mt-4">
+                <div>
+                    <label class="block text-gray-400 text-xs mb-1" for="combo-strategy-select">
+                        Strategy
+                    </label>
+                    <select id="combo-strategy-select"
+                            class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                            hx-post="/dashboard/api/settings"
+                            hx-swap="none"
+                            hx-trigger="change"
+                            hx-on:htmx:config-request="event.detail.parameters.key='combo_strategy'; event.detail.parameters.value=event.detail.elt.value">
+                        <option value="fallback" {% if combo_strategy == 'fallback' %}selected{% endif %}>Fallback</option>
+                        <option value="round_robin" {% if combo_strategy == 'round_robin' %}selected{% endif %}>Round robin</option>
+                        <option value="fusion" {% if combo_strategy == 'fusion' %}selected{% endif %}>Fusion</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs mb-1" for="combo-sticky-limit-input">
+                        Sticky limit (requests before rotating)
+                    </label>
+                    <input id="combo-sticky-limit-input"
+                           type="number" min="1" max="1000"
+                           value="{{ combo_sticky_limit }}"
+                           class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white w-32"
+                           hx-post="/dashboard/api/settings"
+                           hx-swap="none"
+                           hx-trigger="change"
+                           hx-on:htmx:config-request="event.detail.parameters.key='combo_sticky_limit'; event.detail.parameters.value=event.detail.elt.value">
+                </div>
+            </div>
+
+            <h3 class="text-sm font-bold text-gray-300 mt-6 mb-1">Fusion</h3>
+            <p class="text-gray-500 text-xs mb-3">
+                Only used when the strategy above is set to <span class="text-gray-400">fusion</span>.
+            </p>
+            <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="block text-gray-400 text-xs mb-1" for="combo-fusion-judge-input">
+                        Judge model
+                    </label>
+                    <input id="combo-fusion-judge-input"
+                           type="text"
+                           placeholder="prefix/model"
+                           value="{{ combo_fusion_judge }}"
+                           class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white w-48"
+                           hx-post="/dashboard/api/settings"
+                           hx-swap="none"
+                           hx-trigger="change"
+                           hx-on:htmx:config-request="event.detail.parameters.key='combo_fusion_judge'; event.detail.parameters.value=event.detail.elt.value">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs mb-1" for="combo-fusion-min-panel-input">
+                        Min panel size (default 2)
+                    </label>
+                    <input id="combo-fusion-min-panel-input"
+                           type="number" min="1" max="20"
+                           value="{{ combo_fusion_min_panel }}"
+                           class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white w-32"
+                           hx-post="/dashboard/api/settings"
+                           hx-swap="none"
+                           hx-trigger="change"
+                           hx-on:htmx:config-request="event.detail.parameters.key='combo_fusion_min_panel'; event.detail.parameters.value=event.detail.elt.value">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs mb-1" for="combo-fusion-grace-input">
+                        Straggler grace (s, default 8)
+                    </label>
+                    <input id="combo-fusion-grace-input"
+                           type="number" min="0" step="0.5" max="600"
+                           value="{{ combo_fusion_straggler_grace_s }}"
+                           class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white w-32"
+                           hx-post="/dashboard/api/settings"
+                           hx-swap="none"
+                           hx-trigger="change"
+                           hx-on:htmx:config-request="event.detail.parameters.key='combo_fusion_straggler_grace_s'; event.detail.parameters.value=event.detail.elt.value">
+                </div>
+                <div>
+                    <label class="block text-gray-400 text-xs mb-1" for="combo-fusion-timeout-input">
+                        Hard timeout (s, default 90)
+                    </label>
+                    <input id="combo-fusion-timeout-input"
+                           type="number" min="0" step="1" max="3600"
+                           value="{{ combo_fusion_hard_timeout_s }}"
+                           class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white w-32"
+                           hx-post="/dashboard/api/settings"
+                           hx-swap="none"
+                           hx-trigger="change"
+                           hx-on:htmx:config-request="event.detail.parameters.key='combo_fusion_hard_timeout_s'; event.detail.parameters.value=event.detail.elt.value">
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Request Logging -->
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <div class="flex items-center justify-between gap-4">

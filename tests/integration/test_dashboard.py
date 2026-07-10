@@ -107,3 +107,126 @@ async def test_settings_post_updates_account_strategy(app):
         assert r.status_code == 200
     db_path = app.state.db_path
     assert await get_setting(db_path, "server_account_strategy") == "sticky_rr"
+
+
+@pytest.mark.asyncio
+async def test_settings_page_shows_combo_routing(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/settings")
+        assert r.status_code == 200
+        body = r.text
+        assert "Combo Routing" in body
+        assert "combo_strategy" in body
+        assert "combo_sticky_limit" in body
+        assert "combo_fusion_judge" in body
+        assert "combo_fusion_min_panel" in body
+        assert "combo_fusion_straggler_grace_s" in body
+        assert "combo_fusion_hard_timeout_s" in body
+        # placeholder for the judge model input
+        assert "prefix/model" in body
+
+
+@pytest.mark.asyncio
+async def test_settings_post_updates_combo_strategy(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_strategy&value=fusion",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 200
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "combo_strategy") == "fusion"
+
+
+@pytest.mark.asyncio
+async def test_settings_post_updates_combo_fusion_settings(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for key, value in [
+            ("combo_sticky_limit", "5"),
+            ("combo_fusion_judge", "openai/gpt-4o-mini"),
+            ("combo_fusion_min_panel", "3"),
+            ("combo_fusion_straggler_grace_s", "12.5"),
+            ("combo_fusion_hard_timeout_s", "120"),
+        ]:
+            r = await client.post(
+                "/dashboard/api/settings",
+                content=f"key={key}&value={value}",
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            assert r.status_code == 200, key
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "combo_sticky_limit") == "5"
+    assert await get_setting(db_path, "combo_fusion_judge") == "openai/gpt-4o-mini"
+    assert await get_setting(db_path, "combo_fusion_min_panel") == "3"
+    assert await get_setting(db_path, "combo_fusion_straggler_grace_s") == "12.5"
+    assert await get_setting(db_path, "combo_fusion_hard_timeout_s") == "120"
+
+
+@pytest.mark.asyncio
+async def test_settings_post_rejects_invalid_combo_strategy(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_strategy&value=bogus",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 400
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "combo_strategy") is None
+
+
+@pytest.mark.asyncio
+async def test_settings_post_rejects_invalid_combo_sticky_limit(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_sticky_limit&value=notanumber",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 400
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "combo_sticky_limit") is None
+
+
+@pytest.mark.asyncio
+async def test_settings_post_rejects_invalid_combo_fusion_min_panel(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Visit the settings page first so server defaults are seeded into the DB.
+        await client.get("/dashboard/settings")
+        before = await get_setting(app.state.db_path, "combo_fusion_min_panel")
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_fusion_min_panel&value=0",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 400
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "combo_fusion_min_panel") == before
+
+
+@pytest.mark.asyncio
+async def test_settings_post_rejects_invalid_combo_fusion_timeout(app):
+    from janus.storage.settings import get_setting
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.get("/dashboard/settings")
+        before = await get_setting(app.state.db_path, "combo_fusion_hard_timeout_s")
+        r = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_fusion_hard_timeout_s&value=not-a-float",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert r.status_code == 400
+    db_path = app.state.db_path
+    assert await get_setting(db_path, "combo_fusion_hard_timeout_s") == before

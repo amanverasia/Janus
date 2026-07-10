@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
@@ -41,7 +42,7 @@ from janus.storage.budgets import (
     get_budgets,
 )
 from janus.storage.database import init_db
-from janus.storage.settings import get_setting, set_setting
+from janus.storage.settings import VALID_COMBO_STRATEGIES, get_setting, set_setting
 from janus.storage.usage import get_usage_stats
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
@@ -1098,6 +1099,45 @@ async def savers_partial(request: Request) -> HTMLResponse:
     )
 
 
+VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})
+
+# Settings keys that require server-side validation before being persisted. Each
+# validator raises ValueError on bad input; the POST handler rejects with 400 and
+# leaves the stored value untouched (page re-renders with the prior value on reload).
+_SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
+    "combo_strategy": lambda v: _require_choice(v, VALID_COMBO_STRATEGIES),
+    "combo_sticky_limit": lambda v: _require_int(v, min_value=1),
+    "combo_fusion_min_panel": lambda v: _require_int(v, min_value=1),
+    "combo_fusion_straggler_grace_s": lambda v: _require_float(v, min_value=0),
+    "combo_fusion_hard_timeout_s": lambda v: _require_float(v, min_value=0),
+    "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
+    "server_sticky_limit": lambda v: _require_int(v, min_value=1),
+}
+
+
+def _require_choice(value: str, choices: frozenset[str]) -> None:
+    if value not in choices:
+        raise ValueError(f"must be one of: {', '.join(sorted(choices))}")
+
+
+def _require_int(value: str, *, min_value: int) -> None:
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise ValueError("must be an integer") from e
+    if parsed < min_value:
+        raise ValueError(f"must be >= {min_value}")
+
+
+def _require_float(value: str, *, min_value: float) -> None:
+    try:
+        parsed = float(value)
+    except ValueError as e:
+        raise ValueError("must be a number") from e
+    if parsed < min_value:
+        raise ValueError(f"must be >= {min_value}")
+
+
 @router.post("/api/settings", response_class=HTMLResponse)
 async def api_update_setting(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -1112,6 +1152,12 @@ async def api_update_setting(request: Request) -> HTMLResponse:
         value = params["value"][0]
     except KeyError:
         return HTMLResponse(content="Missing key or value", status_code=400)
+    validator = _SETTINGS_VALIDATORS.get(key)
+    if validator is not None:
+        try:
+            validator(value)
+        except ValueError as e:
+            return HTMLResponse(content=f"Invalid value for {key}: {e}", status_code=400)
     await set_setting(db_path, key, value)
     if key.startswith("saver_"):
         from janus.dashboard.reload import reload_savers
@@ -1240,6 +1286,12 @@ async def settings_page(request: Request) -> HTMLResponse:
         request_logging_enabled,
         require_api_key_enabled,
         resolve_account_strategy,
+        resolve_combo_fusion_hard_timeout_s,
+        resolve_combo_fusion_judge,
+        resolve_combo_fusion_min_panel,
+        resolve_combo_fusion_straggler_grace_s,
+        resolve_combo_sticky_limit,
+        resolve_combo_strategy,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
     )
@@ -1262,6 +1314,12 @@ async def settings_page(request: Request) -> HTMLResponse:
         "request_logging_enabled": request_logging_enabled(settings),
         "account_strategy": resolve_account_strategy(settings),
         "sticky_limit": resolve_sticky_limit(settings),
+        "combo_strategy": resolve_combo_strategy(settings),
+        "combo_sticky_limit": resolve_combo_sticky_limit(settings),
+        "combo_fusion_judge": resolve_combo_fusion_judge(settings),
+        "combo_fusion_min_panel": resolve_combo_fusion_min_panel(settings),
+        "combo_fusion_straggler_grace_s": resolve_combo_fusion_straggler_grace_s(settings),
+        "combo_fusion_hard_timeout_s": resolve_combo_fusion_hard_timeout_s(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 
