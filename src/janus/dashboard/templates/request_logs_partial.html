@@ -18,7 +18,7 @@
             <tr class="hover:bg-gray-700">
                 <td class="px-4 py-3 text-sm text-gray-300 font-mono">{{ log.timestamp }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300">{{ log.client_format or "-" }}{% if log.streamed %} <span class="text-xs text-blue-400">(stream)</span>{% endif %}</td>
-                <td class="px-4 py-3 text-sm text-gray-300">{{ log.client_key_label or (("key #" ~ log.client_key_id) if log.client_key_id else "—") }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300">{{ log.client_key_name or log.client_key_label or (("key #" ~ log.client_key_id) if log.client_key_id else "—") }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 font-mono">{{ log.model or "-" }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300">{{ log.provider_id or "-" }}</td>
                 <td class="px-4 py-3 text-sm">

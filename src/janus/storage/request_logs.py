@@ -77,9 +77,12 @@ async def list_request_logs(
 ) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT id, timestamp, client_format, model, provider_id, account_id,
-                      status, duration_ms, streamed, error, client_key_id, client_key_label
-               FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?""",
+            """SELECT r.id, r.timestamp, r.client_format, r.model, r.provider_id,
+                      r.account_id, r.status, r.duration_ms, r.streamed, r.error,
+                      r.client_key_id, r.client_key_label, k.name AS client_key_name
+               FROM request_logs r
+               LEFT JOIN api_keys k ON k.id = r.client_key_id
+               ORDER BY r.id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
         ) as cur:
             rows = await cur.fetchall()
@@ -88,7 +91,13 @@ async def list_request_logs(
 
 async def get_request_log(db_path: str | Path, log_id: int) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
-        async with db.execute("SELECT * FROM request_logs WHERE id = ?", (log_id,)) as cur:
+        async with db.execute(
+            """SELECT r.*, k.name AS client_key_name
+               FROM request_logs r
+               LEFT JOIN api_keys k ON k.id = r.client_key_id
+               WHERE r.id = ?""",
+            (log_id,),
+        ) as cur:
             row = await cur.fetchone()
     return dict(row) if row else None
 

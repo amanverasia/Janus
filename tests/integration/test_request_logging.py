@@ -286,6 +286,44 @@ async def test_db_key_records_client_key_id(tmp_path):
     assert len(logs) == 1
     assert logs[0]["client_key_id"] == key_info["id"]
     assert logs[0]["client_key_label"] is None
+    assert logs[0]["client_key_name"] == "my-app"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_db_key_name_shown_on_dashboard(tmp_path):
+    from janus.storage.api_keys import create_key
+
+    provider = ProviderConfig(
+        id="test",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="sk-test",
+        models=["test-m1"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=True, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    full_key, _ = await create_key(app.state.db_path, "alice-laptop")
+    _mock_upstream()
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post(
+            "/v1/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+        assert r.status_code == 200
+
+        page = await client.get("/dashboard/request-logs")
+        assert page.status_code == 200
+        assert "alice-laptop" in page.text
+        assert "key #" not in page.text
 
 
 @pytest.mark.asyncio
