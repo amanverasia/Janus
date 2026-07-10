@@ -241,6 +241,8 @@ async def _log_error_and_raise(
     request_body: str | None,
     detail: Any,
     response_body: Any = None,
+    client_key_id: int | None = None,
+    client_key_label: str | None = None,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
     if log_requests:
@@ -266,6 +268,8 @@ async def _log_error_and_raise(
             request_body=request_body,
             response_body=resp_text,
             error=err_text[:2000],
+            client_key_id=client_key_id,
+            client_key_label=client_key_label,
         )
     raise HTTPException(status_code=status, detail=detail)
 
@@ -493,6 +497,8 @@ async def _handle(
                         request_body=logged_request_body,
                         detail="Upstream error",
                         response_body=result.json_data,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 if pt_stream:
                     lines = result.lines
@@ -553,6 +559,8 @@ async def _handle(
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
+                                    client_key_id=client_key_id,
+                                    client_key_label=client_key_label,
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
@@ -597,6 +605,8 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         response_body=pt_response_body,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 handler.mark_success(target.account_id, target.model)
                 return JSONResponse(content=result.json_data if result.json_data else {})
@@ -667,6 +677,8 @@ async def _handle(
                         request_body=logged_request_body,
                         detail="Upstream error",
                         response_body=native_result.json_data,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
 
                 if native_stream:
@@ -727,6 +739,8 @@ async def _handle(
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
+                                    client_key_id=client_key_id,
+                                    client_key_label=client_key_label,
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
@@ -776,6 +790,8 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         response_body=native_response_body,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 handler.mark_success(target.account_id, target.model)
                 return JSONResponse(
@@ -829,6 +845,8 @@ async def _handle(
                         request_body=logged_request_body,
                         detail=(str(result.json_data) if result.json_data else "Upstream error"),
                         response_body=result.json_data,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 lines = result.lines
                 if lines is None:
@@ -843,6 +861,8 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         detail="No stream from upstream",
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 parser = provider_adapter.stream_parser()
                 emitter = client_adapter.stream_emitter()
@@ -885,6 +905,8 @@ async def _handle(
                                 duration_ms=_elapsed_ms(),
                                 streamed=True,
                                 request_body=logged_request_body,
+                                client_key_id=client_key_id,
+                                client_key_label=client_key_label,
                             )
                         if stream_ok:
                             handler.mark_success(target.account_id, target.model)
@@ -915,6 +937,8 @@ async def _handle(
                     request_body=logged_request_body,
                     detail=(str(result.json_data) if result.json_data else "Upstream error"),
                     response_body=result.json_data,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
                 )
             if result.json_data is None:
                 await _log_error_and_raise(
@@ -928,6 +952,8 @@ async def _handle(
                     duration_ms=_elapsed_ms(),
                     request_body=logged_request_body,
                     detail="Empty upstream response",
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
                 )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
@@ -969,6 +995,8 @@ async def _handle(
                     duration_ms=_elapsed_ms(),
                     request_body=logged_request_body,
                     response_body=logged_response_body,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
                 )
 
             handler.mark_success(target.account_id, target.model)
@@ -988,6 +1016,8 @@ async def _handle(
             duration_ms=_elapsed_ms(),
             request_body=logged_request_body,
             error=f"All providers exhausted: {last_error}",
+            client_key_id=client_key_id,
+            client_key_label=client_key_label,
         )
     raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
 

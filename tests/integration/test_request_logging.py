@@ -199,3 +199,94 @@ async def test_dashboard_page_shows_disabled_banner(app):
         r = await client.get("/dashboard/request-logs")
         assert r.status_code == 200
         assert "disabled" in r.text
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_labeled_key_records_client_key_label(tmp_path):
+    provider = ProviderConfig(
+        id="test",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="sk-test",
+        models=["test-m1"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=True, data_dir=tmp_path),
+        providers=[provider],
+        api_keys=["sk-static-labeled"],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    _mock_upstream()
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post(
+            "/v1/chat/completions",
+            json=payload,
+            headers={"Authorization": "Bearer sk-static-labeled"},
+        )
+        assert r.status_code == 200
+    logs = await list_request_logs(app.state.db_path)
+    assert len(logs) == 1
+    assert logs[0]["client_key_label"] is not None
+    assert logs[0]["client_key_label"].startswith("Config (")
+    assert logs[0]["client_key_id"] is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_db_key_records_client_key_id(tmp_path):
+    from janus.storage.api_keys import create_key
+
+    provider = ProviderConfig(
+        id="test",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="sk-test",
+        models=["test-m1"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=True, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    full_key, key_info = await create_key(app.state.db_path, "my-app")
+    _mock_upstream()
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post(
+            "/v1/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+        assert r.status_code == 200
+    logs = await list_request_logs(app.state.db_path)
+    assert len(logs) == 1
+    assert logs[0]["client_key_id"] == key_info["id"]
+    assert logs[0]["client_key_label"] is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_anonymous_access_records_null_client_key(app):
+    _mock_upstream()
+    await set_setting(app.state.db_path, "server_request_logging", "true")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+
+        logs = await list_request_logs(app.state.db_path)
+        assert len(logs) == 1
+        assert logs[0]["client_key_id"] is None
+        assert logs[0]["client_key_label"] is None
+
+        page = await client.get("/dashboard/request-logs")
+        assert page.status_code == 200
+        assert "—" in page.text

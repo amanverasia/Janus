@@ -31,14 +31,17 @@ async def record_request_log(
     request_body: str | None = None,
     response_body: str | None = None,
     error: str | None = None,
+    client_key_id: int | None = None,
+    client_key_label: str | None = None,
 ) -> None:
     try:
         async with get_connection(db_path) as db:
             await db.execute(
                 """INSERT INTO request_logs
                    (client_format, model, provider_id, account_id, status,
-                    duration_ms, streamed, request_body, response_body, error)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    duration_ms, streamed, request_body, response_body, error,
+                    client_key_id, client_key_label)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     client_format,
                     model,
@@ -50,6 +53,8 @@ async def record_request_log(
                     _truncate(request_body),
                     _truncate(response_body),
                     error,
+                    client_key_id,
+                    client_key_label,
                 ),
             )
             await db.execute(
@@ -71,7 +76,7 @@ async def list_request_logs(
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT id, timestamp, client_format, model, provider_id, account_id,
-                      status, duration_ms, streamed, error
+                      status, duration_ms, streamed, error, client_key_id, client_key_label
                FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
         ) as cur:
