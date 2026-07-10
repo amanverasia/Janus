@@ -1,7 +1,14 @@
 import pytest
 
-from janus.storage.database import init_db
-from janus.storage.usage import get_unpriced_models, get_usage_stats, record_usage
+from janus.pricing.registry import PricingRegistry
+from janus.storage.database import get_connection, init_db
+from janus.storage.usage import (
+    backfill_costs,
+    get_today_total_cost,
+    get_unpriced_models,
+    get_usage_stats,
+    record_usage,
+)
 
 
 @pytest.mark.asyncio
@@ -256,3 +263,187 @@ async def test_get_unpriced_models_partial_cost_mix_excluded(tmp_path):
     )
     rows = await get_unpriced_models(db_path)
     assert rows == []
+
+
+# --- backfill_costs ----------------------------------------------------
+
+
+def _registry() -> PricingRegistry:
+    return PricingRegistry(
+        {},
+        {
+            "mystery-model": {
+                "input_per_mtok": 3.0,
+                "output_per_mtok": 15.0,
+                "cache_creation_per_mtok": 3.75,
+                "cache_read_per_mtok": 0.3,
+            }
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_backfill_updates_zero_cost_rows_with_tokens(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 1
+    expected = 3.0 + 7.5
+    assert abs(total_added - expected) < 1e-9
+
+    stats = await get_usage_stats(db_path)
+    assert stats["total_requests"] == 1
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT cost FROM usage") as cur:
+            row = await cur.fetchone()
+    assert abs(row["cost"] - expected) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_backfill_leaves_priced_rows_untouched(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=1.23,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 0
+    assert total_added == 0.0
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT cost FROM usage") as cur:
+            row = await cur.fetchone()
+    assert abs(row["cost"] - 1.23) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_backfill_leaves_zero_token_rows_untouched(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="mystery-model",
+        input_tokens=0,
+        output_tokens=0,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 0
+    assert total_added == 0.0
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_rows_still_unpriced(tmp_path):
+    # Model still has no pricing entry anywhere -- recomputed cost is 0.0, so
+    # the row should not be counted as updated (we only write cost > 0).
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="still-unknown-model",
+        input_tokens=100,
+        output_tokens=50,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 0
+    assert total_added == 0.0
+
+
+@pytest.mark.asyncio
+async def test_backfill_dry_run_writes_nothing(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry(), dry_run=True)
+    assert rows_updated == 1
+    assert total_added > 0.0
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT cost FROM usage") as cur:
+            row = await cur.fetchone()
+    assert row["cost"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_backfill_respects_days_window(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=0.0,
+    )
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE usage SET timestamp = datetime('now', '-90 days')")
+        await db.commit()
+
+    rows_updated, total_added = await backfill_costs(db_path, _registry(), days=30)
+    assert rows_updated == 0
+    assert total_added == 0.0
+
+    rows_updated_all, total_added_all = await backfill_costs(db_path, _registry(), days=120)
+    assert rows_updated_all == 1
+    assert total_added_all > 0.0
+
+
+@pytest.mark.asyncio
+async def test_backfill_totals_across_multiple_rows(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    for _ in range(3):
+        await record_usage(
+            db_path,
+            provider_id="p",
+            model="mystery-model",
+            input_tokens=1_000_000,
+            output_tokens=0,
+            status=200,
+            cost=0.0,
+        )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 3
+    assert abs(total_added - 3 * 3.0) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_get_today_total_cost(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path, provider_id="p", model="m", input_tokens=1, output_tokens=1, cost=1.5
+    )
+    await record_usage(
+        db_path, provider_id="p", model="m", input_tokens=1, output_tokens=1, cost=2.5
+    )
+    total = await get_today_total_cost(db_path)
+    assert abs(total - 4.0) < 1e-9

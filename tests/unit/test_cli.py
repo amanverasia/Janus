@@ -70,3 +70,133 @@ def test_keys_revoke(tmp_path):
     result = runner.invoke(app, ["keys", "revoke", "1", "--config", config_path])
     assert result.exit_code == 0
     assert "Revoked" in result.output
+
+
+def _write_config(tmp_path) -> str:
+    import yaml
+
+    config_path = str(tmp_path / "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump({"server": {"data_dir": str(tmp_path)}}, f)
+    return config_path
+
+
+def test_pricing_sync_success(tmp_path, monkeypatch):
+    config_path = _write_config(tmp_path)
+
+    async def fake_fetch_and_sync(db_path):
+        return 42
+
+    monkeypatch.setattr("janus.pricing.sync.fetch_and_sync", fake_fetch_and_sync)
+    result = runner.invoke(app, ["pricing", "sync", "--config", config_path])
+    assert result.exit_code == 0
+    assert "42" in result.output
+
+
+def test_pricing_sync_failure_exits_nonzero(tmp_path, monkeypatch):
+    from janus.pricing.sync import PricingSyncError
+
+    config_path = _write_config(tmp_path)
+
+    async def fake_fetch_and_sync(db_path):
+        raise PricingSyncError("both sources failed")
+
+    monkeypatch.setattr("janus.pricing.sync.fetch_and_sync", fake_fetch_and_sync)
+    result = runner.invoke(app, ["pricing", "sync", "--config", config_path])
+    assert result.exit_code == 1
+    assert "both sources failed" in result.output
+
+
+def test_pricing_backfill_updates_rows_and_notes_today(tmp_path):
+    import asyncio
+
+    from janus.storage.database import init_db
+    from janus.storage.usage import record_usage
+
+    config_path = _write_config(tmp_path)
+    db_path = tmp_path / "janus.db"
+    asyncio.run(init_db(db_path))
+    asyncio.run(
+        record_usage(
+            db_path,
+            provider_id="p",
+            model="gpt-4o-mini",
+            input_tokens=1_000_000,
+            output_tokens=500_000,
+            status=200,
+            cost=0.0,
+        )
+    )
+
+    result = runner.invoke(app, ["pricing", "backfill", "--config", config_path])
+    assert result.exit_code == 0
+    assert "Updated 1 row" in result.output
+    assert "today's measured spend increased" in result.output
+
+
+def test_pricing_backfill_dry_run_writes_nothing(tmp_path):
+    import asyncio
+
+    from janus.storage.database import get_connection, init_db
+    from janus.storage.usage import record_usage
+
+    config_path = _write_config(tmp_path)
+    db_path = tmp_path / "janus.db"
+    asyncio.run(init_db(db_path))
+    asyncio.run(
+        record_usage(
+            db_path,
+            provider_id="p",
+            model="gpt-4o-mini",
+            input_tokens=1_000_000,
+            output_tokens=500_000,
+            status=200,
+            cost=0.0,
+        )
+    )
+
+    result = runner.invoke(app, ["pricing", "backfill", "--dry-run", "--config", config_path])
+    assert result.exit_code == 0
+    assert "Would update 1 row" in result.output
+    assert "today's measured spend" not in result.output
+
+    async def _read_cost():
+        async with get_connection(db_path) as db:
+            async with db.execute("SELECT cost FROM usage") as cur:
+                row = await cur.fetchone()
+        return row["cost"]
+
+    assert asyncio.run(_read_cost()) == 0.0
+
+
+def test_pricing_backfill_respects_days(tmp_path):
+    import asyncio
+
+    from janus.storage.database import get_connection, init_db
+    from janus.storage.usage import record_usage
+
+    config_path = _write_config(tmp_path)
+    db_path = tmp_path / "janus.db"
+    asyncio.run(init_db(db_path))
+    asyncio.run(
+        record_usage(
+            db_path,
+            provider_id="p",
+            model="gpt-4o-mini",
+            input_tokens=1_000_000,
+            output_tokens=500_000,
+            status=200,
+            cost=0.0,
+        )
+    )
+
+    async def _age_row():
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE usage SET timestamp = datetime('now', '-90 days')")
+            await db.commit()
+
+    asyncio.run(_age_row())
+
+    result = runner.invoke(app, ["pricing", "backfill", "--days", "30", "--config", config_path])
+    assert result.exit_code == 0
+    assert "Updated 0 row" in result.output

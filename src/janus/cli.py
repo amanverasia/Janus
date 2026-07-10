@@ -466,6 +466,70 @@ def pricing_show(
     typer.echo(f"  Cache read:         ${p.cache_read_per_mtok} / Mtok")
 
 
+@pricing_app.command("sync")
+def pricing_sync(
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Fetch the LiteLLM/OpenRouter pricing catalog and store it in the DB."""
+    import asyncio
+
+    from janus.pricing.sync import PricingSyncError, fetch_and_sync
+    from janus.storage.database import init_db
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    try:
+        count = asyncio.run(fetch_and_sync(db_path))
+    except PricingSyncError as exc:
+        typer.echo(f"Pricing sync failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"Synced pricing catalog: {count} model(s).")
+
+
+@pricing_app.command("backfill")
+def pricing_backfill(
+    days: int | None = typer.Option(
+        None, "--days", "-d", help="Only backfill rows from the last N days (default: all time)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Compute the backfill without writing any changes"
+    ),
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Retroactively price historical $0-cost usage rows with the current pricing registry."""
+    import asyncio
+
+    from janus.pricing.registry import PricingRegistry
+    from janus.storage.database import init_db
+    from janus.storage.pricing_catalog import get_catalog
+    from janus.storage.pricing_db import get_pricing_overrides
+    from janus.storage.usage import backfill_costs, get_today_total_cost
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+
+    overrides = asyncio.run(get_pricing_overrides(db_path))
+    catalog = asyncio.run(get_catalog(db_path))
+    registry = PricingRegistry(overrides, catalog)
+
+    today_before = asyncio.run(get_today_total_cost(db_path))
+    rows_updated, total_cost_added = asyncio.run(
+        backfill_costs(db_path, registry, days=days, dry_run=dry_run)
+    )
+
+    verb = "Would update" if dry_run else "Updated"
+    typer.echo(f"{verb} {rows_updated} row(s), adding ${total_cost_added:.2f} in recovered cost.")
+
+    if not dry_run and rows_updated:
+        today_after = asyncio.run(get_today_total_cost(db_path))
+        today_delta = today_after - today_before
+        if today_delta > 0:
+            typer.echo(
+                "Note: budget enforcement uses these costs; today's measured spend "
+                f"increased by ${today_delta:.2f}"
+            )
+
+
 @inventory_app.command("generate-encryption-key")
 def inventory_generate_encryption_key() -> None:
     """Generate a Fernet key for INVENTORY_ENCRYPTION_KEY."""
