@@ -139,6 +139,31 @@ def test_compress_git_status_caps_files_with_more_markers():
     assert "file15.txt" not in result  # beyond the 10-file cap
 
 
+def test_git_status_detection_ignores_prose_starting_with_a_code():
+    # Prose lines starting with "A " must not route to compress_git_status
+    # (which would drop lines beyond STATUS_MAX_FILES).
+    lines = [
+        f"A very important fact number {i} that must not be silently dropped here"
+        for i in range(20)
+    ]
+    text = "\n".join(lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    result = _detect_and_compress(text)
+    for i in range(20):
+        assert f"fact number {i}" in result
+
+
+def test_git_status_detection_still_fires_for_genuine_porcelain():
+    lines = [f"M  src/changed{i}.py" for i in range(16)]
+    lines += [f"?? new{i}.txt" for i in range(16)]
+    text = "\n".join(lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    result = _detect_and_compress(text)
+    assert len(result) < len(text)
+    assert "more modified" in result
+    assert "more untracked" in result
+
+
 def test_compress_grep_output_groups_and_caps_per_file():
     lines = [f"src/a.py:{i}:match number {i}" for i in range(15)]
     lines += [f"src/b.py:{i}:other match {i}" for i in range(3)]
@@ -153,6 +178,94 @@ def test_compress_grep_output_never_empty_on_unmatched_input():
     text = "no colons here\njust plain text\n"
     result = compress_grep_output(text)
     assert result == text
+
+
+def test_compress_grep_output_preserves_non_matching_lines_in_place():
+    # Non-matching lines (prose, tracebacks, separators) must pass through
+    # unchanged in their original positions — only match lines get capped.
+    lines = ["Traceback (most recent call last):"]
+    lines += [f"src/a.py:{i}:match number {i}" for i in range(15)]
+    lines += ["--"]
+    lines += ["RuntimeError: something exploded"]
+    text = "\n".join(lines)
+    result = compress_grep_output(text)
+    out_lines = result.split("\n")
+    assert out_lines[0] == "Traceback (most recent call last):"
+    assert "--" in out_lines
+    assert "RuntimeError: something exploded" in out_lines
+    assert "more in src/a.py" in result
+    assert "src/a.py:14:" not in result  # beyond the 10-match cap
+
+
+def test_compress_grep_output_preserves_context_lines():
+    # grep -C context lines (`path-NN-…`) are not matches; they must survive.
+    lines = []
+    for i in range(15):
+        lines.append(f"src/a.py-{i * 10}- context before {i}")
+        lines.append(f"src/a.py:{i * 10 + 1}:the match {i}")
+        lines.append(f"src/a.py-{i * 10 + 2}- context after {i}")
+        lines.append("--")
+    text = "\n".join(lines)
+    result = compress_grep_output(text)
+    assert len(result) < len(text)
+    for i in range(15):
+        assert f"context before {i}" in result
+        assert f"context after {i}" in result
+    assert "the match 0" in result
+    assert "the match 14" not in result  # beyond the 10-match cap
+    assert "more in src/a.py" in result
+
+
+def test_grep_detection_ignores_timestamped_logs():
+    # `12:34:56 …` has an all-digit pre-colon token — not a grep match line.
+    # A timestamped log with an embedded traceback must NOT be routed to the
+    # grep filter (which would delete the traceback lines entirely).
+    from janus.tokensavers.rtk import _is_grep_output
+
+    log_lines = [f"12:34:{i:02d} server started worker {i}" for i in range(20)]
+    traceback_lines = [
+        "Traceback (most recent call last):",
+        '  File "/app/main.py", line 10, in <module>',
+        "    run()",
+        "RuntimeError: kaboom",
+    ]
+    text = "\n".join(log_lines + traceback_lines)
+    assert len(text) >= MIN_COMPRESS_SIZE
+    assert not _is_grep_output(text[:1024])
+    result = _detect_and_compress(text)
+    for line in traceback_lines:
+        assert line in result
+    for i in range(20):
+        assert f"worker {i}" in result
+
+
+def test_grep_detection_requires_majority_grep_shaped_lines():
+    # A traceback with a handful of `file.py:NN:` frames sprinkled into mostly
+    # prose must not be classified as grep output.
+    from janus.tokensavers.rtk import _is_grep_output
+
+    lines = []
+    for i in range(6):
+        lines.append(f"src/mod{i}.py:{i}: some frame-like line {i}")
+        lines.append(f"prose explanation line number {i} without any match shape")
+        lines.append(f"another prose line {i} that is definitely not grep output")
+    window = "\n".join(lines)[:1024]
+    assert not _is_grep_output(window)
+
+
+def test_grep_detection_still_fires_for_genuine_grep():
+    from janus.tokensavers.rtk import _is_grep_output
+
+    plain = "\n".join(f"src/file{i}.py:{i}:match {i}" for i in range(10))
+    assert _is_grep_output(plain[:1024])
+
+    with_context = []
+    for i in range(6):
+        with_context.append(f"src/a.py-{i * 3}- before")
+        with_context.append(f"src/a.py:{i * 3 + 1}:match {i}")
+        with_context.append(f"src/a.py-{i * 3 + 2}- after")
+        with_context.append("--")
+    assert _is_grep_output("\n".join(with_context)[:1024])
 
 
 def test_compress_find_output_groups_by_dir_and_caps():

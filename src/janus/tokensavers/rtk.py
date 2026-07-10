@@ -36,9 +36,17 @@ _PERMISSIONS_RE = re.compile(
 _TRUNCATE_MARKER = "\n[…truncated…]"
 
 _GIT_LOG_DETECT_RE = re.compile(r"^commit [0-9a-f]{7,40}", re.MULTILINE)
-_GIT_STATUS_DETECT_RE = re.compile(r"^(M|A|D|R|\?\?)\s", re.MULTILINE)
+# One porcelain-shaped line: a status code then a single path-like token (no
+# spaces). Detection requires several of these (see _is_git_status) so prose
+# that merely starts with "A " can't misroute to the git-status filter.
+_GIT_STATUS_LINE_RE = re.compile(r"^(\?\?|[MADRC][MD ]?)\s+\S+$")
+_GIT_STATUS_MIN_LINES = 3  # porcelain-shaped lines needed to classify as git status
 _BUILD_OUTPUT_DETECT_RE = re.compile(r"error\[|warning:|FAILED|BUILD")
-_GREP_LINE_RE = re.compile(r"^\S+:\d+[:\s]")
+# A grep match line `path:NN:…`. The pre-colon token must contain at least one
+# non-digit so pure timestamps (`12:34:56 …`) don't look like grep matches.
+_GREP_LINE_RE = re.compile(r"^[^\s:]*[^\d\s:][^\s:]*:\d+[:\s]")
+# A grep -C/-A/-B context line `path-NN-…` (same non-digit token requirement).
+_GREP_CONTEXT_RE = re.compile(r"^[^\s:]*[^\d\s:][^\s:]*-\d+-")
 _TREE_GLYPH_RE = re.compile(r"├──|└──")
 _LS_ROW_RE = re.compile(r"^[dls-][rwxst-]{9}\s", re.MULTILINE)
 _BUILD_LINE_RE = re.compile(r"error|warning|failed|FAILED|✗|✘")
@@ -205,33 +213,49 @@ def compress_git_status(text: str, max_files: int = STATUS_MAX_FILES) -> str:
     return result
 
 
-def compress_grep_output(text: str, per_file_max: int = GREP_PER_FILE_MAX) -> str:
-    """Group `path:line:content` matches by file, capping matches shown per file."""
-    by_file: dict[str, list[str]] = {}
-    for line in text.split("\n"):
-        if not line:
-            continue
-        first = line.find(":")
-        if first == -1:
-            continue
-        second = line.find(":", first + 1)
-        if second == -1:
-            continue
-        file = line[:first]
-        lineno = line[first + 1 : second]
-        if not lineno.isdigit():
-            continue
-        by_file.setdefault(file, []).append(line)
+def _grep_match_file(line: str) -> str | None:
+    """Return the file path when `line` is a `path:NN:…` grep match, else None."""
+    if not _GREP_LINE_RE.match(line):
+        return None
+    first = line.find(":")
+    second = line.find(":", first + 1)
+    if second == -1:
+        return None
+    if not line[first + 1 : second].isdigit():
+        return None
+    return line[:first]
 
-    if not by_file:
+
+def compress_grep_output(text: str, per_file_max: int = GREP_PER_FILE_MAX) -> str:
+    """Cap `path:line:content` matches per file, leaving all other lines intact.
+
+    Non-matching lines (tracebacks, `-C` context lines, `--` separators, prose)
+    pass through unchanged in their original positions; only match lines beyond
+    `per_file_max` for a given file are dropped, replaced by one
+    "+N more in <file>" marker at the point of the first dropped match.
+    """
+    lines = text.split("\n")
+    totals: dict[str, int] = {}
+    for line in lines:
+        file = _grep_match_file(line)
+        if file is not None:
+            totals[file] = totals.get(file, 0) + 1
+
+    if not totals:
         return text
 
     out: list[str] = []
-    for file in sorted(by_file):
-        matches = by_file[file]
-        out.extend(matches[:per_file_max])
-        if len(matches) > per_file_max:
-            out.append(f"… (+{len(matches) - per_file_max} more in {file})")
+    seen: dict[str, int] = {}
+    for line in lines:
+        file = _grep_match_file(line)
+        if file is None:
+            out.append(line)
+            continue
+        seen[file] = seen.get(file, 0) + 1
+        if seen[file] <= per_file_max:
+            out.append(line)
+        elif seen[file] == per_file_max + 1:
+            out.append(f"… (+{totals[file] - per_file_max} more in {file})")
 
     result = "\n".join(out)
     if not result:
@@ -339,10 +363,31 @@ def _looks_like_log(text: str) -> bool:
     return any(re.search(p, first_1k) for p in log_patterns)
 
 
+def _is_git_status(window: str) -> bool:
+    lines = [line for line in window.split("\n") if line.strip()]
+    count = sum(1 for line in lines if _GIT_STATUS_LINE_RE.match(line))
+    return count >= _GIT_STATUS_MIN_LINES
+
+
 def _is_grep_output(window: str) -> bool:
-    lines = window.split("\n")
-    count = sum(1 for line in lines if _GREP_LINE_RE.match(line))
-    return count >= 5
+    """Grep-shaped: enough match lines AND a majority of the window looks like grep.
+
+    The majority rule keeps mixed content (timestamped logs, tracebacks with a
+    few `file.py:NN:` frames) out of the grep filter; `-C` context lines and
+    `--` separators count toward the majority since real grep output has them.
+    """
+    lines = [line for line in window.split("\n") if line.strip()]
+    if not lines:
+        return False
+    matches = sum(1 for line in lines if _GREP_LINE_RE.match(line))
+    if matches < 5:
+        return False
+    grep_shaped = sum(
+        1
+        for line in lines
+        if _GREP_LINE_RE.match(line) or _GREP_CONTEXT_RE.match(line) or line == "--"
+    )
+    return grep_shaped * 2 > len(lines)
 
 
 def _is_path_like(line: str) -> bool:
@@ -372,7 +417,7 @@ def _detect_and_compress(text: str) -> str:
         result = compress_git_log(result)
     elif "diff --git" in window or window.startswith("diff "):
         result = compress_git_diff(result)
-    elif _GIT_STATUS_DETECT_RE.search(window) or "Changes not staged" in window:
+    elif _is_git_status(window) or "Changes not staged" in window:
         result = compress_git_status(result)
     elif _BUILD_OUTPUT_DETECT_RE.search(window):
         result = compress_build_output(result)
