@@ -38,7 +38,13 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_request_logging": "false",
     "server_account_strategy": "round_robin",
     "server_sticky_limit": "3",
+    "combo_fusion_min_panel": "2",
+    "combo_fusion_straggler_grace_s": "8",
+    "combo_fusion_hard_timeout_s": "90",
+    "combo_fusion_judge": "",
 }
+
+VALID_COMBO_STRATEGIES = frozenset({"fallback", "round_robin", "fusion"})
 
 
 async def get_setting(db_path: str | Path, key: str, default: str | None = None) -> str | None:
@@ -118,7 +124,8 @@ def resolve_account_strategy(settings: dict[str, str]) -> str:
 
 
 def resolve_combo_strategy(settings: dict[str, str]) -> str:
-    return settings.get("combo_strategy", "fallback")
+    value = settings.get("combo_strategy", "fallback")
+    return value if value in VALID_COMBO_STRATEGIES else "fallback"
 
 
 def resolve_combo_sticky_limit(settings: dict[str, str]) -> int:
@@ -126,6 +133,31 @@ def resolve_combo_sticky_limit(settings: dict[str, str]) -> int:
         return int(settings.get("combo_sticky_limit", "1"))
     except (ValueError, TypeError):
         return 1
+
+
+def resolve_combo_fusion_min_panel(settings: dict[str, str]) -> int:
+    try:
+        return int(resolve_server_settings(settings)["combo_fusion_min_panel"])
+    except (ValueError, TypeError):
+        return 2
+
+
+def resolve_combo_fusion_straggler_grace_s(settings: dict[str, str]) -> float:
+    try:
+        return float(resolve_server_settings(settings)["combo_fusion_straggler_grace_s"])
+    except (ValueError, TypeError):
+        return 8.0
+
+
+def resolve_combo_fusion_hard_timeout_s(settings: dict[str, str]) -> float:
+    try:
+        return float(resolve_server_settings(settings)["combo_fusion_hard_timeout_s"])
+    except (ValueError, TypeError):
+        return 90.0
+
+
+def resolve_combo_fusion_judge(settings: dict[str, str]) -> str:
+    return resolve_server_settings(settings)["combo_fusion_judge"].strip()
 
 
 def resolve_sticky_limit(settings: dict[str, str]) -> int:

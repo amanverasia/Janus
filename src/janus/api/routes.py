@@ -41,6 +41,7 @@ from janus.routing.errors import (
     refine_error_type,
 )
 from janus.routing.fallback import AccountStrategy, AllAccountsCooledDown, FallbackHandler
+from janus.routing.fusion import FusionDeps, run_fusion
 from janus.routing.modality import strip_unsupported_modalities
 from janus.routing.model_aliases import resolve_model_alias
 from janus.routing.prefetch import prefetch_remote_images
@@ -335,6 +336,10 @@ async def _handle(
         get_all_settings,
         request_logging_enabled,
         resolve_account_strategy,
+        resolve_combo_fusion_hard_timeout_s,
+        resolve_combo_fusion_judge,
+        resolve_combo_fusion_min_panel,
+        resolve_combo_fusion_straggler_grace_s,
         resolve_combo_sticky_limit,
         resolve_combo_strategy,
         resolve_sticky_limit,
@@ -361,6 +366,39 @@ async def _handle(
 
     def _elapsed_ms() -> int:
         return int((time.monotonic() - start_time) * 1000)
+
+    # ── Fusion combo: fan out to the panel, then judge synthesizes ────────
+    # Rewrites canonical_req to the judge request (a plain model), so the
+    # normal attempt loop below handles streaming/fallback/usage untouched.
+    if combo_strat == "fusion":
+        fusion_panel = handler.registry.lookup_combo(canonical_req.model)
+        if fusion_panel is not None and len(fusion_panel) >= 2:
+            judge_model = resolve_combo_fusion_judge(settings) or fusion_panel[0]
+            if handler.registry.lookup_combo(judge_model) is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Fusion judge '{judge_model}' is a combo; must be a plain model",
+                )
+            canonical_req = await run_fusion(
+                canonical_req,
+                fusion_panel,
+                judge_model=judge_model,
+                deps=FusionDeps(
+                    handler=handler,
+                    providers=request.app.state.providers,
+                    resolve_format=_resolve_format,
+                    db_path=db_path,
+                    pricing_registry=pricing_registry,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
+                ),
+                min_panel=resolve_combo_fusion_min_panel(settings),
+                straggler_grace_s=resolve_combo_fusion_straggler_grace_s(settings),
+                hard_timeout_s=resolve_combo_fusion_hard_timeout_s(settings),
+            )
+        # Judge (or sole-answer model) is a plain model now — combo strategy
+        # no longer applies; use plain fallback semantics for its attempts.
+        combo_strat = "fallback"
 
     required_caps = detect_required_capabilities(canonical_req)
     try:
