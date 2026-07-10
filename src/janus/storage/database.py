@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS pricing_overrides (
     cache_read_per_mtok REAL NOT NULL DEFAULT 0.0
 );
 
+CREATE TABLE IF NOT EXISTS pricing_catalog (
+    model TEXT PRIMARY KEY,
+    input_per_mtok REAL NOT NULL,
+    output_per_mtok REAL NOT NULL,
+    cache_creation_per_mtok REAL NOT NULL DEFAULT 0,
+    cache_read_per_mtok REAL NOT NULL DEFAULT 0,
+    source TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS cooldowns (
     account_id TEXT NOT NULL,
     model TEXT NOT NULL DEFAULT '__all__',
