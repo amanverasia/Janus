@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-10
+
 ### Added
 - **Fusion combo strategy** — combos can now run in `fusion` mode (9router port): the request fans out to all combo members in parallel (tools stripped, non-streaming, tool history flattened), a quorum + straggler-grace collector gathers answers, and a judge model (configurable via `combo_fusion_judge`, defaults to the first panel member) synthesizes one authoritative answer from anonymized `[Source N]` responses. The judge keeps the client's stream flag and tools and rides the normal fallback machinery. Panel usage is recorded per model. Judge is validated before any panel spend, with fallback to the first answering panel model. Tuning: `combo_fusion_min_panel`, `combo_fusion_straggler_grace_s`, `combo_fusion_hard_timeout_s`
 - **Per-provider model allowlist** — new optional `allowed_models` on providers (dashboard field, comma-separated, `fnmatch` globs like `claude-opus-*` supported; empty = all models). Blocked models are rejected at routing time (400) and hidden from `/v1/models` and Ollama `/api/tags`. Lets you expose only selected models from a provider (e.g. only `claude-opus-4-7` from Anthropic)
