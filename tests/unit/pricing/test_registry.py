@@ -190,6 +190,72 @@ def test_none_catalog_behaves_like_no_catalog():
     assert reg.source_of("gpt-4o") == "builtin"
 
 
+def test_override_prefix_beats_more_specific_catalog_entry():
+    # Reviewer repro: overrides has a *less specific* key ("gpt-4o") than
+    # catalog ("gpt-4o-mini"). A lookup that matches both via prefix must
+    # resolve to the override, not the more specific catalog entry, because
+    # overrides always win when they match at all.
+    overrides = {
+        "gpt-4o": {
+            "input_per_mtok": 42.0,
+            "output_per_mtok": 42.0,
+            "cache_creation_per_mtok": 0.0,
+            "cache_read_per_mtok": 0.0,
+        }
+    }
+    catalog = {
+        "gpt-4o-mini": {
+            "input_per_mtok": 1.0,
+            "output_per_mtok": 1.0,
+            "cache_creation_per_mtok": 0.0,
+            "cache_read_per_mtok": 0.0,
+        }
+    }
+    reg = PricingRegistry(overrides, catalog)
+    p = reg.get("gpt-4o-mini-2024-07-18")
+    assert p is not None
+    assert p.input_per_mtok == 42.0
+    assert reg.source_of("gpt-4o-mini-2024-07-18") == "override"
+
+
+def test_override_prefix_beats_more_specific_builtin_entry():
+    # Same contract as above but against the builtin layer instead of
+    # catalog: builtin has an exact "gpt-4o-mini" entry, but an override on
+    # the less-specific "gpt-4o" prefix still wins for "gpt-4o-mini" lookups.
+    overrides = {
+        "gpt-4o": {
+            "input_per_mtok": 7.0,
+            "output_per_mtok": 7.0,
+            "cache_creation_per_mtok": 0.0,
+            "cache_read_per_mtok": 0.0,
+        }
+    }
+    reg = PricingRegistry(overrides)
+    p = reg.get("gpt-4o-mini")
+    assert p is not None
+    assert p.input_per_mtok == 7.0
+    assert reg.source_of("gpt-4o-mini") == "override"
+
+
+def test_source_of_reflects_prefix_match_layer_not_exact_only():
+    # source_of must use the same layered exact-then-prefix resolution as
+    # get(), not an exact-key-only lookup, so it reports the layer of what
+    # actually resolves.
+    reg = PricingRegistry({})
+    assert reg.source_of("gpt-4o-latest") == "builtin"
+
+    catalog = {
+        "some-vendor-model": {
+            "input_per_mtok": 5.0,
+            "output_per_mtok": 6.0,
+            "cache_creation_per_mtok": 0.0,
+            "cache_read_per_mtok": 0.0,
+        }
+    }
+    reg2 = PricingRegistry({}, catalog)
+    assert reg2.source_of("some-vendor-model-20250101") == "catalog"
+
+
 def test_get_all_returns_merged_table():
     overrides = {
         "custom": {
