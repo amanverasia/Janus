@@ -254,6 +254,53 @@ Backend supports `combo_strategy` / `combo_sticky_limit` / (after Task 3)
 **Tests:** GET settings page contains the combo section; POST updates settings rows; invalid
 strategy value is rejected/ignored.
 
+## Task 8 — Per-provider model allowlist (selective models)
+
+**Files:** `src/janus/config/schema.py`, `src/janus/storage/database.py`,
+`src/janus/storage/providers_db.py`, `src/janus/routing/upstream_expand.py` (and any other
+row→ProviderConfig builder), `src/janus/providers/registry.py`, `src/janus/api/routes.py`
+(models listing), `src/janus/dashboard/routes.py` + provider form template, tests.
+
+**User story:** "I have the Anthropic provider added; they provide many Claude models, but I
+only want users to use claude-opus-4-7 — no other model." Today `registry.lookup()` routes
+ANY `prefix/model` string to the provider; the `models` list is display-only for
+`/v1/models`. There is no enforcement point.
+
+**Design:** new optional `allowed_models: list[str]` on `ProviderConfig` (default empty =
+no restriction — current behavior unchanged). Patterns support `fnmatch` globs
+(`claude-opus-*`). Enforcement lives in `ProviderRegistry.lookup()`.
+
+- `schema.py`: `allowed_models: list[str] = Field(default_factory=list)` on ProviderConfig.
+- DB: idempotent migration adding `allowed_models TEXT NOT NULL DEFAULT '[]'` to
+  `providers` (follow the existing PRAGMA table_info migration pattern for added columns,
+  e.g. quota/transport columns). `providers_db.py` create/update persists it (JSON list, same
+  as `models`). `seed_from_config` includes it.
+- Row→config builders (`upstream_expand.py` and any sibling that constructs ProviderConfig
+  from a DB row): parse the JSON column into `allowed_models`.
+- `registry.py`: add module-level
+  `model_allowed(model: str, allowed: list[str]) -> bool` (True when list empty; else exact
+  match or `fnmatch.fnmatchcase`). In `lookup()`, skip configs where
+  `not model_allowed(rest, config.allowed_models)`. If every config for the prefix is
+  skipped, return the empty-filtered result: `lookup` returns `None` when no config passes
+  (so routes yield the existing 400 "Unknown model" path — check what `resolve_attempts`
+  does with `None` vs `[]` and keep the unknown-model ValueError semantics).
+- `/v1/models` listing (routes.py `list_models`): only list models that pass
+  `model_allowed` for at least one config of the prefix, so restricted models disappear
+  from discovery too.
+- Dashboard provider form: "Allowed models" text input (comma-separated, placeholder
+  "empty = all models"), persisted through the create/update handlers, shown in the
+  provider edit view. Follow the existing `models` field markup/parsing exactly.
+- Combos: no special handling — a combo member blocked by allowlist simply resolves to no
+  targets and is skipped (verify a combo with one blocked + one allowed member still works;
+  add a test).
+
+**Tests:** unit (registry) — empty allowlist routes anything; exact allowlist blocks others;
+glob `claude-opus-*` matches `claude-opus-4-7` and not `claude-sonnet-4-5`; multi-account
+same prefix with different allowlists → only permitted configs returned. Integration —
+provider with `allowed_models=["m-allowed"]`: request for `prefix/m-blocked` → 400,
+`prefix/m-allowed` → 200; `/v1/models` hides blocked models; DB migration round-trip
+(create provider with allowlist via providers_db, reload, enforced).
+
 ---
 
 ## Deferred (recorded in todo.md, not this phase)
