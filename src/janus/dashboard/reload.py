@@ -14,6 +14,7 @@ from janus.routing.fallback import FallbackHandler
 from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
 from janus.routing.upstream_expand import expand_gateway_provider
 from janus.storage.combos_db import list_combos
+from janus.storage.pricing_catalog import get_catalog
 from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
 from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
@@ -102,4 +103,5 @@ async def reload_savers(app: FastAPI) -> None:
 async def reload_pricing(app: FastAPI) -> None:
     db_path: Path = app.state.db_path
     overrides = await get_pricing_overrides(db_path)
-    app.state.pricing_registry = PricingRegistry(overrides)
+    catalog = await get_catalog(db_path)
+    app.state.pricing_registry = PricingRegistry(overrides, catalog)

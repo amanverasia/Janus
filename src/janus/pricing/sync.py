@@ -51,9 +51,10 @@ def _add_with_dual_key(result: dict[str, ModelPricing], key: str, pricing: Model
 def parse_litellm(data: dict[str, Any]) -> dict[str, ModelPricing]:
     """Parse the LiteLLM ``model_prices_and_context_window.json`` shape.
 
-    Skips the non-model ``sample_spec`` key and entries whose ``mode`` isn't
+    Skips the non-model ``sample_spec`` key, entries whose ``mode`` isn't
     chat-ish (embeddings/image/audio/rerank models don't have per-token text
-    pricing that's comparable to the rest of the catalog).
+    pricing that's comparable to the rest of the catalog), entries with an
+    unhashable ``mode`` value, and entries with negative cost fields.
     """
     result: dict[str, ModelPricing] = {}
     for key in sorted(data.keys()):
@@ -63,11 +64,20 @@ def parse_litellm(data: dict[str, Any]) -> dict[str, ModelPricing]:
         if not isinstance(entry, dict):
             continue
         mode = entry.get("mode")
-        if mode not in _LITELLM_ALLOWED_MODES:
+        try:
+            mode_allowed = mode in _LITELLM_ALLOWED_MODES
+        except TypeError:
+            # Unhashable mode (list/dict) -- skip this entry, not the whole source.
+            continue
+        if not mode_allowed:
             continue
         input_cost = entry.get("input_cost_per_token")
         output_cost = entry.get("output_cost_per_token")
         if not isinstance(input_cost, (int, float)) and not isinstance(output_cost, (int, float)):
+            continue
+        if isinstance(input_cost, (int, float)) and input_cost < 0:
+            continue
+        if isinstance(output_cost, (int, float)) and output_cost < 0:
             continue
         input_per_mtok = float(input_cost) * _MTOK if isinstance(input_cost, (int, float)) else 0.0
         output_per_mtok = (
@@ -104,7 +114,8 @@ def parse_openrouter(data: dict[str, Any]) -> dict[str, ModelPricing]:
     """Parse the OpenRouter ``/api/v1/models`` shape.
 
     Pricing fields are per-token decimal strings. Skips entries that fail to
-    parse or are free variants (both prompt and completion cost zero).
+    parse, are free variants (both prompt and completion cost zero), or have
+    a negative prompt/completion cost.
     """
     result: dict[str, ModelPricing] = {}
     entries = data.get("data")
@@ -121,6 +132,8 @@ def parse_openrouter(data: dict[str, Any]) -> dict[str, ModelPricing]:
         prompt = _parse_float(pricing_raw.get("prompt"))
         completion = _parse_float(pricing_raw.get("completion"))
         if prompt is None or completion is None:
+            continue
+        if prompt < 0 or completion < 0:
             continue
         if prompt == 0.0 and completion == 0.0:
             continue
@@ -204,9 +217,9 @@ async def fetch_and_sync(db_path: str | Path) -> int:
     """Fetch both pricing sources, merge, and replace the pricing_catalog table.
 
     Each source is fetched independently — one source failing (network error,
-    bad JSON, etc.) does not abort the other. Only raises ``PricingSyncError``
-    if both sources fail or the merged result would be empty (guards against
-    ever wiping out an existing catalog with nothing).
+    bad JSON, no usable entries, etc.) does not abort the other. Only raises
+    ``PricingSyncError`` if both sources come back empty, which guards against
+    ever wiping out an existing catalog with nothing.
     """
     async with httpx.AsyncClient(timeout=30) as client:
         litellm = await _fetch_litellm(client)
@@ -214,10 +227,6 @@ async def fetch_and_sync(db_path: str | Path) -> int:
 
     if not litellm and not openrouter:
         raise PricingSyncError("Both LiteLLM and OpenRouter pricing fetches failed")
-
-    merged = merge_sources(litellm, openrouter)
-    if not merged:
-        raise PricingSyncError("Merged pricing catalog is empty; refusing to sync")
 
     rows = _rows_for_catalog(litellm, openrouter)
     count = await replace_catalog(db_path, rows)

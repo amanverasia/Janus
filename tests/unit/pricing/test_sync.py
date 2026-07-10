@@ -182,6 +182,48 @@ def test_parse_litellm_skips_non_numeric_cost_entries():
     assert "broken-model" not in result
 
 
+def test_parse_litellm_skips_negative_cost_entries():
+    data = {
+        "negative-input": {
+            "input_cost_per_token": -1e-06,
+            "output_cost_per_token": 2e-06,
+            "mode": "chat",
+        },
+        "negative-output": {
+            "input_cost_per_token": 1e-06,
+            "output_cost_per_token": -2e-06,
+            "mode": "chat",
+        },
+        "fine-model": {
+            "input_cost_per_token": 1e-06,
+            "output_cost_per_token": 2e-06,
+            "mode": "chat",
+        },
+    }
+    result = parse_litellm(data)
+    assert "negative-input" not in result
+    assert "negative-output" not in result
+    assert "fine-model" in result
+
+
+def test_parse_litellm_skips_unhashable_mode():
+    data = {
+        "weird-mode-model": {
+            "input_cost_per_token": 1e-06,
+            "output_cost_per_token": 2e-06,
+            "mode": ["chat"],
+        },
+        "fine-model": {
+            "input_cost_per_token": 1e-06,
+            "output_cost_per_token": 2e-06,
+            "mode": "chat",
+        },
+    }
+    result = parse_litellm(data)
+    assert "weird-mode-model" not in result
+    assert "fine-model" in result
+
+
 # --- parse_openrouter -------------------------------------------------------
 
 
@@ -240,6 +282,29 @@ def test_parse_openrouter_skips_unparseable_pricing():
     }
     result = parse_openrouter(data)
     assert "weird/model" not in result
+
+
+def test_parse_openrouter_skips_negative_cost_entries():
+    data = {
+        "data": [
+            {
+                "id": "negative/prompt",
+                "pricing": {"prompt": "-0.000001", "completion": "0.000002"},
+            },
+            {
+                "id": "negative/completion",
+                "pricing": {"prompt": "0.000001", "completion": "-0.000002"},
+            },
+            {
+                "id": "fine/model",
+                "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+            },
+        ]
+    }
+    result = parse_openrouter(data)
+    assert "negative/prompt" not in result
+    assert "negative/completion" not in result
+    assert "fine/model" in result
 
 
 def test_parse_openrouter_missing_cache_fields_default_zero():
@@ -356,7 +421,7 @@ async def test_fetch_and_sync_both_down_raises_and_leaves_catalog_untouched(db):
 
 
 @respx.mock
-async def test_fetch_and_sync_empty_merge_guard(db):
+async def test_fetch_and_sync_both_sources_parse_empty_raises(db):
     await replace_catalog(
         db,
         [

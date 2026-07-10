@@ -5,10 +5,25 @@ from .models import ModelPricing
 
 
 class PricingRegistry:
-    def __init__(self, user_overrides: dict[str, dict[str, float]]) -> None:
-        self._table: dict[str, ModelPricing] = {**BUILTIN_PRICING}
+    def __init__(
+        self,
+        user_overrides: dict[str, dict[str, float]],
+        catalog: dict[str, dict[str, float]] | None = None,
+    ) -> None:
+        self._table: dict[str, ModelPricing] = {}
+        self._source: dict[str, str] = {}
+        for model, pricing in BUILTIN_PRICING.items():
+            self._table[model] = pricing
+            self._source[model] = "builtin"
+        for model, rates in (catalog or {}).items():
+            self._table[model] = ModelPricing(**rates)
+            self._source[model] = "catalog"
         for model, rates in user_overrides.items():
             self._table[model] = ModelPricing(**rates)
+            self._source[model] = "override"
+
+    def source_of(self, model: str) -> str | None:
+        return self._source.get(model)
 
     def get(self, model: str) -> ModelPricing | None:
         candidates = [model]
