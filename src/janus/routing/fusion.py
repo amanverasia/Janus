@@ -320,8 +320,11 @@ async def run_fusion(
 
     Degrades gracefully: 0 panel answers → HTTPException 503; exactly 1 →
     the original request pinned to the sole answering model (no judge turn).
+    If the judge itself can't route (cooldown, allowlist change since
+    validation), the first answering panel model takes over as judge — it just
+    proved routable — rather than failing the whole fusion.
     """
-    quorum = min(max(2, min_panel), len(panel_models))
+    quorum = min(max(1, min_panel), len(panel_models))
     logger.info(
         "FUSION panel=%d %s | judge=%s | quorum=%d",
         len(panel_models),
@@ -345,6 +348,38 @@ async def run_fusion(
     if len(answers) == 1:
         logger.info("FUSION only %s succeeded — answering directly (no fusion)", answers[0].model)
         return canonical_req.model_copy(update={"model": answers[0].model})
+    judge_model = _pick_available_judge(judge_model, answers, deps.handler)
     logger.info("FUSION judging %d answers with %s", len(answers), judge_model)
     judge_req = build_judge_request(canonical_req, answers)
     return judge_req.model_copy(update={"model": judge_model})
+
+
+def _pick_available_judge(
+    judge_model: str,
+    answers: list[PanelAnswer],
+    handler: FallbackHandler,
+) -> str:
+    """Return a judge that can actually route right now.
+
+    The panel already spent tokens; a judge on cooldown (or unroutable after a
+    config change) must not waste them. Fall back to the first ANSWERING panel
+    model — it just proved routable — and only 503 when that fails too.
+    """
+    try:
+        handler.resolve_attempts(judge_model)
+        return judge_model
+    except (AllAccountsCooledDown, ValueError) as e:
+        logger.warning("FUSION judge %s unavailable (%s); falling back", judge_model, e)
+    for answer in answers:
+        if answer.model == judge_model:
+            continue
+        try:
+            handler.resolve_attempts(answer.model)
+        except (AllAccountsCooledDown, ValueError):
+            continue
+        logger.info("FUSION using answering panel model %s as judge", answer.model)
+        return answer.model
+    raise HTTPException(
+        status_code=503,
+        detail=f"Fusion judge '{judge_model}' unavailable and no answering panel model can route",
+    )

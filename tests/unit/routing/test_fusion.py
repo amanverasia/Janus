@@ -22,6 +22,7 @@ from janus.canonical.models import (
     Usage,
 )
 from janus.routing import fusion
+from janus.routing.fallback import AllAccountsCooledDown
 from janus.routing.fusion import (
     PanelAnswer,
     build_judge_prompt,
@@ -291,9 +292,7 @@ async def test_collect_panel_cancellation_cancels_pending_panel_tasks():
     ]
 
     async def _runner() -> list[PanelAnswer]:
-        return await collect_panel(
-            tasks, min_panel=2, straggler_grace_s=1.0, hard_timeout_s=90.0
-        )
+        return await collect_panel(tasks, min_panel=2, straggler_grace_s=1.0, hard_timeout_s=90.0)
 
     runner_task = asyncio.create_task(_runner())
     # Let collect_panel start its asyncio.wait on the still-pending panel tasks.
@@ -323,9 +322,24 @@ def _fake_panel(results: dict[str, PanelAnswer | None]):
     return fake
 
 
-def _deps() -> fusion.FusionDeps:
+class _StubHandler:
+    """resolve_attempts stub: raises for `unavailable` models, else 'routes'."""
+
+    def __init__(self, unavailable: dict[str, Exception] | None = None) -> None:
+        self.unavailable = unavailable or {}
+        self.resolved: list[str] = []
+
+    def resolve_attempts(self, model: str, **_: Any) -> list[Any]:
+        self.resolved.append(model)
+        exc = self.unavailable.get(model)
+        if exc is not None:
+            raise exc
+        return [object()]
+
+
+def _deps(handler: Any | None = None) -> fusion.FusionDeps:
     return fusion.FusionDeps(
-        handler=None,  # type: ignore[arg-type]
+        handler=handler if handler is not None else _StubHandler(),  # type: ignore[arg-type]
         providers={},
         resolve_format=lambda name: None,  # type: ignore[arg-type, return-value]
         db_path=":memory:",
@@ -393,3 +407,97 @@ async def test_run_fusion_single_answer_skips_judge(monkeypatch):
     assert out.model == "b/m2"
     assert len(out.messages) == len(req.messages)
     assert out.stream is True
+
+
+async def test_run_fusion_min_panel_1_quorum_after_first_success(monkeypatch):
+    """min_panel=1 is honored (no silent floor to 2): quorum fires after the
+    first success, grace still applies, and the slow member is cancelled."""
+
+    async def fake(model: str, panel_req: CanonicalRequest, deps: Any) -> PanelAnswer | None:
+        if model == "a/m1":
+            return _answer("a/m1", "fast answer")
+        await asyncio.sleep(30.0)
+        return _answer("b/m2", "slow answer")
+
+    monkeypatch.setattr(fusion, "_call_panel_model", fake)
+    req = _req()
+    start = time.monotonic()
+    out = await run_fusion(
+        req,
+        ["a/m1", "b/m2"],
+        judge_model="a/m1",
+        deps=_deps(),
+        min_panel=1,
+        straggler_grace_s=0.05,
+        hard_timeout_s=30.0,
+    )
+    elapsed = time.monotonic() - start
+    assert elapsed < 5.0  # quorum=1 + short grace, not the 30s straggler
+    # Only one answer arrived → pinned directly to the answering model.
+    assert out.model == "a/m1"
+    assert len(out.messages) == len(req.messages)
+
+
+async def test_run_fusion_judge_cooled_down_falls_back_to_answering_model(monkeypatch):
+    results = {
+        "a/m1": _answer("a/m1", "alpha answer"),
+        "b/m2": _answer("b/m2", "beta answer"),
+    }
+    monkeypatch.setattr(fusion, "_call_panel_model", _fake_panel(results))
+    handler = _StubHandler(
+        unavailable={"x/judge": AllAccountsCooledDown("cooling", retry_after=30.0)}
+    )
+    out = await run_fusion(
+        _req(),
+        ["a/m1", "b/m2"],
+        judge_model="x/judge",
+        deps=_deps(handler),
+        min_panel=2,
+        straggler_grace_s=0.1,
+        hard_timeout_s=5.0,
+    )
+    # Judge fell back to the first answering panel model; judge turn appended.
+    assert out.model == "a/m1"
+    last = out.messages[-1]
+    assert isinstance(last.content, str)
+    assert "[Source 1]" in last.content
+
+
+async def test_run_fusion_judge_unroutable_falls_back_to_answering_model(monkeypatch):
+    results = {
+        "a/m1": _answer("a/m1", "alpha answer"),
+        "b/m2": _answer("b/m2", "beta answer"),
+    }
+    monkeypatch.setattr(fusion, "_call_panel_model", _fake_panel(results))
+    handler = _StubHandler(unavailable={"x/judge": ValueError("Unknown model: x/judge")})
+    out = await run_fusion(
+        _req(),
+        ["a/m1", "b/m2"],
+        judge_model="x/judge",
+        deps=_deps(handler),
+        min_panel=2,
+        straggler_grace_s=0.1,
+        hard_timeout_s=5.0,
+    )
+    assert out.model == "a/m1"
+
+
+async def test_run_fusion_judge_and_all_answerers_cooled_raises_503(monkeypatch):
+    results = {
+        "a/m1": _answer("a/m1", "alpha answer"),
+        "b/m2": _answer("b/m2", "beta answer"),
+    }
+    monkeypatch.setattr(fusion, "_call_panel_model", _fake_panel(results))
+    cooled = AllAccountsCooledDown("cooling", retry_after=30.0)
+    handler = _StubHandler(unavailable={"x/judge": cooled, "a/m1": cooled, "b/m2": cooled})
+    with pytest.raises(HTTPException) as exc:
+        await run_fusion(
+            _req(),
+            ["a/m1", "b/m2"],
+            judge_model="x/judge",
+            deps=_deps(handler),
+            min_panel=2,
+            straggler_grace_s=0.1,
+            hard_timeout_s=5.0,
+        )
+    assert exc.value.status_code == 503

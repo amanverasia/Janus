@@ -166,6 +166,118 @@ async def test_fusion_judge_combo_rejected(tmp_path):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_fusion_judge_unroutable_falls_back_to_panel_head(tmp_path):
+    """A configured judge that doesn't resolve (allowlist/unknown prefix) must
+    not fail the request — panel[0] takes over as judge before any spend."""
+    app = await _fusion_app(tmp_path)
+    await set_setting(app.state.db_path, "combo_fusion_judge", "zz/not-a-real-model")
+
+    a_calls: list[dict] = []
+
+    def a_responder(request):
+        body = json.loads(request.content)
+        a_calls.append(body)
+        text = "final synthesis" if len(a_calls) > 1 else "panel one"
+        return httpx.Response(200, json=_completion(text, "m1"))
+
+    respx.post("https://a.local/v1/chat/completions").mock(side_effect=a_responder)
+    respx.post("https://b.local/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion("panel two", "m2"))
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "fus", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+
+    assert r.status_code == 200
+    assert r.json()["choices"][0]["message"]["content"] == "final synthesis"
+    # Judge fell back to panel[0] (a/m1): one panel call + one judge call.
+    assert len(a_calls) == 2
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fusion_judge_cooled_down_falls_back_to_answering_model(tmp_path):
+    """A judge that resolves but is fully cooled down when judging must fall
+    back to an answering panel model instead of 503-ing the whole fusion."""
+    provider_c = ProviderConfig(
+        id="c",
+        prefix="c",
+        api_type="openai_compat",
+        base_url="https://c.local/v1",
+        api_key="k3",
+        models=["m3"],
+    )
+    app = await _fusion_app(tmp_path)
+    app.state.config.providers.append(provider_c)
+    await _seed_and_reload(app)
+    await set_setting(app.state.db_path, "combo_fusion_judge", "c/m3")
+    # Cool the judge's only account down so resolve_attempts raises for it.
+    app.state.fallback_handler.mark_cooldown("c", "rate_limit", model="m3", duration=600.0)
+
+    a_calls: list[dict] = []
+
+    def a_responder(request):
+        body = json.loads(request.content)
+        a_calls.append(body)
+        text = "final synthesis" if len(a_calls) > 1 else "panel one"
+        return httpx.Response(200, json=_completion(text, "m1"))
+
+    respx.post("https://a.local/v1/chat/completions").mock(side_effect=a_responder)
+    respx.post("https://b.local/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion("panel two", "m2"))
+    )
+    judge_route = respx.post("https://c.local/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion("never", "m3"))
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "fus", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+
+    assert r.status_code == 200
+    assert r.json()["choices"][0]["message"]["content"] == "final synthesis"
+    assert not judge_route.called  # cooled judge never hit
+    assert len(a_calls) == 2  # panel + fallback judge on the answering model
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fusion_all_panel_blocked_returns_400_without_upstream_calls(tmp_path):
+    """When neither the judge nor any panel member resolves, reject with 400
+    BEFORE spending any panel tokens."""
+    provider = ProviderConfig(
+        id="a",
+        prefix="a",
+        api_type="openai_compat",
+        base_url="https://a.local/v1",
+        api_key="k1",
+        models=["m1"],
+        allowed_models=["m1"],  # blocks x1/x2 below
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+        combos=[ComboConfig(name="fus", models=["a/x1", "a/x2"])],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    await set_setting(app.state.db_path, "combo_strategy", "fusion")
+
+    upstream = respx.post("https://a.local/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=_completion("never", "m1"))
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {"model": "fus", "messages": [{"role": "user", "content": "hi"}]}
+        r = await client.post("/v1/chat/completions", json=payload)
+
+    assert r.status_code == 400
+    assert not upstream.called
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_fusion_all_panel_failed_returns_503(tmp_path):
     app = await _fusion_app(tmp_path)
 

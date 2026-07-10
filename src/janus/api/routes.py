@@ -377,11 +377,26 @@ async def _handle(
     if combo_strat == "fusion":
         fusion_panel = handler.registry.lookup_combo(canonical_req.model)
         if fusion_panel is not None and len(fusion_panel) >= 2:
-            judge_model = resolve_combo_fusion_judge(settings) or fusion_panel[0]
-            if handler.registry.lookup_combo(judge_model) is not None:
+            judge_setting = resolve_combo_fusion_judge(settings)
+            if judge_setting and handler.registry.lookup_combo(judge_setting) is not None:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Fusion judge '{judge_model}' is a combo; must be a plain model",
+                    detail=f"Fusion judge '{judge_setting}' is a combo; must be a plain model",
+                )
+            # Validate the judge BEFORE spending panel tokens: prefer the
+            # configured judge, then panel[0], then any panel member that
+            # actually resolves (allowlists can block individual models).
+            judge_candidates = [judge_setting] if judge_setting else []
+            judge_candidates.extend(fusion_panel)
+            judge_model = next(
+                (m for m in judge_candidates if handler.registry.lookup(m) is not None),
+                None,
+            )
+            if judge_model is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No routable fusion judge for combo '{canonical_req.model}': "
+                    "neither the configured judge nor any panel model resolves",
                 )
             canonical_req = await run_fusion(
                 canonical_req,
