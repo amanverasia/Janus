@@ -10,6 +10,7 @@ def test_resolve_saver_settings_fills_missing_defaults():
     assert resolved == SAVER_SETTING_DEFAULTS
     assert resolved["saver_rtk_enabled"] == "true"
     assert resolved["saver_caveman_enabled"] == "false"
+    assert resolved["saver_caveman_level"] == "full"
 
 
 def test_resolve_saver_settings_preserves_stored_values():

@@ -59,11 +59,13 @@ async def test_seed_saver_settings(db, tmp_path):
     config = JanusConfig(server=ServerSettings(data_dir=tmp_path))
     config.token_savers.rtk.enabled = True
     config.token_savers.caveman.enabled = False
+    config.token_savers.caveman.level = "lite"
     config.token_savers.ponytail.enabled = True
     config.token_savers.ponytail.level = "ultra"
     await seed_from_config(db, config)
     assert await get_setting(db, "saver_rtk_enabled") == "true"
     assert await get_setting(db, "saver_caveman_enabled") == "false"
+    assert await get_setting(db, "saver_caveman_level") == "lite"
     assert await get_setting(db, "saver_ponytail_enabled") == "true"
     assert await get_setting(db, "saver_ponytail_level") == "ultra"
 

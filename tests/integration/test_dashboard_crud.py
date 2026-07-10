@@ -67,6 +67,50 @@ async def test_provider_delete(client):
     assert r.status_code == 200
 
 
+async def test_provider_create_with_allowed_models(client):
+    r = await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "anthropic",
+            "prefix": "an",
+            "api_type": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "api_key": "sk-test",
+            "models": "claude-opus-4-7,claude-sonnet-4-5",
+            "allowed_models": "claude-opus-4-7",
+        },
+    )
+    assert r.status_code == 200
+    assert b"claude-opus-4-7" in r.content
+
+
+async def test_provider_edit_updates_allowed_models(client):
+    await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "edit-allow",
+            "prefix": "edit-allow",
+            "api_type": "openai_compat",
+            "base_url": "https://old.local",
+            "api_key": "old",
+            "models": "m1,m2",
+        },
+    )
+    r = await client.put(
+        "/dashboard/api/providers/edit-allow",
+        data={
+            "prefix": "edit-allow",
+            "api_type": "openai_compat",
+            "base_url": "https://new.local",
+            "api_key": "new",
+            "models": "m1,m2",
+            "allowed_models": "m1",
+        },
+    )
+    assert r.status_code == 200
+    assert b"m1" in r.content
+
+
 async def test_provider_edit(client):
     await client.post(
         "/dashboard/api/providers",
@@ -240,6 +284,24 @@ async def test_export_yaml(client):
     assert "janus-config.yaml" in r.headers["content-disposition"]
     assert "openai" in r.text
     assert "gpt-4o" in r.text
+
+
+async def test_export_yaml_includes_allowed_models(client):
+    await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "anthropic",
+            "prefix": "an",
+            "api_type": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "api_key": "sk-test",
+            "models": "claude-opus-4-7,claude-sonnet-4-5",
+            "allowed_models": "claude-opus-4-7",
+        },
+    )
+    r = await client.get("/dashboard/api/export")
+    assert r.status_code == 200
+    assert "claude-opus-4-7" in r.text
 
 
 async def test_reset_to_defaults(client):

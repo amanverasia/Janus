@@ -216,6 +216,12 @@ _NEW_PROVIDER_COLUMNS = [
     ("quota_limit", "INTEGER"),
     ("quota_metric", "TEXT DEFAULT 'requests'"),
     ("transports", "TEXT"),
+    ("allowed_models", "TEXT NOT NULL DEFAULT '[]'"),
+]
+
+_NEW_REQUEST_LOG_COLUMNS = [
+    ("client_key_id", "INTEGER"),
+    ("client_key_label", "TEXT"),
 ]
 
 _API_KEY_NEW_COLUMNS = [
@@ -277,6 +283,15 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
     )
 
 
+async def _migrate_request_log_columns(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(request_logs)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    for col, col_type in _NEW_REQUEST_LOG_COLUMNS:
+        if col not in existing:
+            await db.execute(f"ALTER TABLE request_logs ADD COLUMN {col} {col_type}")
+
+
 async def _migrate_api_key_columns(db: aiosqlite.Connection) -> None:
     cursor = await db.execute("PRAGMA table_info(api_keys)")
     rows = await cursor.fetchall()
@@ -324,6 +339,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_usage_columns(db)
         await _migrate_provider_columns(db)
         await _migrate_upstream_key_columns(db)
+        await _migrate_request_log_columns(db)
         await _migrate_cooldowns_per_model(db)
         await _migrate_api_key_columns(db)
         await db.commit()
@@ -348,9 +364,10 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
         if await _table_is_empty(db, "providers") and config.providers:
             for pc in config.providers:
                 await db.execute(
-                    """INSERT INTO providers (
-                        id, prefix, api_type, base_url, api_key, models, transports
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO providers
+                       (id, prefix, api_type, base_url, api_key, models, transports,
+                        allowed_models)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         pc.id,
                         pc.prefix,
@@ -359,6 +376,7 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                         pc.api_key,
                         json.dumps(pc.models),
                         json.dumps(pc.transports) if pc.transports else None,
+                        json.dumps(pc.allowed_models),
                     ),
                 )
 
@@ -380,6 +398,10 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                     "saver_caveman_enabled",
                     "true" if config.token_savers.caveman.enabled else "false",
                 ),
+            )
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                ("saver_caveman_level", config.token_savers.caveman.level),
             )
             await db.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",

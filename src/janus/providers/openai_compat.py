@@ -44,9 +44,10 @@ class OpenAICompatProvider:
             return await self._call_stream(url, payload)
         r = await self._client.post(url, json=payload, headers=self._headers)
         if r.status_code >= 400:
+            body = await r.aread()
             return RawResult(
                 status_code=r.status_code,
-                json_data=r.json(),
+                json_data=parse_error_body(body),
                 retry_after=parse_retry_after(r.headers),
             )
         return RawResult(status_code=r.status_code, json_data=r.json())

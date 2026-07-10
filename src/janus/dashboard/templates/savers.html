@@ -75,5 +75,14 @@ function ponytailLevelSelect(btn, level) {
     });
     btn.className = 'px-4 py-1.5 text-sm font-medium transition-colors ponytail-btn bg-blue-600 text-white';
 }
+function cavemanLevelSelect(btn, level) {
+    var container = document.getElementById('caveman-levels');
+    if (!container) return;
+    var buttons = container.querySelectorAll('.caveman-btn');
+    buttons.forEach(function(b) {
+        b.className = 'px-4 py-1.5 text-sm font-medium transition-colors caveman-btn bg-gray-900 text-gray-400 hover:text-white';
+    });
+    btn.className = 'px-4 py-1.5 text-sm font-medium transition-colors caveman-btn bg-blue-600 text-white';
+}
 </script>
 {% endblock %}

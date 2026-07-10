@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
@@ -42,7 +44,7 @@ from janus.storage.budgets import (
 )
 from janus.storage.database import init_db
 from janus.storage.key_access import parse_models_input
-from janus.storage.settings import get_setting, set_setting
+from janus.storage.settings import VALID_COMBO_STRATEGIES, get_setting, set_setting
 from janus.storage.usage import get_usage_stats
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
@@ -705,6 +707,8 @@ async def api_create_provider(request: Request) -> HTMLResponse:
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    allowed_models_str = params.get("allowed_models", [""])[0]
+    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
     try:
         await create_provider(
             db_path,
@@ -715,6 +719,7 @@ async def api_create_provider(request: Request) -> HTMLResponse:
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": params.get("api_key", [""])[0] or None,
                 "models": models,
+                "allowed_models": allowed_models,
                 **_parse_quota_params(params),
             },
         )
@@ -739,6 +744,8 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    allowed_models_str = params.get("allowed_models", [""])[0]
+    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
     new_key = params.get("api_key", [""])[0] or None
     if not new_key:
         from janus.storage.providers_db import get_provider
@@ -755,6 +762,7 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": new_key,
                 "models": models,
+                "allowed_models": allowed_models,
                 **_parse_quota_params(params),
             },
         )
@@ -814,6 +822,9 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
     for p in providers_raw:
         parsed = dict(p)
         parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        parsed["allowed_models_list"] = (
+            json.loads(parsed["allowed_models"]) if parsed.get("allowed_models") else []
+        )
         inventory_id = inventory_provider_id_for_prefix(str(parsed["prefix"]))
         parsed["inventory_provider_id"] = inventory_id
         parsed["inventory_keys"] = await summarize_upstream_keys_for_inventory(
@@ -1186,6 +1197,30 @@ async def _combos_partial(request: Request, db_path: Path) -> HTMLResponse:
 # ---- Token Savers ----
 
 
+def _saver_display_stats(raw_stats: dict[str, dict[str, int]]) -> dict[str, dict[str, Any]]:
+    """Build per-saver display stats: saved KB, request count, avg % saved.
+
+    Savings are clamped at >= 0 for display (prompt-injecting savers like
+    Caveman/Ponytail can have negative raw savings); the underlying raw sums
+    in the pipeline's stats dict are left untouched.
+    """
+    display: dict[str, dict[str, Any]] = {}
+    for name, counters in raw_stats.items():
+        requests = counters.get("requests", 0)
+        if requests <= 0:
+            continue
+        bytes_before = counters.get("bytes_before", 0)
+        bytes_after = counters.get("bytes_after", 0)
+        saved_bytes = max(0, bytes_before - bytes_after)
+        avg_pct = (saved_bytes / bytes_before * 100) if bytes_before else 0.0
+        display[name] = {
+            "requests": requests,
+            "saved_kb": saved_bytes / 1024,
+            "avg_pct": avg_pct,
+        }
+    return display
+
+
 async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
     from janus.storage.settings import (
         ensure_saver_defaults,
@@ -1195,7 +1230,10 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
 
     await ensure_saver_defaults(db_path)
     settings = resolve_saver_settings(await get_all_settings(db_path))
-    return {"request": request, "settings": settings}
+    saver_pipeline = getattr(request.app.state, "saver_pipeline", None)
+    raw_stats = getattr(saver_pipeline, "stats", {}) if saver_pipeline is not None else {}
+    saver_stats = _saver_display_stats(raw_stats)
+    return {"request": request, "settings": settings, "saver_stats": saver_stats}
 
 
 @router.get("/savers", response_class=HTMLResponse)
@@ -1214,6 +1252,60 @@ async def savers_partial(request: Request) -> HTMLResponse:
     )
 
 
+VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})
+
+# Settings keys that require server-side validation before being persisted. Each
+# validator raises ValueError on bad input; the POST handler rejects with 400 and
+# leaves the stored value untouched (page re-renders with the prior value on reload).
+_SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
+    "combo_strategy": lambda v: _require_choice(v, VALID_COMBO_STRATEGIES),
+    "combo_sticky_limit": lambda v: _require_int(v, min_value=1),
+    "combo_fusion_min_panel": lambda v: _require_int(v, min_value=1),
+    "combo_fusion_straggler_grace_s": lambda v: _require_float(v, min_value=0, max_value=3600),
+    "combo_fusion_hard_timeout_s": lambda v: _require_float(
+        v, min_value=0, max_value=3600, exclusive_min=True
+    ),
+    "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
+    "server_sticky_limit": lambda v: _require_int(v, min_value=1),
+}
+
+
+def _require_choice(value: str, choices: frozenset[str]) -> None:
+    if value not in choices:
+        raise ValueError(f"must be one of: {', '.join(sorted(choices))}")
+
+
+def _require_int(value: str, *, min_value: int) -> None:
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise ValueError("must be an integer") from e
+    if parsed < min_value:
+        raise ValueError(f"must be >= {min_value}")
+
+
+def _require_float(
+    value: str,
+    *,
+    min_value: float,
+    max_value: float | None = None,
+    exclusive_min: bool = False,
+) -> None:
+    try:
+        parsed = float(value)
+    except ValueError as e:
+        raise ValueError("must be a number") from e
+    if not math.isfinite(parsed):
+        raise ValueError("must be a finite number")
+    if exclusive_min:
+        if parsed <= min_value:
+            raise ValueError(f"must be > {min_value}")
+    elif parsed < min_value:
+        raise ValueError(f"must be >= {min_value}")
+    if max_value is not None and parsed > max_value:
+        raise ValueError(f"must be <= {max_value}")
+
+
 @router.post("/api/settings", response_class=HTMLResponse)
 async def api_update_setting(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -1228,6 +1320,12 @@ async def api_update_setting(request: Request) -> HTMLResponse:
         value = params["value"][0]
     except KeyError:
         return HTMLResponse(content="Missing key or value", status_code=400)
+    validator = _SETTINGS_VALIDATORS.get(key)
+    if validator is not None:
+        try:
+            validator(value)
+        except ValueError as e:
+            return HTMLResponse(content=f"Invalid value for {key}: {e}", status_code=400)
     await set_setting(db_path, key, value)
     if key.startswith("saver_"):
         from janus.dashboard.reload import reload_savers
@@ -1356,6 +1454,12 @@ async def settings_page(request: Request) -> HTMLResponse:
         request_logging_enabled,
         require_api_key_enabled,
         resolve_account_strategy,
+        resolve_combo_fusion_hard_timeout_s,
+        resolve_combo_fusion_judge,
+        resolve_combo_fusion_min_panel,
+        resolve_combo_fusion_straggler_grace_s,
+        resolve_combo_sticky_limit,
+        resolve_combo_strategy,
         resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
@@ -1380,6 +1484,12 @@ async def settings_page(request: Request) -> HTMLResponse:
         "request_log_retention": resolve_request_log_retention(settings),
         "account_strategy": resolve_account_strategy(settings),
         "sticky_limit": resolve_sticky_limit(settings),
+        "combo_strategy": resolve_combo_strategy(settings),
+        "combo_sticky_limit": resolve_combo_sticky_limit(settings),
+        "combo_fusion_judge": resolve_combo_fusion_judge(settings),
+        "combo_fusion_min_panel": resolve_combo_fusion_min_panel(settings),
+        "combo_fusion_straggler_grace_s": resolve_combo_fusion_straggler_grace_s(settings),
+        "combo_fusion_hard_timeout_s": resolve_combo_fusion_hard_timeout_s(settings),
     }
     return _templates.TemplateResponse(request, "settings.html", context)
 
@@ -1423,6 +1533,7 @@ async def api_export_config(request: Request) -> Response:
             "base_url": p["base_url"],
             "api_key": p["api_key"],
             "models": json.loads(p["models"]) if p["models"] else [],
+            "allowed_models": json.loads(p["allowed_models"]) if p.get("allowed_models") else [],
         }
         for p in providers_raw
     ]

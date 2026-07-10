@@ -60,6 +60,16 @@
                     {% endif %}
                 </div>
             </div>
+            {% if provider.allowed_models_list %}
+            <div>
+                <p class="text-gray-500 text-xs uppercase tracking-wide mb-2">Allowed Models</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for model in provider.allowed_models_list %}
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-900 text-amber-200">{{ model }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
             {% if provider.quota %}
             <div>
                 <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Quota ({{ provider.quota.window }})</p>
@@ -111,7 +121,8 @@
                     data-inventory-pending="{{ provider.inventory_keys.pending }}"
                     data-quota-window="{{ provider.quota_window or '' }}"
                     data-quota-limit="{{ provider.quota_limit or '' }}"
-                    data-quota-metric="{{ provider.quota_metric or 'requests' }}">Edit</button>
+                    data-quota-metric="{{ provider.quota_metric or 'requests' }}"
+                    data-allowed-models="{{ provider.allowed_models_list | join(', ') }}">Edit</button>
             <button hx-post="/dashboard/api/providers/{{ provider.id }}/test"
                     hx-target="#test-status-{{ provider.id }}"
                     hx-swap="innerHTML"

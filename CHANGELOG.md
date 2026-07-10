@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fusion combo strategy** — combos can now run in `fusion` mode (9router port): the request fans out to all combo members in parallel (tools stripped, non-streaming, tool history flattened), a quorum + straggler-grace collector gathers answers, and a judge model (configurable via `combo_fusion_judge`, defaults to the first panel member) synthesizes one authoritative answer from anonymized `[Source N]` responses. The judge keeps the client's stream flag and tools and rides the normal fallback machinery. Panel usage is recorded per model. Judge is validated before any panel spend, with fallback to the first answering panel model. Tuning: `combo_fusion_min_panel`, `combo_fusion_straggler_grace_s`, `combo_fusion_hard_timeout_s`
+- **Per-provider model allowlist** — new optional `allowed_models` on providers (dashboard field, comma-separated, `fnmatch` globs like `claude-opus-*` supported; empty = all models). Blocked models are rejected at routing time (400) and hidden from `/v1/models` and Ollama `/api/tags`. Lets you expose only selected models from a provider (e.g. only `claude-opus-4-7` from Anthropic)
+- **Request log "User" column** — request logs now record and display which client API key made each call (`client_key_label` for config keys, `key #<id>` for DB-issued keys, "—" for anonymous)
+- **Per-saver savings metrics** — the token-saver pipeline measures request size before/after each saver, logs shrinkage, and shows cumulative per-saver savings ("saved X KB across N requests, since restart") on the Token Savers page. Stats survive dashboard-triggered saver reloads
+- **Caveman levels** — the Caveman saver now has `lite` / `full` / `ultra` levels (dashboard select, `saver_caveman_level`), with 9router's safety boundaries (security warnings, irreversible confirmations, and multi-step instructions are always written normally; code/paths/commands/errors/URLs never abbreviated)
+- **Combo Routing settings UI** — Settings page section for `combo_strategy` (fallback / round_robin / fusion), `combo_sticky_limit`, and fusion tuning, with server-side validation (whitelisted strategy, finite bounded numbers)
+- **503 + Retry-After on exhausted cooldowns** — when every account for a model is cooling down, Janus now returns `503` with a `Retry-After` header derived from the earliest cooldown expiry instead of a generic `400`
+- **Body-text rate-limit detection** — upstream error bodies are scanned for rate-limit markers ("rate limit", "too many requests", "quota exceeded", "capacity", "overloaded", "resource exhausted"); a disguised rate limit (e.g. HTTP 400 with "quota exceeded") now cools the account down with rate-limit backoff and falls back to the next account. Handles dict, list, string, and other JSON body shapes
+- **RTK filter upgrade** — ported 9router's compression filter set: git-log, git-status, grep (per-file cap, non-matching lines preserved), find (per-dir cap, path-only detection), tree, and build-output filters with priority auto-detection, plus line-based head+tail smart truncation (120 head / 60 tail above 250 lines). Compression gate raised to 500 bytes minimum, 10 MiB raw cap
+
 - **API key scopes** — DB-managed keys support `can_login` (default on; opt out for API-only keys that cannot open the dashboard) and `allowed_models` (exact IDs or `prefix/*` wildcards; empty/unset = all models). Disallowed models return `403` with `error.type = model_not_allowed`; `GET /v1/models` is filtered the same way. Optional daily budget can be set on key create/update via CLI (`--daily-budget`) or the dashboard Keys page. Spec: `docs/superpowers/specs/2026-07-09-api-key-scopes-design.md`
 - **Ollama `/api/show` and `/api/generate`** — `POST /api/show` returns stub model metadata for routable models; `POST /api/generate` accepts a bare `prompt` and remaps chat responses to Ollama's completion shape. `GET /api/tags` now respects the API key model allowlist (parity with `GET /v1/models`)
 - **Request log retention setting** — `server_request_log_retention` (default 500, clamp 50–5000) replaces the hardcoded row cap; configurable from Settings
@@ -21,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenAI Responses API endpoint** (`POST /v1/responses`) — Codex CLI and other Responses-API clients now work natively. New bidirectional format adapter (`formats/openai_responses.py`) translates `input` items, flat tool definitions, `function_call`/`function_call_output` round-trips, `max_output_tokens`, `reasoning.effort`, and streaming via named SSE events (`response.created` … `response.completed`). Phase 8.1 of the 9router feature-parity plan (`docs/superpowers/specs/2026-07-05-phase8-9router-parity.md`)
 
 ### Fixed
+- Combo round-robin rotation now honors `combo_sticky_limit` (stay on a combo member for N requests before advancing); previously the limit was accepted but ignored
+- Non-JSON upstream error bodies (HTML gateway pages, plain text) no longer raise during error handling in the Anthropic/Gemini/OpenAI-compat providers
+- HTTP 402 responses are classified as payment errors, are fallback-eligible, and cool the account for 5 minutes
+- Bare model names on the Gemini-native endpoint (`/v1beta/models/gemini-2.5-flash:generateContent`) are auto-prefixed with `gemini/`
+- Fusion panel tasks are cancelled and awaited if the client disconnects mid-panel (no orphaned upstream spend)
 - **Request logging coverage** — debug mode now captures pre-routing rejections (budget exceeded, model not allowed), non-fallback upstream errors, and empty-stream failures (not only successes and the final 503)
 
 ### Changed

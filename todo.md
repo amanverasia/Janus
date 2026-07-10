@@ -128,3 +128,14 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 - Mid-stream resume / partial output caching for long agent runs.
 - Savings tracker view — with subscription quotas + pricing data, show "what this month would have cost via paid APIs" (9router's cost-display framing) as a dashboard stat.
 - Anthropic-format upstream for Copilot/Claude-family OAuth providers once 8.4b lands (today all OAuth routing assumes OpenAI-compatible upstreams).
+
+## Phase 3 follow-ups (2026-07-10, from final review of feat/9router-highclass)
+
+- [ ] **Stale-cooldown Retry-After understatement** — `earliest_cooldown_expiry` (routing/fallback.py) counts already-expired entries, so a stale expired `__all__` row can shrink Retry-After to 1s while a 300s model cooldown is active. Filter to `> time.time()`.
+- [ ] **Streaming pre-body error classification** — the streaming error site that runs before any bytes are sent could safely use the refined body-text classification (retry is still possible there); today only non-stream sites use it.
+- [ ] **Fusion request log records judge model, not combo name** — Monitor tab shows e.g. `a/m1` for a request that asked for combo `fus`; consider logging the combo name (or both).
+- [ ] **Body-text markers only inspect `error` key for dict bodies** — providers returning `{"message": "rate limit"}` at top level are missed by refine_error_type.
+- [ ] **Judge-probe rotation drift** — `_pick_available_judge` probes resolve_attempts, advancing rotation counters once before the real attempt loop; cosmetic fairness drift.
+- [ ] **Ponytail reload lacks fail-open level guard** — invalid `saver_ponytail_level` in DB crashes reload; Caveman got the guard in Phase 3, mirror it (two-line fix).
+- [ ] **Sticky/rotation counter persistence across restarts** — 9router persists consecutiveUseCount/lastUsedAt per connection; Janus is in-memory (survives reload via adopt_runtime_state, resets on restart). Low value.
+- [ ] **Rolling (vs fixed UTC) quota windows** — Claude/Codex subscriptions use rolling windows anchored to first request; needs per-window anchor timestamps.

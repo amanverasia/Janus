@@ -28,15 +28,27 @@ from janus.providers.base import (
     parse_error_body,
     parse_retry_after,
 )
-from janus.providers.registry import ProviderRegistry, ResolvedTarget
+from janus.providers.registry import (
+    ProviderRegistry,
+    ResolvedTarget,
+)
+from janus.providers.registry import (
+    model_allowed as provider_model_allowed,
+)
 from janus.routing.capabilities import (
     detect_required_capabilities,
     get_capabilities_for_model,
 )
 from janus.routing.claude_normalize import normalize_claude_passthrough
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
-from janus.routing.errors import classify_error, is_fallback_eligible
-from janus.routing.fallback import AccountStrategy, FallbackHandler
+from janus.routing.errors import (
+    classify_error,
+    is_fallback_eligible,
+    is_fallback_eligible_refined,
+    refine_error_type,
+)
+from janus.routing.fallback import AccountStrategy, AllAccountsCooledDown, FallbackHandler
+from janus.routing.fusion import FusionDeps, run_fusion
 from janus.routing.modality import strip_unsupported_modalities
 from janus.routing.model_aliases import resolve_model_alias
 from janus.routing.prefetch import prefetch_remote_images
@@ -47,7 +59,7 @@ from janus.routing.thinking import (
 )
 from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
-from janus.storage.key_access import model_allowed
+from janus.storage.key_access import model_allowed as key_model_allowed
 from janus.storage.request_logs import MAX_ROWS, record_request_log
 from janus.storage.usage import record_usage
 from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
@@ -261,6 +273,8 @@ async def _log_error_and_raise(
     request_body: str | None,
     detail: Any,
     response_body: Any = None,
+    client_key_id: int | None = None,
+    client_key_label: str | None = None,
     max_rows: int = MAX_ROWS,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
@@ -287,6 +301,8 @@ async def _log_error_and_raise(
             request_body=request_body,
             response_body=resp_text,
             error=err_text[:2000],
+            client_key_id=client_key_id,
+            client_key_label=client_key_label,
             max_rows=max_rows,
         )
     raise HTTPException(status_code=status, detail=detail)
@@ -331,6 +347,10 @@ async def _handle(
         get_all_settings,
         request_logging_enabled,
         resolve_account_strategy,
+        resolve_combo_fusion_hard_timeout_s,
+        resolve_combo_fusion_judge,
+        resolve_combo_fusion_min_panel,
+        resolve_combo_fusion_straggler_grace_s,
         resolve_combo_sticky_limit,
         resolve_combo_strategy,
         resolve_request_log_retention,
@@ -380,7 +400,7 @@ async def _handle(
     canonical_req, thinking_intent = resolve_thinking_intent(canonical_req)
 
     allowed = key_allowed_models(request)
-    if not model_allowed(canonical_req.model, allowed):
+    if not key_model_allowed(canonical_req.model, allowed):
         await _maybe_log_client_error(
             log_requests=log_requests,
             db_path=db_path,
@@ -422,6 +442,54 @@ async def _handle(
     def _elapsed_ms() -> int:
         return int((time.monotonic() - start_time) * 1000)
 
+    # ── Fusion combo: fan out to the panel, then judge synthesizes ────────
+    # Rewrites canonical_req to the judge request (a plain model), so the
+    # normal attempt loop below handles streaming/fallback/usage untouched.
+    if combo_strat == "fusion":
+        fusion_panel = handler.registry.lookup_combo(canonical_req.model)
+        if fusion_panel is not None and len(fusion_panel) >= 2:
+            judge_setting = resolve_combo_fusion_judge(settings)
+            if judge_setting and handler.registry.lookup_combo(judge_setting) is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Fusion judge '{judge_setting}' is a combo; must be a plain model",
+                )
+            # Validate the judge BEFORE spending panel tokens: prefer the
+            # configured judge, then panel[0], then any panel member that
+            # actually resolves (allowlists can block individual models).
+            judge_candidates = [judge_setting] if judge_setting else []
+            judge_candidates.extend(fusion_panel)
+            judge_model = next(
+                (m for m in judge_candidates if handler.registry.lookup(m) is not None),
+                None,
+            )
+            if judge_model is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No routable fusion judge for combo '{canonical_req.model}': "
+                    "neither the configured judge nor any panel model resolves",
+                )
+            canonical_req = await run_fusion(
+                canonical_req,
+                fusion_panel,
+                judge_model=judge_model,
+                deps=FusionDeps(
+                    handler=handler,
+                    providers=request.app.state.providers,
+                    resolve_format=_resolve_format,
+                    db_path=db_path,
+                    pricing_registry=pricing_registry,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
+                ),
+                min_panel=resolve_combo_fusion_min_panel(settings),
+                straggler_grace_s=resolve_combo_fusion_straggler_grace_s(settings),
+                hard_timeout_s=resolve_combo_fusion_hard_timeout_s(settings),
+            )
+        # Judge (or sole-answer model) is a plain model now — combo strategy
+        # no longer applies; use plain fallback semantics for its attempts.
+        combo_strat = "fallback"
+
     required_caps = detect_required_capabilities(canonical_req)
     try:
         attempts = handler.resolve_attempts(
@@ -433,6 +501,14 @@ async def _handle(
             required_caps=required_caps,
             combo_strategy=combo_strat,
             combo_sticky_limit=combo_csl,
+        )
+    except AllAccountsCooledDown as e:
+        retry_after = e.retry_after
+        raise HTTPException(
+            status_code=503,
+            detail=f"All accounts for '{canonical_req.model}' are cooling down; "
+            f"retry after {int(retry_after)}s",
+            headers={"Retry-After": str(int(retry_after))},
         )
     except ValueError as e:
         await _maybe_log_client_error(
@@ -496,10 +572,10 @@ async def _handle(
                 if result is None:
                     continue
                 if result.status_code >= 400:
-                    if is_fallback_eligible(result.status_code):
+                    if is_fallback_eligible_refined(result.status_code, result.json_data):
                         handler.mark_cooldown(
                             target.account_id,
-                            classify_error(result.status_code).value,
+                            refine_error_type(result.status_code, result.json_data).value,
                             model=target.model,
                             retry_after=getattr(result, "retry_after", None),
                         )
@@ -518,6 +594,8 @@ async def _handle(
                         request_body=logged_request_body,
                         detail="Upstream error",
                         response_body=result.json_data,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 if pt_stream:
                     lines = result.lines
@@ -590,6 +668,8 @@ async def _handle(
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
+                                    client_key_id=client_key_id,
+                                    client_key_label=client_key_label,
                                     max_rows=retention,
                                 )
                             if stream_ok:
@@ -635,6 +715,8 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         response_body=pt_response_body,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
@@ -681,10 +763,14 @@ async def _handle(
                     last_error = f"{target.account_id}: {type(e).__name__}"
                     continue
                 if native_result.status_code >= 400:
-                    if is_fallback_eligible(native_result.status_code):
+                    if is_fallback_eligible_refined(
+                        native_result.status_code, native_result.json_data
+                    ):
                         handler.mark_cooldown(
                             target.account_id,
-                            classify_error(native_result.status_code).value,
+                            refine_error_type(
+                                native_result.status_code, native_result.json_data
+                            ).value,
                             model=target.model,
                             retry_after=getattr(native_result, "retry_after", None),
                         )
@@ -703,6 +789,8 @@ async def _handle(
                         request_body=logged_request_body,
                         detail="Upstream error",
                         response_body=native_result.json_data,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
 
                 if native_stream:
@@ -775,6 +863,8 @@ async def _handle(
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
+                                    client_key_id=client_key_id,
+                                    client_key_label=client_key_label,
                                     max_rows=retention,
                                 )
                             if stream_ok:
@@ -825,6 +915,8 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         response_body=native_response_body,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
@@ -880,6 +972,8 @@ async def _handle(
                         request_body=logged_request_body,
                         detail=(str(result.json_data) if result.json_data else "Upstream error"),
                         response_body=result.json_data,
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 lines = result.lines
                 if lines is None:
@@ -895,6 +989,8 @@ async def _handle(
                         duration_ms=_elapsed_ms(),
                         request_body=logged_request_body,
                         detail="No stream from upstream",
+                        client_key_id=client_key_id,
+                        client_key_label=client_key_label,
                     )
                 parser = provider_adapter.stream_parser()
                 emitter = client_adapter.stream_emitter()
@@ -937,6 +1033,8 @@ async def _handle(
                                 duration_ms=_elapsed_ms(),
                                 streamed=True,
                                 request_body=logged_request_body,
+                                client_key_id=client_key_id,
+                                client_key_label=client_key_label,
                                 max_rows=retention,
                             )
                         if stream_ok:
@@ -947,10 +1045,10 @@ async def _handle(
 
             result = await provider.call(upstream_payload, stream=False)
             if result.status_code >= 400:
-                if is_fallback_eligible(result.status_code):
+                if is_fallback_eligible_refined(result.status_code, result.json_data):
                     handler.mark_cooldown(
                         target.account_id,
-                        classify_error(result.status_code).value,
+                        refine_error_type(result.status_code, result.json_data).value,
                         model=target.model,
                         retry_after=result.retry_after,
                     )
@@ -969,6 +1067,8 @@ async def _handle(
                     request_body=logged_request_body,
                     detail=(str(result.json_data) if result.json_data else "Upstream error"),
                     response_body=result.json_data,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
                 )
             if result.json_data is None:
                 await _log_error_and_raise(
@@ -983,6 +1083,8 @@ async def _handle(
                     duration_ms=_elapsed_ms(),
                     request_body=logged_request_body,
                     detail="Empty upstream response",
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
                 )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
@@ -1024,6 +1126,8 @@ async def _handle(
                     duration_ms=_elapsed_ms(),
                     request_body=logged_request_body,
                     response_body=logged_response_body,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
                     max_rows=retention,
                 )
 
@@ -1044,6 +1148,8 @@ async def _handle(
             duration_ms=_elapsed_ms(),
             request_body=logged_request_body,
             error=f"All providers exhausted: {last_error}",
+            client_key_id=client_key_id,
+            client_key_label=client_key_label,
             max_rows=retention,
         )
     raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
@@ -1058,21 +1164,24 @@ async def list_models(request: Request) -> dict[str, Any]:
         models_seen: set[str] = set()
         for config in configs:
             for model in config.models:
-                if model not in models_seen:
-                    models_seen.add(model)
-                    model_id = f"{prefix}/{model}"
-                    if not model_allowed(model_id, allowed):
-                        continue
-                    data.append(
-                        {
-                            "id": model_id,
-                            "object": "model",
-                            "created": 0,
-                            "owned_by": config.id,
-                        }
-                    )
+                if model in models_seen:
+                    continue
+                if not provider_model_allowed(model, config.allowed_models):
+                    continue
+                model_id = f"{prefix}/{model}"
+                if not key_model_allowed(model_id, allowed):
+                    continue
+                models_seen.add(model)
+                data.append(
+                    {
+                        "id": model_id,
+                        "object": "model",
+                        "created": 0,
+                        "owned_by": config.id,
+                    }
+                )
     for combo_name in registry.combos:
-        if not model_allowed(combo_name, allowed):
+        if not key_model_allowed(combo_name, allowed):
             continue
         data.append(
             {
@@ -1119,6 +1228,8 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
     if action not in ("generateContent", "streamGenerateContent"):
         raise HTTPException(status_code=404, detail=f"Unsupported action: {action}")
     body: dict[str, Any] = await request.json()
+    if "/" not in model:
+        model = f"gemini/{model}"
     body["model"] = model
     body["stream"] = action == "streamGenerateContent"
     return await _handle("gemini", body, request)
@@ -1138,7 +1249,11 @@ def _ollama_model_entries(
         for config in configs:
             for model in config.models:
                 name = f"{prefix}/{model}"
-                if name in seen or not model_allowed(name, allowed_models):
+                if name in seen:
+                    continue
+                if not provider_model_allowed(model, config.allowed_models):
+                    continue
+                if not key_model_allowed(name, allowed_models):
                     continue
                 seen.add(name)
                 models.append(
@@ -1152,7 +1267,7 @@ def _ollama_model_entries(
                     }
                 )
     for combo_name in registry.combos:
-        if not model_allowed(combo_name, allowed_models):
+        if not key_model_allowed(combo_name, allowed_models):
             continue
         models.append(
             {
