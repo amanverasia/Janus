@@ -124,6 +124,67 @@ async def test_delete_provider(db):
     assert await get_provider(db, "test") is None
 
 
+async def test_create_provider_with_allowed_models(db):
+    await create_provider(
+        db,
+        {
+            "id": "anthropic",
+            "prefix": "an",
+            "api_type": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "api_key": "sk-xxx",
+            "models": ["claude-opus-4-7", "claude-sonnet-4-5"],
+            "allowed_models": ["claude-opus-4-7"],
+        },
+    )
+    p = await get_provider(db, "anthropic")
+    assert json.loads(p["allowed_models"]) == ["claude-opus-4-7"]
+
+
+async def test_create_provider_without_allowed_models_defaults_empty(db):
+    await create_provider(
+        db,
+        {
+            "id": "test",
+            "prefix": "test",
+            "api_type": "openai_compat",
+            "base_url": "https://test.local",
+            "api_key": None,
+            "models": [],
+        },
+    )
+    p = await get_provider(db, "test")
+    assert json.loads(p["allowed_models"]) == []
+
+
+async def test_update_provider_allowed_models(db):
+    await create_provider(
+        db,
+        {
+            "id": "test",
+            "prefix": "test",
+            "api_type": "openai_compat",
+            "base_url": "https://old.local",
+            "api_key": "old",
+            "models": ["m1"],
+        },
+    )
+    await update_provider(
+        db,
+        "test",
+        {
+            "prefix": "test",
+            "api_type": "openai_compat",
+            "base_url": "https://new.local",
+            "api_key": "new",
+            "models": ["m1", "m2"],
+            "allowed_models": ["m1"],
+        },
+    )
+    p = await get_provider(db, "test")
+    assert json.loads(p["allowed_models"]) == ["m1"]
+
+
 async def test_list_providers_only_enabled(db):
     await create_provider(
         db,

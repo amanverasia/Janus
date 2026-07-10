@@ -27,7 +27,7 @@ from janus.providers.base import (
     parse_error_body,
     parse_retry_after,
 )
-from janus.providers.registry import ProviderRegistry, ResolvedTarget
+from janus.providers.registry import ProviderRegistry, ResolvedTarget, model_allowed
 from janus.routing.capabilities import (
     detect_required_capabilities,
     get_capabilities_for_model,
@@ -962,16 +962,19 @@ async def list_models(request: Request) -> dict[str, Any]:
         models_seen: set[str] = set()
         for config in configs:
             for model in config.models:
-                if model not in models_seen:
-                    models_seen.add(model)
-                    data.append(
-                        {
-                            "id": f"{prefix}/{model}",
-                            "object": "model",
-                            "created": 0,
-                            "owned_by": config.id,
-                        }
-                    )
+                if model in models_seen:
+                    continue
+                if not model_allowed(model, config.allowed_models):
+                    continue
+                models_seen.add(model)
+                data.append(
+                    {
+                        "id": f"{prefix}/{model}",
+                        "object": "model",
+                        "created": 0,
+                        "owned_by": config.id,
+                    }
+                )
     for combo_name in registry.combos:
         data.append(
             {
@@ -1044,7 +1047,7 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
         for config in configs:
             for model in config.models:
                 name = f"{prefix}/{model}"
-                if name not in seen:
+                if name not in seen and model_allowed(model, config.allowed_models):
                     seen.add(name)
                     models.append(
                         {

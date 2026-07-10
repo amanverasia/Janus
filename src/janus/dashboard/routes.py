@@ -566,6 +566,8 @@ async def api_create_provider(request: Request) -> HTMLResponse:
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    allowed_models_str = params.get("allowed_models", [""])[0]
+    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
     try:
         await create_provider(
             db_path,
@@ -576,6 +578,7 @@ async def api_create_provider(request: Request) -> HTMLResponse:
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": params.get("api_key", [""])[0] or None,
                 "models": models,
+                "allowed_models": allowed_models,
                 **_parse_quota_params(params),
             },
         )
@@ -600,6 +603,8 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
     params = parse_qs(body.decode())
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    allowed_models_str = params.get("allowed_models", [""])[0]
+    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
     new_key = params.get("api_key", [""])[0] or None
     if not new_key:
         from janus.storage.providers_db import get_provider
@@ -616,6 +621,7 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": new_key,
                 "models": models,
+                "allowed_models": allowed_models,
                 **_parse_quota_params(params),
             },
         )
@@ -675,6 +681,9 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
     for p in providers_raw:
         parsed = dict(p)
         parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
+        parsed["allowed_models_list"] = (
+            json.loads(parsed["allowed_models"]) if parsed.get("allowed_models") else []
+        )
         inventory_id = inventory_provider_id_for_prefix(str(parsed["prefix"]))
         parsed["inventory_provider_id"] = inventory_id
         parsed["inventory_keys"] = await summarize_upstream_keys_for_inventory(
@@ -1269,6 +1278,7 @@ async def api_export_config(request: Request) -> Response:
             "base_url": p["base_url"],
             "api_key": p["api_key"],
             "models": json.loads(p["models"]) if p["models"] else [],
+            "allowed_models": json.loads(p["allowed_models"]) if p.get("allowed_models") else [],
         }
         for p in providers_raw
     ]

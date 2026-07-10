@@ -255,6 +255,37 @@ def test_resolve_combo_expansion():
     assert attempts[1].model == "d"
 
 
+def test_combo_skips_member_blocked_by_allowlist():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="a",
+            prefix="a",
+            api_type="openai_compat",
+            base_url="https://a.com",
+            api_key="k",
+            models=["b"],
+            allowed_models=["other-model"],
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="c",
+            prefix="c",
+            api_type="anthropic",
+            base_url="https://c.com",
+            api_key="k",
+            models=["d"],
+        )
+    )
+    registry.register_combo(ComboConfig(name="stk", models=["a/b", "c/d"]))
+    handler = FallbackHandler(registry)
+    attempts = handler.resolve_attempts("stk")
+    assert len(attempts) == 1
+    assert attempts[0].model == "d"
+    assert attempts[0].account_id == "c"
+
+
 def test_cooldown_filters_account():
     registry = ProviderRegistry()
     registry.register(

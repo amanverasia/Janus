@@ -116,6 +116,12 @@
                 <p id="f-fetch-status" class="text-xs mt-1 hidden"></p>
             </div>
             <div>
+                <label class="block text-gray-400 text-sm mb-1">Allowed models (comma-separated, globs ok)</label>
+                <input type="text" name="allowed_models" id="f-allowed_models" placeholder="empty = all models"
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                <p class="text-gray-500 text-xs mt-1">Restrict which models clients may request, e.g. claude-opus-*.</p>
+            </div>
+            <div>
                 <label class="block text-gray-400 text-sm mb-1">Quota (optional — subscription window limit)</label>
                 <div class="grid grid-cols-3 gap-4">
                     <select name="quota_window" id="f-quota_window"
@@ -200,6 +206,12 @@
                 <p id="e-fetch-status" class="text-xs mt-1 hidden"></p>
             </div>
             <div>
+                <label class="block text-gray-400 text-sm mb-1">Allowed models (comma-separated, globs ok)</label>
+                <input type="text" name="allowed_models" id="e-allowed_models" placeholder="empty = all models"
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                <p class="text-gray-500 text-xs mt-1">Restrict which models clients may request, e.g. claude-opus-*.</p>
+            </div>
+            <div>
                 <label class="block text-gray-400 text-sm mb-1">Quota (optional — subscription window limit)</label>
                 <div class="grid grid-cols-3 gap-4">
                     <select name="quota_window" id="e-quota_window"
@@ -233,6 +245,7 @@ function fillProviderForm(key, apiType, baseUrl, prefix, models) {
     document.getElementById('f-api_type').value = apiType;
     document.getElementById('f-base_url').value = baseUrl;
     document.getElementById('f-models').value = models;
+    document.getElementById('f-allowed_models').value = '';
     copilotConnectVisibility();
 }
 
@@ -356,12 +369,13 @@ function fetchModels(prefix) {
     });
 }
 
-function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey, invTotal, invRoutable, invPending, quotaWindow, quotaLimit, quotaMetric) {
+function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey, invTotal, invRoutable, invPending, quotaWindow, quotaLimit, quotaMetric, allowedModels) {
     document.getElementById('e-provider-id').value = id;
     document.getElementById('e-prefix').value = prefix;
     document.getElementById('e-api_type').value = apiType;
     document.getElementById('e-base_url').value = baseUrl;
     document.getElementById('e-models').value = models;
+    document.getElementById('e-allowed_models').value = allowedModels || '';
     document.getElementById('e-api_key').value = '';
     document.getElementById('e-quota_window').value = quotaWindow || '';
     document.getElementById('e-quota_limit').value = quotaLimit || '';
@@ -422,7 +436,8 @@ document.addEventListener('click', function(e) {
         btn.dataset.inventoryPending,
         btn.dataset.quotaWindow,
         btn.dataset.quotaLimit,
-        btn.dataset.quotaMetric
+        btn.dataset.quotaMetric,
+        btn.dataset.allowedModels
     );
 });
 

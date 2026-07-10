@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass
 
 from janus.config.schema import ComboConfig, ProviderConfig
@@ -44,6 +45,17 @@ PREFIX_ALIASES: dict[str, str] = {
 }
 
 
+def model_allowed(model: str, allowed: list[str]) -> bool:
+    """True when `model` passes the allowlist.
+
+    An empty allowlist means no restriction (current default behavior).
+    Entries may be exact model names or fnmatch globs (e.g. "claude-opus-*").
+    """
+    if not allowed:
+        return True
+    return any(model == pattern or fnmatch.fnmatchcase(model, pattern) for pattern in allowed)
+
+
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, list[ProviderConfig]] = {}
@@ -70,6 +82,8 @@ class ProviderRegistry:
             return None
         results: list[ResolvedTarget] = []
         for config in configs:
+            if not model_allowed(rest, config.allowed_models):
+                continue
             native = _native_format(config.api_type)
             results.append(
                 ResolvedTarget(
@@ -80,6 +94,8 @@ class ProviderRegistry:
                     account_id=config.upstream_key_id or config.id,
                 )
             )
+        if not results:
+            return None
         return results
 
     def lookup_combo(self, name: str) -> list[str] | None:

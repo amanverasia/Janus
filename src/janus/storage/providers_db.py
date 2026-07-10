@@ -30,8 +30,8 @@ async def create_provider(db_path: str | Path, data: dict[str, Any]) -> None:
         await db.execute(
             """INSERT INTO providers
                (id, prefix, api_type, base_url, api_key, models,
-                quota_window, quota_limit, quota_metric, transports)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                quota_window, quota_limit, quota_metric, transports, allowed_models)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data["id"],
                 data["prefix"],
@@ -43,6 +43,7 @@ async def create_provider(db_path: str | Path, data: dict[str, Any]) -> None:
                 data.get("quota_limit"),
                 data.get("quota_metric") or "requests",
                 json.dumps(data.get("transports")) if data.get("transports") else None,
+                json.dumps(data.get("allowed_models", [])),
             ),
         )
         await db.commit()
@@ -53,7 +54,8 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
         await db.execute(
             """UPDATE providers SET prefix = ?, api_type = ?, base_url = ?,
                api_key = ?, models = ?, quota_window = ?, quota_limit = ?,
-               quota_metric = ?, transports = ?, updated_at = datetime('now')
+               quota_metric = ?, transports = ?, allowed_models = ?,
+               updated_at = datetime('now')
                WHERE id = ?""",
             (
                 data["prefix"],
@@ -65,6 +67,7 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
                 data.get("quota_limit"),
                 data.get("quota_metric") or "requests",
                 json.dumps(data.get("transports")) if data.get("transports") else None,
+                json.dumps(data.get("allowed_models", [])),
                 provider_id,
             ),
         )

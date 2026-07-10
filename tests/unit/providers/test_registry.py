@@ -1,5 +1,5 @@
 from janus.config.schema import ComboConfig, ProviderConfig
-from janus.providers.registry import ProviderRegistry
+from janus.providers.registry import ProviderRegistry, model_allowed
 
 
 def test_register_and_lookup_single():
@@ -89,3 +89,81 @@ def test_register_combo():
 def test_lookup_combo_unknown():
     registry = ProviderRegistry()
     assert registry.lookup_combo("nope") is None
+
+
+def test_model_allowed_empty_allowlist_routes_anything():
+    assert model_allowed("anything-goes", []) is True
+
+
+def test_model_allowed_exact_match_blocks_others():
+    assert model_allowed("claude-opus-4-7", ["claude-opus-4-7"]) is True
+    assert model_allowed("claude-sonnet-4-5", ["claude-opus-4-7"]) is False
+
+
+def test_model_allowed_glob_matches():
+    assert model_allowed("claude-opus-4-7", ["claude-opus-*"]) is True
+    assert model_allowed("claude-sonnet-4-5", ["claude-opus-*"]) is False
+
+
+def test_lookup_filters_out_disallowed_model():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="anthropic",
+            prefix="an",
+            api_type="anthropic",
+            base_url="https://api.anthropic.com",
+            api_key="sk-test",
+            models=["claude-opus-4-7", "claude-sonnet-4-5"],
+            allowed_models=["claude-opus-4-7"],
+        )
+    )
+    assert registry.lookup("an/claude-opus-4-7") is not None
+    assert registry.lookup("an/claude-sonnet-4-5") is None
+
+
+def test_lookup_glob_allowlist():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="anthropic",
+            prefix="an",
+            api_type="anthropic",
+            base_url="https://api.anthropic.com",
+            api_key="sk-test",
+            models=["claude-opus-4-7", "claude-sonnet-4-5"],
+            allowed_models=["claude-opus-*"],
+        )
+    )
+    assert registry.lookup("an/claude-opus-4-7") is not None
+    assert registry.lookup("an/claude-sonnet-4-5") is None
+
+
+def test_lookup_multi_account_different_allowlists():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="an-1",
+            prefix="an",
+            api_type="anthropic",
+            base_url="https://api.anthropic.com",
+            api_key="k1",
+            models=["claude-opus-4-7"],
+            allowed_models=["claude-opus-4-7"],
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="an-2",
+            prefix="an",
+            api_type="anthropic",
+            base_url="https://api.anthropic.com",
+            api_key="k2",
+            models=["claude-opus-4-7"],
+            allowed_models=["claude-sonnet-4-5"],
+        )
+    )
+    targets = registry.lookup("an/claude-opus-4-7")
+    assert targets is not None
+    assert len(targets) == 1
+    assert targets[0].account_id == "an-1"

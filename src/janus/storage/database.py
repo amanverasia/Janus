@@ -214,6 +214,7 @@ _NEW_PROVIDER_COLUMNS = [
     ("quota_limit", "INTEGER"),
     ("quota_metric", "TEXT DEFAULT 'requests'"),
     ("transports", "TEXT"),
+    ("allowed_models", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 
@@ -332,8 +333,9 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
             for pc in config.providers:
                 await db.execute(
                     """INSERT INTO providers
-                       (id, prefix, api_type, base_url, api_key, models, transports)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (id, prefix, api_type, base_url, api_key, models, transports,
+                        allowed_models)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         pc.id,
                         pc.prefix,
@@ -342,6 +344,7 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                         pc.api_key,
                         json.dumps(pc.models),
                         json.dumps(pc.transports) if pc.transports else None,
+                        json.dumps(pc.allowed_models),
                     ),
                 )
 

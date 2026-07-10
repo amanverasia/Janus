@@ -54,6 +54,85 @@ async def test_models_endpoint(app):
         assert any(m["id"] == "test/test-m1" for m in data["data"])
 
 
+@pytest.fixture
+async def allowlisted_app(tmp_path):
+    provider = ProviderConfig(
+        id="test",
+        prefix="test",
+        api_type="openai_compat",
+        base_url="https://fake.local/v1",
+        api_key="sk-test",
+        models=["m-allowed", "m-blocked"],
+        allowed_models=["m-allowed"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    return app
+
+
+@pytest.mark.asyncio
+async def test_models_endpoint_hides_blocked_models(allowlisted_app):
+    async with AsyncClient(
+        transport=ASGITransport(app=allowlisted_app), base_url="http://test"
+    ) as client:
+        r = await client.get("/v1/models")
+        assert r.status_code == 200
+        ids = {m["id"] for m in r.json()["data"]}
+        assert "test/m-allowed" in ids
+        assert "test/m-blocked" not in ids
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_chat_completions_allowed_model_succeeds(allowlisted_app):
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "m-allowed",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Hello!"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+            },
+        )
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=allowlisted_app), base_url="http://test"
+    ) as client:
+        payload = {
+            "model": "test/m-allowed",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": False,
+        }
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_blocked_model_returns_400(allowlisted_app):
+    async with AsyncClient(
+        transport=ASGITransport(app=allowlisted_app), base_url="http://test"
+    ) as client:
+        payload = {
+            "model": "test/m-blocked",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": False,
+        }
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_health(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
