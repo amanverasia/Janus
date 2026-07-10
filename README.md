@@ -139,12 +139,16 @@ export ANTHROPIC_BASE_URL=http://localhost:20128/v1
 export ANTHROPIC_API_KEY=sk-janus-yourkey   # if require_api_key is on
 ```
 
-**OpenAI-compatible tools (Codex, Cursor, Cline, etc.):**
+**Cursor / OpenAI Chat Completions tools:**
 
 ```bash
 export OPENAI_BASE_URL=http://localhost:20128/v1
 export OPENAI_API_KEY=sk-janus-yourkey      # if require_api_key is on
 ```
+
+**Codex CLI** uses `POST /v1/responses` — configure a provider in
+`~/.codex/config.toml` with `wire_api = "responses"` (see
+[Client Setup](https://amanverasia.github.io/Janus/client-setup/)).
 
 Use `prefix/model` in requests (e.g. `openai/gpt-4o`,
 `anthropic/claude-sonnet-4-20250514`) or a combo name like `best-effort`.
@@ -218,6 +222,7 @@ combos:
 | `openai_compat` | Any OpenAI-compatible API (OpenAI, Groq, Together, DeepSeek, OpenRouter, Mistral, Fireworks, Perplexity, xAI, ...) |
 | `anthropic` | Direct Anthropic API |
 | `gemini` | Direct Google Gemini API |
+| `github_copilot` | GitHub Copilot (device-code OAuth from the dashboard) |
 | `opencode_free` | OpenCode Zen free tier |
 
 ### Known Provider Base URLs
@@ -237,7 +242,8 @@ combos:
 
 ## Client Setup
 
-See step 7 in [First-time setup](#first-time-setup) for the basics. The dashboard
+See step 7 in [First-time setup](#first-time-setup) for the basics. Full guides:
+[Client Setup](https://amanverasia.github.io/Janus/client-setup/). The dashboard
 **Tool Setup** page (`/dashboard/tools`) generates copy-paste env vars for your
 exact server URL and auth settings.
 
@@ -246,22 +252,35 @@ exact server URL and auth settings.
 export ANTHROPIC_BASE_URL=http://localhost:20128/v1
 ```
 
-**OpenAI tools (Codex, Cursor, etc.):**
+**Cursor / OpenAI Chat Completions tools:**
 ```bash
 export OPENAI_BASE_URL=http://localhost:20128/v1
 export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 ```
 
+**Codex CLI** speaks the Responses API (`POST /v1/responses`). Prefer a
+`~/.codex/config.toml` provider with `wire_api = "responses"` and
+`base_url = "http://localhost:20128/v1"` — see the docs link above.
+
+**Ollama-only tools** use `OLLAMA_HOST=http://localhost:20128` (`/api/chat`,
+`/api/generate`, `/api/show`, `/api/tags`). **Gemini-native tools** use
+`GOOGLE_GEMINI_BASE_URL=http://localhost:20128`.
+
 ## Features
 
-- **Fallback routing** — multi-account rotation with cooldowns (429->60s, 5xx->30s, auth->300s, network->15s)
+- **Multi-format inbound** — OpenAI Chat Completions, OpenAI Responses (`/v1/responses` for Codex CLI), Anthropic Messages, Gemini GenerateContent, and Ollama (`/api/chat`, `/api/generate`, `/api/show`, `/api/tags`)
+- **Fallback routing** — multi-account rotation with cooldowns (429→60s, 5xx→30s, auth→300s, network→15s)
 - **Rate-limit-aware rotation** — accounts at their per-minute or per-day request quota are tried last
+- **Subscription quotas** — per-provider 5h / daily / weekly / monthly windows; near-limit banners and soft deprioritization in routing
 - **Combos** — named ordered model sequences (e.g., `"model": "best-effort"`)
-- **Token savers** — RTK compression (default ON), Caveman terse prompt, Ponytail lazy-dev prompt
+- **Token savers** — RTK compression (default ON), Caveman, Ponytail, and optional Headroom compression proxy
+- **GitHub Copilot OAuth** — device-code connect from the dashboard; session tokens refreshed automatically
+- **API key scopes** — API-only keys (`can_login`), model allowlists (`prefix/*`), optional daily budgets
 - **Budgets** — daily spending limits per API key or global, with warn/block thresholds
+- **Request logging** — opt-in debug capture of request/response bodies (Settings → Request Logs)
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
-- **Pricing** — 28 builtin model prices, YAML-overridable, cache token rates
-- **Dashboard** — HTMX UI at `/dashboard` with charts, budget management, usage stats, and remote username/password login
+- **Pricing** — builtin model prices, YAML/DB overrides, cache token rates
+- **Dashboard** — HTMX UI at `/dashboard` with charts, budgets, usage, routing overview, and remote login
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/inventory`)
 
 ## Upstream Key Inventory
@@ -296,7 +315,7 @@ janus inventory encrypt-keys                       # encrypt plaintext keys in D
 | `janus serve` | Start the gateway server |
 | `janus config-init` | Generate default config YAML |
 | `janus config-path` | Print config file path |
-| `janus keys create/list/revoke` | Manage API keys |
+| `janus keys create/list/update/revoke` | Manage API keys (scopes: `--no-login`, `--models`, `--daily-budget`) |
 | `janus usage stats/cost/by-key` | Usage and cost reports |
 | `janus budgets list/set/delete` | Manage spending budgets |
 | `janus pricing list/show` | View model pricing |

@@ -33,11 +33,7 @@ def detect_client_tool(
     if body.get("userAgent") == "antigravity":
         return "antigravity"
 
-    if (
-        "githubcopilotchat" in ua
-        or openai_intent == "conversation-panel"
-        or initiator == "user"
-    ):
+    if "githubcopilotchat" in ua or openai_intent == "conversation-panel" or initiator == "user":
         return "github-copilot"
 
     if "claude-cli" in ua or "claude-code" in ua or x_app == "cli":

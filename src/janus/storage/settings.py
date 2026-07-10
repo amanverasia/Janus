@@ -37,6 +37,7 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_require_api_key": "true",
     "server_sticky_client_key_routing": "false",
     "server_request_logging": "false",
+    "server_request_log_retention": "500",
     "server_account_strategy": "round_robin",
     "server_sticky_limit": "3",
     "combo_fusion_min_panel": "2",
@@ -170,6 +171,14 @@ def resolve_sticky_limit(settings: dict[str, str]) -> int:
 
 def request_logging_enabled(settings: dict[str, str]) -> bool:
     return resolve_server_settings(settings)["server_request_logging"].lower() == "true"
+
+
+def resolve_request_log_retention(settings: dict[str, str]) -> int:
+    try:
+        value = int(resolve_server_settings(settings)["server_request_log_retention"])
+    except (ValueError, TypeError, KeyError):
+        value = 500
+    return max(50, min(value, 5000))
 
 
 async def is_request_logging_enabled(db_path: str | Path) -> bool:

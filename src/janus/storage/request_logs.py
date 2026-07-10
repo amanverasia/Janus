@@ -33,7 +33,9 @@ async def record_request_log(
     error: str | None = None,
     client_key_id: int | None = None,
     client_key_label: str | None = None,
+    max_rows: int | None = None,
 ) -> None:
+    rows = max_rows if max_rows is not None else MAX_ROWS
     try:
         async with get_connection(db_path) as db:
             await db.execute(
@@ -60,7 +62,7 @@ async def record_request_log(
             await db.execute(
                 "DELETE FROM request_logs WHERE id NOT IN "
                 "(SELECT id FROM request_logs ORDER BY id DESC LIMIT ?)",
-                (MAX_ROWS,),
+                (rows,),
             )
             await db.commit()
     except Exception as e:

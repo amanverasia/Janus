@@ -75,10 +75,10 @@ def _apply_deepseek_v4_pro_alias(
     extra = body.get("extra_body")
     if isinstance(extra, dict):
         raw_prev = extra.get("thinking")
-        prev = raw_prev if isinstance(raw_prev, dict) else {}
+        prev_dict: dict[str, Any] = raw_prev if isinstance(raw_prev, dict) else {}
         body["extra_body"] = {
             **extra,
-            "thinking": {**prev, "type": thinking_type},
+            "thinking": {**prev_dict, "type": thinking_type},
         }
     effort = alias.get("reasoning_effort")
     if effort:

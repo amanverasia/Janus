@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Body-text rate-limit detection** — upstream error bodies are scanned for rate-limit markers ("rate limit", "too many requests", "quota exceeded", "capacity", "overloaded", "resource exhausted"); a disguised rate limit (e.g. HTTP 400 with "quota exceeded") now cools the account down with rate-limit backoff and falls back to the next account. Handles dict, list, string, and other JSON body shapes
 - **RTK filter upgrade** — ported 9router's compression filter set: git-log, git-status, grep (per-file cap, non-matching lines preserved), find (per-dir cap, path-only detection), tree, and build-output filters with priority auto-detection, plus line-based head+tail smart truncation (120 head / 60 tail above 250 lines). Compression gate raised to 500 bytes minimum, 10 MiB raw cap
 
+- **API key scopes** — DB-managed keys support `can_login` (default on; opt out for API-only keys that cannot open the dashboard) and `allowed_models` (exact IDs or `prefix/*` wildcards; empty/unset = all models). Disallowed models return `403` with `error.type = model_not_allowed`; `GET /v1/models` is filtered the same way. Optional daily budget can be set on key create/update via CLI (`--daily-budget`) or the dashboard Keys page. Spec: `docs/superpowers/specs/2026-07-09-api-key-scopes-design.md`
+- **Ollama `/api/show` and `/api/generate`** — `POST /api/show` returns stub model metadata for routable models; `POST /api/generate` accepts a bare `prompt` and remaps chat responses to Ollama's completion shape. `GET /api/tags` now respects the API key model allowlist (parity with `GET /v1/models`)
+- **Request log retention setting** — `server_request_log_retention` (default 500, clamp 50–5000) replaces the hardcoded row cap; configurable from Settings
+- **Request logs pagination** — dashboard request-logs table supports Prev/Next paging via HTMX partial
+- **Quota UX round 2** — shared `quota_status` helper drives ≥80% amber banners on provider cards, quota fields on the Routing page, and an 8s poll refresh for provider usage bars
 - **Ollama-compatible endpoints** (`POST /api/chat`, `GET /api/tags`, `GET /api/version`) — tools that only speak Ollama can now route through Janus. Full format adapter with NDJSON streaming (Ollama defaults to streaming), tool-call round-trips (positional call-id assignment), `images`, `options` (`num_predict`/`temperature`/`top_p`/`stop`), and `thinking` passthrough. Phase 8.6 — completes the 9router feature-parity plan
 - **Subscription quota tracking** — per-provider quota windows (`5h`, `daily`, `weekly`, `monthly`, all UTC) with a request or token limit, configurable in the provider Add/Edit forms. Provider cards show a usage bar + reset countdown; exhausted providers are deprioritized in fallback ordering (soft enforcement — never blocked). Counters are shared across a provider's inventory accounts and seeded from the `usage` table on startup/reload. Phase 8.5 of the 9router parity plan
 - **GitHub Copilot OAuth provider** — first subscription/OAuth provider (Phase 8.4 of the 9router parity plan). New `api_type: github_copilot` with device-code login from the dashboard ("Connect GitHub Account" in Add Provider), automatic exchange of the long-lived GitHub OAuth token for short-lived Copilot session tokens (refreshed before expiry behind a single-flight lock), OpenAI-compatible routing (`copilot/gpt-4o`, ...), Fetch Models and Test Connection support. New dashboard endpoints `POST /dashboard/api/oauth/copilot/{start,poll}`
@@ -31,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP 402 responses are classified as payment errors, are fallback-eligible, and cool the account for 5 minutes
 - Bare model names on the Gemini-native endpoint (`/v1beta/models/gemini-2.5-flash:generateContent`) are auto-prefixed with `gemini/`
 - Fusion panel tasks are cancelled and awaited if the client disconnects mid-panel (no orphaned upstream spend)
+- **Request logging coverage** — debug mode now captures pre-routing rejections (budget exceeded, model not allowed), non-fallback upstream errors, and empty-stream failures (not only successes and the final 503)
+
+### Changed
+- **Docs** — README feature list and Client Setup cover Phase 8 surfaces (Responses/Codex `config.toml`, Ollama, Gemini CLI, Copilot OAuth, quotas, request logging, Headroom); docs index provider count aligned to 29
 
 ## [1.2.0] - 2026-07-05
 

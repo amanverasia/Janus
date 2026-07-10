@@ -1,3 +1,15 @@
+{% if quota_warnings %}
+<div class="mb-6 bg-amber-900/30 border border-amber-700 rounded-lg p-4 text-amber-200 text-sm" id="quota-warning-banner">
+  <p class="font-medium mb-2">Subscription quota near or at limit</p>
+  <ul class="list-disc list-inside space-y-1">
+    {% for p in quota_warnings %}
+    <li><span class="font-mono">{{ p.id }}</span>:
+      {{ "{:,}".format(p.quota.used) }} / {{ "{:,}".format(p.quota.limit) }} {{ p.quota.metric }}
+      ({{ p.quota.status }}) · resets in {{ p.quota.resets_in }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 {% set icon_map = {
     'openai': '🟢', 'anthropic': '🟠', 'gemini': '🔵',
     'groq': '⚡', 'together': '🤝', 'deepseek': '🔬',

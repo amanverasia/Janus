@@ -1,6 +1,6 @@
 # Janus — TODO & improvements
 
-Living backlog from repo audit (2026-07-05); last updated 2026-07-05 after completing the Phase 8 9router-parity plan. Items are grouped by area; order within a section is rough priority.
+Living backlog from repo audit (2026-07-05); last updated 2026-07-10 after README/client-setup Phase 8 docs refresh. Items are grouped by area; order within a section is rough priority.
 
 ---
 
@@ -11,6 +11,7 @@ Living backlog from repo audit (2026-07-05); last updated 2026-07-05 after compl
 - [x] **Add `mkdocs build --strict` to CI** — docs workflow only runs on `docs/` changes; main CI (`ci.yml`) should fail if the published site would break. *(Done 2026-07-05.)*
 - [x] **Unify provider catalogs** — `dashboard/catalog.py` has 14 gateway providers; `inventory/catalog.py` has 29. Duplicated base URLs, models, and metadata drift easily. Single source or codegen sync. *(Done 2026-07-05 — unified into `src/janus/catalog.py`; both legacy modules and the id bridges now derive from it. Also fixed the missing `qwen`→`dashscope` prefix bridge so DashScope inventory keys route for the `qwen` prefix.)*
 - [x] **Use inventory rate limits in routing** — `rate_limit_rpm/tpm/rpd` are stored and shown in the UI but ignored by `routing/fallback.py` and `list_routable_upstream_keys()`. Skip or deprioritize keys near quota exhaustion during rotation. *(Done 2026-07-05 for RPM/RPD — accounts without headroom are moved to the end of the try-order; TPM enforcement deferred since token counts are only known post-response.)*
+- [x] **API key scopes** — per-key `can_login` (API-only vs dashboard) and `allowed_models` (exact IDs + `prefix/*`; empty = all), plus optional daily budget on key create/update. Spec: `docs/superpowers/specs/2026-07-09-api-key-scopes-design.md`. *(Done 2026-07-09 — storage columns + migration, `key_access` matching, auth/dashboard/API enforcement, CLI `keys update`, dashboard Keys UI.)*
 
 ---
 
@@ -30,12 +31,12 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 
 ### Phase 8 follow-ups (discovered during implementation)
 
-- [ ] **Request logs: capture non-fallback upstream errors** — 8.2 logs successes, streams, and the final 503; upstream 4xx errors that raise `HTTPException` directly (non-fallback-eligible) bypass logging. Wrap those raise paths so debug mode sees failed requests too.
-- [ ] **Request logs: configurable retention + pagination** — 500-row cap and 64 KB truncation are hardcoded (`storage/request_logs.py`); the dashboard shows only the latest 100 with no paging. Expose retention in Settings and paginate the table (reuse the keys-table pagination pattern).
-- [ ] **Quota UX round 2** — near-exhaustion warning (dashboard banner at ≥80%, mirroring budget warn), quota state on the Routing page next to cooldowns/rate limits, and live refresh of the provider-card usage bar (currently render-time only).
+- [x] **Request logs: capture non-fallback upstream errors** — 8.2 logs successes, streams, and the final 503; upstream 4xx errors that raise `HTTPException` directly (non-fallback-eligible) bypass logging. Wrap those raise paths so debug mode sees failed requests too. *(Done 2026-07-09 — pre-routing errors (budget, allowlist) and empty-stream failures now logged via `_log_error_and_raise`.)*
+- [x] **Request logs: configurable retention + pagination** — 500-row cap and 64 KB truncation are hardcoded (`storage/request_logs.py`); the dashboard shows only the latest 100 with no paging. Expose retention in Settings and paginate the table (reuse the keys-table pagination pattern). *(Done 2026-07-09 — `server_request_log_retention` setting (50–5000, default 500); HTMX Prev/Next pagination on request-logs page.)*
+- [x] **Quota UX round 2** — near-exhaustion warning (dashboard banner at ≥80%, mirroring budget warn), quota state on the Routing page next to cooldowns/rate limits, and live refresh of the provider-card usage bar (currently render-time only). *(Done 2026-07-09 — shared `quota_status` helper, amber banners, routing overview quota fields, 8s providers partial poll.)*
 - [ ] **True rolling 5h quota windows** — `storage/quotas.py` uses fixed UTC 5-hour buckets as an approximation; Claude/Codex subscriptions use rolling windows anchored to first request. Needs per-window timestamp tracking (deque or window-anchor column).
 - [ ] **Copilot model pricing** — `copilot/*` models are unknown to `pricing/builtin.py`, so usage shows $0. Add reference prices (as a "what this would cost via API" savings tracker, like 9router) or flag them explicitly as subscription-covered.
-- [ ] **Ollama surface completeness** — some Ollama clients call `POST /api/show` (model metadata) and `POST /api/generate` (bare completions) before/instead of `/api/chat`. Add minimal shims so those clients don't fail the handshake. `/api/version` is already stubbed.
+- [x] **Ollama surface completeness** — some Ollama clients call `POST /api/show` (model metadata) and `POST /api/generate` (bare completions) before/instead of `/api/chat`. Add minimal shims so those clients don't fail the handshake. `/api/version` is already stubbed. *(Done 2026-07-09 — `/api/show` metadata shim, `/api/generate` prompt→chat remap, `/api/tags` filtered by key allowlist.)*
 - [ ] **Copilot session-token 401 mid-stream** — a session token revoked between refresh and stream start surfaces as a stream error (no retry, by design). Consider a one-shot forced token refresh + retry for the non-streaming path.
 
 ---
@@ -83,11 +84,11 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 ## Docs & developer experience
 
 - [ ] **Document maintainer scripts in user docs** — currently only in `CONTRIBUTING.md`; add a short "Maintenance" subsection to deployment or contributing on the docs site (already included via snippet — verify it renders on GitHub Pages).
-- [ ] **Refresh README feature list** — README predates Phase 8; add Responses API (Codex-native), Ollama endpoints, GitHub Copilot OAuth, subscription quotas, request logging, and Headroom to the feature summary and any endpoint tables.
-- [ ] **Client setup for new surfaces** — extend `docs/client-setup.md` with Codex CLI via `/v1/responses` and Ollama-only tools via `/api/chat` (including the `stream` default and NDJSON note).
+- [x] **Refresh README feature list** — README predates Phase 8; add Responses API (Codex-native), Ollama endpoints, GitHub Copilot OAuth, subscription quotas, request logging, and Headroom to the feature summary and any endpoint tables. *(Done 2026-07-10.)*
+- [x] **Client setup for new surfaces** — extend `docs/client-setup.md` with Codex CLI via `/v1/responses` and Ollama-only tools via `/api/chat` (including the `stream` default and NDJSON note). *(Done 2026-07-10 — Codex `config.toml` + Responses; Ollama show/generate/tags; Gemini CLI section expanded.)*
 - [ ] **Trim or relocate `docs/superpowers/`** — 18 phase plans/specs from June 2026; excluded from the site but add repo noise. Archive to a wiki, separate branch, or compress into `docs/architecture.md` history.
 - [ ] **TLS / reverse-proxy guide expansion** — Janus is HTTP-only; add Caddy/nginx/Tailscale Serve examples with auth headers and WebSocket/SSE notes for streaming clients.
-- [ ] **Client setup for Gemini-native tools** — inbound Gemini endpoint exists; ensure `client-setup.md` covers Cursor/Gemini CLI paths completely.
+- [x] **Client setup for Gemini-native tools** — inbound Gemini endpoint exists; ensure `client-setup.md` covers Cursor/Gemini CLI paths completely. *(Done 2026-07-10 — Gemini CLI env vars + Cursor vs Gemini surface note.)*
 
 ---
 

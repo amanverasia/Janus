@@ -119,7 +119,7 @@ def has_valuable_content(parsed: dict[str, Any]) -> bool:
     if choice.get("finish_reason") not in (None, ""):
         return True
     raw_delta = choice.get("delta")
-    delta = raw_delta if isinstance(raw_delta, dict) else {}
+    delta: dict[str, Any] = raw_delta if isinstance(raw_delta, dict) else {}
     if delta.get("role"):
         return True
     content = delta.get("content")

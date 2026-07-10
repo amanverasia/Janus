@@ -12,6 +12,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from janus.api.auth import key_allowed_models
 from janus.canonical.models import Usage
 from janus.canonical.tool_calls import prepare_tool_messages
 from janus.formats.anthropic import AnthropicAdapter
@@ -27,7 +28,13 @@ from janus.providers.base import (
     parse_error_body,
     parse_retry_after,
 )
-from janus.providers.registry import ProviderRegistry, ResolvedTarget, model_allowed
+from janus.providers.registry import (
+    ProviderRegistry,
+    ResolvedTarget,
+)
+from janus.providers.registry import (
+    model_allowed as provider_model_allowed,
+)
 from janus.routing.capabilities import (
     detect_required_capabilities,
     get_capabilities_for_model,
@@ -52,7 +59,8 @@ from janus.routing.thinking import (
 )
 from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
-from janus.storage.request_logs import record_request_log
+from janus.storage.key_access import model_allowed as key_model_allowed
+from janus.storage.request_logs import MAX_ROWS, record_request_log
 from janus.storage.usage import record_usage
 from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
 from janus.streaming.translator import translate_stream
@@ -228,6 +236,30 @@ async def _passthrough_call(
     )
 
 
+async def _maybe_log_client_error(
+    *,
+    log_requests: bool,
+    db_path: str | Path,
+    client_format: str,
+    model: str | None,
+    status: int,
+    request_body: str | None,
+    error: str,
+    max_rows: int = MAX_ROWS,
+) -> None:
+    if not log_requests:
+        return
+    await record_request_log(
+        db_path,
+        client_format=client_format,
+        model=model,
+        status=status,
+        request_body=request_body,
+        error=error[:2000],
+        max_rows=max_rows,
+    )
+
+
 async def _log_error_and_raise(
     *,
     log_requests: bool,
@@ -243,6 +275,7 @@ async def _log_error_and_raise(
     response_body: Any = None,
     client_key_id: int | None = None,
     client_key_label: str | None = None,
+    max_rows: int = MAX_ROWS,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
     if log_requests:
@@ -270,6 +303,7 @@ async def _log_error_and_raise(
             error=err_text[:2000],
             client_key_id=client_key_id,
             client_key_label=client_key_label,
+            max_rows=max_rows,
         )
     raise HTTPException(status_code=status, detail=detail)
 
@@ -309,8 +343,44 @@ async def _handle(
     client_key_id = getattr(request.state, "client_key_id", None)
     client_key_label = getattr(request.state, "client_key_label", None)
 
+    from janus.storage.settings import (
+        get_all_settings,
+        request_logging_enabled,
+        resolve_account_strategy,
+        resolve_combo_fusion_hard_timeout_s,
+        resolve_combo_fusion_judge,
+        resolve_combo_fusion_min_panel,
+        resolve_combo_fusion_straggler_grace_s,
+        resolve_combo_sticky_limit,
+        resolve_combo_strategy,
+        resolve_request_log_retention,
+        resolve_sticky_limit,
+        sticky_client_key_routing_enabled,
+    )
+
+    settings = await get_all_settings(db_path)
+    log_requests = request_logging_enabled(settings)
+    retention = resolve_request_log_retention(settings)
+    logged_request_body: str | None = None
+    if log_requests:
+        try:
+            logged_request_body = json.dumps(body, ensure_ascii=False)
+        except (TypeError, ValueError):
+            logged_request_body = str(body)
+
     blocked_response = await _check_budgets(db_path, client_key_id)
     if blocked_response is not None:
+        model_raw = body.get("model")
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=model_raw if isinstance(model_raw, str) else None,
+            status=429,
+            request_body=logged_request_body,
+            error="budget_exceeded",
+            max_rows=retention,
+        )
         return blocked_response
 
     client_adapter = FORMATS[client_format]
@@ -329,6 +399,29 @@ async def _handle(
     # Strip model thinking suffix like "gpt-4o(high)" → clean model + intent
     canonical_req, thinking_intent = resolve_thinking_intent(canonical_req)
 
+    allowed = key_allowed_models(request)
+    if not key_model_allowed(canonical_req.model, allowed):
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=canonical_req.model,
+            status=403,
+            request_body=logged_request_body,
+            error=f"Model '{canonical_req.model}' is not allowed for this API key",
+            max_rows=retention,
+        )
+        return JSONResponse(
+            content={
+                "error": {
+                    "message": f"Model '{canonical_req.model}' is not allowed for this API key",
+                    "type": "model_not_allowed",
+                    "model": canonical_req.model,
+                }
+            },
+            status_code=403,
+        )
+
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
     canonical_req = await saver_pipeline.apply_async(canonical_req)
     canonical_req = saver_pipeline.apply(canonical_req)
@@ -336,23 +429,7 @@ async def _handle(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
 
-    from janus.storage.settings import (
-        get_all_settings,
-        request_logging_enabled,
-        resolve_account_strategy,
-        resolve_combo_fusion_hard_timeout_s,
-        resolve_combo_fusion_judge,
-        resolve_combo_fusion_min_panel,
-        resolve_combo_fusion_straggler_grace_s,
-        resolve_combo_sticky_limit,
-        resolve_combo_strategy,
-        resolve_sticky_limit,
-        sticky_client_key_routing_enabled,
-    )
-
-    settings = await get_all_settings(db_path)
     sticky_routing = sticky_client_key_routing_enabled(settings)
-    log_requests = request_logging_enabled(settings)
     try:
         strategy = AccountStrategy(resolve_account_strategy(settings))
     except ValueError:
@@ -361,12 +438,6 @@ async def _handle(
     combo_strat = resolve_combo_strategy(settings)
     combo_csl = resolve_combo_sticky_limit(settings)
     start_time = time.monotonic()
-    logged_request_body: str | None = None
-    if log_requests:
-        try:
-            logged_request_body = json.dumps(body, ensure_ascii=False)
-        except (TypeError, ValueError):
-            logged_request_body = str(body)
 
     def _elapsed_ms() -> int:
         return int((time.monotonic() - start_time) * 1000)
@@ -440,6 +511,16 @@ async def _handle(
             headers={"Retry-After": str(int(retry_after))},
         )
     except ValueError as e:
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=canonical_req.model,
+            status=400,
+            request_body=logged_request_body,
+            error=str(e),
+            max_rows=retention,
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     last_error = "Unknown error"
@@ -502,6 +583,7 @@ async def _handle(
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -518,7 +600,19 @@ async def _handle(
                 if pt_stream:
                     lines = result.lines
                     if lines is None:
-                        raise HTTPException(status_code=502, detail="No stream from upstream")
+                        await _log_error_and_raise(
+                            log_requests=log_requests,
+                            max_rows=retention,
+                            db_path=db_path,
+                            client_format=client_format,
+                            model=canonical_req.model,
+                            provider_id=target.provider_config.id,
+                            account_id=target.account_id,
+                            status=502,
+                            duration_ms=_elapsed_ms(),
+                            request_body=logged_request_body,
+                            detail="No stream from upstream",
+                        )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
                     _live_lines = lines
@@ -576,6 +670,7 @@ async def _handle(
                                     request_body=logged_request_body,
                                     client_key_id=client_key_id,
                                     client_key_label=client_key_label,
+                                    max_rows=retention,
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
@@ -622,6 +717,7 @@ async def _handle(
                         response_body=pt_response_body,
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
+                        max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
                 return JSONResponse(content=result.json_data if result.json_data else {})
@@ -682,6 +778,7 @@ async def _handle(
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -699,7 +796,19 @@ async def _handle(
                 if native_stream:
                     native_lines = native_result.lines
                     if native_lines is None:
-                        raise HTTPException(status_code=502, detail="No stream from upstream")
+                        await _log_error_and_raise(
+                            log_requests=log_requests,
+                            max_rows=retention,
+                            db_path=db_path,
+                            client_format=client_format,
+                            model=canonical_req.model,
+                            provider_id=target.provider_config.id,
+                            account_id=target.account_id,
+                            status=502,
+                            duration_ms=_elapsed_ms(),
+                            request_body=logged_request_body,
+                            detail="No stream from upstream",
+                        )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
                     _native_model = target.model
@@ -756,6 +865,7 @@ async def _handle(
                                     request_body=logged_request_body,
                                     client_key_id=client_key_id,
                                     client_key_label=client_key_label,
+                                    max_rows=retention,
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
@@ -807,6 +917,7 @@ async def _handle(
                         response_body=native_response_body,
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
+                        max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
                 return JSONResponse(
@@ -850,6 +961,7 @@ async def _handle(
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -867,6 +979,7 @@ async def _handle(
                 if lines is None:
                     await _log_error_and_raise(
                         log_requests=log_requests,
+                        max_rows=retention,
                         db_path=db_path,
                         client_format=client_format,
                         model=canonical_req.model,
@@ -922,6 +1035,7 @@ async def _handle(
                                 request_body=logged_request_body,
                                 client_key_id=client_key_id,
                                 client_key_label=client_key_label,
+                                max_rows=retention,
                             )
                         if stream_ok:
                             handler.mark_success(target.account_id, target.model)
@@ -942,6 +1056,7 @@ async def _handle(
                     continue
                 await _log_error_and_raise(
                     log_requests=log_requests,
+                    max_rows=retention,
                     db_path=db_path,
                     client_format=client_format,
                     model=canonical_req.model,
@@ -958,6 +1073,7 @@ async def _handle(
             if result.json_data is None:
                 await _log_error_and_raise(
                     log_requests=log_requests,
+                    max_rows=retention,
                     db_path=db_path,
                     client_format=client_format,
                     model=canonical_req.model,
@@ -1012,6 +1128,7 @@ async def _handle(
                     response_body=logged_response_body,
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
+                    max_rows=retention,
                 )
 
             handler.mark_success(target.account_id, target.model)
@@ -1033,6 +1150,7 @@ async def _handle(
             error=f"All providers exhausted: {last_error}",
             client_key_id=client_key_id,
             client_key_label=client_key_label,
+            max_rows=retention,
         )
     raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
 
@@ -1040,6 +1158,7 @@ async def _handle(
 @router.get("/models", dependencies=[Depends(require_api_key)])
 async def list_models(request: Request) -> dict[str, Any]:
     registry: ProviderRegistry = request.app.state.registry
+    allowed = key_allowed_models(request)
     data: list[dict[str, Any]] = []
     for prefix, configs in registry.providers.items():
         models_seen: set[str] = set()
@@ -1047,18 +1166,23 @@ async def list_models(request: Request) -> dict[str, Any]:
             for model in config.models:
                 if model in models_seen:
                     continue
-                if not model_allowed(model, config.allowed_models):
+                if not provider_model_allowed(model, config.allowed_models):
+                    continue
+                model_id = f"{prefix}/{model}"
+                if not key_model_allowed(model_id, allowed):
                     continue
                 models_seen.add(model)
                 data.append(
                     {
-                        "id": f"{prefix}/{model}",
+                        "id": model_id,
                         "object": "model",
                         "created": 0,
                         "owned_by": config.id,
                     }
                 )
     for combo_name in registry.combos:
+        if not key_model_allowed(combo_name, allowed):
+            continue
         data.append(
             {
                 "id": combo_name,
@@ -1114,15 +1238,10 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
 ollama_router = APIRouter()
 
 
-@ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
-async def ollama_chat(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
-    return await _handle("ollama", body, request)
-
-
-@ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])
-async def ollama_tags(request: Request) -> dict[str, Any]:
-    registry: ProviderRegistry = request.app.state.registry
+def _ollama_model_entries(
+    registry: ProviderRegistry,
+    allowed_models: list[str] | None = None,
+) -> list[dict[str, Any]]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     models: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -1130,19 +1249,26 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
         for config in configs:
             for model in config.models:
                 name = f"{prefix}/{model}"
-                if name not in seen and model_allowed(model, config.allowed_models):
-                    seen.add(name)
-                    models.append(
-                        {
-                            "name": name,
-                            "model": name,
-                            "modified_at": now,
-                            "size": 0,
-                            "digest": "",
-                            "details": {"family": "janus", "format": "gateway"},
-                        }
-                    )
+                if name in seen:
+                    continue
+                if not provider_model_allowed(model, config.allowed_models):
+                    continue
+                if not key_model_allowed(name, allowed_models):
+                    continue
+                seen.add(name)
+                models.append(
+                    {
+                        "name": name,
+                        "model": name,
+                        "modified_at": now,
+                        "size": 0,
+                        "digest": "",
+                        "details": {"family": "janus", "format": "gateway"},
+                    }
+                )
     for combo_name in registry.combos:
+        if not key_model_allowed(combo_name, allowed_models):
+            continue
         models.append(
             {
                 "name": combo_name,
@@ -1153,7 +1279,137 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
                 "details": {"family": "janus", "format": "combo"},
             }
         )
-    return {"models": models}
+    return models
+
+
+def _ollama_generate_to_chat(body: dict[str, Any]) -> dict[str, Any]:
+    prompt = body.get("prompt") or ""
+    user_msg: dict[str, Any] = {"role": "user", "content": prompt}
+    if body.get("images"):
+        user_msg["images"] = body["images"]
+    chat: dict[str, Any] = {
+        "model": body.get("model"),
+        "messages": [user_msg],
+        "stream": body.get("stream", True),
+    }
+    if body.get("options") is not None:
+        chat["options"] = body["options"]
+    return chat
+
+
+def _ollama_chat_json_to_generate(data: dict[str, Any]) -> dict[str, Any]:
+    if "message" not in data and "done" not in data:
+        return data
+    out = dict(data)
+    message = out.pop("message", None) or {}
+    out["response"] = message.get("content") or ""
+    return out
+
+
+def _ollama_chat_ndjson_to_generate(line: str) -> str:
+    raw = line.strip()
+    if not raw:
+        return line
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError:
+        return line
+    if "message" in obj:
+        msg = obj.pop("message") or {}
+        obj["response"] = msg.get("content") or ""
+    return json.dumps(obj, ensure_ascii=False) + "\n"
+
+
+@ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
+async def ollama_chat(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    return await _handle("ollama", body, request)
+
+
+@ollama_router.post("/api/generate", dependencies=[Depends(require_api_key)])
+async def ollama_generate(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    if not body.get("model"):
+        raise HTTPException(status_code=400, detail="model required")
+    chat_body = _ollama_generate_to_chat(body)
+    response = await _handle("ollama", chat_body, request)
+    if isinstance(response, StreamingResponse):
+
+        async def _remap() -> AsyncIterator[bytes]:
+            async for chunk in response.body_iterator:
+                text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+                for part in text.splitlines(keepends=True):
+                    if not part.strip():
+                        continue
+                    line = part if part.endswith("\n") else part + "\n"
+                    yield _ollama_chat_ndjson_to_generate(line).encode()
+
+        return StreamingResponse(
+            _remap(),
+            media_type=response.media_type or "application/x-ndjson",
+            status_code=response.status_code,
+        )
+    if isinstance(response, JSONResponse):
+        data = json.loads(bytes(response.body).decode())
+        return JSONResponse(
+            content=_ollama_chat_json_to_generate(data), status_code=response.status_code
+        )
+    try:
+        raw = bytes(response.body) if hasattr(response, "body") else b""
+        if raw:
+            data = json.loads(raw.decode())
+            return JSONResponse(
+                content=_ollama_chat_json_to_generate(data), status_code=response.status_code
+            )
+    except Exception:
+        pass
+    return response
+
+
+@ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])
+async def ollama_tags(request: Request) -> dict[str, Any]:
+    registry: ProviderRegistry = request.app.state.registry
+    return {"models": _ollama_model_entries(registry, key_allowed_models(request))}
+
+
+@ollama_router.post("/api/show", dependencies=[Depends(require_api_key)])
+async def ollama_show(request: Request) -> Response:
+    body: dict[str, Any] = await request.json()
+    name = (body.get("name") or body.get("model") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="model name required")
+    registry: ProviderRegistry = request.app.state.registry
+    entries = _ollama_model_entries(registry, key_allowed_models(request))
+    match = next((e for e in entries if e["name"] == name), None)
+    if match is None:
+        return JSONResponse(
+            content={"error": f"model '{name}' not found"},
+            status_code=404,
+        )
+    details: dict[str, Any] = {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "janus",
+        "families": ["janus"],
+        "parameter_size": "N/A",
+        "quantization_level": "gateway",
+    }
+    entry_details = match.get("details") or {}
+    if entry_details.get("format"):
+        details["format"] = entry_details["format"]
+    if entry_details.get("family"):
+        details["family"] = entry_details["family"]
+        details["families"] = [entry_details["family"]]
+    return JSONResponse(
+        content={
+            "modelfile": "",
+            "parameters": "",
+            "template": "{{ .Prompt }}",
+            "details": details,
+            "model_info": {},
+            "capabilities": ["completion"],
+        }
+    )
 
 
 @ollama_router.get("/api/version")

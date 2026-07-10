@@ -302,14 +302,10 @@ def _apply_format(
     if fmt == "gemini-budget":
         # Gemini 2.x thinkingBudget: 0 disables, -1 dynamic, >0 fixed budget.
         if none and can_disable:
-            _set_gemini_thinking(
-                payload, {"thinkingBudget": 0, "includeThoughts": False}
-            )
+            _set_gemini_thinking(payload, {"thinkingBudget": 0, "includeThoughts": False})
             return
         if eff["mode"] == "auto":
-            _set_gemini_thinking(
-                payload, {"thinkingBudget": -1, "includeThoughts": True}
-            )
+            _set_gemini_thinking(payload, {"thinkingBudget": -1, "includeThoughts": True})
             return
         budget = _to_budget(eff, caps)
         _set_gemini_thinking(
@@ -345,9 +341,7 @@ def _apply_format(
             return
         payload["thinking"] = {"type": "enabled"}
         level = _to_level(eff)
-        payload["reasoning_effort"] = (
-            "max" if level in ("xhigh", "max") else "high"
-        )
+        payload["reasoning_effort"] = "max" if level in ("xhigh", "max") else "high"
         return
 
     if fmt == "kimi":
@@ -392,9 +386,7 @@ def _apply_format(
             return
         level = _to_level(eff)
         if level:
-            payload["reasoning_effort"] = (
-                "high" if level in ("xhigh", "max") else level
-            )
+            payload["reasoning_effort"] = "high" if level in ("xhigh", "max") else level
         return
 
 

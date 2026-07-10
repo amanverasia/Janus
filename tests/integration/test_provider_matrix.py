@@ -270,9 +270,7 @@ async def test_openai_compat_nonstream_and_stream(tmp_path: Any) -> None:
     app = create_app(config=cfg)
     await _seed_and_reload(app)
 
-    respx.post(f"{base}/chat/completions").mock(
-        return_value=httpx.Response(200, json=_OPENAI_JSON)
-    )
+    respx.post(f"{base}/chat/completions").mock(return_value=httpx.Response(200, json=_OPENAI_JSON))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
             "/v1/chat/completions",
@@ -614,6 +612,7 @@ async def test_mimo_free_openai_native(tmp_path: Any) -> None:
     body = json.loads(req.content)
     assert body["messages"][0]["role"] == "system"
     assert "MiMoCode" in body["messages"][0]["content"]
+
 
 @respx.mock
 async def test_github_copilot_exchanges_token_then_chats(tmp_path: Any) -> None:

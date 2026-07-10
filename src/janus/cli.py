@@ -84,6 +84,18 @@ def _get_db_path(config: str) -> Path:
 @keys_app.command("create")
 def keys_create(
     name: str = typer.Option("default", "--name", "-n", help="Name for this key"),
+    no_login: bool = typer.Option(False, "--no-login", help="Disallow dashboard login"),
+    models: str | None = typer.Option(
+        None,
+        "--models",
+        "-m",
+        help="Comma-separated allowed models (exact or prefix/*); omit for all",
+    ),
+    daily_budget: float | None = typer.Option(
+        None,
+        "--daily-budget",
+        help="Optional daily spend limit in USD for this key",
+    ),
     config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
 ) -> None:
     """Create a new API key."""
@@ -91,12 +103,30 @@ def keys_create(
 
     from janus.storage.api_keys import create_key
     from janus.storage.database import init_db
+    from janus.storage.key_access import parse_models_input
 
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
-    key, record = asyncio.run(create_key(db_path, name=name))
+    allowed = parse_models_input(models) if models else None
+    key, record = asyncio.run(
+        create_key(
+            db_path,
+            name=name,
+            can_login=not no_login,
+            allowed_models=allowed,
+        )
+    )
+    if daily_budget is not None and daily_budget > 0:
+        from janus.storage.budgets import create_or_update_budget
+
+        asyncio.run(
+            create_or_update_budget(db_path, key_id=int(record["id"]), daily_limit=daily_budget)
+        )
     typer.echo(f"API Key (save this — shown once): {key}")
     typer.echo(f"ID: {record['id']}  Name: {record['name']}")
+    typer.echo(f"Login: {'yes' if record['can_login'] else 'no'}")
+    models_disp = ", ".join(record["allowed_models"] or []) or "all"
+    typer.echo(f"Models: {models_disp}")
 
 
 @keys_app.command("list")
@@ -117,9 +147,70 @@ def keys_list(
         return
     for k in keys:
         status = "active" if k["is_active"] else "revoked"
+        login = "login" if k.get("can_login", True) else "api-only"
+        models = k.get("allowed_models")
+        models_disp = ",".join(models) if models else "all"
         typer.echo(
-            f"  {k['id']:>3}  {k['prefix']}...  {k['name']:<20}  {status}  {k['created_at']}"
+            f"  {k['id']:>3}  {k['prefix']}...  {k['name']:<20}  {status}  {login}  "
+            f"models={models_disp}  {k['created_at']}"
         )
+
+
+@keys_app.command("update")
+def keys_update(
+    key_id: int = typer.Argument(..., help="Key ID to update"),
+    name: str | None = typer.Option(None, "--name", "-n"),
+    login: bool | None = typer.Option(
+        None,
+        "--login/--no-login",
+        help="Allow or disallow dashboard login",
+    ),
+    models: str | None = typer.Option(
+        None,
+        "--models",
+        "-m",
+        help="Comma-separated allowed models (exact or prefix/*)",
+    ),
+    clear_models: bool = typer.Option(
+        False,
+        "--clear-models",
+        help="Remove model allowlist (allow all models)",
+    ),
+    daily_budget: float | None = typer.Option(
+        None,
+        "--daily-budget",
+        help="Set daily spend limit in USD for this key",
+    ),
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+) -> None:
+    """Update an API key's name, login permission, models, or daily budget."""
+    import asyncio
+
+    from janus.storage.api_keys import update_key
+    from janus.storage.database import init_db
+    from janus.storage.key_access import parse_models_input
+
+    db_path = _get_db_path(config)
+    asyncio.run(init_db(db_path))
+    kwargs: dict[str, object] = {}
+    if name is not None:
+        kwargs["name"] = name
+    if login is not None:
+        kwargs["can_login"] = login
+    if clear_models:
+        kwargs["allowed_models"] = None
+    elif models is not None:
+        kwargs["allowed_models"] = parse_models_input(models)
+    if kwargs:
+        updated = asyncio.run(update_key(db_path, key_id, **kwargs))  # type: ignore[arg-type]
+        if not updated:
+            typer.echo(f"No changes applied for key {key_id}", err=True)
+            raise typer.Exit(1)
+    if daily_budget is not None and daily_budget > 0:
+        from janus.storage.budgets import create_or_update_budget
+
+        asyncio.run(create_or_update_budget(db_path, key_id=key_id, daily_limit=daily_budget))
+    typer.echo(f"Updated key {key_id}")
 
 
 @keys_app.command("revoke")
@@ -459,6 +550,7 @@ _ALLOWED_SETTING_KEYS = {
     "server_require_api_key",
     "server_sticky_client_key_routing",
     "server_request_logging",
+    "server_request_log_retention",
     "server_account_strategy",
     "server_sticky_limit",
     "saver_rtk_enabled",

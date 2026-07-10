@@ -82,6 +82,15 @@ async def get_window_usage(
     return {"requests": int(row["requests"]), "tokens": int(row["tokens"])}
 
 
+def quota_status(used: int, limit: int, warn_pct: float = 80.0) -> str:
+    if limit <= 0 or used >= limit:
+        return "exhausted"
+    pct = (used * 100) / limit
+    if pct >= warn_pct:
+        return "warning"
+    return "ok"
+
+
 def describe_reset(window: str, now: datetime | None = None) -> dict[str, Any]:
     """Reset timestamp + human countdown for dashboard display."""
     now = now or datetime.now(UTC)

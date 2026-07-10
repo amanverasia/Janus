@@ -262,7 +262,7 @@ auto-created on startup via `init_db()` in the lifespan handler.
 
 | Table | Purpose |
 |---|---|
-| `api_keys` | API key storage (SHA256-hashed) |
+| `api_keys` | Client API keys (SHA256-hashed) plus scopes: `can_login`, `allowed_models` |
 | `usage` | Per-request token + cost tracking |
 | `budgets` | Daily spending limits |
 | `providers` | Gateway provider configs (DB-driven) |
