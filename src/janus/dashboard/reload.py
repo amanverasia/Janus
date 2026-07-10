@@ -19,6 +19,7 @@ from janus.storage.providers_db import list_providers
 from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
 from janus.storage.upstream_keys import list_routable_upstream_keys
 from janus.tokensavers.base import AsyncTokenSaver, TokenSaver
+from janus.tokensavers.caveman import PROMPTS as CAVEMAN_PROMPTS
 from janus.tokensavers.caveman import CavemanSaver
 from janus.tokensavers.headroom import HeadroomSaver
 from janus.tokensavers.pipeline import SaverPipeline
@@ -84,7 +85,10 @@ async def reload_savers(app: FastAPI) -> None:
     if settings["saver_rtk_enabled"].lower() == "true":
         savers.append(RTKSaver())
     if settings["saver_caveman_enabled"].lower() == "true":
-        savers.append(CavemanSaver())
+        caveman_level = settings["saver_caveman_level"]
+        if caveman_level not in CAVEMAN_PROMPTS:
+            caveman_level = "full"
+        savers.append(CavemanSaver(level=caveman_level))
     if settings["saver_ponytail_enabled"].lower() == "true":
         savers.append(PonytailSaver(level=settings["saver_ponytail_level"]))
     old_pipeline: SaverPipeline | None = getattr(app.state, "saver_pipeline", None)

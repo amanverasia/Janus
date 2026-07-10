@@ -26,6 +26,7 @@ def invalidate_settings_cache(db_path: str | Path | None = None) -> None:
 SAVER_SETTING_DEFAULTS: dict[str, str] = {
     "saver_rtk_enabled": "true",
     "saver_caveman_enabled": "false",
+    "saver_caveman_level": "full",
     "saver_ponytail_enabled": "false",
     "saver_ponytail_level": "full",
     "saver_headroom_enabled": "false",

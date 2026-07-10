@@ -384,6 +384,10 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
             )
             await db.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
+                ("saver_caveman_level", config.token_savers.caveman.level),
+            )
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
                 (
                     "saver_ponytail_enabled",
                     "true" if config.token_savers.ponytail.enabled else "false",
