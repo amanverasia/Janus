@@ -1,6 +1,6 @@
 # Janus — TODO & improvements
 
-Living backlog from repo audit (2026-07-05); last updated 2026-07-09 after API key scopes landed. Items are grouped by area; order within a section is rough priority.
+Living backlog from repo audit (2026-07-05); last updated 2026-07-10 after README/client-setup Phase 8 docs refresh. Items are grouped by area; order within a section is rough priority.
 
 ---
 
@@ -84,11 +84,11 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 ## Docs & developer experience
 
 - [ ] **Document maintainer scripts in user docs** — currently only in `CONTRIBUTING.md`; add a short "Maintenance" subsection to deployment or contributing on the docs site (already included via snippet — verify it renders on GitHub Pages).
-- [ ] **Refresh README feature list** — README predates Phase 8; add Responses API (Codex-native), Ollama endpoints, GitHub Copilot OAuth, subscription quotas, request logging, and Headroom to the feature summary and any endpoint tables.
-- [ ] **Client setup for new surfaces** — extend `docs/client-setup.md` with Codex CLI via `/v1/responses` and Ollama-only tools via `/api/chat` (including the `stream` default and NDJSON note).
+- [x] **Refresh README feature list** — README predates Phase 8; add Responses API (Codex-native), Ollama endpoints, GitHub Copilot OAuth, subscription quotas, request logging, and Headroom to the feature summary and any endpoint tables. *(Done 2026-07-10.)*
+- [x] **Client setup for new surfaces** — extend `docs/client-setup.md` with Codex CLI via `/v1/responses` and Ollama-only tools via `/api/chat` (including the `stream` default and NDJSON note). *(Done 2026-07-10 — Codex `config.toml` + Responses; Ollama show/generate/tags; Gemini CLI section expanded.)*
 - [ ] **Trim or relocate `docs/superpowers/`** — 18 phase plans/specs from June 2026; excluded from the site but add repo noise. Archive to a wiki, separate branch, or compress into `docs/architecture.md` history.
 - [ ] **TLS / reverse-proxy guide expansion** — Janus is HTTP-only; add Caddy/nginx/Tailscale Serve examples with auth headers and WebSocket/SSE notes for streaming clients.
-- [ ] **Client setup for Gemini-native tools** — inbound Gemini endpoint exists; ensure `client-setup.md` covers Cursor/Gemini CLI paths completely.
+- [x] **Client setup for Gemini-native tools** — inbound Gemini endpoint exists; ensure `client-setup.md` covers Cursor/Gemini CLI paths completely. *(Done 2026-07-10 — Gemini CLI env vars + Cursor vs Gemini surface note.)*
 
 ---
 

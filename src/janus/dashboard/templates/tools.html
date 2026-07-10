@@ -34,8 +34,8 @@
             <span class="text-2xl">💻</span>
             <h2 class="text-lg font-bold text-white">Codex / Cursor</h2>
         </div>
-        <p class="text-gray-400 text-sm mb-3">Point OpenAI base URL at Janus:</p>
-        <div class="bg-gray-900 rounded-lg border border-gray-700 flex items-center group">
+        <p class="text-gray-400 text-sm mb-3">Cursor / Chat Completions — point OpenAI base URL at Janus:</p>
+        <div class="bg-gray-900 rounded-lg border border-gray-700 flex items-center group mb-3">
             <div class="flex-1 p-3 min-w-0 overflow-x-auto">
                 <code class="text-sm text-green-300 block">export OPENAI_BASE_URL={{ base_url }}</code>
                 {% if require_key %}
@@ -47,6 +47,7 @@
                 Copy
             </button>
         </div>
+        <p class="text-gray-400 text-sm mb-2">Codex CLI — use Responses API via <code class="text-gray-300">~/.codex/config.toml</code> (<code class="text-gray-300">wire_api = "responses"</code>, <code class="text-gray-300">base_url</code> = Janus <code class="text-gray-300">/v1</code>). See docs Client Setup.</p>
     </div>
 
     <!-- Cline -->

@@ -6,15 +6,17 @@
 Janus is a local-first, single-user AI routing gateway. It exposes
 OpenAI/Anthropic/Gemini-compatible HTTP endpoints that your coding tools (Claude Code,
 Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
-40+ AI providers — without either side needing to know the other exists.
+any of 29 built-in AI providers — or any OpenAI-compatible endpoint — without
+either side needing to know the other exists.
 
 ## Why Janus?
 
-- **One endpoint, every provider** — point your tools at a single URL, route to OpenAI, Anthropic, Gemini, Groq, DeepSeek, and more
+- **One endpoint, every provider** — point your tools at a single URL, route to OpenAI, Anthropic, Gemini, Groq, DeepSeek, Copilot, and more
 - **Automatic fallback** — if one provider is rate-limited or down, Janus rotates to the next automatically
 - **Key inventory** — store and route across many upstream API keys with validation, credit checks, and multi-account expansion
-- **Cost tracking** — per-request cost estimation with 28 builtin model prices and budget enforcement
-- **Token savings** — RTK compression strips boilerplate from tool outputs before sending to the model
+- **Cost tracking** — per-request cost estimation with builtin model prices, budgets, and subscription quota windows
+- **Token savings** — RTK compression, optional Headroom proxy, and prompt savers before routing
+- **Client-native surfaces** — Chat Completions, Responses (Codex), Anthropic, Gemini, and Ollama endpoints
 - **No cloud, no telemetry** — runs entirely on your machine, your keys never leave your system
 
 ## Quick Start
@@ -52,6 +54,11 @@ Store, validate, and route with many upstream API keys across 27+ providers. Key
 - **RTK** (default ON) — compresses tool output (git diffs, file listings, logs) before sending
 - **Caveman** — prepends a brevity-maximizing system prompt
 - **Ponytail** — prepends a lazy-developer prompt (3 levels: lite, full, ultra)
+- **Headroom** — optional external conversation compression proxy (`/v1/compress`), fail-open
+
+### Client surfaces
+
+OpenAI Chat Completions, OpenAI Responses (`/v1/responses` for Codex CLI), Anthropic Messages, Gemini GenerateContent, and Ollama (`/api/chat`, `/api/generate`, `/api/show`, `/api/tags`). See [Client Setup](client-setup.md).
 
 ### Budgets
 

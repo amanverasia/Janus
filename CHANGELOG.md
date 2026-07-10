@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Request logging coverage** — debug mode now captures pre-routing rejections (budget exceeded, model not allowed), non-fallback upstream errors, and empty-stream failures (not only successes and the final 503)
 
+### Changed
+- **Docs** — README feature list and Client Setup cover Phase 8 surfaces (Responses/Codex `config.toml`, Ollama, Gemini CLI, Copilot OAuth, quotas, request logging, Headroom); docs index provider count aligned to 29
+
 ## [1.2.0] - 2026-07-05
 
 ### Added
