@@ -470,8 +470,35 @@ curl http://localhost:20128/v1/health
 | Status | When | Details |
 |--------|------|---------|
 | `401` | Invalid API key | Returned when `require_api_key` is on and the key is missing or unrecognized |
+| `402` → fallback | Upstream payment error | Classified as a payment error, fallback-eligible, cools the account for 300s (5 minutes) |
 | `429` | Budget exceeded | Daily spend limit reached. Includes a `Retry-After` header (seconds until midnight reset) |
-| `503` | All providers exhausted | Every account in the fallback chain was tried and failed. `detail` contains the last error |
+| `503` | All accounts cooling down | Every account for the requested model is currently in cooldown (none exhausted, all just waiting). Includes a `Retry-After` header — seconds until the **earliest** cooldown expiry across those accounts |
+| `503` | All providers exhausted | Every account in the fallback chain was tried in this request and failed. `detail` contains the last error |
+
+### 503 — All Accounts Cooling Down
+
+Returned before any attempt is made, when resolving targets for a model finds
+every candidate account already in cooldown:
+
+```json
+{"detail": "All accounts for 'openai/gpt-4o' are cooling down; retry after 42s"}
+```
+
+With header: `Retry-After: 42`
+
+The value is computed from the soonest cooldown expiry among the model's
+accounts, so clients can back off precisely instead of guessing.
+
+### Body-text rate-limit detection
+
+Some upstream providers disguise a rate limit as a non-429 status — e.g. an
+HTTP 400 with a body like `{"error": "quota exceeded"}`. Janus scans error
+response bodies (dict, list, string, or other JSON shapes) for markers such as
+`rate limit`, `too many requests`, `quota exceeded`, `capacity`, `overloaded`,
+and `resource exhausted`. A match upgrades the error to a rate limit
+regardless of status code: the account is cooled down with rate-limit backoff
+(exponential, starting at 2s, capped at 300s) and the request falls back to
+the next account — the client never sees the disguised error.
 
 ### 401 — Invalid API Key
 

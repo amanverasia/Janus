@@ -66,12 +66,17 @@ Summary landing page:
 Debug view of captured API requests (**off by default** — enable **Request
 Logging** under Settings, or set `server_request_logging=true`):
 
-- Table of recent requests: time, format, model, provider, status, duration
+- Table of recent requests: time, format, **user**, model, provider, status, duration
+- **User column** — which client API key made the call: the key's name for
+  DB-issued keys, the config label for static YAML keys
+  (`client_key_label`), or `—` for anonymous requests (no key required)
 - Per-request JSON detail (full request/response bodies, truncated at 64 KB)
 - Successful completions (stream + non-stream), exhausted fallbacks (`503`), and
   non-fallback upstream errors (e.g. `400`) are recorded when logging is on
 - Export all logs as JSON; Clear button wipes the table
-- Only the most recent 500 requests are kept (pruned automatically)
+- Retention is **configurable** via `server_request_log_retention` (default
+  `500`, clamped between 50 and 5000) on the Settings page — oldest rows
+  beyond the limit are pruned automatically
 
 If the page is empty, logging is almost always still disabled — check the banner
 and the Settings toggle.
@@ -179,7 +184,13 @@ Each card shows the exact `export` commands for your server URL and auth setting
 ### Settings — `/dashboard/settings`
 
 - **Require API key** — runtime toggle (stored in DB, overrides YAML default)
-- **Request Logging** — capture full request/response bodies for debugging (off by default)
+- **Combo Routing** — `combo_strategy` selector (fallback / round robin /
+  fusion), `combo_sticky_limit`, and the Fusion tuning fields (judge model,
+  min panel size, straggler grace, hard timeout) — see [Combos &
+  Fallback](combos.md#combo-strategies) for what each does. Changes are
+  validated server-side (strategy must be one of the three known values;
+  numeric fields must be finite and within bounds)
+- **Request Logging** — capture full request/response bodies for debugging (off by default), plus the log retention limit
 - **Server info** — host, port, data directory
 - **Export Config** — download current DB state as YAML
 - **Reset to Defaults** — wipe DB tables and re-seed from `config.yaml` (danger zone)
