@@ -21,7 +21,7 @@ from janus.formats.gemini import GeminiAdapter
 from janus.formats.ollama import OllamaAdapter
 from janus.formats.openai import OpenAIAdapter
 from janus.formats.openai_responses import OpenAIResponsesAdapter
-from janus.pricing.calculator import compute_cost
+from janus.pricing.calculator import attempt_cost
 from janus.providers.base import (
     Provider,
     RawResult,
@@ -639,7 +639,7 @@ async def _handle(
                             stream_ok = True
                         finally:
                             usage = tracker.get_usage()
-                            cost = compute_cost(usage, target.model, pricing_registry)
+                            cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
                             )
@@ -695,7 +695,7 @@ async def _handle(
                     status=200,
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
-                    cost=compute_cost(pt_usage, target.model, pricing_registry),
+                    cost=attempt_cost(pt_usage, target, pricing_registry),
                 )
                 handler.record_quota_tokens(target, pt_usage.input_tokens + pt_usage.output_tokens)
                 if log_requests:
@@ -834,7 +834,7 @@ async def _handle(
                             stream_ok = True
                         finally:
                             usage = tracker.get_usage()
-                            cost = compute_cost(usage, target.model, pricing_registry)
+                            cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
                             )
@@ -892,7 +892,7 @@ async def _handle(
                     status=200,
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
-                    cost=compute_cost(passthrough_usage, target.model, pricing_registry),
+                    cost=attempt_cost(passthrough_usage, target, pricing_registry),
                 )
                 handler.record_quota_tokens(
                     target,
@@ -1004,7 +1004,7 @@ async def _handle(
                         stream_ok = True
                     finally:
                         usage = tracker.get_usage()
-                        cost = compute_cost(usage, target.model, pricing_registry)
+                        cost = attempt_cost(usage, target, pricing_registry)
                         handler.record_quota_tokens(
                             target, usage.input_tokens + usage.output_tokens
                         )
@@ -1089,7 +1089,7 @@ async def _handle(
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
 
-            cost = compute_cost(canonical_resp.usage, target.model, pricing_registry)
+            cost = attempt_cost(canonical_resp.usage, target, pricing_registry)
             handler.record_quota_tokens(
                 target,
                 canonical_resp.usage.input_tokens + canonical_resp.usage.output_tokens,

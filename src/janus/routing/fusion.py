@@ -31,7 +31,7 @@ from janus.canonical.models import (
     tool_result_text,
 )
 from janus.formats.base import FormatAdapter
-from janus.pricing.calculator import compute_cost
+from janus.pricing.calculator import attempt_cost
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
 from janus.routing.errors import is_fallback_eligible_refined, refine_error_type
@@ -239,7 +239,7 @@ async def _call_panel_model(
         status=200,
         client_key_id=deps.client_key_id,
         client_key_label=deps.client_key_label,
-        cost=compute_cost(usage, target.model, deps.pricing_registry),
+        cost=attempt_cost(usage, target, deps.pricing_registry),
     )
     handler.mark_success(target.account_id, target.model)
     logger.info("FUSION panel %s ok (%d chars)", model, len(text))

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Live pricing catalog** — Janus now syncs real model pricing from LiteLLM's community price table (~3k models) and OpenRouter's models API into a local `pricing_catalog` table: on startup when stale, on a 24h schedule (`PRICING_SYNC_INTERVAL_HOURS`, `PRICING_SYNC_ENABLED`), and on demand via the Pricing tab's "Sync now" button or `janus pricing sync`. Fail-open: a failed fetch keeps the last-synced catalog. Pricing resolution is layered: user override > synced catalog > builtin, with prefix matching per layer (an override always wins when it matches)
+- **Pricing tab upgrades** — sync status line (model count + last-synced age, amber when stale), per-row source badges (override / catalog / builtin), searchable collapsed catalog section, and an "Unpriced models seen recently" table with one-click override prefill
+- **`janus pricing backfill [--days N] [--dry-run]`** — retroactively recompute `usage.cost` for $0-cost rows (including cache-only rows) using current pricing; prints how much today's measured spend increased (budgets enforce against it)
+
+### Fixed
+- **Subscription/OAuth providers no longer accrue phantom cost** — Copilot/Kiro/Cursor/Codex/Claude-sub/Antigravity/MiMo/OpenCode usage is recorded with $0 cost even when the synced catalog knows the bare model id; backfill and the unpriced-models table exclude subscription rows. Previously copilot/gpt-4o traffic was billed at API list price into budget enforcement
+
 ## [1.5.0] - 2026-07-10
 
 ### Added

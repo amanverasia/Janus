@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -28,6 +30,8 @@ from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.storage.database import init_db, seed_from_config
 from janus.tokensavers.pipeline import SaverPipeline
+
+logger = logging.getLogger(__name__)
 
 
 def _default_headers_for(config: ProviderConfig) -> dict[str, str] | None:
@@ -83,6 +87,45 @@ def _build_provider(config: ProviderConfig) -> Provider:
     raise ValueError(f"Unknown api_type: {config.api_type}")
 
 
+async def _initial_pricing_sync(app: FastAPI) -> None:
+    """Fetch a fresh pricing catalog and reload the registry, fail-open.
+
+    Runs as a background task off the critical startup path so a slow or
+    failing upstream (LiteLLM/OpenRouter) never delays server readiness.
+    """
+    from janus.dashboard.reload import reload_pricing
+    from janus.pricing.sync import PricingSyncError, fetch_and_sync
+
+    try:
+        await fetch_and_sync(app.state.db_path)
+        await reload_pricing(app)
+    except PricingSyncError as exc:
+        logger.warning("Startup pricing sync failed: %s", exc)
+    except Exception:
+        logger.exception("Startup pricing sync raised an unexpected error")
+
+
+async def _pricing_catalog_needs_sync(app: FastAPI) -> bool:
+    from janus.pricing.scheduler import sync_interval_hours
+    from janus.storage.pricing_catalog import catalog_count
+    from janus.storage.settings import get_setting
+
+    db_path: Path = app.state.db_path
+    if await catalog_count(db_path) == 0:
+        return True
+    last_sync_raw = await get_setting(db_path, "pricing_last_sync_at")
+    if last_sync_raw is None:
+        return True
+    try:
+        last_sync = datetime.fromisoformat(last_sync_raw)
+    except ValueError:
+        return True
+    if last_sync.tzinfo is None:
+        last_sync = last_sync.replace(tzinfo=UTC)
+    age_hours = (datetime.now(UTC) - last_sync).total_seconds() / 3600
+    return age_hours >= sync_interval_hours()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db_path = app.state.db_path
@@ -115,6 +158,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             run_inventory_scheduler(app.state.db_path, app.state.inventory_scheduler_stop)
         )
 
+    app.state.pricing_initial_sync_task = None
+    if await _pricing_catalog_needs_sync(app):
+        app.state.pricing_initial_sync_task = asyncio.create_task(_initial_pricing_sync(app))
+
+    from janus.pricing.scheduler import pricing_scheduler_enabled, run_pricing_scheduler
+
+    app.state.pricing_scheduler_stop = asyncio.Event()
+    app.state.pricing_scheduler_task = None
+    if pricing_scheduler_enabled():
+        app.state.pricing_scheduler_task = asyncio.create_task(
+            run_pricing_scheduler(app, app.state.pricing_scheduler_stop)
+        )
+
     yield
 
     app.state.inventory_scheduler_stop.set()
@@ -125,6 +181,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await scheduler_task
         except asyncio.CancelledError:
             pass
+
+    app.state.pricing_scheduler_stop.set()
+    pricing_scheduler_task = app.state.pricing_scheduler_task
+    if pricing_scheduler_task is not None:
+        pricing_scheduler_task.cancel()
+        try:
+            await pricing_scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+    initial_sync_task = app.state.pricing_initial_sync_task
+    if initial_sync_task is not None:
+        initial_sync_task.cancel()
+        try:
+            await initial_sync_task
+        except asyncio.CancelledError:
+            pass
+
     for provider in app.state.providers.values():
         await provider.close()
 

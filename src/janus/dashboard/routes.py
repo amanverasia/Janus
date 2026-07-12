@@ -4,6 +4,7 @@ import json
 import math
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
@@ -45,7 +46,7 @@ from janus.storage.budgets import (
 from janus.storage.database import init_db
 from janus.storage.key_access import parse_models_input
 from janus.storage.settings import VALID_COMBO_STRATEGIES, get_setting, set_setting
-from janus.storage.usage import get_usage_stats
+from janus.storage.usage import get_unpriced_models, get_usage_stats
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 
@@ -1354,10 +1355,57 @@ async def tools_page(request: Request) -> HTMLResponse:
 # ---- Pricing ----
 
 
-@router.get("/pricing", response_class=HTMLResponse)
-async def pricing_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
+def _humanize_age(last_sync_raw: str | None) -> str | None:
+    """Render a human-friendly "X ago" string for an ISO timestamp, or None."""
+    if not last_sync_raw:
+        return None
+    try:
+        last_sync = datetime.fromisoformat(last_sync_raw)
+    except ValueError:
+        return None
+    if last_sync.tzinfo is None:
+        last_sync = last_sync.replace(tzinfo=UTC)
+    seconds = max(0.0, (datetime.now(UTC) - last_sync).total_seconds())
+    if seconds < 60:
+        return "just now"
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{int(minutes)}m ago"
+    hours = minutes / 60
+    if hours < 24:
+        return f"{int(hours)}h ago"
+    days = hours / 24
+    return f"{int(days)}d ago"
+
+
+def _pricing_sync_status(last_sync_raw: str | None) -> dict[str, Any]:
+    stale = True
+    if last_sync_raw:
+        try:
+            last_sync = datetime.fromisoformat(last_sync_raw)
+            if last_sync.tzinfo is None:
+                last_sync = last_sync.replace(tzinfo=UTC)
+            age_hours = (datetime.now(UTC) - last_sync).total_seconds() / 3600
+            stale = age_hours >= 48
+        except ValueError:
+            stale = True
+    return {
+        "last_sync_at": last_sync_raw,
+        "last_sync_ago": _humanize_age(last_sync_raw),
+        "stale": stale,
+    }
+
+
+async def _unpriced_models_context(request: Request, db_path: Path) -> list[dict[str, Any]]:
+    """Models with recent zero-cost usage that the *current* registry still can't price."""
+    registry = request.app.state.pricing_registry
+    candidates = await get_unpriced_models(db_path)
+    return [row for row in candidates if registry.get(row["model"]) is None]
+
+
+async def _pricing_page_context(request: Request, db_path: Path) -> dict[str, Any]:
     from janus.pricing.builtin import BUILTIN_PRICING
+    from janus.storage.pricing_catalog import list_catalog
     from janus.storage.pricing_db import list_pricing_overrides
 
     overrides = await list_pricing_overrides(db_path)
@@ -1371,11 +1419,43 @@ async def pricing_page(request: Request) -> HTMLResponse:
         }
         for k, p in sorted(BUILTIN_PRICING.items())
     ]
+
+    registry = request.app.state.pricing_registry
+    catalog_rows = await list_catalog(db_path)
+    catalog_list = [
+        {
+            "model": row["model"],
+            "input_per_mtok": row["input_per_mtok"],
+            "output_per_mtok": row["output_per_mtok"],
+            "cache_creation_per_mtok": row["cache_creation_per_mtok"],
+            "cache_read_per_mtok": row["cache_read_per_mtok"],
+            # The catalog row's own source is always "catalog" -- source_of()
+            # instead reports which layer actually *wins* for this model name,
+            # so an override or a shorter builtin prefix match can shadow it.
+            "source": registry.source_of(row["model"]),
+        }
+        for row in catalog_rows
+    ]
+
+    last_sync_raw = await get_setting(db_path, "pricing_last_sync_at")
+    catalog_count_raw = await get_setting(db_path, "pricing_catalog_count")
+
     context: dict[str, Any] = {
         "request": request,
         "builtin": builtin_list,
         "overrides": overrides,
+        "catalog": catalog_list,
+        "sync_status": _pricing_sync_status(last_sync_raw),
+        "catalog_count": int(catalog_count_raw) if catalog_count_raw else 0,
+        "unpriced": await _unpriced_models_context(request, db_path),
     }
+    return context
+
+
+@router.get("/pricing", response_class=HTMLResponse)
+async def pricing_page(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    context = await _pricing_page_context(request, db_path)
     return _templates.TemplateResponse(request, "pricing.html", context)
 
 
@@ -1419,26 +1499,23 @@ async def api_delete_pricing(request: Request, model: str) -> HTMLResponse:
     return await _pricing_partial(request, db_path)
 
 
-async def _pricing_partial(request: Request, db_path: Path) -> HTMLResponse:
-    from janus.pricing.builtin import BUILTIN_PRICING
-    from janus.storage.pricing_db import list_pricing_overrides
+@router.post("/api/pricing/sync")
+async def api_sync_pricing(request: Request) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    from janus.dashboard.reload import reload_pricing
+    from janus.pricing.sync import PricingSyncError, fetch_and_sync
 
-    overrides = await list_pricing_overrides(db_path)
-    builtin_list = [
-        {
-            "model": k,
-            "input_per_mtok": p.input_per_mtok,
-            "output_per_mtok": p.output_per_mtok,
-            "cache_creation_per_mtok": p.cache_creation_per_mtok,
-            "cache_read_per_mtok": p.cache_read_per_mtok,
-        }
-        for k, p in sorted(BUILTIN_PRICING.items())
-    ]
-    context: dict[str, Any] = {
-        "request": request,
-        "builtin": builtin_list,
-        "overrides": overrides,
-    }
+    try:
+        count = await fetch_and_sync(db_path)
+    except PricingSyncError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+    await reload_pricing(request.app)
+    synced_at = await get_setting(db_path, "pricing_last_sync_at")
+    return JSONResponse({"count": count, "synced_at": synced_at})
+
+
+async def _pricing_partial(request: Request, db_path: Path) -> HTMLResponse:
+    context = await _pricing_page_context(request, db_path)
     return _templates.TemplateResponse(request, "pricing_partial.html", context)
 
 

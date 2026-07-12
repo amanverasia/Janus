@@ -6,34 +6,39 @@
 <h1 class="text-2xl font-bold text-white mb-2">Pricing</h1>
 <p class="text-gray-400 text-sm mb-6">Cost per million tokens. Override builtin pricing or add custom model rates.</p>
 
+<!-- Sync status -->
+<div id="pricing-sync-panel" class="bg-gray-800 rounded-xl p-4 border border-gray-700 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+    {% include "pricing_sync_status.html" %}
+</div>
+
 <!-- Add Override -->
 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
     <h2 class="text-lg font-semibold text-white mb-4">Add / Update Override</h2>
-    <form hx-post="/dashboard/api/pricing" hx-target="#pricing-content" hx-swap="outerHTML" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
+    <form id="override-form" hx-post="/dashboard/api/pricing" hx-target="#pricing-content" hx-swap="outerHTML" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
            onsubmit="setTimeout(() => this.reset(), 100)">
         <div>
             <label class="block text-gray-400 text-xs mb-1">Model</label>
-            <input type="text" name="model" required placeholder="gpt-4o"
+            <input type="text" id="ov-model" name="model" required placeholder="gpt-4o"
                    class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
         </div>
         <div>
             <label class="block text-gray-400 text-xs mb-1">Input $/Mtok</label>
-            <input type="number" name="input_per_mtok" step="0.01" min="0" value="2.50"
+            <input type="number" id="ov-input_per_mtok" name="input_per_mtok" step="0.01" min="0" value="2.50"
                    class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
         </div>
         <div>
             <label class="block text-gray-400 text-xs mb-1">Output $/Mtok</label>
-            <input type="number" name="output_per_mtok" step="0.01" min="0" value="10.00"
+            <input type="number" id="ov-output_per_mtok" name="output_per_mtok" step="0.01" min="0" value="10.00"
                    class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
         </div>
         <div>
             <label class="block text-gray-400 text-xs mb-1">Cache Create</label>
-            <input type="number" name="cache_creation_per_mtok" step="0.01" min="0" value="0"
+            <input type="number" id="ov-cache_creation_per_mtok" name="cache_creation_per_mtok" step="0.01" min="0" value="0"
                    class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
         </div>
         <div>
             <label class="block text-gray-400 text-xs mb-1">Cache Read</label>
-            <input type="number" name="cache_read_per_mtok" step="0.01" min="0" value="0"
+            <input type="number" id="ov-cache_read_per_mtok" name="cache_read_per_mtok" step="0.01" min="0" value="0"
                    class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
         </div>
         <div class="md:col-span-5">
@@ -44,6 +49,41 @@
     </form>
 </div>
 
+{% if unpriced %}
+<div class="bg-gray-800 rounded-xl border border-amber-700 overflow-hidden mb-8">
+    <div class="px-6 py-3 border-b border-gray-700">
+        <h2 class="text-sm font-semibold text-amber-300">Unpriced models seen recently</h2>
+        <p class="text-xs text-gray-400 mt-1">Requests in the last 30 days recorded $0 cost with nonzero tokens. Add an override to price them.</p>
+    </div>
+    <table class="w-full">
+        <thead>
+            <tr class="bg-gray-900 border-b border-gray-700">
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Model</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Requests</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Input Tokens</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Output Tokens</th>
+                <th class="px-4 py-3"></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-700">
+            {% for u in unpriced %}
+            <tr class="hover:bg-gray-700">
+                <td class="px-4 py-3 text-sm text-white font-medium">{{ u.model }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ u.requests }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(u.input_tokens) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(u.output_tokens) }}</td>
+                <td class="px-4 py-3 text-right">
+                    <button type="button" class="add-override-btn text-blue-400 hover:text-blue-300 text-sm" data-model="{{ u.model }}">
+                        Add override
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
 {% include "pricing_partial.html" %}
 
 <script>
@@ -53,6 +93,70 @@ function filterPricingTable(query) {
         var model = row.cells[0].textContent.toLowerCase();
         row.style.display = model.indexOf(q) >= 0 ? '' : 'none';
     });
+}
+
+function filterCatalogTable(query) {
+    var q = query.toLowerCase();
+    document.querySelectorAll('#pricing-catalog-table .pricing-row').forEach(function(row) {
+        var model = row.cells[0].textContent.toLowerCase();
+        row.style.display = model.indexOf(q) >= 0 ? '' : 'none';
+    });
+}
+
+function prefillOverride(model) {
+    document.getElementById('ov-model').value = model;
+    document.getElementById('ov-input_per_mtok').value = '2.50';
+    document.getElementById('ov-output_per_mtok').value = '10.00';
+    document.getElementById('ov-cache_creation_per_mtok').value = '0';
+    document.getElementById('ov-cache_read_per_mtok').value = '0';
+    document.getElementById('ov-model').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('ov-model').focus();
+}
+
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.add-override-btn');
+    if (!btn) return;
+    prefillOverride(btn.dataset.model);
+});
+
+function syncPricingNow() {
+    var btn = document.getElementById('pricing-sync-btn');
+    var statusEl = document.getElementById('pricing-sync-result');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50');
+    }
+    if (statusEl) {
+        statusEl.textContent = 'Syncing...';
+        statusEl.className = 'text-xs mt-2 text-blue-400';
+    }
+    fetch('/dashboard/api/pricing/sync', { method: 'POST' })
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+        .then(function(result) {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
+            if (!statusEl) return;
+            if (!result.ok) {
+                statusEl.textContent = 'Sync failed: ' + (result.data.error || 'unknown error');
+                statusEl.className = 'text-xs mt-2 text-red-400';
+                return;
+            }
+            statusEl.textContent = 'Synced ' + result.data.count + ' models just now.';
+            statusEl.className = 'text-xs mt-2 text-green-400';
+            setTimeout(function() { location.reload(); }, 800);
+        })
+        .catch(function(err) {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+            }
+            if (statusEl) {
+                statusEl.textContent = 'Sync failed: ' + err.message;
+                statusEl.className = 'text-xs mt-2 text-red-400';
+            }
+        });
 }
 </script>
 {% endblock %}
