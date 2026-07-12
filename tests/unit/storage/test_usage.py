@@ -417,6 +417,37 @@ async def test_backfill_respects_days_window(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_backfill_updates_cache_only_rows(tmp_path):
+    # A row with no input/output tokens but a large cache_read_tokens count
+    # still carries recoverable cost and must not be skipped by the
+    # candidate WHERE clause.
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await record_usage(
+        db_path,
+        provider_id="p",
+        model="mystery-model",
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=1_000_000,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 1
+    expected = 0.3
+    assert abs(total_added - expected) < 1e-9
+
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT cost FROM usage") as cur:
+            row = await cur.fetchone()
+    assert abs(row["cost"] - expected) < 1e-9
+
+    stats = await get_usage_stats(db_path)
+    assert stats["total_requests"] == 1
+
+
+@pytest.mark.asyncio
 async def test_backfill_totals_across_multiple_rows(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)

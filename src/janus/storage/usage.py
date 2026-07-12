@@ -147,7 +147,8 @@ async def backfill_costs(
     $0 before pricing was known, but did carry token usage.
 
     Only rows matching ``(cost IS NULL OR cost = 0) AND (input_tokens > 0 OR
-    output_tokens > 0)`` are considered. Each candidate row's cost is
+    output_tokens > 0 OR cache_creation_tokens > 0 OR cache_read_tokens > 0)``
+    are considered. Each candidate row's cost is
     recomputed via ``compute_cost`` using its stored token counts against the
     given (already up to date) pricing registry. A row is only written back
     when the recomputed cost is strictly greater than zero -- if the model is
@@ -167,7 +168,8 @@ async def backfill_costs(
         "SELECT id, model, input_tokens, output_tokens, "
         "cache_creation_tokens, cache_read_tokens FROM usage "
         "WHERE (cost IS NULL OR cost = 0) "
-        "AND (input_tokens > 0 OR output_tokens > 0)"
+        "AND (input_tokens > 0 OR output_tokens > 0 "
+        "OR cache_creation_tokens > 0 OR cache_read_tokens > 0)"
     )
     params: tuple[Any, ...] = ()
     if days is not None:
