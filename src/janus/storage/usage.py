@@ -12,6 +12,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _not_subscription_provider_clause(table: str = "usage") -> tuple[str, tuple[Any, ...]]:
+    """SQL fragment excluding rows recorded against subscription/OAuth providers.
+
+    Subscription providers (Copilot, Kiro, Claude OAuth, ...) have no per-token
+    marginal cost, so their $0 rows are intentional -- they must not be
+    backfilled with catalog pricing nor reported as "unpriced".
+
+    ``usage.provider_id`` is ``target.provider_config.id``, which is either the
+    providers-table row id or that id with an ``::uk_N`` inventory-key suffix,
+    so both the exact id and the prefix before ``::`` are matched.
+    """
+    from janus.pricing.calculator import SUBSCRIPTION_API_TYPES
+
+    api_types = sorted(SUBSCRIPTION_API_TYPES)
+    placeholders = ", ".join("?" for _ in api_types)
+    clause = (
+        f"NOT EXISTS (SELECT 1 FROM providers p "
+        f"WHERE p.api_type IN ({placeholders}) "
+        f"AND ({table}.provider_id = p.id OR {table}.provider_id LIKE p.id || '::%'))"
+    )
+    return clause, tuple(api_types)
+
+
 async def record_usage(
     db_path: str | Path,
     *,
@@ -73,21 +96,26 @@ async def get_unpriced_models(db_path: str | Path, days: int = 30) -> list[dict[
     Callers should further filter out models that the *current* pricing
     registry actually resolves (via ``registry.get``), since a model can have
     old $0 usage rows from before a catalog sync even though it's priced now.
+
+    Rows recorded against subscription/OAuth providers are excluded: their $0
+    cost is intentional, not a missing pricing entry.
     """
+    sub_clause, sub_params = _not_subscription_provider_clause()
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT model,
+            f"""SELECT model,
                       COUNT(*) as requests,
                       COALESCE(SUM(input_tokens), 0) as input_tokens,
                       COALESCE(SUM(output_tokens), 0) as output_tokens
                FROM usage
                WHERE timestamp >= datetime('now', ?)
                  AND model IS NOT NULL
+                 AND {sub_clause}
                GROUP BY model
                HAVING COALESCE(SUM(cost), 0.0) = 0.0
                   AND (COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)) > 0
                ORDER BY (input_tokens + output_tokens) DESC""",
-            (f"-{days} days",),
+            (f"-{days} days", *sub_params),
         ) as cur:
             rows = await cur.fetchall()
     return [dict(r) for r in rows]
@@ -159,22 +187,28 @@ async def backfill_costs(
     within the last ``days`` days. ``dry_run`` computes the same totals but
     rolls back instead of committing, so nothing is persisted.
 
+    Rows recorded against subscription/OAuth providers are never candidates:
+    their $0 cost is correct, and pricing them from the catalog would
+    fabricate spend that never happened.
+
     Runs as a single transaction. Returns ``(rows_updated, total_cost_added)``.
     """
     from janus.canonical.models import Usage
     from janus.pricing.calculator import compute_cost
 
+    sub_clause, sub_params = _not_subscription_provider_clause()
     query = (
         "SELECT id, model, input_tokens, output_tokens, "
         "cache_creation_tokens, cache_read_tokens FROM usage "
         "WHERE (cost IS NULL OR cost = 0) "
         "AND (input_tokens > 0 OR output_tokens > 0 "
-        "OR cache_creation_tokens > 0 OR cache_read_tokens > 0)"
+        "OR cache_creation_tokens > 0 OR cache_read_tokens > 0) "
+        f"AND {sub_clause}"
     )
-    params: tuple[Any, ...] = ()
+    params: tuple[Any, ...] = sub_params
     if days is not None:
         query += " AND timestamp >= datetime('now', ?)"
-        params = (f"-{days} days",)
+        params = (*sub_params, f"-{days} days")
 
     async with get_connection(db_path) as db:
         async with db.execute(query, params) as cur:

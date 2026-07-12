@@ -478,3 +478,125 @@ async def test_get_today_total_cost(tmp_path):
     )
     total = await get_today_total_cost(db_path)
     assert abs(total - 4.0) < 1e-9
+
+
+# --- subscription providers: excluded from backfill + unpriced list ---------
+
+
+async def _seed_provider(db_path, provider_id: str, api_type: str) -> None:
+    from janus.storage.providers_db import create_provider
+
+    await create_provider(
+        db_path,
+        {
+            "id": provider_id,
+            "prefix": provider_id,
+            "api_type": api_type,
+            "base_url": "https://example.invalid",
+            "models": [],
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_subscription_provider_rows(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await _seed_provider(db_path, "github_copilot", "github_copilot")
+    await _seed_provider(db_path, "oai", "openai_compat")
+    # Both rows are $0 with tokens, and the registry prices the model.
+    await record_usage(
+        db_path,
+        provider_id="github_copilot",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=0.0,
+    )
+    await record_usage(
+        db_path,
+        provider_id="oai",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 1
+    assert abs(total_added - (3.0 + 7.5)) < 1e-9
+
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT provider_id, cost FROM usage ORDER BY provider_id") as cur:
+            rows = await cur.fetchall()
+    by_provider = {r["provider_id"]: r["cost"] for r in rows}
+    assert by_provider["github_copilot"] == 0.0
+    assert by_provider["oai"] > 0.0
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_subscription_rows_with_upstream_key_suffix(tmp_path):
+    # provider_id in usage may carry an "::uk_N" inventory-key suffix; the
+    # prefix part (before "::") must still match the subscription provider row.
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await _seed_provider(db_path, "github_copilot", "github_copilot")
+    await record_usage(
+        db_path,
+        provider_id="github_copilot::uk_7",
+        model="mystery-model",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+        status=200,
+        cost=0.0,
+    )
+    rows_updated, total_added = await backfill_costs(db_path, _registry())
+    assert rows_updated == 0
+    assert total_added == 0.0
+
+
+@pytest.mark.asyncio
+async def test_get_unpriced_models_excludes_subscription_provider_rows(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await _seed_provider(db_path, "github_copilot", "github_copilot")
+    await _seed_provider(db_path, "oai", "openai_compat")
+    await record_usage(
+        db_path,
+        provider_id="github_copilot",
+        model="gpt-4o",
+        input_tokens=100,
+        output_tokens=50,
+        status=200,
+        cost=0.0,
+    )
+    await record_usage(
+        db_path,
+        provider_id="oai",
+        model="truly-unpriced",
+        input_tokens=100,
+        output_tokens=50,
+        status=200,
+        cost=0.0,
+    )
+    rows = await get_unpriced_models(db_path)
+    assert [r["model"] for r in rows] == ["truly-unpriced"]
+
+
+@pytest.mark.asyncio
+async def test_get_unpriced_models_excludes_subscription_rows_with_key_suffix(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await _seed_provider(db_path, "mimo_free", "mimo_free")
+    await record_usage(
+        db_path,
+        provider_id="mimo_free::uk_3",
+        model="kimi-k2.5",
+        input_tokens=100,
+        output_tokens=50,
+        status=200,
+        cost=0.0,
+    )
+    rows = await get_unpriced_models(db_path)
+    assert rows == []

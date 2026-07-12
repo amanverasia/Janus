@@ -202,3 +202,36 @@ async def test_providers_page_lists_copilot_catalog(app):
         assert "GitHub Copilot" in r.text
         assert "github_copilot" in r.text
         assert "startCopilotAuth" in r.text
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_copilot_usage_recorded_at_zero_cost(app):
+    # BUILTIN pricing prices bare "gpt-4o" ($2.5/$10 per Mtok), and the model
+    # id is recorded prefix-stripped -- but Copilot is subscription-billed, so
+    # its marginal cost must be $0 even though the registry can price the id.
+    import aiosqlite
+
+    registry = app.state.pricing_registry
+    assert registry.get("gpt-4o") is not None, "test precondition: registry prices bare gpt-4o"
+
+    _mock_copilot_upstream()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "model": "copilot/gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+        }
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 200
+
+    async with aiosqlite.connect(str(app.state.db_path)) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT cost, input_tokens, output_tokens FROM usage WHERE model = 'gpt-4o'"
+        ) as cur:
+            rows = await cur.fetchall()
+    assert len(rows) == 1
+    assert rows[0]["cost"] == 0.0
+    # Tokens are still real and recorded.
+    assert rows[0]["input_tokens"] == 5
+    assert rows[0]["output_tokens"] == 3
