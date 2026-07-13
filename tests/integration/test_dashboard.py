@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -48,6 +51,50 @@ async def test_dashboard_combos(app):
         r = await client.get("/dashboard/combos")
         assert r.status_code == 200
         assert "stk" in r.text
+
+
+@pytest.mark.asyncio
+async def test_usage_page_has_live_section(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/usage")
+        assert r.status_code == 200
+        assert "Live requests" in r.text
+        assert "/dashboard/api/usage/live" in r.text
+
+
+@pytest.mark.asyncio
+async def test_usage_live_sse_snapshot_and_event(app):
+    # The SSE generator never ends on its own, and httpx's ASGITransport waits
+    # for the app coroutine to finish — so drive the endpoint's stream directly.
+    from janus.dashboard.live import get_bus, reset_bus
+    from janus.dashboard.routes import usage_live_stream
+
+    reset_bus()
+    try:
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        response = await usage_live_stream(_FakeRequest())  # type: ignore[arg-type]
+        assert response.media_type == "text/event-stream"
+        stream = response.body_iterator
+
+        first = await asyncio.wait_for(anext(stream), timeout=5)
+        snap = json.loads(first.decode().removeprefix("data: "))
+        assert snap["type"] == "snapshot"
+        assert snap["inflight"] == 0
+
+        get_bus().record_completed(model="t/m1", client_key_label="alice", status=200, cost=0.01)
+        chunk = await asyncio.wait_for(anext(stream), timeout=5)
+        event = json.loads(chunk.decode().removeprefix("data: "))
+        assert event["type"] == "request"
+        assert event["model"] == "t/m1"
+        assert event["user"] == "alice"
+
+        await stream.aclose()
+    finally:
+        reset_bus()
 
 
 @pytest.mark.asyncio

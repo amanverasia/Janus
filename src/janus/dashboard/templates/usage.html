@@ -3,7 +3,32 @@
 {% block usage_active %}bg-gray-700 text-white{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-bold text-white mb-6">Usage</h1>
+<div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold text-white">Usage</h1>
+    <span id="live-status" class="flex items-center gap-2 text-xs text-gray-500">
+        <span id="live-dot" class="inline-block w-2 h-2 rounded-full bg-gray-600"></span>
+        <span id="live-label">connecting…</span>
+    </span>
+</div>
+
+<!-- Live Activity -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+    <div class="lg:col-span-2 bg-gray-800 rounded-xl border border-gray-700 p-5">
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-semibold text-white">Live requests <span class="text-gray-500 font-normal">(per second, last 2 min)</span></h2>
+            <span class="text-xs text-gray-400">In flight: <span id="inflight-count" class="text-white font-bold">0</span></span>
+        </div>
+        <canvas id="liveChart" height="70"></canvas>
+    </div>
+    <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col">
+        <div class="px-4 py-3 border-b border-gray-700">
+            <h2 class="text-sm font-semibold text-white">Live feed</h2>
+        </div>
+        <ul id="live-feed" class="divide-y divide-gray-700/60 overflow-y-auto text-xs" style="max-height: 220px;">
+            <li id="live-feed-empty" class="px-4 py-6 text-center text-gray-500">Waiting for requests…</li>
+        </ul>
+    </div>
+</div>
 
 <!-- Stats Cards -->
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -55,4 +80,134 @@
 </div>
 
 <p class="text-gray-500 text-xs mt-4">Cost analytics available on the <a href="/dashboard/analytics" class="text-blue-400 hover:underline">Analytics page</a>.</p>
+
+<script>
+(function () {
+    var WINDOW_S = 120;
+    var buckets = new Array(WINDOW_S).fill(0);   // requests per 1s bucket
+    var windowStart = Math.floor(Date.now() / 1000) - WINDOW_S + 1;
+    var FEED_MAX = 20;
+
+    var ctx = document.getElementById('liveChart').getContext('2d');
+    var chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: new Array(WINDOW_S).fill(''),
+            datasets: [{
+                data: buckets,
+                backgroundColor: 'rgba(59, 130, 246, 0.65)',
+                borderWidth: 0,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0,
+            }]
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: {
+                x: { display: false },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: '#6b7280', precision: 0, maxTicksLimit: 4 },
+                    grid: { color: 'rgba(75, 85, 99, 0.2)' }
+                }
+            }
+        }
+    });
+
+    function bucketFor(tsSec) {
+        var idx = Math.floor(tsSec) - windowStart;
+        return (idx >= 0 && idx < WINDOW_S) ? idx : -1;
+    }
+
+    // Slide the window forward once per second.
+    setInterval(function () {
+        var nowStart = Math.floor(Date.now() / 1000) - WINDOW_S + 1;
+        var shift = nowStart - windowStart;
+        if (shift <= 0) return;
+        if (shift >= WINDOW_S) {
+            buckets.fill(0);
+        } else {
+            buckets.splice(0, shift);
+            for (var i = 0; i < shift; i++) buckets.push(0);
+        }
+        windowStart = nowStart;
+        chart.data.datasets[0].data = buckets;
+        chart.update('none');
+    }, 1000);
+
+    function setStatus(ok) {
+        var dot = document.getElementById('live-dot');
+        var label = document.getElementById('live-label');
+        dot.className = 'inline-block w-2 h-2 rounded-full ' +
+            (ok ? 'bg-green-500 animate-pulse' : 'bg-red-500');
+        label.textContent = ok ? 'live' : 'reconnecting…';
+    }
+
+    function addFeedRow(ev) {
+        var empty = document.getElementById('live-feed-empty');
+        if (empty) empty.remove();
+        var feed = document.getElementById('live-feed');
+        var li = document.createElement('li');
+        li.className = 'px-4 py-2 flex items-center justify-between gap-2';
+        var ok = ev.status && ev.status < 400;
+        var left = document.createElement('div');
+        left.className = 'min-w-0';
+        var modelEl = document.createElement('p');
+        modelEl.className = 'text-white font-mono truncate';
+        modelEl.textContent = ev.model || '—';
+        var metaEl = document.createElement('p');
+        metaEl.className = 'text-gray-500 truncate';
+        metaEl.textContent = (ev.user || 'anonymous') +
+            ' · ' + (ev.input_tokens || 0) + '→' + (ev.output_tokens || 0) + ' tok' +
+            (ev.cost ? ' · $' + ev.cost.toFixed(4) : '');
+        left.appendChild(modelEl);
+        left.appendChild(metaEl);
+        var badge = document.createElement('span');
+        badge.className = 'shrink-0 text-xs ' + (ok ? 'text-green-400' : 'text-red-400');
+        badge.textContent = ev.status || '?';
+        li.appendChild(left);
+        li.appendChild(badge);
+        feed.prepend(li);
+        while (feed.children.length > FEED_MAX) feed.removeChild(feed.lastChild);
+    }
+
+    function handleEvent(ev) {
+        if (ev.type === 'snapshot') {
+            document.getElementById('inflight-count').textContent = ev.inflight;
+            (ev.recent || []).slice(-FEED_MAX).forEach(function (r) {
+                var idx = bucketFor(r.ts);
+                if (idx !== -1) buckets[idx] += 1;
+                addFeedRow(r);
+            });
+            chart.update('none');
+        } else if (ev.type === 'inflight') {
+            document.getElementById('inflight-count').textContent = ev.count;
+        } else if (ev.type === 'request') {
+            var idx = bucketFor(ev.ts);
+            if (idx !== -1) {
+                buckets[idx] += 1;
+                chart.update('none');
+            }
+            addFeedRow(ev);
+        }
+    }
+
+    var source = null;
+    function connect() {
+        source = new EventSource('/dashboard/api/usage/live');
+        source.onopen = function () { setStatus(true); };
+        source.onmessage = function (e) {
+            try { handleEvent(JSON.parse(e.data)); } catch (err) { /* ignore */ }
+        };
+        source.onerror = function () {
+            setStatus(false);
+            // EventSource auto-reconnects; nothing else to do.
+        };
+    }
+    connect();
+    window.addEventListener('beforeunload', function () { if (source) source.close(); });
+})();
+</script>
 {% endblock %}

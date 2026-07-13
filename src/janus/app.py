@@ -219,6 +219,11 @@ def create_app(
     app.state.saver_pipeline = SaverPipeline([])
     app.state.pricing_registry = PricingRegistry(config.pricing)
     app.state.providers = {}
+
+    from janus.dashboard.live import LiveTrackingMiddleware, get_bus
+
+    app.add_middleware(LiveTrackingMiddleware, bus=get_bus())
+
     app.include_router(router, prefix="/v1")
     app.include_router(gemini_router)
     app.include_router(ollama_router)
