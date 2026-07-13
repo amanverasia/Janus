@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -12,7 +13,13 @@ from urllib.parse import quote
 import httpx
 import yaml
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.templating import Jinja2Templates
 
 from janus.api.auth import authenticate_api_key
@@ -376,6 +383,42 @@ async def usage_page(request: Request) -> HTMLResponse:
         "stats": stats,
     }
     return _templates.TemplateResponse(request, "usage.html", context)
+
+
+@router.get("/api/usage/live")
+async def usage_live_stream(request: Request) -> StreamingResponse:
+    """SSE feed for the Usage tab's live activity view.
+
+    Emits a `snapshot` event on connect (in-flight count + recent-request
+    ring), then pushes `request` events as usage is recorded and `inflight`
+    gauge updates as gateway requests start/finish. A comment ping every 25s
+    keeps proxies from closing the idle stream.
+    """
+    from janus.dashboard.live import get_bus
+
+    bus = get_bus()
+
+    async def _events() -> AsyncIterator[bytes]:
+        q = bus.subscribe()
+        try:
+            yield f"data: {json.dumps(bus.snapshot())}\n\n".encode()
+            while True:
+                if await request.is_disconnected():
+                    return
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=25.0)
+                except TimeoutError:
+                    yield b": ping\n\n"
+                    continue
+                yield f"data: {json.dumps(event)}\n\n".encode()
+        finally:
+            bus.unsubscribe(q)
+
+    return StreamingResponse(
+        _events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _clamp_page_size(limit: int) -> int:

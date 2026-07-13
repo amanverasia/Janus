@@ -75,6 +75,22 @@ async def record_usage(
             await db.commit()
     except Exception as e:
         logger.warning("Failed to record usage: %s", e)
+    try:
+        from janus.dashboard.live import get_bus
+
+        get_bus().record_completed(
+            provider_id=provider_id,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            status=status,
+            client_key_id=client_key_id,
+            client_key_label=client_key_label,
+            cost=cost,
+        )
+    except Exception:
+        # Live view is best-effort; never let it affect request handling.
+        pass
 
 
 async def get_request_counts_today(db_path: str | Path) -> dict[str, int]:
