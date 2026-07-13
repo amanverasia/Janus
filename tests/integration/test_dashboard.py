@@ -51,6 +51,40 @@ async def test_dashboard_combos(app):
 
 
 @pytest.mark.asyncio
+async def test_combo_modal_lists_wired_providers(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/combos")
+        assert r.status_code == 200
+        assert "Connected providers" in r.text
+        assert 'data-prefix="t"' in r.text
+        assert 'data-model="t/m1"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_combo_modal_hides_allowlist_blocked_models(tmp_path):
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="t",
+                prefix="t",
+                api_type="openai_compat",
+                base_url="https://test.local/v1",
+                api_key="k",
+                models=["m1", "m2"],
+                allowed_models=["m1"],
+            )
+        ],
+    )
+    app = create_app(config=cfg)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/combos")
+        assert r.status_code == 200
+        assert 'data-model="t/m1"' in r.text
+        assert 'data-model="t/m2"' not in r.text
+
+
+@pytest.mark.asyncio
 async def test_dashboard_keys_page(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/dashboard/keys")
