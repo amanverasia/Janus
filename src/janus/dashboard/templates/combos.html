@@ -17,7 +17,7 @@
 
 <!-- Add/Edit Combo Modal -->
 <div id="combo-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div class="bg-gray-800 rounded-xl border border-gray-700 p-6 max-w-md w-full mx-4">
+    <div class="bg-gray-800 rounded-xl border border-gray-700 p-6 max-w-2xl w-full mx-4">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-bold text-white" id="combo-modal-title">Add Combo</h2>
             <button onclick="document.getElementById('combo-modal').classList.add('hidden')"
@@ -36,6 +36,38 @@
                 <input type="text" name="models" id="c-models" required
                        class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
             </div>
+            {% if wired_providers %}
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <label class="block text-gray-400 text-sm">Connected providers — click a model to add it</label>
+                    <input type="text" id="wired-filter" placeholder="Filter models…"
+                           oninput="filterWiredModels(this.value)"
+                           class="bg-gray-900 text-white rounded px-2 py-1 border border-gray-700 text-xs w-40">
+                </div>
+                <div id="wired-providers" class="max-h-56 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 divide-y divide-gray-800">
+                    {% for p in wired_providers %}
+                    <details class="wired-provider" data-prefix="{{ p.prefix }}">
+                        <summary class="cursor-pointer px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 flex items-center justify-between">
+                            <span class="font-medium text-white">{{ p.prefix }}</span>
+                            <span class="text-xs text-gray-500">{{ p.models | length }} model{{ "s" if p.models | length != 1 }}{% if p.accounts > 1 %} &middot; {{ p.accounts }} accounts{% endif %}</span>
+                        </summary>
+                        <div class="px-3 pb-2 flex flex-wrap gap-1">
+                            {% for m in p.models %}
+                            <button type="button"
+                                    class="wired-model bg-gray-800 hover:bg-blue-700 text-gray-300 hover:text-white rounded px-2 py-0.5 text-xs transition-colors"
+                                    data-model="{{ p.prefix }}/{{ m }}">{{ m }}</button>
+                            {% endfor %}
+                            {% if not p.models %}
+                            <span class="text-xs text-gray-600 italic">no models listed — type the id manually</span>
+                            {% endif %}
+                        </div>
+                    </details>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <p class="text-xs text-gray-500">No providers with credentials yet — add one on the Providers page first.</p>
+            {% endif %}
             <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
                 Create Combo
             </button>
@@ -94,5 +126,33 @@ document.addEventListener('keydown', function(e) {
 document.getElementById('combo-modal').addEventListener('click', function(e) {
     if (e.target === this) closeComboModal();
 });
+
+// Click a wired-provider model chip to append it to the models input.
+document.addEventListener('click', function(e) {
+    var chip = e.target.closest('.wired-model');
+    if (!chip) return;
+    var input = document.getElementById('c-models');
+    var current = input.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    if (current.indexOf(chip.dataset.model) === -1) {
+        current.push(chip.dataset.model);
+    }
+    input.value = current.join(', ');
+});
+
+function filterWiredModels(q) {
+    q = q.trim().toLowerCase();
+    document.querySelectorAll('#wired-providers .wired-provider').forEach(function(det) {
+        var anyVisible = false;
+        det.querySelectorAll('.wired-model').forEach(function(chip) {
+            var match = !q || chip.dataset.model.toLowerCase().indexOf(q) !== -1;
+            chip.classList.toggle('hidden', !match);
+            if (match) anyVisible = true;
+        });
+        var prefixMatch = !q || det.dataset.prefix.toLowerCase().indexOf(q) !== -1;
+        det.classList.toggle('hidden', !(anyVisible || prefixMatch));
+        if (q && anyVisible) det.setAttribute('open', '');
+        if (!q) det.removeAttribute('open');
+    });
+}
 </script>
 {% endblock %}

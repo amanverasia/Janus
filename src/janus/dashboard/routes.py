@@ -311,8 +311,35 @@ async def combos_page(request: Request) -> HTMLResponse:
     context: dict[str, Any] = {
         "request": request,
         "combos": combos,
+        "wired_providers": _wired_providers(request),
     }
     return _templates.TemplateResponse(request, "combos.html", context)
+
+
+def _wired_providers(request: Request) -> list[dict[str, Any]]:
+    """Prefixes with credentialed provider configs, and the models they expose.
+
+    The registry only holds providers built from stored credentials, so this
+    is exactly the set of routable `prefix/model` targets. Models blocked by a
+    provider's allowlist are dropped; a prefix with several accounts shows the
+    union of their permitted models.
+    """
+    from janus.providers.registry import ProviderRegistry, model_allowed
+
+    registry: ProviderRegistry = request.app.state.registry
+    wired: list[dict[str, Any]] = []
+    for prefix in sorted(registry.providers):
+        models: list[str] = []
+        seen: set[str] = set()
+        account_count = len(registry.providers[prefix])
+        for config in registry.providers[prefix]:
+            for model in config.models:
+                if model in seen or not model_allowed(model, config.allowed_models):
+                    continue
+                seen.add(model)
+                models.append(model)
+        wired.append({"prefix": prefix, "models": models, "accounts": account_count})
+    return wired
 
 
 @router.get("/routing", response_class=HTMLResponse)
