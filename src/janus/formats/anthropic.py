@@ -299,7 +299,18 @@ class AnthropicAdapter:
 
         messages: list[Message] = []
         for msg in raw.get("messages") or []:
+            if not isinstance(msg, dict):
+                continue
             role_str = msg.get("role", "")
+            # Claude Code / beta clients sometimes put system turns in `messages`.
+            # Hoist them — never map to assistant (that becomes fake prefill and
+            # OpenRouter Anthropic upstreams reject with 400).
+            if role_str == "system":
+                parts = self._parse_content_parts(msg.get("content"))
+                for part in parts:
+                    if isinstance(part, TextPart) and part.text.strip():
+                        system.append(SystemBlock(type="text", text=part.text))
+                continue
             role = Role.USER if role_str == "user" else Role.ASSISTANT
             parts = self._parse_content_parts(msg.get("content"))
             messages.append(Message(role=role, content=parts))
@@ -443,6 +454,8 @@ class AnthropicAdapter:
             payload["thinking"] = req.thinking
         if req.tool_choice is not None:
             payload["tool_choice"] = self._build_tool_choice(req.tool_choice)
+        if req.stream:
+            payload["stream"] = True
         return payload
 
     @staticmethod

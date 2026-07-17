@@ -48,6 +48,26 @@ BODY_RATE_LIMIT_MARKERS: tuple[str, ...] = (
     "resource exhausted",
 )
 
+# OpenRouter (and similar gateways) return 400/404 when no upstream matches the
+# account's privacy/data-collection settings, or when assistant-prefill is
+# rejected. These should rotate to the next inventory key, not fail hard.
+BODY_PROVIDER_MISS_MARKERS: tuple[str, ...] = (
+    "no endpoints found",
+    "no endpoints",
+    "no providers available",
+    "no provider",
+    "data collection",
+    "data_collection",
+    "privacy",
+    "provider routing",
+    "not available for your",
+    "assistant prefill",
+    "prefill",
+    "last message must be a user",
+    "must end with a user message",
+    "messages must alternate",
+)
+
 
 def _error_body_text(body: Any | None) -> str:
     if not body:
@@ -70,7 +90,15 @@ def _error_body_text(body: Any | None) -> str:
         return text.lower().replace("_", " ")[:2000]
     error = body.get("error")
     if error is None:
-        return ""
+        # OpenRouter sometimes puts the message at the top level.
+        try:
+            text = json.dumps(body)
+        except Exception:
+            try:
+                text = str(body)
+            except Exception:
+                return ""
+        return text.lower().replace("_", " ")[:2000]
     if isinstance(error, str):
         text = error
     else:
@@ -94,13 +122,23 @@ def refine_error_type(status_code: int, body: Any | None) -> ErrorType:
     text = _error_body_text(body)
     if text and any(marker in text for marker in BODY_RATE_LIMIT_MARKERS):
         return ErrorType.RATE_LIMIT
+    # Treat privacy / no-endpoint / prefill rejections as soft server errors so
+    # FallbackHandler applies a short cooldown and tries the next account.
+    if status_code in (400, 404) and text and any(
+        marker in text for marker in BODY_PROVIDER_MISS_MARKERS
+    ):
+        return ErrorType.SERVER_ERROR
     return error_type
 
 
 def is_fallback_eligible_refined(status_code: int, body: Any | None) -> bool:
     if is_fallback_eligible(status_code):
         return True
-    return refine_error_type(status_code, body) == ErrorType.RATE_LIMIT
+    refined = refine_error_type(status_code, body)
+    return refined in (ErrorType.RATE_LIMIT, ErrorType.SERVER_ERROR) and status_code in (
+        400,
+        404,
+    )
 
 
 BACKOFF_BASE_MS = 2000

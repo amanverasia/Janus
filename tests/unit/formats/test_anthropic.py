@@ -77,6 +77,39 @@ def test_build_upstream_request():
     assert payload["system"][0]["text"] == "Be concise"
     assert payload["messages"][0]["content"][0]["text"] == "hi"
     assert payload["max_tokens"] == 1024
+    assert "stream" not in payload
+
+
+def test_build_upstream_request_includes_stream():
+    req = CanonicalRequest(
+        model="claude-sonnet-4-20250514",
+        messages=[Message(role=Role.USER, content=[TextPart(type="text", text="hi")])],
+        max_tokens=64,
+        stream=True,
+    )
+    payload = AnthropicAdapter().build_upstream_request(req, "claude-sonnet-4-20250514")
+    assert payload["stream"] is True
+
+
+def test_parse_system_role_in_messages_hoisted():
+    raw = {
+        "model": "claude-sonnet-4-20250514",
+        "max_tokens": 64,
+        "messages": [
+            {"role": "system", "content": "Be terse"},
+            {"role": "user", "content": "hi"},
+        ],
+    }
+    req = AnthropicAdapter().parse_request(raw)
+    assert len(req.system) == 1
+    assert req.system[0].text == "Be terse"
+    assert len(req.messages) == 1
+    assert req.messages[0].role == Role.USER
+    # Must not become assistant prefill on rebuild
+    payload = AnthropicAdapter().build_upstream_request(req, "claude-sonnet-4-20250514")
+    assert payload["system"][0]["text"] == "Be terse"
+    assert all(m["role"] != "system" for m in payload["messages"])
+    assert payload["messages"][0]["role"] == "user"
 
 
 def test_parse_anthropic_stream():

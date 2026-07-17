@@ -78,6 +78,18 @@ def test_refine_400_plain_stays_client_error():
     assert not is_fallback_eligible_refined(400, body)
 
 
+def test_refine_404_privacy_becomes_fallback_eligible():
+    body = {"error": {"message": "No endpoints found matching your data collection settings"}}
+    assert refine_error_type(404, body) == ErrorType.SERVER_ERROR
+    assert is_fallback_eligible_refined(404, body)
+
+
+def test_refine_400_assistant_prefill_becomes_fallback_eligible():
+    body = {"error": "Assistant prefill is not supported by this provider"}
+    assert refine_error_type(400, body) == ErrorType.SERVER_ERROR
+    assert is_fallback_eligible_refined(400, body)
+
+
 def test_refine_400_no_body_stays_client_error():
     assert refine_error_type(400, None) == ErrorType.CLIENT_ERROR
     assert not is_fallback_eligible_refined(400, None)

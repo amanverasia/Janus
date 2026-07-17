@@ -42,8 +42,6 @@ from janus.routing.capabilities import (
 from janus.routing.claude_normalize import normalize_claude_passthrough
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
 from janus.routing.errors import (
-    classify_error,
-    is_fallback_eligible,
     is_fallback_eligible_refined,
     refine_error_type,
 )
@@ -315,10 +313,27 @@ def _apply_client_body_quirks(
     client_tool: str | None,
     model: str,
     provider_prefix: str,
+    wire_format: str | None = None,
 ) -> dict[str, Any]:
-    """Claude normalize + tool dedupe on final wire bodies."""
-    if client_format == "anthropic" or client_tool == "claude":
-        body = normalize_claude_passthrough(body, model)
+    """Claude normalize + tool dedupe on final wire bodies.
+
+    Claude normalize must only run on Anthropic-shaped wire payloads. Applying it
+    after OpenAI ``build_upstream_request`` (cross-format translate) corrupts tools
+    / thinking blocks. ``wire_format`` is the format of ``body`` on the wire.
+    """
+    fmt = wire_format or client_format
+    if fmt == "anthropic" and (client_format == "anthropic" or client_tool == "claude"):
+        body = normalize_claude_passthrough(
+            body, model, provider_prefix=provider_prefix
+        )
+        tools = body.get("tools")
+        if isinstance(tools, list):
+            deduped, stripped = dedupe_tools(tools)
+            if stripped:
+                body["tools"] = deduped
+                logger.debug("Deduped tools for %s: %s", provider_prefix, stripped[:5])
+    elif client_format == "anthropic" or client_tool == "claude":
+        # Cross-format: still dedupe tools on the OpenAI-shaped upstream body.
         tools = body.get("tools")
         if isinstance(tools, list):
             deduped, stripped = dedupe_tools(tools)
@@ -540,6 +555,16 @@ async def _handle(
         # Rebuild from post-saver CanonicalRequest so RTK/Caveman still apply.
         transports = target.provider_config.transports or {}
         transport_base = transports.get(client_format, "")
+        # OpenRouter speaks Anthropic Messages at /messages even when the
+        # gateway row is openai_compat (legacy DBs may lack transports.anthropic).
+        if (
+            not transport_base
+            and client_format == "anthropic"
+            and target.prefix == "openrouter"
+        ):
+            transport_base = (target.provider_config.base_url or "").rstrip("/") or (
+                "https://openrouter.ai/api/v1"
+            )
         if transport_base:
             providers_t: dict[str, Provider] = request.app.state.providers
             if target.provider_config.id in providers_t:
@@ -558,6 +583,7 @@ async def _handle(
                     client_tool=client_tool,
                     model=upstream_model,
                     provider_prefix=target.prefix,
+                    wire_format=client_format,
                 )
                 pt_stream = attempt_req.stream
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
@@ -747,6 +773,7 @@ async def _handle(
                     client_tool=client_tool,
                     model=upstream_model,
                     provider_prefix=target.prefix,
+                    wire_format=client_format,
                 )
                 if is_native_passthrough(client_tool, target.prefix):
                     logger.debug(
@@ -941,6 +968,7 @@ async def _handle(
             client_tool=client_tool,
             model=upstream_model,
             provider_prefix=target.prefix,
+            wire_format=target.native_format,
         )
         providers: dict[str, Provider] = request.app.state.providers
         provider = providers[target.provider_config.id]
@@ -950,10 +978,10 @@ async def _handle(
             if attempt_req.stream:
                 result = await provider.call(upstream_payload, stream=True)
                 if result.status_code >= 400:
-                    if is_fallback_eligible(result.status_code):
+                    if is_fallback_eligible_refined(result.status_code, result.json_data):
                         handler.mark_cooldown(
                             target.account_id,
-                            classify_error(result.status_code).value,
+                            refine_error_type(result.status_code, result.json_data).value,
                             model=target.model,
                             retry_after=result.retry_after,
                         )

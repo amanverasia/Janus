@@ -115,6 +115,10 @@ PROVIDERS: dict[str, dict[str, Any]] = {
                 "HTTP-Referer": "https://janus.local",
                 "X-Title": "Janus",
             },
+            # OpenRouter speaks Anthropic Messages natively at /messages.
+            "transports": {
+                "anthropic": "https://openrouter.ai/api/v1",
+            },
         },
         "capabilities": {"vision": True, "pdf": True, "tool_use": True},
     },
