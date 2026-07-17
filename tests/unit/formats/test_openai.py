@@ -148,6 +148,64 @@ def test_parse_upstream_stream_with_usage():
     assert usage_deltas[0].usage.output_tokens == 7
 
 
+def test_parse_openrouter_duplicate_finish_empty_content():
+    """OpenRouter Claude streams often re-send empty content + finish_reason.
+
+    That used to reopen a second Anthropic text block after stop_reason=end_turn,
+    which breaks strict Anthropic clients intermittently.
+    """
+    parser = OpenAIAdapter().stream_parser()
+    lines = [
+        (
+            '{"id":"g1","object":"chat.completion.chunk","choices":[{"index":0,'
+            '"delta":{"content":"1","role":"assistant"},"finish_reason":null}]}'
+        ),
+        (
+            '{"id":"g1","object":"chat.completion.chunk","choices":[{"index":0,'
+            '"delta":{"content":"","role":"assistant"},"finish_reason":"stop"}]}'
+        ),
+        (
+            '{"id":"g1","object":"chat.completion.chunk","choices":[{"index":0,'
+            '"delta":{"content":"","role":"assistant"},"finish_reason":"stop"}]}'
+        ),
+        (
+            '{"id":"g1","object":"chat.completion.chunk","choices":[],'
+            '"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}}'
+        ),
+        "[DONE]",
+    ]
+    all_events: list = []
+    for line in lines:
+        all_events.extend(parser.feed(line))
+    all_events.extend(parser.finish())
+
+    text_starts = [e for e in all_events if isinstance(e, TextBlockStart)]
+    stop_reasons = [
+        e.stop_reason for e in all_events if isinstance(e, MessageDelta) and e.stop_reason
+    ]
+    assert len(text_starts) == 1
+    assert stop_reasons == ["end_turn"]
+    usage_deltas = [e for e in all_events if isinstance(e, MessageDelta) and e.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.output_tokens == 1
+
+    # Round-trip through Anthropic emitter: no content block after message_delta stop.
+    from janus.formats.anthropic import AnthropicAdapter
+
+    emitter = AnthropicAdapter().stream_emitter()
+    out = b"".join(chunk for ev in all_events for chunk in emitter.feed(ev))
+    out += b"".join(emitter.finish())
+    text = out.decode()
+    events = []
+    for line in text.splitlines():
+        if line.startswith("data:"):
+            events.append(json.loads(line[5:].strip()))
+    types = [e.get("type") for e in events]
+    assert types.count("content_block_start") == 1
+    stop_idx = types.index("message_delta")
+    assert "content_block_start" not in types[stop_idx:]
+
+
 def test_emit_stream():
     emitter = OpenAIAdapter().stream_emitter()
     events = [

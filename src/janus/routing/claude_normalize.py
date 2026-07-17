@@ -38,7 +38,12 @@ def _is_valid_claude_signature(sig: Any) -> bool:
     return not sig.startswith("{") and "openai" not in sig.lower()
 
 
-def normalize_claude_passthrough(body: dict[str, Any], model: str = "") -> dict[str, Any]:
+def normalize_claude_passthrough(
+    body: dict[str, Any],
+    model: str = "",
+    *,
+    provider_prefix: str = "",
+) -> dict[str, Any]:
     """Mutate and return body so Anthropic accepts Claude Code wire shapes."""
     if not isinstance(body, dict):
         return body
@@ -103,6 +108,8 @@ def normalize_claude_passthrough(body: dict[str, Any], model: str = "") -> dict[
     thinking_enabled = (
         isinstance(body.get("thinking"), dict) and body["thinking"].get("type") == "enabled"
     )
+    # OpenRouter's Anthropic bridge often rejects forged thinking signatures.
+    allow_placeholder = provider_prefix != "openrouter"
     if isinstance(messages, list):
         for msg in messages:
             if not isinstance(msg, dict) or msg.get("role") != "assistant":
@@ -127,7 +134,7 @@ def normalize_claude_passthrough(body: dict[str, Any], model: str = "") -> dict[
                     has_tool_use = True
                 kept.append(block)
             msg["content"] = kept
-            if thinking_enabled and not has_kept_thinking and has_tool_use:
+            if allow_placeholder and thinking_enabled and not has_kept_thinking and has_tool_use:
                 msg["content"].insert(
                     0,
                     {
@@ -137,4 +144,36 @@ def normalize_claude_passthrough(body: dict[str, Any], model: str = "") -> dict[
                     },
                 )
 
+    if provider_prefix == "openrouter":
+        _fix_openrouter_trailing_assistant(body)
+
     return body
+
+
+def _fix_openrouter_trailing_assistant(body: dict[str, Any]) -> None:
+    """Avoid OpenRouter 400s on assistant-prefill for intolerant upstreams.
+
+    True Anthropic prefill (last message = assistant text) is valid, but many
+    OpenRouter privacy-routed providers reject it. Drop empty trailing
+    assistants; for non-empty text prefills, append a minimal user continue
+    turn so the conversation ends on ``user``. Leave tool_use turns alone.
+    """
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return
+    last = messages[-1]
+    if not isinstance(last, dict) or last.get("role") != "assistant":
+        return
+    content = last.get("content")
+    if isinstance(content, list):
+        if any(isinstance(b, dict) and b.get("type") == "tool_use" for b in content):
+            return
+        text = _content_text(content).strip()
+    elif isinstance(content, str):
+        text = content.strip()
+    else:
+        text = ""
+    if not text:
+        body["messages"] = messages[:-1]
+        return
+    messages.append({"role": "user", "content": "Continue."})

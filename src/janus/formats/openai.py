@@ -74,6 +74,7 @@ class OpenAIStreamParser:
         self._reasoning_index = 0
         self._tool_map: dict[int, int] = {}
         self._next_block = 0
+        self._finished = False
         self._done = False
 
     def feed(self, line: str) -> list[CanonicalEvent]:
@@ -113,6 +114,11 @@ class OpenAIStreamParser:
         if not choices:
             return events
 
+        # OpenRouter (and some gateways) re-send empty content + finish_reason after
+        # the first stop. Ignore content/tool deltas once finished; still accept usage.
+        if self._finished:
+            return events
+
         choice = choices[0]
         delta: dict[str, Any] = choice.get("delta") or {}
         finish_reason = choice.get("finish_reason")
@@ -122,7 +128,9 @@ class OpenAIStreamParser:
             events.append(MessageStart(model=chunk.get("model") or ""))
 
         content = delta.get("content")
-        if content is not None:
+        # Empty-string content must not open a new text block (common on the
+        # finish chunk). Only continue an already-open block, or start on non-empty.
+        if content is not None and (content or self._text_started):
             if not self._text_started:
                 self._text_started = True
                 self._text_index = self._next_block
@@ -174,6 +182,7 @@ class OpenAIStreamParser:
             events.append(
                 MessageDelta(stop_reason=_FINISH_TO_STOP.get(finish_reason, finish_reason))
             )
+            self._finished = True
 
         return events
 
