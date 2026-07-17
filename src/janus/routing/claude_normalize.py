@@ -134,12 +134,7 @@ def normalize_claude_passthrough(
                     has_tool_use = True
                 kept.append(block)
             msg["content"] = kept
-            if (
-                allow_placeholder
-                and thinking_enabled
-                and not has_kept_thinking
-                and has_tool_use
-            ):
+            if allow_placeholder and thinking_enabled and not has_kept_thinking and has_tool_use:
                 msg["content"].insert(
                     0,
                     {

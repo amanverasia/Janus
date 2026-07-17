@@ -124,8 +124,10 @@ def refine_error_type(status_code: int, body: Any | None) -> ErrorType:
         return ErrorType.RATE_LIMIT
     # Treat privacy / no-endpoint / prefill rejections as soft server errors so
     # FallbackHandler applies a short cooldown and tries the next account.
-    if status_code in (400, 404) and text and any(
-        marker in text for marker in BODY_PROVIDER_MISS_MARKERS
+    if (
+        status_code in (400, 404)
+        and text
+        and any(marker in text for marker in BODY_PROVIDER_MISS_MARKERS)
     ):
         return ErrorType.SERVER_ERROR
     return error_type

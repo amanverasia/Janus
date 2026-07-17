@@ -323,9 +323,7 @@ def _apply_client_body_quirks(
     """
     fmt = wire_format or client_format
     if fmt == "anthropic" and (client_format == "anthropic" or client_tool == "claude"):
-        body = normalize_claude_passthrough(
-            body, model, provider_prefix=provider_prefix
-        )
+        body = normalize_claude_passthrough(body, model, provider_prefix=provider_prefix)
         tools = body.get("tools")
         if isinstance(tools, list):
             deduped, stripped = dedupe_tools(tools)
@@ -557,11 +555,7 @@ async def _handle(
         transport_base = transports.get(client_format, "")
         # OpenRouter speaks Anthropic Messages at /messages even when the
         # gateway row is openai_compat (legacy DBs may lack transports.anthropic).
-        if (
-            not transport_base
-            and client_format == "anthropic"
-            and target.prefix == "openrouter"
-        ):
+        if not transport_base and client_format == "anthropic" and target.prefix == "openrouter":
             transport_base = (target.provider_config.base_url or "").rstrip("/") or (
                 "https://openrouter.ai/api/v1"
             )
