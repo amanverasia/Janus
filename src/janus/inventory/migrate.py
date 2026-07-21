@@ -7,6 +7,7 @@ from urllib.request import urlopen
 
 from janus.inventory.url_guard import detect_provider_from_key
 from janus.storage.database import init_db
+from janus.storage.providers_db import count_provider_encryption_state
 from janus.storage.upstream_keys import (
     count_storage_encryption_state,
     count_upstream_keys,
@@ -48,12 +49,14 @@ async def verify_inventory(db_path: Path) -> dict[str, Any]:
         if key["status"] == "active" and key["is_valid"] and key["is_usable"]:
             routable += 1
     encryption = await count_storage_encryption_state(db_path)
+    provider_encryption = await count_provider_encryption_state(db_path)
     return {
         "total": await count_upstream_keys(db_path),
         "routable": routable,
         "by_status": dict(sorted(by_status.items())),
         "by_provider": dict(sorted(by_provider.items(), key=lambda item: (-item[1], item[0]))),
         "encryption": encryption,
+        "provider_encryption": provider_encryption,
     }
 
 
@@ -70,9 +73,16 @@ def format_inventory_verification(summary: dict[str, Any]) -> str:
         lines.append(f"  {provider_id}: {count}")
     encryption = summary["encryption"]
     lines.append(
-        "Encryption at rest: "
+        "Upstream key encryption: "
         f"{encryption['encrypted']} encrypted, {encryption['plaintext']} plaintext "
         f"({encryption['total']} total)"
+    )
+    provider_encryption = summary["provider_encryption"]
+    lines.append(
+        "Provider credential encryption: "
+        f"{provider_encryption['encrypted']} encrypted, "
+        f"{provider_encryption['plaintext']} plaintext "
+        f"({provider_encryption['total']} total)"
     )
     return "\n".join(lines)
 

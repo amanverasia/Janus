@@ -307,8 +307,8 @@ janus inventory generate-encryption-key
 
 ### `janus inventory encrypt-keys`
 
-Encrypt plaintext upstream keys at rest. Requires `INVENTORY_ENCRYPTION_KEY` to
-be set in the environment.
+Encrypt plaintext upstream keys and gateway provider API keys/OAuth credential blobs
+at rest in one pass. Requires `INVENTORY_ENCRYPTION_KEY` to be set in the environment.
 
 ```bash
 export INVENTORY_ENCRYPTION_KEY='gAAAAABl...'

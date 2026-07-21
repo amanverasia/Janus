@@ -40,12 +40,12 @@ def decrypt_key_value(stored: str) -> str:
         return stored
     fernet = _fernet()
     if fernet is None:
-        raise RuntimeError("INVENTORY_ENCRYPTION_KEY is required to decrypt upstream keys")
+        raise RuntimeError("INVENTORY_ENCRYPTION_KEY is required to decrypt stored credentials")
     try:
         return fernet.decrypt(stored[len(ENCRYPTED_PREFIX) :].encode()).decode()
     except InvalidToken as exc:
         raise RuntimeError(
-            "Failed to decrypt upstream key; check INVENTORY_ENCRYPTION_KEY"
+            "Failed to decrypt stored credential; check INVENTORY_ENCRYPTION_KEY"
         ) from exc
 
 

@@ -334,6 +334,8 @@ This is [tracked in TODO](https://github.com/amanverasia/Janus).
 
 ### 🏗️ ARCH-003: Provider API keys stored in plaintext
 
+> **Resolved 2026-07-21:** Provider API keys and OAuth credential blobs now use the same optional Fernet encryption as inventory keys, with transparent reads and unified migration tooling.
+
 **File:** `src/janus/storage/database.py` — `providers` table schema
 
 Gateway provider `api_key` values (including GitHub Copilot OAuth tokens) are stored in plaintext in SQLite. Inventory upstream keys use Fernet encryption via `INVENTORY_ENCRYPTION_KEY`.

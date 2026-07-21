@@ -34,7 +34,11 @@ from janus.storage.inventory_overview import (
     get_top_keys_per_provider,
 )
 from janus.storage.inventory_providers import list_inventory_providers
-from janus.storage.providers_db import list_providers
+from janus.storage.providers_db import (
+    count_provider_encryption_state,
+    list_providers,
+    reencrypt_plaintext_provider_keys,
+)
 from janus.storage.upstream_keys import (
     DEFAULT_PAGE_SIZE,
     SORT_COLUMNS,
@@ -220,9 +224,9 @@ def _status_badge(status: str) -> str:
 
 
 async def _encryption_context(db_path: Path) -> dict[str, Any]:
-    state = await count_storage_encryption_state(db_path)
     return {
-        "encryption": state,
+        "encryption": await count_storage_encryption_state(db_path),
+        "provider_encryption": await count_provider_encryption_state(db_path),
         "encryption_enabled": encryption_enabled(),
     }
 
@@ -727,18 +731,21 @@ async def api_reclassify_clear() -> HTMLResponse:
 async def api_inventory_encrypt_keys(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     error: str | None = None
-    converted = 0
+    upstream_converted = 0
+    provider_converted = 0
     if not encryption_enabled():
         error = "Set INVENTORY_ENCRYPTION_KEY in the environment before encrypting keys."
     else:
         try:
-            converted = await reencrypt_plaintext_upstream_keys(db_path)
+            upstream_converted = await reencrypt_plaintext_upstream_keys(db_path)
+            provider_converted = await reencrypt_plaintext_provider_keys(db_path)
         except RuntimeError as exc:
             error = str(exc)
     context = {
         "request": request,
         "error": error,
-        "converted": converted,
+        "upstream_converted": upstream_converted,
+        "provider_converted": provider_converted,
         **await _encryption_context(db_path),
     }
     return _templates.TemplateResponse(request, "inventory_encryption_partial.html", context)

@@ -1,33 +1,40 @@
+{% set total_plaintext = encryption.plaintext + provider_encryption.plaintext %}
 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
     <div>
         <h2 class="text-lg font-semibold text-white">Encryption at Rest</h2>
         <p class="text-sm text-gray-400 mt-1">
             {% if encryption_enabled %}
             <span class="text-green-400">INVENTORY_ENCRYPTION_KEY is set.</span>
-            New keys are encrypted automatically.
+            New upstream keys and provider credentials are encrypted automatically.
             {% else %}
             <span class="text-yellow-400">INVENTORY_ENCRYPTION_KEY is not set.</span>
-            Keys are stored in plaintext until encryption is enabled.
+            Credentials are stored in plaintext until encryption is enabled.
             {% endif %}
         </p>
         <p class="text-sm text-gray-300 mt-2">
-            {{ encryption.encrypted }} encrypted · {{ encryption.plaintext }} plaintext
+            Upstream keys: {{ encryption.encrypted }} encrypted · {{ encryption.plaintext }} plaintext
             ({{ encryption.total }} total)
         </p>
-        {% if converted %}
-        <p class="text-sm text-green-400 mt-2">Encrypted {{ converted }} key(s) just now.</p>
+        <p class="text-sm text-gray-300 mt-1">
+            Provider credentials: {{ provider_encryption.encrypted }} encrypted · {{ provider_encryption.plaintext }} plaintext
+            ({{ provider_encryption.total }} total)
+        </p>
+        {% if upstream_converted or provider_converted %}
+        <p class="text-sm text-green-400 mt-2">
+            Encrypted {{ upstream_converted }} upstream key(s) and {{ provider_converted }} provider credential(s) just now.
+        </p>
         {% endif %}
         {% if error %}
         <p class="text-sm text-red-400 mt-2">{{ error }}</p>
         {% endif %}
     </div>
-    {% if encryption_enabled and encryption.plaintext > 0 %}
+    {% if encryption_enabled and total_plaintext > 0 %}
     <button hx-post="/dashboard/api/inventory/encrypt-keys"
             hx-target="#encryption-panel"
             hx-swap="innerHTML"
-            hx-confirm="Encrypt {{ encryption.plaintext }} plaintext key(s) at rest?"
+            hx-confirm="Encrypt {{ total_plaintext }} plaintext credential(s) at rest?"
             class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm cursor-pointer whitespace-nowrap">
-        Encrypt {{ encryption.plaintext }} Plaintext Key(s)
+        Encrypt {{ total_plaintext }} Plaintext Credential(s)
     </button>
     {% elif not encryption_enabled %}
     <p class="text-xs text-gray-500 font-mono">janus inventory generate-encryption-key</p>
