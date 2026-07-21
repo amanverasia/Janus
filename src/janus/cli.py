@@ -635,6 +635,7 @@ _ALLOWED_SETTING_KEYS = {
     "server_request_log_retention",
     "server_account_strategy",
     "server_sticky_limit",
+    "server_gateway_rate_limit_rpm",
     "saver_rtk_enabled",
     "saver_caveman_enabled",
     "saver_ponytail_enabled",

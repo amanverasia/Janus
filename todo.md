@@ -45,7 +45,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 
 - [ ] **Smarter inventory account ordering** — today: `priority DESC`, then credits. Consider health status, recent 429s, and RPM headroom in sort/rotation.
 - [ ] **Streaming fallback story** — mid-stream errors cannot retry (by design). Document clearly for users; optionally explore safe reconnect patterns for idempotent short streams.
-- [ ] **Gateway-level rate limiting** — inventory submit is rate-limited; public `/v1/*` API is not. Add optional per-key RPM limits on the Janus API itself.
+- [x] **Gateway-level rate limiting** — optional per-client RPM limiting now covers authenticated `/v1`, `/v1beta`, and `/api` traffic using DB-key, static-key, or anonymous-IP buckets, with standard retry/limit headers and immediate DB-backed settings updates. Counters are process-local and reset on restart. *(Done 2026-07-21.)*
 - [ ] **Richer `/v1/health`** — today returns `{"status":"ok"}`. Add optional checks: DB reachable, provider count, inventory scheduler alive, last recheck age.
 - [x] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types. *(Done 2026-07-05 for the framework + GitHub Copilot — see Phase 8.4. Remaining providers tracked as 8.4b.)*
 

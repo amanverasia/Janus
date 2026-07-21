@@ -1338,6 +1338,7 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     ),
     "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
     "server_sticky_limit": lambda v: _require_int(v, min_value=1),
+    "server_gateway_rate_limit_rpm": lambda v: _require_int(v, min_value=0, max_value=100_000),
 }
 
 
@@ -1346,13 +1347,15 @@ def _require_choice(value: str, choices: frozenset[str]) -> None:
         raise ValueError(f"must be one of: {', '.join(sorted(choices))}")
 
 
-def _require_int(value: str, *, min_value: int) -> None:
+def _require_int(value: str, *, min_value: int, max_value: int | None = None) -> None:
     try:
         parsed = int(value)
     except ValueError as e:
         raise ValueError("must be an integer") from e
     if parsed < min_value:
         raise ValueError(f"must be >= {min_value}")
+    if max_value is not None and parsed > max_value:
+        raise ValueError(f"must be <= {max_value}")
 
 
 def _require_float(
@@ -1607,6 +1610,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         resolve_combo_fusion_straggler_grace_s,
         resolve_combo_sticky_limit,
         resolve_combo_strategy,
+        resolve_gateway_rate_limit_rpm,
         resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
@@ -1631,6 +1635,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         "request_log_retention": resolve_request_log_retention(settings),
         "account_strategy": resolve_account_strategy(settings),
         "sticky_limit": resolve_sticky_limit(settings),
+        "gateway_rate_limit_rpm": resolve_gateway_rate_limit_rpm(settings),
         "combo_strategy": resolve_combo_strategy(settings),
         "combo_sticky_limit": resolve_combo_sticky_limit(settings),
         "combo_fusion_judge": resolve_combo_fusion_judge(settings),

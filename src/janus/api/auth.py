@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 
 from fastapi import Request
@@ -50,6 +51,7 @@ async def authenticate_api_key(request: Request, key: str | None) -> bool:
     if not key:
         return False
     if key in request.app.state.config.api_keys:
+        request.state.client_key_identity = hashlib.sha256(key.encode()).hexdigest()
         request.state.client_key_label = _label_for_config_key(key)
         request.state.can_login = True
         request.state.allowed_models = None
