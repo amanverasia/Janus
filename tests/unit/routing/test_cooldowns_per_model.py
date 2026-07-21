@@ -1,5 +1,10 @@
+import time
+
+import pytest
+
+from janus.config.schema import ProviderConfig
 from janus.providers.registry import ProviderRegistry
-from janus.routing.fallback import FallbackHandler
+from janus.routing.fallback import AllAccountsCooledDown, FallbackHandler
 
 
 def _handler() -> FallbackHandler:
@@ -71,3 +76,41 @@ def test_model_success_clears_only_that_model() -> None:
     h.mark_success("acct-a", "m1")
     assert h.is_available("acct-a", "m1")
     assert not h.is_available("acct-a", "m2")
+
+
+def test_earliest_cooldown_expiry_ignores_stale_entries() -> None:
+    h = _handler()
+    active_expiry = time.time() + 300
+    h._cooldowns[("acct-a", "__all__")] = time.time() - 30
+    h._cooldowns[("acct-a", "m1")] = active_expiry
+
+    assert h.earliest_cooldown_expiry(["acct-a"], "m1") == active_expiry
+
+
+def test_earliest_cooldown_expiry_returns_none_when_all_entries_are_stale() -> None:
+    h = _handler()
+    h._cooldowns[("acct-a", "__all__")] = time.time() - 30
+    h._cooldowns[("acct-a", "m1")] = time.time() - 10
+
+    assert h.earliest_cooldown_expiry(["acct-a"], "m1") is None
+
+
+def test_stale_account_cooldown_does_not_shrink_retry_after() -> None:
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="acct-a",
+            prefix="provider",
+            api_type="openai_compat",
+            base_url="https://example.test/v1",
+            models=["m1"],
+        )
+    )
+    h = FallbackHandler(registry, db_path=None)
+    h._cooldowns[("acct-a", "__all__")] = time.time() - 30
+    h.mark_cooldown("acct-a", "rate_limit", model="m1", duration=300)
+
+    with pytest.raises(AllAccountsCooledDown) as exc_info:
+        h.resolve_attempts("provider/m1")
+
+    assert 290 < exc_info.value.retry_after <= 300

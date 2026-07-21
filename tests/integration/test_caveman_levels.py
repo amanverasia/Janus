@@ -75,6 +75,15 @@ async def _enable_caveman(app, level: str | None = None) -> None:
     await reload_savers(app)
 
 
+async def _enable_ponytail(app, level: str | None = None) -> None:
+    from janus.dashboard.reload import reload_savers
+
+    await set_setting(app.state.db_path, "saver_ponytail_enabled", "true")
+    if level is not None:
+        await set_setting(app.state.db_path, "saver_ponytail_level", level)
+    await reload_savers(app)
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_caveman_lite_injects_prompt(app):
@@ -128,6 +137,17 @@ async def test_caveman_invalid_db_level_falls_back_to_full(app):
     caveman = next(s for s in savers if type(s).__name__ == "CavemanSaver")
     assert caveman.level == "full"
     assert PROMPTS[caveman.level]
+
+
+@pytest.mark.asyncio
+async def test_ponytail_invalid_db_level_falls_back_to_full(app):
+    from janus.tokensavers.ponytail import PROMPTS
+
+    await _enable_ponytail(app, "bogus-level")
+    savers = app.state.saver_pipeline._savers
+    ponytail = next(s for s in savers if type(s).__name__ == "PonytailSaver")
+    assert ponytail.level == "full"
+    assert PROMPTS[ponytail.level]
 
 
 @pytest.mark.asyncio

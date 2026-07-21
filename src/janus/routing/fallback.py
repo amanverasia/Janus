@@ -491,14 +491,15 @@ class FallbackHandler:
         Considers both the account-wide `__all__` lock and a model-specific
         lock (when `model` is given) for each account.
         """
+        now = time.time()
         expiries: list[float] = []
         for account_id in account_ids:
             all_exp = self._cooldowns.get((account_id, "__all__"))
-            if all_exp is not None:
+            if all_exp is not None and all_exp > now:
                 expiries.append(all_exp)
             if model is not None:
                 model_exp = self._cooldowns.get((account_id, model))
-                if model_exp is not None:
+                if model_exp is not None and model_exp > now:
                     expiries.append(model_exp)
         if not expiries:
             return None

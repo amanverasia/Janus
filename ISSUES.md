@@ -6,6 +6,8 @@
 
 This report covers two areas: (A) implementation issues found in the full `main` sweep, and (B) provider integration gaps identified against 9router's provider registry.
 
+> **Status update (2026-07-21):** This is a point-in-time sweep, not the living backlog. A1 is fixed: every request path starts from the post-saver canonical request (`api/routes.py`). A2 is fixed for parseable responses: passthrough paths extract and record upstream usage, while parse failures still fall back to zero. A4 is fixed as a **global** combo strategy control in Dashboard Settings; per-combo strategy remains unsupported. A3 remains open. The provider-gap section predates the current Codex, Kiro, Cursor, and Claude OAuth executors and should be read as historical; current onboarding gaps are tracked in `todo.md`. See `todo.md` for active work.
+
 ---
 
 ## A. Implementation Issues
@@ -163,21 +165,21 @@ But there is no interactive dashboard UI — no dropdown, no input, no dedicated
 
 ## C. Summary
 
-### Issues Requiring Fixes
+### Reconciled Status (2026-07-21)
 
-| ID | Issue | Severity | Effort |
-|---|---|---|---|
-| A1 | Native passthrough skips token savers | 🟡 MEDIUM | S-M |
-| A2 | Native passthrough records zero tokens | 🟡 LOW | S |
-| A3 | `_passthrough_call` accesses private attrs | 🟢 MINOR | S |
-| A4 | Dashboard has no combo strategy UI | 🟢 MINOR | M |
-| B1 | 5 providers need `api_type: anthropic` not `openai_compat` | 🔴 CRITICAL | S (docs/validation) |
-| B2 | DeepSeek needs dual-format transports | 🟡 MEDIUM | XS |
-| B3 | Codex needs provider executor | 🟡 MEDIUM | M |
-| B4 | Kiro/Cursor/Claude-sub need providers | 🟢 LOW (future) | L-XL |
+| ID | Original finding | Current status |
+|---|---|---|
+| A1 | Native passthrough skips token savers | **Fixed** — all attempt paths use the post-saver canonical request. |
+| A2 | Native passthrough records zero tokens | **Fixed for parseable responses** — usage is extracted through the client adapter; parse failures still fall back to zero. |
+| A3 | `_passthrough_call` accesses private attrs | **Open** — transport passthrough still relies on provider `_client` and `_headers`. |
+| A4 | Dashboard has no combo strategy UI | **Fixed globally** — Dashboard Settings exposes fallback, round-robin, and fusion; per-combo strategy is not supported. |
+| B1 | Five providers risk a wrong wire format | **Partially superseded** — MiniMax, Zhipu/GLM, and Kimi now have gateway entries with Anthropic transports; SiliconFlow and NVIDIA remain inventory-only. |
+| B2 | DeepSeek needs dual-format transports | **Fixed** — the catalog includes the Anthropic transport. |
+| B3 | Codex needs a provider executor | **Fixed** — a dedicated Codex executor exists. |
+| B4 | Kiro/Cursor/Claude subscription need providers | **Executors exist** — user-facing onboarding remains incomplete; see `todo.md` 8.4b. |
 
-### Quick Wins (< 1 hour)
+### Remaining action from this sweep
 
-1. **B2** — Add transports dict to DeepSeek gateway entry (1-line change in `catalog.py`)
-2. **B1** — Document the `api_type: anthropic` requirement in `CONTRIBUTING.md` or `AGENTS.md`
-3. **A2** — Parse usage from passthrough response body (or remove native passthrough)
+1. Replace `_passthrough_call`'s private provider-attribute access with an explicit provider transport interface.
+2. Add onboarding flows for the newer OAuth executors as tracked in `todo.md`.
+3. Decide whether SiliconFlow and NVIDIA need first-class gateway entries; if added, configure their actual wire formats explicitly.
