@@ -10,6 +10,7 @@ import aiosqlite
 
 if TYPE_CHECKING:
     from janus.config.schema import JanusConfig
+from janus.inventory.key_encryption import encrypt_key_value
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -383,7 +384,7 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                         pc.prefix,
                         pc.api_type,
                         pc.base_url,
-                        pc.api_key,
+                        encrypt_key_value(pc.api_key) if pc.api_key else pc.api_key,
                         json.dumps(pc.models),
                         json.dumps(pc.transports) if pc.transports else None,
                         json.dumps(pc.allowed_models),

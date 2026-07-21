@@ -67,8 +67,10 @@ fallbacks.
 
 ## Encryption at rest
 
-Set `INVENTORY_ENCRYPTION_KEY` to a Fernet key before adding keys. Keys are then
-stored encrypted in SQLite.
+Set `INVENTORY_ENCRYPTION_KEY` to a Fernet key before adding credentials. Inventory
+upstream keys and gateway provider API keys/OAuth credential blobs are then stored
+encrypted in SQLite. Keep this key with your backups: an encrypted database cannot
+be used without the same Fernet key.
 
 Generate a key:
 
@@ -81,14 +83,16 @@ janus inventory generate-encryption-key
 export INVENTORY_ENCRYPTION_KEY='gAAAAABl...'
 ```
 
-Encrypt existing plaintext keys:
+Encrypt existing plaintext upstream keys and provider credentials in one pass:
 
 ```bash
 janus inventory encrypt-keys
 ```
 
-The dashboard shows encryption status on the inventory overview and offers an
-**Encrypt keys** action when `INVENTORY_ENCRYPTION_KEY` is set.
+The dashboard shows separate encryption counts on the inventory overview and offers
+one **Encrypt credentials** action when `INVENTORY_ENCRYPTION_KEY` is set. Dashboard
+configuration export remains a portable plaintext YAML export; protect exported files
+accordingly. For encrypted backups, copy the SQLite database and retain the Fernet key.
 
 ## Push API
 

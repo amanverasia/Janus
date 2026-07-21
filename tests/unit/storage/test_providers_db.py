@@ -1,13 +1,17 @@
 import json
 
 import pytest
+from cryptography.fernet import Fernet
 
-from janus.storage.database import init_db
+from janus.inventory.key_encryption import ENCRYPTED_PREFIX, encrypt_key_value
+from janus.storage.database import get_connection, init_db
 from janus.storage.providers_db import (
+    count_provider_encryption_state,
     create_provider,
     delete_provider,
     get_provider,
     list_providers,
+    reencrypt_plaintext_provider_keys,
     toggle_provider,
     update_provider,
 )
@@ -214,3 +218,138 @@ async def test_list_providers_only_enabled(db):
     assert enabled[0]["id"] == "a"
     all_p = await list_providers(db, enabled_only=False)
     assert len(all_p) == 2
+
+
+async def _raw_api_key(db, provider_id: str):
+    async with get_connection(db) as conn:
+        async with conn.execute(
+            "SELECT api_key FROM providers WHERE id = ?", (provider_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row["api_key"]
+
+
+async def test_provider_credentials_encrypt_at_rest_and_decrypt_on_read(db, monkeypatch):
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    await create_provider(
+        db,
+        {
+            "id": "secure",
+            "prefix": "secure",
+            "api_type": "openai_compat",
+            "base_url": "https://secure.local",
+            "api_key": "sk-secret",
+            "models": [],
+        },
+    )
+
+    stored = await _raw_api_key(db, "secure")
+    assert stored.startswith(ENCRYPTED_PREFIX)
+    assert "sk-secret" not in stored
+    assert (await get_provider(db, "secure"))["api_key"] == "sk-secret"
+    assert (await list_providers(db))[0]["api_key"] == "sk-secret"
+
+
+async def test_update_provider_encrypts_oauth_blob_opaquely(db, monkeypatch):
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    await create_provider(
+        db,
+        {
+            "id": "oauth",
+            "prefix": "oauth",
+            "api_type": "codex",
+            "base_url": "https://oauth.local",
+            "api_key": None,
+            "models": [],
+        },
+    )
+    credential = json.dumps({"access_token": "access", "refresh_token": "refresh"})
+    await update_provider(
+        db,
+        "oauth",
+        {
+            "prefix": "oauth",
+            "api_type": "codex",
+            "base_url": "https://oauth.local",
+            "api_key": credential,
+            "models": [],
+        },
+    )
+
+    assert (await _raw_api_key(db, "oauth")).startswith(ENCRYPTED_PREFIX)
+    assert (await get_provider(db, "oauth"))["api_key"] == credential
+
+
+async def test_provider_credentials_preserve_none_and_empty(db, monkeypatch):
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    for provider_id, value in (("none", None), ("empty", "")):
+        await create_provider(
+            db,
+            {
+                "id": provider_id,
+                "prefix": provider_id,
+                "api_type": "openai_compat",
+                "base_url": f"https://{provider_id}.local",
+                "api_key": value,
+                "models": [],
+            },
+        )
+        assert await _raw_api_key(db, provider_id) == value
+
+
+async def test_provider_credentials_migrate_plaintext_idempotently(db, monkeypatch):
+    await create_provider(
+        db,
+        {
+            "id": "legacy",
+            "prefix": "legacy",
+            "api_type": "openai_compat",
+            "base_url": "https://legacy.local",
+            "api_key": "sk-legacy",
+            "models": [],
+        },
+    )
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    assert await count_provider_encryption_state(db) == {
+        "encrypted": 0,
+        "plaintext": 1,
+        "total": 1,
+    }
+    assert await reencrypt_plaintext_provider_keys(db) == 1
+    assert await reencrypt_plaintext_provider_keys(db) == 0
+    assert await count_provider_encryption_state(db) == {
+        "encrypted": 1,
+        "plaintext": 0,
+        "total": 1,
+    }
+    assert (await get_provider(db, "legacy"))["api_key"] == "sk-legacy"
+
+
+async def test_encrypted_provider_requires_matching_key(db, monkeypatch):
+    key = Fernet.generate_key().decode()
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", key)
+    await create_provider(
+        db,
+        {
+            "id": "secure",
+            "prefix": "secure",
+            "api_type": "openai_compat",
+            "base_url": "https://secure.local",
+            "api_key": "sk-secret",
+            "models": [],
+        },
+    )
+
+    monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
+    with pytest.raises(RuntimeError, match="required to decrypt stored credentials"):
+        await get_provider(db, "secure")
+
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    with pytest.raises(RuntimeError, match="Failed to decrypt stored credential"):
+        await get_provider(db, "secure")
+
+
+def test_encrypt_key_value_still_accepts_plaintext_legacy_values(monkeypatch):
+    monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY", raising=False)
+    assert encrypt_key_value("sk-plain") == "sk-plain"

@@ -100,6 +100,39 @@ async def test_inventory_overview_encryption_panel(client):
     r = await client.get("/dashboard/inventory")
     assert r.status_code == 200
     assert "Encryption at Rest" in r.text
+    assert "Upstream keys:" in r.text
+    assert "Provider credentials:" in r.text
+
+
+async def test_inventory_encrypt_action_covers_provider_credentials(client, tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from janus.storage.database import get_connection, init_db
+    from janus.storage.providers_db import create_provider
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await create_provider(
+        db_path,
+        {
+            "id": "openai",
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-provider",
+            "models": [],
+        },
+    )
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    r = await client.post("/dashboard/api/inventory/encrypt-keys")
+
+    assert r.status_code == 200
+    assert "Encrypted 0 upstream key(s) and 1 provider credential(s)" in r.text
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT api_key FROM providers WHERE id = 'openai'") as cur:
+            row = await cur.fetchone()
+    assert row["api_key"].startswith("enc:v1:")
 
 
 async def test_inventory_keys_has_reidentify_and_import_links(client):

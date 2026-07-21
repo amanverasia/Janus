@@ -104,7 +104,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 ## Architecture & tech debt
 
 - [ ] **Move `_build_provider()` out of `app.py`** — called from lifespan and reload; belongs in `providers/` factory module for clearer boundaries.
-- [ ] **Encrypt `providers.api_key` at rest** — inventory `upstream_keys` are Fernet-encrypted (`inventory/key_encryption.py`) but gateway provider keys — now including Copilot OAuth tokens — are plaintext in the `providers` table. Reuse the same helpers (encrypt-on-write in `providers_db.py`, decrypt in `expand_gateway_provider`).
+- [x] **Encrypt `providers.api_key` at rest** — gateway API keys and OAuth credential blobs now reuse `INVENTORY_ENCRYPTION_KEY`, encrypt on storage writes/YAML seed, decrypt at the storage boundary, and migrate with the unified `janus inventory encrypt-keys` CLI/dashboard action. *(Done 2026-07-21 — mixed plaintext compatibility, explicit missing/wrong-key failures, and CRUD/seed/migration/UI coverage.)*
 - [x] **Reduce catalog duplication between `dashboard/catalog.py` and `inventory/catalog.py`** — different shapes (`CATALOG` dict vs list with detection endpoints); unify schema. *(Done 2026-07-05 — see "Unify provider catalogs" above.)*
 - [ ] **Inventory module packaging** — added `inventory/__init__.py`; consider same explicit exports pattern for other leaf packages if mypy/import clarity suffers.
 - [ ] **Structured logging** — request ID, attempt index, and fallback chain logged but not consistently structured for log aggregation.

@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from cryptography.fernet import Fernet
 
 from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
 from janus.storage.combos_db import list_combos
@@ -38,6 +39,34 @@ async def test_seed_providers_from_config(db, tmp_path):
     assert len(providers) == 1
     assert providers[0]["id"] == "openai"
     assert json.loads(providers[0]["models"]) == ["gpt-4o"]
+
+
+async def test_seed_provider_key_is_encrypted_at_rest(db, tmp_path, monkeypatch):
+    from janus.inventory.key_encryption import ENCRYPTED_PREFIX
+    from janus.storage.database import get_connection, seed_from_config
+
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    config = JanusConfig(
+        server=ServerSettings(data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="openai",
+                prefix="openai",
+                api_type="openai_compat",
+                base_url="https://api.openai.com/v1",
+                api_key="sk-seeded",
+                models=["gpt-4o"],
+            ),
+        ],
+    )
+
+    await seed_from_config(db, config)
+
+    async with get_connection(db) as conn:
+        async with conn.execute("SELECT api_key FROM providers WHERE id = 'openai'") as cur:
+            row = await cur.fetchone()
+    assert row["api_key"].startswith(ENCRYPTED_PREFIX)
+    assert (await list_providers(db))[0]["api_key"] == "sk-seeded"
 
 
 async def test_seed_combos_from_config(db, tmp_path):

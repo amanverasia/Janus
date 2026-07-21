@@ -542,11 +542,15 @@ def inventory_generate_encryption_key() -> None:
 def inventory_encrypt_keys(
     config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
 ) -> None:
-    """Encrypt plaintext upstream keys at rest (requires INVENTORY_ENCRYPTION_KEY)."""
+    """Encrypt plaintext upstream and provider credentials at rest."""
     import asyncio
 
     from janus.inventory.key_encryption import encryption_enabled
     from janus.storage.database import init_db
+    from janus.storage.providers_db import (
+        count_provider_encryption_state,
+        reencrypt_plaintext_provider_keys,
+    )
     from janus.storage.upstream_keys import (
         count_storage_encryption_state,
         reencrypt_plaintext_upstream_keys,
@@ -558,13 +562,27 @@ def inventory_encrypt_keys(
 
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
-    before = asyncio.run(count_storage_encryption_state(db_path))
-    converted = asyncio.run(reencrypt_plaintext_upstream_keys(db_path))
-    after = asyncio.run(count_storage_encryption_state(db_path))
-    typer.echo(f"Encrypted {converted} key(s).")
+    upstream_before = asyncio.run(count_storage_encryption_state(db_path))
+    provider_before = asyncio.run(count_provider_encryption_state(db_path))
+    upstream_converted = asyncio.run(reencrypt_plaintext_upstream_keys(db_path))
+    provider_converted = asyncio.run(reencrypt_plaintext_provider_keys(db_path))
+    upstream_after = asyncio.run(count_storage_encryption_state(db_path))
+    provider_after = asyncio.run(count_provider_encryption_state(db_path))
     typer.echo(
-        f"Storage state: {after['encrypted']} encrypted, {after['plaintext']} plaintext "
-        f"(was {before['encrypted']} encrypted, {before['plaintext']} plaintext)"
+        f"Encrypted {upstream_converted} upstream key(s) and "
+        f"{provider_converted} provider credential(s)."
+    )
+    typer.echo(
+        f"Upstream keys: {upstream_after['encrypted']} encrypted, "
+        f"{upstream_after['plaintext']} plaintext "
+        f"(was {upstream_before['encrypted']} encrypted, "
+        f"{upstream_before['plaintext']} plaintext)"
+    )
+    typer.echo(
+        f"Provider credentials: {provider_after['encrypted']} encrypted, "
+        f"{provider_after['plaintext']} plaintext "
+        f"(was {provider_before['encrypted']} encrypted, "
+        f"{provider_before['plaintext']} plaintext)"
     )
 
 

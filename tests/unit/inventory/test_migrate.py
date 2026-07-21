@@ -8,6 +8,7 @@ from janus.inventory.migrate import (
     verify_inventory,
 )
 from janus.storage.database import init_db
+from janus.storage.providers_db import create_provider
 from janus.storage.upstream_keys import create_upstream_key, update_upstream_key
 
 
@@ -25,15 +26,28 @@ async def test_verify_inventory_summary(tmp_path) -> None:
         record["id"],
         {"status": "active", "is_valid": 1, "is_usable": 1},
     )
+    await create_provider(
+        db_path,
+        {
+            "id": "openai",
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-provider",
+            "models": [],
+        },
+    )
 
     summary = await verify_inventory(db_path)
     assert summary["total"] == 1
     assert summary["routable"] == 1
     assert summary["by_status"]["active"] == 1
     assert summary["by_provider"]["openai"] == 1
+    assert summary["provider_encryption"] == {"encrypted": 0, "plaintext": 1, "total": 1}
     text = format_inventory_verification(summary)
     assert "Total upstream keys: 1" in text
     assert "openai: 1" in text
+    assert "Provider credential encryption: 0 encrypted, 1 plaintext" in text
 
 
 @pytest.mark.asyncio

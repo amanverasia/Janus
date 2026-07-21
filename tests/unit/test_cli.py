@@ -81,6 +81,53 @@ def _write_config(tmp_path) -> str:
     return config_path
 
 
+def test_inventory_encrypt_keys_covers_provider_credentials(tmp_path, monkeypatch):
+    import asyncio
+
+    from cryptography.fernet import Fernet
+
+    from janus.storage.database import get_connection, init_db
+    from janus.storage.providers_db import create_provider
+    from janus.storage.upstream_keys import create_upstream_key
+
+    config_path = _write_config(tmp_path)
+    db_path = tmp_path / "janus.db"
+    asyncio.run(init_db(db_path))
+    asyncio.run(
+        create_provider(
+            db_path,
+            {
+                "id": "openai",
+                "prefix": "openai",
+                "api_type": "openai_compat",
+                "base_url": "https://api.openai.com/v1",
+                "api_key": "sk-provider",
+                "models": [],
+            },
+        )
+    )
+    asyncio.run(create_upstream_key(db_path, provider_id="openai", key_value="sk-upstream"))
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    result = runner.invoke(app, ["inventory", "encrypt-keys", "--config", config_path])
+
+    assert result.exit_code == 0
+    assert "Encrypted 1 upstream key(s) and 1 provider credential(s)" in result.output
+    assert "Provider credentials: 1 encrypted, 0 plaintext" in result.output
+
+    async def _stored_values():
+        async with get_connection(db_path) as db:
+            async with db.execute("SELECT api_key FROM providers") as cur:
+                provider = await cur.fetchone()
+            async with db.execute("SELECT key_value FROM upstream_keys") as cur:
+                upstream = await cur.fetchone()
+        return provider["api_key"], upstream["key_value"]
+
+    provider_value, upstream_value = asyncio.run(_stored_values())
+    assert provider_value.startswith("enc:v1:")
+    assert upstream_value.startswith("enc:v1:")
+
+
 def test_pricing_sync_success(tmp_path, monkeypatch):
     config_path = _write_config(tmp_path)
 
