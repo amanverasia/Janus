@@ -65,7 +65,7 @@ from janus.streaming.translator import translate_stream
 from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
 
-from .deps import require_api_key
+from .deps import require_gateway_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -1177,7 +1177,7 @@ async def _handle(
     raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
 
 
-@router.get("/models", dependencies=[Depends(require_api_key)])
+@router.get("/models", dependencies=[Depends(require_gateway_rate_limit)])
 async def list_models(request: Request) -> dict[str, Any]:
     registry: ProviderRegistry = request.app.state.registry
     allowed = key_allowed_models(request)
@@ -1221,19 +1221,19 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.post("/chat/completions", dependencies=[Depends(require_api_key)])
+@router.post("/chat/completions", dependencies=[Depends(require_gateway_rate_limit)])
 async def chat_completions(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("openai", body, request)
 
 
-@router.post("/responses", dependencies=[Depends(require_api_key)])
+@router.post("/responses", dependencies=[Depends(require_gateway_rate_limit)])
 async def responses(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("openai_responses", body, request)
 
 
-@router.post("/messages", dependencies=[Depends(require_api_key)])
+@router.post("/messages", dependencies=[Depends(require_gateway_rate_limit)])
 async def messages(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("anthropic", body, request)
@@ -1242,7 +1242,9 @@ async def messages(request: Request) -> Response:
 gemini_router = APIRouter()
 
 
-@gemini_router.post("/v1beta/models/{model_action:path}", dependencies=[Depends(require_api_key)])
+@gemini_router.post(
+    "/v1beta/models/{model_action:path}", dependencies=[Depends(require_gateway_rate_limit)]
+)
 async def gemini_generate(model_action: str, request: Request) -> Response:
     if ":" not in model_action:
         raise HTTPException(status_code=404, detail="Unknown endpoint")
@@ -1342,13 +1344,13 @@ def _ollama_chat_ndjson_to_generate(line: str) -> str:
     return json.dumps(obj, ensure_ascii=False) + "\n"
 
 
-@ollama_router.post("/api/chat", dependencies=[Depends(require_api_key)])
+@ollama_router.post("/api/chat", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_chat(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("ollama", body, request)
 
 
-@ollama_router.post("/api/generate", dependencies=[Depends(require_api_key)])
+@ollama_router.post("/api/generate", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_generate(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     if not body.get("model"):
@@ -1388,13 +1390,13 @@ async def ollama_generate(request: Request) -> Response:
     return response
 
 
-@ollama_router.get("/api/tags", dependencies=[Depends(require_api_key)])
+@ollama_router.get("/api/tags", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_tags(request: Request) -> dict[str, Any]:
     registry: ProviderRegistry = request.app.state.registry
     return {"models": _ollama_model_entries(registry, key_allowed_models(request))}
 
 
-@ollama_router.post("/api/show", dependencies=[Depends(require_api_key)])
+@ollama_router.post("/api/show", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_show(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     name = (body.get("name") or body.get("model") or "").strip()

@@ -123,6 +123,31 @@
         </div>
     </div>
 
+    <!-- Gateway Rate Limit -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 class="text-lg font-bold text-white">Gateway Rate Limit</h2>
+        <p class="text-gray-400 text-sm mt-1">
+            Maximum requests per minute for each Janus API key, configured static key,
+            or client IP when API key authentication is disabled. Set to 0 to disable.
+        </p>
+        <p class="text-gray-500 text-xs mt-2">
+            Counters are process-local and reset when Janus restarts.
+        </p>
+        <form hx-post="/dashboard/api/settings" hx-swap="none" class="mt-4 flex items-end gap-3">
+            <input type="hidden" name="key" value="server_gateway_rate_limit_rpm">
+            <div class="flex-1">
+                <label class="block text-gray-400 text-sm mb-1" for="gateway-rate-limit-rpm">Requests per minute</label>
+                <input id="gateway-rate-limit-rpm" type="number" name="value" min="0" max="100000" step="1"
+                       value="{{ gateway_rate_limit_rpm }}"
+                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+            </div>
+            <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
+                Save
+            </button>
+        </form>
+    </div>
+
     <!-- Sticky Client-Key Routing -->
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <div class="flex items-center justify-between gap-4">

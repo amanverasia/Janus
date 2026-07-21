@@ -41,11 +41,17 @@ full access (dashboard login + all models). Scopes (`can_login`, `allowed_models
 apply only to DB-managed `sk-janus-*` keys — see [API Reference](api-reference.md)
 and the Keys dashboard page.
 
+Gateway rate limiting is optional and disabled by default. When enabled, each DB key,
+static YAML key, or client IP (when authentication is disabled) gets an independent
+60-second sliding-window bucket. Counters are in memory, process-local, and reset on
+restart. `/v1/health`, `/api/version`, and dashboard routes are exempt.
+
 Runtime settings stored in the `settings` table:
 
 | Key | Description |
 |---|---|
 | `server_require_api_key` | `true` / `false` — overrides YAML default |
+| `server_gateway_rate_limit_rpm` | Per-client gateway requests per minute; `0` disables limiting |
 | `saver_rtk_enabled` | RTK token saver on/off |
 | `saver_caveman_enabled` | Caveman saver on/off |
 | `saver_ponytail_enabled` | Ponytail saver on/off |
