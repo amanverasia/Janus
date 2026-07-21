@@ -1,10 +1,17 @@
+import asyncio
+import logging
 import time
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from janus.config.schema import ProviderConfig
 from janus.providers.registry import ProviderRegistry
-from janus.routing.fallback import AllAccountsCooledDown, FallbackHandler
+from janus.routing.fallback import (
+    AllAccountsCooledDown,
+    FallbackHandler,
+    _cooldown_task_callback,
+)
 
 
 def _handler() -> FallbackHandler:
@@ -114,3 +121,77 @@ def test_stale_account_cooldown_does_not_shrink_retry_after() -> None:
         h.resolve_attempts("provider/m1")
 
     assert 290 < exc_info.value.retry_after <= 300
+
+
+async def test_cooldown_save_failure_is_logged_and_keeps_memory_state(
+    tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
+    h = FallbackHandler(ProviderRegistry(), db_path=tmp_path / "janus.db")
+    with (
+        caplog.at_level(logging.WARNING, logger="janus.routing.fallback"),
+        patch(
+            "janus.routing.fallback.save_cooldown",
+            AsyncMock(side_effect=OSError("disk full")),
+        ),
+    ):
+        h.mark_cooldown("acct-a", "rate_limit", model="m1")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    assert ("acct-a", "m1") in h._cooldowns
+    assert "Cooldown persistence save failed" in caplog.text
+    assert "account=acct-a model=m1" in caplog.text
+    assert "disk full" in caplog.text
+
+
+async def test_cooldown_delete_failure_is_logged_and_clears_memory_state(
+    tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
+    h = FallbackHandler(ProviderRegistry(), db_path=tmp_path / "janus.db")
+    h._cooldowns[("acct-b", "m2")] = time.time() + 60
+    h._backoff[("acct-b", "m2")] = 1
+    with (
+        caplog.at_level(logging.WARNING, logger="janus.routing.fallback"),
+        patch(
+            "janus.routing.fallback.delete_cooldown",
+            AsyncMock(side_effect=OSError("database locked")),
+        ),
+    ):
+        h.mark_success("acct-b", "m2")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    assert ("acct-b", "m2") not in h._cooldowns
+    assert ("acct-b", "m2") not in h._backoff
+    assert "Cooldown persistence delete failed" in caplog.text
+    assert "account=acct-b model=m2" in caplog.text
+    assert "database locked" in caplog.text
+
+
+async def test_successful_cooldown_persistence_does_not_warn(
+    tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
+    h = FallbackHandler(ProviderRegistry(), db_path=tmp_path / "janus.db")
+    with (
+        caplog.at_level(logging.WARNING, logger="janus.routing.fallback"),
+        patch("janus.routing.fallback.save_cooldown", AsyncMock()),
+    ):
+        h.mark_cooldown("acct-c", "rate_limit", model="m3")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+    assert "Cooldown persistence" not in caplog.text
+
+
+async def test_cancelled_cooldown_persistence_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    task = asyncio.create_task(asyncio.sleep(60))
+    task.add_done_callback(_cooldown_task_callback("save", "acct-d", "m4"))
+
+    with caplog.at_level(logging.WARNING, logger="janus.routing.fallback"):
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0)
+
+    assert "Cooldown persistence" not in caplog.text
