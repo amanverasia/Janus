@@ -115,7 +115,9 @@ return None
 
 ---
 
-### 🟡 BUG-005: `save_cooldown` fire-and-forget with no error handling
+### ✅ BUG-005: `save_cooldown` fire-and-forget with no error handling — FIXED
+
+**Status (2026-07-21):** Cooldown save/delete tasks now retrieve failures in a done callback and log operation, account, and model context while treating cancellation as normal shutdown.
 
 **File:** `src/janus/routing/fallback.py:131-140`
 

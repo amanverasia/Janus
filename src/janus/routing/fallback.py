@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
 from janus.routing.capabilities import reorder_combo_by_capabilities
@@ -17,6 +20,28 @@ from janus.storage.usage import get_request_counts_today
 RPM_WINDOW_SECONDS = 60.0
 DEFAULT_COOLDOWN_RETRY_AFTER_S = 60.0
 MIN_RETRY_AFTER_S = 1.0
+
+logger = logging.getLogger(__name__)
+
+
+def _cooldown_task_callback(
+    operation: str, account_id: str, model: str
+) -> Callable[[asyncio.Task[Any]], None]:
+    def _log_failure(task: asyncio.Task[Any]) -> None:
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error is not None:
+            logger.warning(
+                "Cooldown persistence %s failed for account=%s model=%s: %s",
+                operation,
+                account_id,
+                model,
+                error,
+                exc_info=error,
+            )
+
+    return _log_failure
 
 
 class AccountStrategy(StrEnum):
@@ -454,7 +479,7 @@ class FallbackHandler:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(
+        task = loop.create_task(
             save_cooldown(
                 self.db_path,
                 account_id,
@@ -464,6 +489,7 @@ class FallbackHandler:
                 backoff_level=level,
             )
         )
+        task.add_done_callback(_cooldown_task_callback("save", account_id, model))
 
     def _delete_cooldown(self, account_id: str, model: str) -> None:
         assert self.db_path is not None
@@ -471,7 +497,8 @@ class FallbackHandler:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        loop.create_task(delete_cooldown(self.db_path, account_id, model))
+        task = loop.create_task(delete_cooldown(self.db_path, account_id, model))
+        task.add_done_callback(_cooldown_task_callback("delete", account_id, model))
 
     async def load_cooldowns(self) -> None:
         if self.db_path is None:
