@@ -24,6 +24,7 @@ from janus.tokensavers.caveman import PROMPTS as CAVEMAN_PROMPTS
 from janus.tokensavers.caveman import CavemanSaver
 from janus.tokensavers.headroom import HeadroomSaver
 from janus.tokensavers.pipeline import SaverPipeline
+from janus.tokensavers.ponytail import PROMPTS as PONYTAIL_PROMPTS
 from janus.tokensavers.ponytail import PonytailSaver
 from janus.tokensavers.rtk import RTKSaver
 
@@ -91,7 +92,10 @@ async def reload_savers(app: FastAPI) -> None:
             caveman_level = "full"
         savers.append(CavemanSaver(level=caveman_level))
     if settings["saver_ponytail_enabled"].lower() == "true":
-        savers.append(PonytailSaver(level=settings["saver_ponytail_level"]))
+        ponytail_level = settings["saver_ponytail_level"]
+        if ponytail_level not in PONYTAIL_PROMPTS:
+            ponytail_level = "full"
+        savers.append(PonytailSaver(level=ponytail_level))
     old_pipeline: SaverPipeline | None = getattr(app.state, "saver_pipeline", None)
     new_pipeline = SaverPipeline(savers, async_savers)
     if old_pipeline is not None:

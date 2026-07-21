@@ -3,6 +3,8 @@
 > **Date:** 2026-07-07  
 > **Scope:** ~14K lines Python (60+ modules) + ~9K lines tests  
 > **Focus:** Bugs, dead code, redundancy, optimization, architectural concerns, error handling, test coverage
+>
+> **Historical status (2026-07-21):** This audit describes Janus v1.2.0 and is preserved as a point-in-time record, not a current issue list. Major findings subsequently fixed include BUG-001 (streaming executors now propagate upstream status), BUG-002 (unknown dashboard clients fail closed), BUG-004 (budget-check failures are logged), and DEAD-001 (the unused resolver module was removed). Other entries may also have changed. Use `todo.md` for the living backlog and `ISSUES.md` for the reconciled sweep status.
 
 ---
 
@@ -457,7 +459,7 @@ In the catalog, Anthropic's `base_url` is `https://api.anthropic.com` (API root)
 
 **Files:** `providers.html`, `combos.html`
 
-Browser `alert()` calls on HTMX failures. [Tracked in TODO](https://github.com/amanverasia/Janus) — replace with inline toast notifications.
+Browser `alert()` calls on HTMX failures. Tracked in [`todo.md`](todo.md) — replace with inline toast notifications.
 
 ---
 
