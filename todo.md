@@ -1,6 +1,6 @@
 # Janus — TODO & improvements
 
-Living backlog from repo audit (2026-07-05); last updated 2026-07-21 after cooldown/Ponytail fixes and tracker reconciliation. Items are grouped by area; order within a section is rough priority.
+Living backlog from repo audit (2026-07-05); last updated 2026-07-22 after gateway rate limiting, cooldown persistence logging, and credential encryption error handling. Items are grouped by area; order within a section is rough priority.
 
 ---
 
@@ -48,6 +48,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 - [x] **Gateway-level rate limiting** — optional per-client RPM limiting now covers authenticated `/v1`, `/v1beta`, and `/api` traffic using DB-key, static-key, or anonymous-IP buckets, with standard retry/limit headers and immediate DB-backed settings updates. Counters are process-local and reset on restart. *(Done 2026-07-21.)*
 - [ ] **Richer `/v1/health`** — today returns `{"status":"ok"}`. Add optional checks: DB reachable, provider count, inventory scheduler alive, last recheck age.
 - [x] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types. *(Done 2026-07-05 for the framework + GitHub Copilot — see Phase 8.4. Remaining providers tracked as 8.4b.)*
+- [x] **Cooldown persistence error logging** — fire-and-forget save/delete tasks now retrieve failures in a done callback and log with operation, account, and model context while treating cancellation as normal shutdown. *(Done 2026-07-21.)*
 
 ---
 
@@ -105,6 +106,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 
 - [ ] **Move `_build_provider()` out of `app.py`** — called from lifespan and reload; belongs in `providers/` factory module for clearer boundaries.
 - [x] **Encrypt `providers.api_key` at rest** — gateway API keys and OAuth credential blobs now reuse `INVENTORY_ENCRYPTION_KEY`, encrypt on storage writes/YAML seed, decrypt at the storage boundary, and migrate with the unified `janus inventory encrypt-keys` CLI/dashboard action. *(Done 2026-07-21 — mixed plaintext compatibility, explicit missing/wrong-key failures, and CRUD/seed/migration/UI coverage.)*
+- [x] **Actionable credential encryption errors** — missing, wrong, and malformed Fernet keys now raise typed errors that return structured HTTP 503 at the request boundary while storage and startup fail closed. Background inventory scheduler/recheck tasks also survive decryption failures instead of silently dying. *(Done 2026-07-22.)*
 - [x] **Reduce catalog duplication between `dashboard/catalog.py` and `inventory/catalog.py`** — different shapes (`CATALOG` dict vs list with detection endpoints); unify schema. *(Done 2026-07-05 — see "Unify provider catalogs" above.)*
 - [ ] **Inventory module packaging** — added `inventory/__init__.py`; consider same explicit exports pattern for other leaf packages if mypy/import clarity suffers.
 - [ ] **Structured logging** — request ID, attempt index, and fallback chain logged but not consistently structured for log aggregation.

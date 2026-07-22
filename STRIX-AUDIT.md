@@ -4,7 +4,7 @@
 > **Scope:** ~14K lines Python (60+ modules) + ~9K lines tests  
 > **Focus:** Bugs, dead code, redundancy, optimization, architectural concerns, error handling, test coverage
 >
-> **Historical status (2026-07-21):** This audit describes Janus v1.2.0 and is preserved as a point-in-time record, not a current issue list. Major findings subsequently fixed include BUG-001 (streaming executors now propagate upstream status), BUG-002 (unknown dashboard clients fail closed), BUG-004 (budget-check failures are logged), and DEAD-001 (the unused resolver module was removed). Other entries may also have changed. Use `todo.md` for the living backlog and `ISSUES.md` for the reconciled sweep status.
+> **Historical status (2026-07-22):** This audit describes Janus v1.2.0 and is preserved as a point-in-time record, not a current issue list. Major findings subsequently fixed include BUG-001 (streaming executors now propagate upstream status), BUG-002 (unknown dashboard clients fail closed), BUG-004 (budget-check failures are logged), BUG-005 (cooldown persistence task failures are logged), ERR-001 (credential decryption failures return structured HTTP 503), and DEAD-001 (the unused resolver module was removed). Other entries may also have changed. Use `todo.md` for the living backlog and `ISSUES.md` for the reconciled sweep status.
 
 ---
 
@@ -473,19 +473,20 @@ Browser `alert()` calls on HTMX failures. Tracked in [`todo.md`](todo.md) — re
 
 | # | ID | Description | Severity | Effort |
 |---|---|---|---|---|
-| 1 | BUG-001 | Fix stream fallback status code | 🔴 HIGH | S |
-| 2 | DEAD-001 | Remove `routing/resolver.py` | 🟢 LOW | XS |
+| 1 | BUG-001 | ✅ Fix stream fallback status code | 🔴 HIGH | S |
+| 2 | DEAD-001 | ✅ Remove `routing/resolver.py` | 🟢 LOW | XS |
 | 3 | DUP-001 | Consolidate URL validation to `url_guard.safe_fetch()` | 🟡 MEDIUM | S |
-| 4 | BUG-002 | Fix `is_trusted_dashboard_client` for `client=None` | 🟡 MEDIUM | XS |
+| 4 | BUG-002 | ✅ Fix `is_trusted_dashboard_client` for `client=None` | 🟡 MEDIUM | XS |
 | 5 | OPT-001 | Cache settings in `app.state` | 🟡 MEDIUM | M |
 | 6 | ARCH-002 | Move `_build_provider()` to `providers/factory.py` | 🟡 MEDIUM | M |
-| 7 | ERR-001 | Handle decryption errors in `_decode_upstream_row` | 🟡 MEDIUM | XS |
-| 8 | BUG-004 | Log budget check failures | 🟡 LOW | XS |
+| 7 | ERR-001 | ✅ Handle decryption errors (structured 503) | 🟡 MEDIUM | XS |
+| 8 | BUG-004 | ✅ Log budget check failures | 🟡 LOW | XS |
 | 9 | ARCH-001 | Refactor `_handle()` into pipeline stages | 🟡 MEDIUM | L |
 | 10 | DEAD-002 | Unify upstream key listing to use `_list_filters()` | 🟡 LOW | S |
 | 11 | DUP-004 | Extract `parse_models_list()` helper | 🟡 LOW | XS |
 | 12 | OPT-002 | Single-query inventory summaries | 🟡 LOW | S |
 | 13 | ERR-003 | Log $0.00 cost for unknown models | 🟡 LOW | XS |
+| 14 | BUG-005 | ✅ Log cooldown persistence task failures | 🟡 LOW | XS |
 | 14 | MINOR-002 | Add URL validation to `api_test_connection` | 🟡 MEDIUM | S |
 | 15 | ARCH-003 | Encrypt provider API keys at rest | 🟡 MEDIUM | M |
 
