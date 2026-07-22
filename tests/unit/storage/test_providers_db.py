@@ -3,7 +3,11 @@ import json
 import pytest
 from cryptography.fernet import Fernet
 
-from janus.inventory.key_encryption import ENCRYPTED_PREFIX, encrypt_key_value
+from janus.inventory.key_encryption import (
+    ENCRYPTED_PREFIX,
+    CredentialDecryptionError,
+    encrypt_key_value,
+)
 from janus.storage.database import get_connection, init_db
 from janus.storage.providers_db import (
     count_provider_encryption_state,
@@ -342,11 +346,11 @@ async def test_encrypted_provider_requires_matching_key(db, monkeypatch):
     )
 
     monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
-    with pytest.raises(RuntimeError, match="required to decrypt stored credentials"):
+    with pytest.raises(CredentialDecryptionError, match="required to decrypt stored credentials"):
         await get_provider(db, "secure")
 
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    with pytest.raises(RuntimeError, match="Failed to decrypt stored credential"):
+    with pytest.raises(CredentialDecryptionError, match="Failed to decrypt stored credential"):
         await get_provider(db, "secure")
 
 

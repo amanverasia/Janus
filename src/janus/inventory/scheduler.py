@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 
 CHECK_INTERVAL_HOURS = float(os.environ.get("INVENTORY_CHECK_INTERVAL_HOURS", "12"))
+
+logger = logging.getLogger(__name__)
 
 
 async def run_inventory_scheduler(db_path: Path, stop_event: asyncio.Event) -> None:
@@ -15,7 +18,10 @@ async def run_inventory_scheduler(db_path: Path, stop_event: asyncio.Event) -> N
             await asyncio.wait_for(stop_event.wait(), timeout=CHECK_INTERVAL_HOURS * 3600)
             return
         except TimeoutError:
-            await check_all_upstream_keys(db_path)
+            try:
+                await check_all_upstream_keys(db_path)
+            except Exception:
+                logger.exception("Scheduled inventory key check failed")
 
 
 def scheduler_enabled() -> bool:

@@ -8,6 +8,14 @@ from cryptography.fernet import Fernet, InvalidToken
 ENCRYPTED_PREFIX = "enc:v1:"
 
 
+class CredentialEncryptionError(RuntimeError):
+    """Raised when credential encryption configuration cannot be used."""
+
+
+class CredentialDecryptionError(CredentialEncryptionError):
+    """Raised when an encrypted stored credential cannot be decrypted."""
+
+
 def hash_upstream_key(plaintext: str) -> str:
     return hashlib.sha256(plaintext.encode()).hexdigest()
 
@@ -28,7 +36,12 @@ def _fernet() -> Fernet | None:
 
 
 def encrypt_key_value(plaintext: str) -> str:
-    fernet = _fernet()
+    try:
+        fernet = _fernet()
+    except ValueError as exc:
+        raise CredentialEncryptionError(
+            "INVENTORY_ENCRYPTION_KEY is invalid; expected a Fernet key"
+        ) from exc
     if fernet is None:
         return plaintext
     token = fernet.encrypt(plaintext.encode()).decode()
@@ -38,13 +51,20 @@ def encrypt_key_value(plaintext: str) -> str:
 def decrypt_key_value(stored: str) -> str:
     if not is_encrypted_value(stored):
         return stored
-    fernet = _fernet()
+    try:
+        fernet = _fernet()
+    except ValueError as exc:
+        raise CredentialDecryptionError(
+            "INVENTORY_ENCRYPTION_KEY is invalid; expected a Fernet key"
+        ) from exc
     if fernet is None:
-        raise RuntimeError("INVENTORY_ENCRYPTION_KEY is required to decrypt stored credentials")
+        raise CredentialDecryptionError(
+            "INVENTORY_ENCRYPTION_KEY is required to decrypt stored credentials"
+        )
     try:
         return fernet.decrypt(stored[len(ENCRYPTED_PREFIX) :].encode()).decode()
     except InvalidToken as exc:
-        raise RuntimeError(
+        raise CredentialDecryptionError(
             "Failed to decrypt stored credential; check INVENTORY_ENCRYPTION_KEY"
         ) from exc
 
