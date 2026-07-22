@@ -1,13 +1,17 @@
 """Normalize Claude Code / Cowork beta shapes for Anthropic Messages API.
 
 Ported from 9router ``open-sse/translator/formats/claude.js``
-``normalizeClaudePassthrough``.
+``normalizeClaudePassthrough``, extended with CLIProxyAPI upstream prep.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import Any
+
+from janus.routing.claude_oauth_tools import remap_oauth_tool_names
+from janus.routing.claude_signing import sign_anthropic_messages_body
 
 _ADAPTIVE_UNSUPPORTED = re.compile(r"haiku", re.I)
 _CLAUDE_SIG_PREFIXES = ("",)  # signatures are opaque; empty allowed only as placeholder
@@ -36,6 +40,106 @@ def _is_valid_claude_signature(sig: Any) -> bool:
     # Anthropic rejects non-Claude signatures. Keep any non-empty signature that
     # does not look like a JSON blob from another stack.
     return not sig.startswith("{") and "openai" not in sig.lower()
+
+
+@dataclass
+class ClaudeUpstreamPrep:
+    extra_betas: list[str] = field(default_factory=list)
+    oauth_tool_reverse_map: dict[str, str] = field(default_factory=dict)
+
+
+def extract_and_remove_betas(body: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    betas = body.pop("betas", None)
+    extra: list[str] = []
+    if isinstance(betas, list):
+        for item in betas:
+            if isinstance(item, str) and item.strip():
+                extra.append(item.strip())
+    elif isinstance(betas, str) and betas.strip():
+        extra.append(betas.strip())
+    return extra, body
+
+
+def disable_thinking_if_tool_choice_forced(body: dict[str, Any]) -> dict[str, Any]:
+    tool_choice = body.get("tool_choice")
+    if not isinstance(tool_choice, dict):
+        return body
+    choice_type = tool_choice.get("type")
+    if choice_type not in ("any", "tool"):
+        return body
+    body.pop("thinking", None)
+    out_cfg = body.get("output_config")
+    if isinstance(out_cfg, dict):
+        out_cfg = dict(out_cfg)
+        out_cfg.pop("effort", None)
+        if out_cfg:
+            body["output_config"] = out_cfg
+        else:
+            body.pop("output_config", None)
+    return body
+
+
+def ensure_claude_thinking_display(body: dict[str, Any]) -> dict[str, Any]:
+    thinking = body.get("thinking")
+    if not isinstance(thinking, dict):
+        return body
+    thinking_type = thinking.get("type")
+    if thinking_type not in ("enabled", "adaptive", "auto"):
+        return body
+    if thinking.get("display"):
+        return body
+    body["thinking"] = {**thinking, "display": "summarized"}
+    return body
+
+
+def normalize_claude_sampling_for_upstream(body: dict[str, Any]) -> dict[str, Any]:
+    body.pop("temperature", None)
+    body.pop("top_p", None)
+    thinking = body.get("thinking")
+    if isinstance(thinking, dict) and thinking.get("type") in ("enabled", "adaptive", "auto"):
+        body.pop("top_k", None)
+    return body
+
+
+def strip_claude_billing_system_header(body: dict[str, Any]) -> dict[str, Any]:
+    system = body.get("system")
+    if not isinstance(system, list) or not system:
+        return body
+    first = system[0]
+    if not isinstance(first, dict):
+        return body
+    text = first.get("text")
+    if isinstance(text, str) and text.startswith("x-anthropic-billing-header:"):
+        body["system"] = system[1:]
+    return body
+
+
+def prepare_claude_upstream_body(
+    body: dict[str, Any],
+    model: str = "",
+    *,
+    provider_prefix: str = "",
+    oauth_upstream: bool = False,
+) -> tuple[dict[str, Any], ClaudeUpstreamPrep]:
+    """Full pre-upstream normalization for Claude Code / Anthropic wire bodies."""
+    if not isinstance(body, dict):
+        return body, ClaudeUpstreamPrep()
+
+    working = dict(body)
+    extra_betas, working = extract_and_remove_betas(working)
+    working = disable_thinking_if_tool_choice_forced(working)
+    working = ensure_claude_thinking_display(working)
+    working = normalize_claude_sampling_for_upstream(working)
+    if not oauth_upstream:
+        working = strip_claude_billing_system_header(working)
+    working = normalize_claude_passthrough(working, model, provider_prefix=provider_prefix)
+
+    reverse_map: dict[str, str] = {}
+    if oauth_upstream:
+        working, reverse_map = remap_oauth_tool_names(working)
+        working = sign_anthropic_messages_body(working)
+
+    return working, ClaudeUpstreamPrep(extra_betas=extra_betas, oauth_tool_reverse_map=reverse_map)
 
 
 def normalize_claude_passthrough(

@@ -1,3 +1,5 @@
+"""Anthropic API key provider executor."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -5,22 +7,14 @@ from typing import Any
 
 import httpx
 
+from janus.routing.claude_beta import apply_claude_upstream_headers, build_claude_upstream_headers
+
 from .base import RawResult, parse_error_body, parse_retry_after
 
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
 
 ANTHROPIC_API_VERSION = "2023-06-01"
-# Core betas always sent (matches 9router CLAUDE_API_HEADERS).
-ANTHROPIC_BETA_HEADERS = "claude-code-20250219,interleaved-thinking-2025-05-14"
-# Extended Claude Code fingerprint (9router CLAUDE_CLI_SPOOF_HEADERS) — adaptive
-# effort, prompt caching, advanced tools. Safe on official Anthropic API.
-ANTHROPIC_CLI_BETA_HEADERS = (
-    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
-    "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
-    "advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,"
-    "fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
-)
 
 
 class AnthropicProvider:
@@ -34,20 +28,62 @@ class AnthropicProvider:
             timeout=_DEFAULT_TIMEOUT,
         )
 
-    @property
-    def _headers(self) -> dict[str, str]:
-        return {
+    def _headers(
+        self,
+        *,
+        stream: bool = False,
+        client_headers: dict[str, str] | None = None,
+        extra_betas: list[str] | None = None,
+        claude_client: bool = False,
+    ) -> dict[str, str]:
+        base: dict[str, str] = {
             "Content-Type": "application/json",
             "x-api-key": self.api_key,
             "anthropic-version": ANTHROPIC_API_VERSION,
-            "anthropic-beta": ANTHROPIC_CLI_BETA_HEADERS,
         }
+        if claude_client:
+            return apply_claude_upstream_headers(
+                base,
+                incoming_headers=client_headers,
+                extra_betas=extra_betas,
+                oauth=False,
+                stream=stream,
+                session_seed=self.api_key,
+                api_key_auth=True,
+            )
+        built = build_claude_upstream_headers(
+            incoming_headers=client_headers,
+            extra_betas=extra_betas,
+            oauth=False,
+            stream=stream,
+            session_seed=self.api_key,
+            api_key_auth=True,
+        )
+        base.update(built)
+        base["x-api-key"] = self.api_key
+        return base
 
-    async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:
+    async def call(
+        self,
+        payload: dict[str, Any],
+        stream: bool = False,
+        *,
+        client_headers: dict[str, str] | None = None,
+        extra_betas: list[str] | None = None,
+        claude_client: bool = False,
+    ) -> RawResult:
         url = f"{self.base_url}/v1/messages"
+        if claude_client:
+            url = f"{url}?beta=true"
+        headers = self._headers(
+            stream=stream,
+            client_headers=client_headers,
+            extra_betas=extra_betas,
+            claude_client=claude_client,
+        )
         if stream:
-            return await self._call_stream(url, payload)
-        r = await self._client.post(url, json=payload, headers=self._headers)
+            return await self._call_stream(url, payload, headers)
+        r = await self._client.post(url, json=payload, headers=headers)
         if r.status_code >= 400:
             body = await r.aread()
             return RawResult(
@@ -57,9 +93,14 @@ class AnthropicProvider:
             )
         return RawResult(status_code=r.status_code, json_data=r.json())
 
-    async def _call_stream(self, url: str, payload: dict[str, Any]) -> RawResult:
+    async def _call_stream(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+    ) -> RawResult:
         payload = {**payload, "stream": True}
-        cm = self._client.stream("POST", url, json=payload, headers=self._headers)
+        cm = self._client.stream("POST", url, json=payload, headers=headers)
         r = await cm.__aenter__()
         if r.status_code >= 400:
             body = await r.aread()

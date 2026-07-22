@@ -12,6 +12,8 @@ from typing import Any
 
 import httpx
 
+from janus.routing.claude_beta import apply_claude_upstream_headers
+
 from .base import RawResult, parse_error_body, parse_retry_after
 from .oauth_tokens import (
     access_token,
@@ -26,13 +28,6 @@ from .oauth_tokens import (
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
 DEFAULT_BASE = "https://api.anthropic.com"
-
-_BETA = (
-    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
-    "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
-    "advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,"
-    "fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
-)
 
 
 class ClaudeOAuthProvider:
@@ -65,27 +60,51 @@ class ClaudeOAuthProvider:
             self._cred = apply_token_response(self._cred, tokens)
         return None
 
-    def _headers(self) -> dict[str, str]:
-        return {
+    def _headers(
+        self,
+        *,
+        stream: bool = False,
+        client_headers: dict[str, str] | None = None,
+        extra_betas: list[str] | None = None,
+    ) -> dict[str, str]:
+        base = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {access_token(self._cred)}",
-            "Anthropic-Version": "2023-06-01",
-            "Anthropic-Beta": _BETA,
-            "Anthropic-Dangerous-Direct-Browser-Access": "true",
-            "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
-            "X-App": "cli",
         }
+        return apply_claude_upstream_headers(
+            base,
+            incoming_headers=client_headers,
+            extra_betas=extra_betas,
+            oauth=True,
+            stream=stream,
+            session_seed=access_token(self._cred),
+            api_key_auth=False,
+        )
 
-    async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:
+    async def call(
+        self,
+        payload: dict[str, Any],
+        stream: bool = False,
+        *,
+        client_headers: dict[str, str] | None = None,
+        extra_betas: list[str] | None = None,
+        claude_client: bool = False,
+    ) -> RawResult:
+        del claude_client
         err = await self._ensure_token()
         if err is not None:
             return err
         url = f"{self.base_url}/v1/messages?beta=true"
         body = dict(payload)
+        headers = self._headers(
+            stream=stream,
+            client_headers=client_headers,
+            extra_betas=extra_betas,
+        )
         if stream:
             body["stream"] = True
-            return await self._call_stream(url, body)
-        r = await self._client.post(url, json=body, headers=self._headers())
+            return await self._call_stream(url, body, headers)
+        r = await self._client.post(url, json=body, headers=headers)
         if r.status_code >= 400:
             return RawResult(
                 status_code=r.status_code,
@@ -98,8 +117,13 @@ class ClaudeOAuthProvider:
             data = {"error": r.text[:500]}
         return RawResult(status_code=r.status_code, json_data=data)
 
-    async def _call_stream(self, url: str, payload: dict[str, Any]) -> RawResult:
-        cm = self._client.stream("POST", url, json=payload, headers=self._headers())
+    async def _call_stream(
+        self,
+        url: str,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+    ) -> RawResult:
+        cm = self._client.stream("POST", url, json=payload, headers=headers)
         r = await cm.__aenter__()
         if r.status_code >= 400:
             body = await r.aread()
