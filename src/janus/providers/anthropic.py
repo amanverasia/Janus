@@ -7,7 +7,11 @@ from typing import Any
 
 import httpx
 
-from janus.routing.claude_beta import apply_claude_upstream_headers, build_claude_upstream_headers
+from janus.routing.claude_beta import (
+    DEFAULT_CLAUDE_BETAS,
+    apply_claude_upstream_headers,
+    build_claude_upstream_headers,
+)
 
 from .base import RawResult, parse_error_body, parse_retry_after
 
@@ -15,6 +19,8 @@ _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
 
 ANTHROPIC_API_VERSION = "2023-06-01"
+ANTHROPIC_BETA_HEADERS = "claude-code-20250219,interleaved-thinking-2025-05-14"
+ANTHROPIC_CLI_BETA_HEADERS = DEFAULT_CLAUDE_BETAS
 
 
 class AnthropicProvider:
