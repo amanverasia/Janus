@@ -134,4 +134,8 @@ async def test_anthropic_thinking_forwarded_upstream(anthropic_app):
         r = await client.post("/v1/messages", json=payload)
         assert r.status_code == 200
 
-    assert captured.get("thinking") == {"type": "enabled", "budget_tokens": 2000}
+    assert captured.get("thinking") == {
+        "type": "enabled",
+        "budget_tokens": 2000,
+        "display": "summarized",
+    }
