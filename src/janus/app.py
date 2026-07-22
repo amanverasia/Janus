@@ -7,12 +7,13 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from janus.api.routes import gemini_router, ollama_router, router
 from janus.config.schema import JanusConfig, ProviderConfig
+from janus.inventory.key_encryption import CredentialEncryptionError
 from janus.pricing.registry import PricingRegistry
 from janus.providers.anthropic import AnthropicProvider
 from janus.providers.antigravity import AntigravityProvider
@@ -222,6 +223,29 @@ def create_app(
     from janus.api.rate_limit import GatewayRateLimiter
 
     app.state.gateway_rate_limiter = GatewayRateLimiter()
+
+    @app.exception_handler(CredentialEncryptionError)
+    async def handle_credential_encryption_error(
+        request: Request, exc: CredentialEncryptionError
+    ) -> JSONResponse:
+        logger.error(
+            "Credential encryption configuration failed for request path %s: %s",
+            request.url.path,
+            exc,
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "type": "credential_encryption_error",
+                    "message": str(exc),
+                    "hint": (
+                        "Verify INVENTORY_ENCRYPTION_KEY is set to the key used to "
+                        "encrypt stored credentials."
+                    ),
+                }
+            },
+        )
 
     from janus.dashboard.live import LiveTrackingMiddleware, get_bus
 

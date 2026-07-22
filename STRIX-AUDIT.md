@@ -364,7 +364,9 @@ The derivation (`google→gemini`, `dashscope→qwen`) comes from the unified ca
 
 ## 6. MISSING ERROR HANDLING
 
-### ❌ ERR-001: `get_upstream_key_detail` doesn't handle decryption failures
+### ✅ ERR-001: Credential decryption failures returned generic HTTP 500 — FIXED
+
+**Status (2026-07-22):** Request-time missing/wrong encryption-key failures now return a structured HTTP 503 with actionable `INVENTORY_ENCRYPTION_KEY` guidance. Storage and startup paths still fail closed rather than substituting redacted or unusable credentials.
 
 **File:** `src/janus/storage/upstream_keys.py:211-220`
 
@@ -375,7 +377,7 @@ return _decode_upstream_row(row) if row else None
 
 If `decrypt_key_value()` raises (wrong encryption key, corrupted data), the dashboard crashes with a 500.
 
-**Fix:** Catch `RuntimeError`/`InvalidToken` in `_decode_upstream_row` and return masked/redacted value.
+**Fix:** Raise a dedicated `CredentialDecryptionError` at the encryption boundary and translate request-time failures to HTTP 503 at the FastAPI boundary. Do not return masked/redacted values from storage reads, because routing and startup must fail closed when credentials cannot be decrypted.
 
 ---
 

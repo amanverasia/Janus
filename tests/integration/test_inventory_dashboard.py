@@ -104,6 +104,81 @@ async def test_inventory_overview_encryption_panel(client):
     assert "Provider credentials:" in r.text
 
 
+async def test_missing_encryption_key_returns_actionable_503_for_upstream_keys(
+    client, tmp_path, monkeypatch
+):
+    from cryptography.fernet import Fernet
+
+    from janus.storage.database import init_db
+    from janus.storage.upstream_keys import create_upstream_key
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    secret = "sk-proj-encrypted-upstream-secret"
+    await create_upstream_key(db_path, provider_id="openai", key_value=secret)
+    monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
+
+    response = await client.get("/dashboard/api/inventory/keys")
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["type"] == "credential_encryption_error"
+    assert "INVENTORY_ENCRYPTION_KEY" in error["message"]
+    assert "Verify INVENTORY_ENCRYPTION_KEY" in error["hint"]
+    assert secret not in response.text
+
+
+async def test_wrong_encryption_key_returns_actionable_503_for_providers(
+    client, tmp_path, monkeypatch
+):
+    from cryptography.fernet import Fernet
+
+    from janus.storage.database import init_db
+    from janus.storage.providers_db import create_provider
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    secret = "sk-encrypted-provider-secret"
+    await create_provider(
+        db_path,
+        {
+            "id": "secure",
+            "prefix": "secure",
+            "api_type": "openai_compat",
+            "base_url": "https://secure.example/v1",
+            "api_key": secret,
+            "models": [],
+        },
+    )
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    response = await client.get("/dashboard/providers")
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["type"] == "credential_encryption_error"
+    assert "Failed to decrypt stored credential" in error["message"]
+    assert "Verify INVENTORY_ENCRYPTION_KEY" in error["hint"]
+    assert secret not in response.text
+
+
+async def test_invalid_encryption_key_returns_actionable_503_on_write(client, monkeypatch):
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", "not-a-fernet-key")
+
+    response = await client.post(
+        "/dashboard/api/inventory/keys",
+        data={"keys_text": "sk-proj-new-secret", "provider_id": "openai"},
+    )
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["type"] == "credential_encryption_error"
+    assert "invalid; expected a Fernet key" in error["message"]
+    assert "sk-proj-new-secret" not in response.text
+
+
 async def test_inventory_encrypt_action_covers_provider_credentials(client, tmp_path, monkeypatch):
     from cryptography.fernet import Fernet
 

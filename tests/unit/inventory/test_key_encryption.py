@@ -2,6 +2,8 @@ import pytest
 
 from janus.inventory.key_encryption import (
     ENCRYPTED_PREFIX,
+    CredentialDecryptionError,
+    CredentialEncryptionError,
     decrypt_key_value,
     encrypt_key_value,
     generate_encryption_key,
@@ -41,6 +43,26 @@ async def test_plaintext_fallback_without_encryption_key(monkeypatch: pytest.Mon
     assert encrypt_key_value(plaintext) == plaintext
     assert decrypt_key_value(plaintext) == plaintext
     assert not is_encrypted_value(plaintext)
+
+
+def test_encrypted_value_requires_matching_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    key = generate_encryption_key()
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", key)
+    stored = encrypt_key_value("sk-secret")
+
+    monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
+    with pytest.raises(CredentialDecryptionError, match="required to decrypt stored credentials"):
+        decrypt_key_value(stored)
+
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", generate_encryption_key())
+    with pytest.raises(CredentialDecryptionError, match="Failed to decrypt stored credential"):
+        decrypt_key_value(stored)
+
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", "not-a-fernet-key")
+    with pytest.raises(CredentialDecryptionError, match="invalid; expected a Fernet key"):
+        decrypt_key_value(stored)
+    with pytest.raises(CredentialEncryptionError, match="invalid; expected a Fernet key"):
+        encrypt_key_value("sk-new-secret")
 
 
 @pytest.mark.asyncio

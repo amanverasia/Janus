@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,7 @@ from janus.storage.upstream_keys import (
 from janus.storage.upstream_models import list_models_for_key
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
+logger = logging.getLogger(__name__)
 
 
 def _client_id(request: Request) -> str:
@@ -75,14 +77,17 @@ def _schedule_recheck_all(db_path: Path) -> None:
 
 
 async def _run_all_keys(db_path: Path) -> None:
-    keys = await list_upstream_keys(db_path)
-    for key in keys:
-        await update_upstream_key(
-            db_path,
-            key["id"],
-            {"status": "pending_validation", "last_error": None},
-        )
-    await check_all_upstream_keys(db_path)
+    try:
+        keys = await list_upstream_keys(db_path)
+        for key in keys:
+            await update_upstream_key(
+                db_path,
+                key["id"],
+                {"status": "pending_validation", "last_error": None},
+            )
+        await check_all_upstream_keys(db_path)
+    except Exception:
+        logger.exception("Inventory recheck-all task failed")
 
 
 def _poll_query(
