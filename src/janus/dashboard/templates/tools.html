@@ -13,12 +13,17 @@
             <span class="text-2xl">🤖</span>
             <h2 class="text-lg font-bold text-white">Claude Code</h2>
         </div>
-        <p class="text-gray-400 text-sm mb-3">Set the environment variable and run:</p>
+        <p class="text-sm text-gray-400 mb-3">
+          Recommended: <a class="text-cyan-400 underline" href="https://github.com/amanverasia/claude-janus" target="_blank" rel="noopener">claude-janus</a>
+          maps Opus/Sonnet/Haiku to Janus and launches Claude Code for you.
+        </p>
+        <p class="text-gray-400 text-sm mb-3">Manual env (advanced):</p>
         <div class="bg-gray-900 rounded-lg border border-gray-700 flex items-center group">
             <div class="flex-1 p-3 min-w-0 overflow-x-auto">
                 <code class="text-sm text-green-300 block">export ANTHROPIC_BASE_URL={{ base_url }}</code>
                 {% if require_key %}
-                <code class="text-sm text-green-300 block mt-1">export ANTHROPIC_API_KEY=sk-janus-xxxx</code>
+                <code class="text-sm text-green-300 block mt-1">export ANTHROPIC_AUTH_TOKEN=sk-janus-xxxx</code>
+                <code class="text-sm text-green-300 block mt-1">export ANTHROPIC_API_KEY=</code>
                 {% endif %}
             </div>
             <button type="button" onclick="copySnippet(this)"
