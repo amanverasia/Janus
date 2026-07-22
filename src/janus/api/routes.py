@@ -39,7 +39,13 @@ from janus.routing.capabilities import (
     detect_required_capabilities,
     get_capabilities_for_model,
 )
-from janus.routing.claude_normalize import normalize_claude_passthrough
+from janus.routing.claude_beta import apply_claude_upstream_headers, client_header_map
+from janus.routing.claude_models import build_claude_code_models_response
+from janus.routing.claude_normalize import ClaudeUpstreamPrep, prepare_claude_upstream_body
+from janus.routing.claude_oauth_tools import (
+    restore_oauth_tool_names,
+    restore_oauth_tool_names_stream_line,
+)
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
 from janus.routing.errors import (
     is_fallback_eligible_refined,
@@ -138,6 +144,50 @@ async def _check_budgets(
     return None
 
 
+def _oauth_upstream(target: ResolvedTarget) -> bool:
+    return target.provider_config.api_type in ("claude_oauth", "claude")
+
+
+def _claude_provider_kwargs(
+    request: Request,
+    prep: ClaudeUpstreamPrep | None,
+    *,
+    client_tool: str | None,
+    target: ResolvedTarget | None = None,
+) -> dict[str, Any]:
+    if target is None:
+        return {}
+    if target.provider_config.api_type not in ("anthropic", "claude_oauth", "claude"):
+        return {}
+    kwargs: dict[str, Any] = {
+        "client_headers": client_header_map(request.headers),
+        "claude_client": client_tool == "claude",
+    }
+    if prep is not None and prep.extra_betas:
+        kwargs["extra_betas"] = prep.extra_betas
+    return kwargs
+
+
+def _restore_claude_oauth_response(
+    payload: dict[str, Any] | None,
+    prep: ClaudeUpstreamPrep | None,
+) -> dict[str, Any] | None:
+    if payload is None or prep is None or not prep.oauth_tool_reverse_map:
+        return payload
+    return restore_oauth_tool_names(payload, prep.oauth_tool_reverse_map)
+
+
+async def _oauth_stream_lines(
+    lines: AsyncIterator[str],
+    reverse_map: dict[str, str],
+) -> AsyncIterator[str]:
+    async for line in lines:
+        if reverse_map:
+            yield restore_oauth_tool_names_stream_line(line, reverse_map)
+        else:
+            yield line
+
+
 def _passthrough_url(base_url: str, fmt: str) -> str:
     base = base_url.rstrip("/")
     if fmt == "anthropic":
@@ -150,17 +200,32 @@ def _passthrough_headers(
     *,
     fmt: str,
     stream: bool,
+    client_headers: dict[str, str] | None = None,
+    extra_betas: list[str] | None = None,
+    claude_client: bool = False,
+    oauth_upstream: bool = False,
 ) -> dict[str, str]:
     raw_headers = getattr(provider, "_headers", None)
     if raw_headers is None:
         headers: dict[str, str] = {}
     elif callable(raw_headers):
-        headers = dict(raw_headers())
+        try:
+            headers = dict(
+                raw_headers(
+                    stream=stream,
+                    client_headers=client_headers,
+                    extra_betas=extra_betas,
+                    claude_client=claude_client,
+                )
+            )
+        except TypeError:
+            headers = dict(raw_headers())
     else:
         headers = dict(raw_headers)
     headers.setdefault("Content-Type", "application/json")
     if stream:
         headers["Accept"] = "text/event-stream"
+        headers["Accept-Encoding"] = "identity"
     if fmt == "anthropic":
         api_key = getattr(provider, "api_key", None)
         if not api_key:
@@ -169,16 +234,15 @@ def _passthrough_headers(
                 api_key = auth.split(" ", 1)[1].strip() or None
         if api_key:
             headers.setdefault("x-api-key", str(api_key))
-        headers.setdefault("anthropic-version", "2023-06-01")
-        headers.setdefault(
-            "anthropic-beta",
-            (
-                "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,"
-                "context-management-2025-06-27,prompt-caching-scope-2026-01-05,"
-                "advanced-tool-use-2025-11-20,effort-2025-11-24,"
-                "structured-outputs-2025-12-15,fast-mode-2026-02-01,"
-                "redact-thinking-2026-02-12,token-efficient-tools-2026-03-28"
-            ),
+        session_seed = str(api_key or headers.get("Authorization", ""))
+        headers = apply_claude_upstream_headers(
+            headers,
+            incoming_headers=client_headers,
+            extra_betas=extra_betas,
+            oauth=oauth_upstream,
+            stream=stream,
+            session_seed=session_seed,
+            api_key_auth=not oauth_upstream,
         )
     return headers
 
@@ -190,6 +254,9 @@ async def _passthrough_call(
     stream: bool,
     request: Request,
     target: ResolvedTarget,
+    *,
+    prep: ClaudeUpstreamPrep | None = None,
+    client_tool: str | None = None,
 ) -> RawResult | None:
     providers: dict[str, Provider] = request.app.state.providers
     provider = providers.get(target.provider_config.id)
@@ -201,7 +268,15 @@ async def _passthrough_call(
     client = getattr(provider, "_client", None)
     if client is None:
         return None
-    headers = _passthrough_headers(provider, fmt=fmt, stream=stream)
+    headers = _passthrough_headers(
+        provider,
+        fmt=fmt,
+        stream=stream,
+        client_headers=client_header_map(request.headers),
+        extra_betas=prep.extra_betas if prep else None,
+        claude_client=client_tool == "claude",
+        oauth_upstream=_oauth_upstream(target),
+    )
     if stream:
         cm = client.stream("POST", url, json=body, headers=headers)
         r = await cm.__aenter__()
@@ -314,7 +389,8 @@ def _apply_client_body_quirks(
     model: str,
     provider_prefix: str,
     wire_format: str | None = None,
-) -> dict[str, Any]:
+    oauth_upstream: bool = False,
+) -> tuple[dict[str, Any], ClaudeUpstreamPrep | None]:
     """Claude normalize + tool dedupe on final wire bodies.
 
     Claude normalize must only run on Anthropic-shaped wire payloads. Applying it
@@ -322,8 +398,14 @@ def _apply_client_body_quirks(
     / thinking blocks. ``wire_format`` is the format of ``body`` on the wire.
     """
     fmt = wire_format or client_format
+    prep: ClaudeUpstreamPrep | None = None
     if fmt == "anthropic" and (client_format == "anthropic" or client_tool == "claude"):
-        body = normalize_claude_passthrough(body, model, provider_prefix=provider_prefix)
+        body, prep = prepare_claude_upstream_body(
+            body,
+            model,
+            provider_prefix=provider_prefix,
+            oauth_upstream=oauth_upstream,
+        )
         tools = body.get("tools")
         if isinstance(tools, list):
             deduped, stripped = dedupe_tools(tools)
@@ -341,7 +423,7 @@ def _apply_client_body_quirks(
     # Mistral (and some OpenAI-compat gateways) reject Anthropic client_metadata.
     if provider_prefix in {"mistral", "mistralai"} and "client_metadata" in body:
         body = {k: v for k, v in body.items() if k != "client_metadata"}
-    return body
+    return body, prep
 
 
 async def _handle(
@@ -571,19 +653,27 @@ async def _handle(
                     intent=attempt_thinking,
                 )
                 inject_reasoning_content(pt_body, provider=target.prefix, model=target.model)
-                pt_body = _apply_client_body_quirks(
+                pt_body, pt_prep = _apply_client_body_quirks(
                     pt_body,
                     client_format=client_format,
                     client_tool=client_tool,
                     model=upstream_model,
                     provider_prefix=target.prefix,
                     wire_format=client_format,
+                    oauth_upstream=_oauth_upstream(target),
                 )
                 pt_stream = attempt_req.stream
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 try:
                     result = await _passthrough_call(
-                        transport_base, client_format, pt_body, pt_stream, request, target
+                        transport_base,
+                        client_format,
+                        pt_body,
+                        pt_stream,
+                        request,
+                        target,
+                        prep=pt_prep,
+                        client_tool=client_tool,
                     )
                 except (httpx.TimeoutException, httpx.ConnectError) as e:
                     handler.mark_cooldown(target.account_id, "network", model=target.model)
@@ -635,7 +725,8 @@ async def _handle(
                         )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
-                    _live_lines = lines
+                    _reverse = pt_prep.oauth_tool_reverse_map if pt_prep else {}
+                    _live_lines = _oauth_stream_lines(lines, _reverse) if _reverse else lines
                     _pt_model = target.model
                     _pt_provider = target.prefix
                     _pt_is_openai = client_format == "openai"
@@ -740,7 +831,8 @@ async def _handle(
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
-                return JSONResponse(content=result.json_data if result.json_data else {})
+                pt_payload = _restore_claude_oauth_response(result.json_data, pt_prep)
+                return JSONResponse(content=pt_payload if pt_payload else {})
         # ── End transport passthrough ───────────────────────────────────
 
         # ── Native-format passthrough ──────────────────────────────────
@@ -761,13 +853,14 @@ async def _handle(
                     intent=attempt_thinking,
                 )
                 inject_reasoning_content(native_body, provider=target.prefix, model=target.model)
-                native_body = _apply_client_body_quirks(
+                native_body, native_prep = _apply_client_body_quirks(
                     native_body,
                     client_format=client_format,
                     client_tool=client_tool,
                     model=upstream_model,
                     provider_prefix=target.prefix,
                     wire_format=client_format,
+                    oauth_upstream=_oauth_upstream(target),
                 )
                 if is_native_passthrough(client_tool, target.prefix):
                     logger.debug(
@@ -778,7 +871,16 @@ async def _handle(
                 native_stream = attempt_req.stream
                 native_media = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 try:
-                    native_result = await provider_p.call(native_body, stream=native_stream)
+                    native_result = await provider_p.call(
+                        native_body,
+                        stream=native_stream,
+                        **_claude_provider_kwargs(
+                            request,
+                            native_prep,
+                            client_tool=client_tool,
+                            target=target,
+                        ),
+                    )
                 except (httpx.TimeoutException, httpx.ConnectError) as e:
                     handler.mark_cooldown(target.account_id, "network", model=target.model)
                     last_error = f"{target.account_id}: {type(e).__name__}"
@@ -832,6 +934,12 @@ async def _handle(
                         )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
+                    _native_reverse = native_prep.oauth_tool_reverse_map if native_prep else {}
+                    _native_lines = (
+                        _oauth_stream_lines(native_lines, _native_reverse)
+                        if _native_reverse
+                        else native_lines
+                    )
                     _native_model = target.model
                     _native_provider = target.prefix
                     _native_is_openai = client_format == "openai"
@@ -841,7 +949,7 @@ async def _handle(
                         try:
                             if _native_is_openai:
                                 async for chunk in openai_passthrough_stream(
-                                    native_lines,
+                                    _native_lines,
                                     tracker=tracker,
                                     model=_native_model,
                                     provider=_native_provider,
@@ -849,7 +957,7 @@ async def _handle(
                                     yield chunk
                             else:
                                 async for chunk in generic_sse_passthrough(
-                                    native_lines, tracker=tracker
+                                    _native_lines, tracker=tracker
                                 ):
                                     yield chunk
                             stream_ok = True
@@ -941,9 +1049,10 @@ async def _handle(
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
-                return JSONResponse(
-                    content=native_result.json_data if native_result.json_data else {}
+                native_payload = _restore_claude_oauth_response(
+                    native_result.json_data, native_prep
                 )
+                return JSONResponse(content=native_payload if native_payload else {})
         # ── End native passthrough ─────────────────────────────────────
 
         provider_adapter = _resolve_format(target.native_format)
@@ -956,21 +1065,28 @@ async def _handle(
             intent=attempt_thinking,
         )
         inject_reasoning_content(upstream_payload, provider=target.prefix, model=target.model)
-        upstream_payload = _apply_client_body_quirks(
+        upstream_payload, upstream_prep = _apply_client_body_quirks(
             upstream_payload,
             client_format=client_format,
             client_tool=client_tool,
             model=upstream_model,
             provider_prefix=target.prefix,
             wire_format=target.native_format,
+            oauth_upstream=_oauth_upstream(target),
         )
         providers: dict[str, Provider] = request.app.state.providers
         provider = providers[target.provider_config.id]
         handler.record_attempt(target)
+        provider_kwargs = _claude_provider_kwargs(
+            request,
+            upstream_prep,
+            client_tool=client_tool,
+            target=target,
+        )
 
         try:
             if attempt_req.stream:
-                result = await provider.call(upstream_payload, stream=True)
+                result = await provider.call(upstream_payload, stream=True, **provider_kwargs)
                 if result.status_code >= 400:
                     if is_fallback_eligible_refined(result.status_code, result.json_data):
                         handler.mark_cooldown(
@@ -1065,7 +1181,7 @@ async def _handle(
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 return StreamingResponse(_streaming_generator(), media_type=media_type)
 
-            result = await provider.call(upstream_payload, stream=False)
+            result = await provider.call(upstream_payload, stream=False, **provider_kwargs)
             if result.status_code >= 400:
                 if is_fallback_eligible_refined(result.status_code, result.json_data):
                     handler.mark_cooldown(
@@ -1181,6 +1297,13 @@ async def _handle(
 async def list_models(request: Request) -> dict[str, Any]:
     registry: ProviderRegistry = request.app.state.registry
     allowed = key_allowed_models(request)
+    client_tool = detect_client_tool(client_header_map(request.headers))
+    if client_tool == "claude":
+        return build_claude_code_models_response(
+            registry_providers=registry.providers,
+            combos=registry.combos,
+            allowed_models=allowed,
+        )
     data: list[dict[str, Any]] = []
     for prefix, configs in registry.providers.items():
         models_seen: set[str] = set()
@@ -1237,6 +1360,21 @@ async def responses(request: Request) -> Response:
 async def messages(request: Request) -> Response:
     body: dict[str, Any] = await request.json()
     return await _handle("anthropic", body, request)
+
+
+@router.post("/messages/count_tokens", dependencies=[Depends(require_gateway_rate_limit)])
+async def count_tokens(request: Request) -> dict[str, Any]:
+    body: dict[str, Any] = await request.json()
+    try:
+        import tiktoken
+
+        enc = tiktoken.get_encoding("cl100k_base")
+        serialized = json.dumps(body.get("messages", []), ensure_ascii=False)
+        input_tokens = len(enc.encode(serialized))
+    except Exception:
+        serialized = json.dumps(body, ensure_ascii=False)
+        input_tokens = max(1, len(serialized) // 4)
+    return {"input_tokens": input_tokens}
 
 
 gemini_router = APIRouter()
