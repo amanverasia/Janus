@@ -1421,14 +1421,27 @@ container. This persists:</p>
 <li><code>config.yaml</code> — seed config (loaded once on first startup)</li>
 <li><code>janus.db</code> — SQLite database (providers, combos, usage, inventory, etc.)</li>
 </ul>
+<p>The image runs the app as user <code>janus</code> (uid <strong>1000</strong>). On first <code>docker compose up</code>,
+Docker may create <code>./janus-data</code> on the host as <strong>root</strong>, which blocks SQLite from
+opening <code>janus.db</code>. The container entrypoint fixes ownership of the mounted data
+directory on each start (no manual <code>chown</code> needed).</p>
+<p>If you still hit permission errors (e.g. host uid is not 1000), fix ownership once:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="m">1000</span>:1000<span class="w"> </span>janus-data
+</code></pre></div>
+<p>Or, without sudo, using a throwaway root container:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-u<span class="w"> </span><span class="m">0</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">/janus-data:/data&quot;</span><span class="w"> </span>alpine<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;chown -R 1000:1000 /data&#39;</span>
+</code></pre></div>
 <p>Environment variables from your host <code>.env</code> file are passed through for
 <code>${ENV_VAR}</code> resolution in config:</p>
 <div class="highlight"><pre><span></span><code>OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=...
-INVENTORY_ENCRYPTION_KEY=...
+INVENTORY_ENCRYPTION_KEY=...  # encrypts inventory and gateway provider credentials
 INVENTORY_PUSH_TOKEN=...
 </code></pre></div>
+<p>Retain <code>INVENTORY_ENCRYPTION_KEY</code> with your backup material. Janus fails clearly if
+an encrypted credential is present but the matching key is unavailable. Dashboard
+configuration export is plaintext by design; a raw database backup remains encrypted.</p>
 <h3 id="build-from-source">Build from source<a class="headerlink" href="#build-from-source" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/amanverasia/Janus.git
 <span class="nb">cd</span><span class="w"> </span>Janus

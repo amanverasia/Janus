@@ -1405,7 +1405,9 @@
 globally. They reset at midnight local time. Budgets are enforced before routing
 — if a budget is exceeded, the request never reaches a provider.</p>
 <p>Budgets are <strong>not</strong> defined in YAML. They are managed at runtime via the CLI or
-the dashboard.</p>
+the dashboard. You can also attach a per-key daily limit when creating or
+updating an API key (<code>janus keys create --daily-budget 5</code> or the Keys page
+form); that uses the same <code>budgets</code> table.</p>
 <h2 id="per-key-vs-global">Per-key vs global<a class="headerlink" href="#per-key-vs-global" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

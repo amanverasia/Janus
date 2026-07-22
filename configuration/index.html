@@ -1382,7 +1382,14 @@ will not re-apply providers, combos, savers, or pricing.</p>
 <li><strong>Reset to Defaults</strong> (Settings page) — wipe DB tables and re-seed from YAML</li>
 </ul>
 <p>Static <code>api_keys</code> in YAML are <strong>not</strong> seeded — they remain in the config file and
-are checked at auth time alongside DB-managed keys.</p>
+are checked at auth time alongside DB-managed keys. YAML static keys always have
+full access (dashboard login + all models). Scopes (<code>can_login</code>, <code>allowed_models</code>)
+apply only to DB-managed <code>sk-janus-*</code> keys — see <a href="../api-reference/">API Reference</a>
+and the Keys dashboard page.</p>
+<p>Gateway rate limiting is optional and disabled by default. When enabled, each DB key,
+static YAML key, or client IP (when authentication is disabled) gets an independent
+60-second sliding-window bucket. Counters are in memory, process-local, and reset on
+restart. <code>/v1/health</code>, <code>/api/version</code>, and dashboard routes are exempt.</p>
 <p>Runtime settings stored in the <code>settings</code> table:</p>
 <table>
 <thead>
@@ -1395,6 +1402,10 @@ are checked at auth time alongside DB-managed keys.</p>
 <tr>
 <td><code>server_require_api_key</code></td>
 <td><code>true</code> / <code>false</code> — overrides YAML default</td>
+</tr>
+<tr>
+<td><code>server_gateway_rate_limit_rpm</code></td>
+<td>Per-client gateway requests per minute; <code>0</code> disables limiting</td>
 </tr>
 <tr>
 <td><code>saver_rtk_enabled</code></td>

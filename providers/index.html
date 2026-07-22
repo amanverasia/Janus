@@ -676,6 +676,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#oauth-providers-github-copilot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OAuth providers: GitHub Copilot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscription-quotas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subscription quotas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model allowlist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#inventory-backed-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1374,6 +1407,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#oauth-providers-github-copilot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OAuth providers: GitHub Copilot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscription-quotas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subscription quotas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model allowlist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#inventory-backed-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1647,18 +1713,116 @@ accounts share that prefix, Janus tries them in order with automatic fallback.</
 <td><code>opencode_free</code></td>
 <td>OpenCode Zen free tier</td>
 </tr>
+<tr>
+<td><code>github_copilot</code></td>
+<td>GitHub Copilot subscription (OAuth device-code flow)</td>
+</tr>
 </tbody>
 </table>
 <p>Most providers use <code>openai_compat</code> — if a provider offers an "OpenAI-compatible"
 endpoint, that's the one to use.</p>
 <h2 id="dashboard-catalog">Dashboard catalog<a class="headerlink" href="#dashboard-catalog" title="Permanent link">&para;</a></h2>
-<p>The dashboard <strong>Providers</strong> page includes a catalog of 14 known providers with
+<p>The dashboard <strong>Providers</strong> page includes a catalog of 15 known providers with
 pre-filled defaults, logos (via Simple Icons), and one-click setup:</p>
 <p>OpenAI, Anthropic, Google Gemini, Groq, Together AI, DeepSeek, OpenRouter,
-Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, OpenCode Zen (Free), and
-Custom.</p>
+Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, GitHub Copilot,
+OpenCode Zen (Free), and Custom.</p>
 <p>Each entry supports <strong>Fetch Models</strong> (auto-populate from upstream) and <strong>Test
 Connection</strong> (1-token probe with latency).</p>
+<h2 id="oauth-providers-github-copilot">OAuth providers: GitHub Copilot<a class="headerlink" href="#oauth-providers-github-copilot" title="Permanent link">&para;</a></h2>
+<p>Copilot is Janus's first OAuth (subscription) provider — it authenticates with
+your GitHub account instead of an API key:</p>
+<ol>
+<li>Dashboard → Providers → Add Provider → pick <strong>GitHub Copilot</strong> from the catalog
+   (or set API Type to <code>github_copilot</code>).</li>
+<li>Click <strong>Connect GitHub Account</strong> — Janus starts GitHub's device-code flow and
+   shows a one-time code.</li>
+<li>Open the verification URL, enter the code, and authorize. The resulting OAuth
+   token is filled into the API Key field automatically.</li>
+<li>Click <strong>Create Provider</strong>. Use models as <code>copilot/gpt-4o</code> etc. (<strong>Fetch
+   Models</strong> lists what your subscription includes.)</li>
+</ol>
+<p>Under the hood, Janus stores the long-lived GitHub OAuth token and exchanges it
+for short-lived Copilot session tokens automatically (refreshed before expiry
+behind a single-flight lock) — no manual re-login needed. The Copilot chat
+endpoint is OpenAI-compatible, so all formats, savers, combos, and fallback work
+as usual.</p>
+<div class="admonition note">
+<p class="admonition-title">Terms of use</p>
+<p>Routing Copilot through third-party tooling may be subject to GitHub's
+terms of service. Use with your own account at your own discretion.</p>
+</div>
+<h2 id="subscription-quotas">Subscription quotas<a class="headerlink" href="#subscription-quotas" title="Permanent link">&para;</a></h2>
+<p>Any provider can be given a <strong>quota window</strong> — useful for subscription plans
+(Copilot, Claude Pro-style 5-hour windows, monthly token allowances):</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Window</td>
+<td><code>5h</code> (fixed 5-hour buckets), <code>daily</code>, <code>weekly</code> (Mon–Sun), <code>monthly</code> — all UTC</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Any positive integer</td>
+</tr>
+<tr>
+<td>Metric</td>
+<td><code>requests</code> or <code>tokens</code> (input + output)</td>
+</tr>
+</tbody>
+</table>
+<p>Configure in the provider's Add/Edit form on the dashboard. The provider card
+then shows a usage bar with the current window's consumption and a reset
+countdown.</p>
+<p><strong>Enforcement is soft:</strong> when a provider's quota is exhausted, its accounts are
+moved to the <em>end</em> of the fallback try-order (same mechanism as RPM/RPD rate
+limits) — requests are never blocked, so a quota-exhausted provider still works
+if it's the only option. In a combo, exhausting your subscription's quota means
+the next tier is tried first until the window resets.</p>
+<p>Consumption is counted from the <code>usage</code> table (shared across all inventory
+accounts of the provider) and seeded on startup/reload, so restarts don't lose
+window state.</p>
+<h2 id="model-allowlist">Model allowlist<a class="headerlink" href="#model-allowlist" title="Permanent link">&para;</a></h2>
+<p>Every provider has an optional <code>allowed_models</code> field — set on the Add/Edit
+Provider form in the dashboard as a comma-separated list. It restricts which
+of the provider's models clients are permitted to route to:</p>
+<ul>
+<li>Entries can be <strong>exact model names</strong> (<code>claude-opus-4-7</code>) or <strong><code>fnmatch</code>
+  globs</strong> (<code>claude-opus-*</code>).</li>
+<li><strong>Empty (the default) means no restriction</strong> — all of the provider's
+  configured models are routable.</li>
+</ul>
+<p>Use it to expose only a subset of a provider's catalog — for example, a
+provider entry with <code>models: [claude-opus-4-7, claude-haiku-4-5]</code> and
+<code>allowed_models: claude-opus-*</code> routes <code>claude-opus-4-7</code> but rejects
+<code>claude-haiku-4-5</code>, letting you keep a broad <code>models</code> list for Fetch Models
+while limiting what's actually reachable.</p>
+<p><strong>Enforcement:</strong></p>
+<ul>
+<li>A request for a blocked model is rejected at routing time with <code>HTTP 400</code>
+  (the same "unknown model" path as an unregistered model — the provider
+  simply doesn't offer a route for it).</li>
+<li>Blocked models are hidden from <code>GET /v1/models</code> and the Ollama <code>GET
+  /api/tags</code> listing, so clients never see them offered in the first place.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Not the same as a key's model allowlist</p>
+<p>This is a <strong>per-provider</strong> allowlist — it governs which models a given
+upstream provider account exposes, regardless of who's asking. It's
+different from the <strong>per-API-key</strong> <code>allowed_models</code> scope (set on
+Janus-issued keys via the dashboard Keys page or <code>janus keys create
+--models</code>), which restricts what a specific <em>client</em> may request
+and uses <code>prefix/*</code> wildcards rather than <code>fnmatch</code> globs. A disallowed
+model on a key returns <code>403</code> (<code>model_not_allowed</code>), not <code>400</code>. See
+<a href="../configuration/">Configuration</a> and <a href="../api-reference/#authentication">API Reference</a>
+for the key-scope version.</p>
+</div>
 <h2 id="inventory-backed-routing">Inventory-backed routing<a class="headerlink" href="#inventory-backed-routing" title="Permanent link">&para;</a></h2>
 <p>When <a href="../inventory/">upstream key inventory</a> has routable keys for a gateway
 prefix, Janus expands the provider into one account per key — the same

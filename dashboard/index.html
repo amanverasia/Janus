@@ -839,6 +839,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#request-logs-dashboardrequest-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Logs — /dashboard/request-logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#analytics-dashboardanalytics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1487,6 +1498,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#request-logs-dashboardrequest-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Request Logs — /dashboard/request-logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#analytics-dashboardanalytics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1835,6 +1857,29 @@ the login page for dashboard access from other machines. See
 <li>Total requests, input tokens, output tokens</li>
 <li>Per-model breakdown</li>
 </ul>
+<h3 id="request-logs-dashboardrequest-logs">Request Logs — <code>/dashboard/request-logs</code><a class="headerlink" href="#request-logs-dashboardrequest-logs" title="Permanent link">&para;</a></h3>
+<p>Debug view of captured API requests (<strong>off by default</strong> — enable <strong>Request
+Logging</strong> under Settings, or set <code>server_request_logging=true</code>):</p>
+<ul>
+<li>Table of recent requests: time, format, <strong>user</strong>, model, provider, status, duration</li>
+<li><strong>User column</strong> — which client API key made the call: the key's name for
+  DB-issued keys, the config label for static YAML keys
+  (<code>client_key_label</code>), or <code>—</code> for anonymous requests (no key required)</li>
+<li>Per-request JSON detail (full request/response bodies, truncated at 64 KB)</li>
+<li>Successful completions (stream + non-stream), exhausted fallbacks (<code>503</code>), and
+  non-fallback upstream errors (e.g. <code>400</code>) are recorded when logging is on</li>
+<li>Export all logs as JSON; Clear button wipes the table</li>
+<li>Retention is <strong>configurable</strong> via <code>server_request_log_retention</code> (default
+  <code>500</code>, clamped between 50 and 5000) on the Settings page — oldest rows
+  beyond the limit are pruned automatically</li>
+</ul>
+<p>If the page is empty, logging is almost always still disabled — check the banner
+and the Settings toggle.</p>
+<div class="admonition warning">
+<p class="admonition-title">Sensitive content</p>
+<p>Captured bodies contain prompts and completions. Leave request logging off
+unless actively debugging.</p>
+</div>
 <h3 id="analytics-dashboardanalytics">Analytics — <code>/dashboard/analytics</code><a class="headerlink" href="#analytics-dashboardanalytics" title="Permanent link">&para;</a></h3>
 <p>Interactive Chart.js visualizations:</p>
 <ul>
@@ -1908,8 +1953,9 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <h2 id="access">Access<a class="headerlink" href="#access" title="Permanent link">&para;</a></h2>
 <h3 id="api-keys-dashboardkeys">API Keys — <code>/dashboard/keys</code><a class="headerlink" href="#api-keys-dashboardkeys" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Key list</strong> — ID, prefix, name, status (active/revoked)</li>
-<li><strong>Create</strong> — HTMX form; full <code>sk-janus-...</code> key shown <strong>once</strong></li>
+<li><strong>Key list</strong> — ID, prefix, name, login permission, model allowlist, status (active/revoked)</li>
+<li><strong>Create</strong> — HTMX form with optional dashboard login, allowed models (<code>exact</code> or <code>prefix/*</code>), and daily budget; full <code>sk-janus-...</code> key shown <strong>once</strong></li>
+<li><strong>Edit</strong> — update name, login, models, or daily budget</li>
 <li><strong>Revoke</strong> — deactivate key</li>
 </ul>
 <h3 id="tool-setup-dashboardtools">Tool Setup — <code>/dashboard/tools</code><a class="headerlink" href="#tool-setup-dashboardtools" title="Permanent link">&para;</a></h3>
@@ -1932,6 +1978,13 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <h3 id="settings-dashboardsettings">Settings — <code>/dashboard/settings</code><a class="headerlink" href="#settings-dashboardsettings" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Require API key</strong> — runtime toggle (stored in DB, overrides YAML default)</li>
+<li><strong>Combo Routing</strong> — <code>combo_strategy</code> selector (fallback / round robin /
+  fusion), <code>combo_sticky_limit</code>, and the Fusion tuning fields (judge model,
+  min panel size, straggler grace, hard timeout) — see <a href="../combos/#combo-strategies">Combos &amp;
+  Fallback</a> for what each does. Changes are
+  validated server-side (strategy must be one of the three known values;
+  numeric fields must be finite and within bounds)</li>
+<li><strong>Request Logging</strong> — capture full request/response bodies for debugging (off by default), plus the log retention limit</li>
 <li><strong>Server info</strong> — host, port, data directory</li>
 <li><strong>Export Config</strong> — download current DB state as YAML</li>
 <li><strong>Reset to Defaults</strong> — wipe DB tables and re-seed from <code>config.yaml</code> (danger zone)</li>
@@ -1952,7 +2005,12 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/keys</code></td>
-<td>Create an API key</td>
+<td>Create an API key (optional login/models/budget)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/dashboard/api/keys/{id}</code></td>
+<td>Update key scopes / optional daily budget</td>
 </tr>
 <tr>
 <td><code>DELETE</code></td>
@@ -2060,7 +2118,7 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/settings</code></td>
-<td>Update runtime settings (savers, require_api_key)</td>
+<td>Update runtime settings (savers, require_api_key, request logging)</td>
 </tr>
 <tr>
 <td><code>GET</code></td>
@@ -2071,6 +2129,21 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/reset</code></td>
 <td>Reset DB and re-seed from YAML</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/dashboard/api/request-logs/export</code></td>
+<td>Export captured request logs as JSON</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/dashboard/api/request-logs/{id}</code></td>
+<td>Full detail for one captured request</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/dashboard/api/request-logs</code></td>
+<td>Clear all captured request logs</td>
 </tr>
 </tbody>
 </table>

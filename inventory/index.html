@@ -1605,19 +1605,23 @@ Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily
 Firecrawl, fal.ai, Exa, Brave Search, plus <strong>custom</strong> and <strong>unidentified</strong>
 fallbacks.</p>
 <h2 id="encryption-at-rest">Encryption at rest<a class="headerlink" href="#encryption-at-rest" title="Permanent link">&para;</a></h2>
-<p>Set <code>INVENTORY_ENCRYPTION_KEY</code> to a Fernet key before adding keys. Keys are then
-stored encrypted in SQLite.</p>
+<p>Set <code>INVENTORY_ENCRYPTION_KEY</code> to a Fernet key before adding credentials. Inventory
+upstream keys and gateway provider API keys/OAuth credential blobs are then stored
+encrypted in SQLite. Keep this key with your backups: an encrypted database cannot
+be used without the same Fernet key.</p>
 <p>Generate a key:</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>generate-encryption-key
 <span class="c1"># gAAAAABl...  (save this — shown once)</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">&#39;gAAAAABl...&#39;</span>
 </code></pre></div>
-<p>Encrypt existing plaintext keys:</p>
+<p>Encrypt existing plaintext upstream keys and provider credentials in one pass:</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>encrypt-keys
 </code></pre></div>
-<p>The dashboard shows encryption status on the inventory overview and offers an
-<strong>Encrypt keys</strong> action when <code>INVENTORY_ENCRYPTION_KEY</code> is set.</p>
+<p>The dashboard shows separate encryption counts on the inventory overview and offers
+one <strong>Encrypt credentials</strong> action when <code>INVENTORY_ENCRYPTION_KEY</code> is set. Dashboard
+configuration export remains a portable plaintext YAML export; protect exported files
+accordingly. For encrypted backups, copy the SQLite database and retain the Fernet key.</p>
 <h2 id="push-api">Push API<a class="headerlink" href="#push-api" title="Permanent link">&para;</a></h2>
 <p>Programmatically ingest keys from scripts or other nodes:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:20128/dashboard/api/inventory/push<span class="w"> </span><span class="se">\</span>

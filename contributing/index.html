@@ -1154,6 +1154,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#maintainer-scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintainer Scripts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pr-process" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1290,6 +1301,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#maintainer-scripts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintainer Scripts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pr-process" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1381,6 +1403,37 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <li>Add construction logic to <code>reload_savers()</code> in <code>src/janus/dashboard/reload.py</code>.</li>
 <li>Savers must be fail-safe — exceptions are caught by the pipeline and logged, never breaking the request.</li>
 </ol>
+<h2 id="maintainer-scripts">Maintainer Scripts<a class="headerlink" href="#maintainer-scripts" title="Permanent link">&para;</a></h2>
+<p>The <code>scripts/</code> directory holds one-off maintenance tools. They are not installed with the
+package — run them from a dev checkout with <code>pip install -e ".[dev]"</code> so <code>janus</code> imports resolve.</p>
+<table>
+<thead>
+<tr>
+<th>Script</th>
+<th>When to run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scripts/generate_model_catalog.py</code></td>
+<td>After updating the upstream model catalog in <a href="https://github.com/amanverasia/Dashboard_For_Apis">Dashboard_For_Apis</a>. Regenerates <code>src/janus/inventory/data/model_catalog.json</code>. Default source: sibling checkout at <code>../Dashboard_For_Apis/backend/src/services/model-catalog.ts</code>; override with <code>--source</code>.</td>
+</tr>
+<tr>
+<td><code>scripts/seed_openrouter_pricing.py</code></td>
+<td>When refreshing OpenRouter per-model pricing in your local DB. Fetches the live catalog and writes rows to <code>pricing_overrides</code>. Use <code>--dry-run</code> to preview counts.</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><span class="c1"># Regenerate model catalog (custom source path)</span>
+.venv/bin/python<span class="w"> </span>scripts/generate_model_catalog.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--source<span class="w"> </span>/path/to/model-catalog.ts
+
+<span class="c1"># Seed OpenRouter pricing into ~/.janus/janus.db</span>
+.venv/bin/python<span class="w"> </span>scripts/seed_openrouter_pricing.py
+
+<span class="c1"># Preview without writing</span>
+.venv/bin/python<span class="w"> </span>scripts/seed_openrouter_pricing.py<span class="w"> </span>--dry-run
+</code></pre></div>
 <h2 id="pr-process">PR Process<a class="headerlink" href="#pr-process" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Squash-merge PRs to <code>main</code>. Branches are deleted after merge.</li>

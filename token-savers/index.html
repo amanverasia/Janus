@@ -732,6 +732,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#headroom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headroom
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#all-savers-together" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -747,6 +758,17 @@
     <span class="md-ellipsis">
       
         Pipeline behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#savings-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Savings metrics
       
     </span>
   </a>
@@ -1214,6 +1236,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#headroom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headroom
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#all-savers-together" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1229,6 +1262,17 @@
     <span class="md-ellipsis">
       
         Pipeline behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#savings-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Savings metrics
       
     </span>
   </a>
@@ -1272,16 +1316,18 @@ saver is a pure <code>transform(req) -&gt; CanonicalRequest</code> — it modifi
 in place to reduce token usage or steer model behavior. Savers are fail-safe:
 exceptions are caught and logged, never breaking a request.</p>
 <p>The <code>SaverPipeline</code> runs enabled savers in sequence:</p>
-<div class="highlight"><pre><span></span><code>RTK → Caveman → Ponytail
+<div class="highlight"><pre><span></span><code>Headroom (external) → RTK → Caveman → Ponytail
 </code></pre></div>
 <h2 id="rtk">RTK<a class="headerlink" href="#rtk" title="Permanent link">&para;</a></h2>
 <p><strong>Default: ON</strong></p>
 <p>RTK compresses <code>tool_result</code> content parts — the verbose output that coding
-tools send back from shell commands, file reads, and similar operations. It
-auto-detects the content type and applies the appropriate compression:</p>
+tools send back from shell commands, file reads, and similar operations. Every
+result is ANSI-stripped first, then auto-detected against a priority-ordered
+filter set and compressed with the matching filter:</p>
 <table>
 <thead>
 <tr>
+<th>Priority</th>
 <th>Content type</th>
 <th>Detection</th>
 <th>Compression</th>
@@ -1289,29 +1335,81 @@ auto-detects the content type and applies the appropriate compression:</p>
 </thead>
 <tbody>
 <tr>
-<td>Git diff</td>
-<td><code>diff --git</code> or <code>diff</code> prefix</td>
-<td>Strips diff-mode lines (<code>index</code>, <code>old mode</code>, <code>new file mode</code>, etc.)</td>
+<td>1</td>
+<td>Git log</td>
+<td><code>commit &lt;sha&gt;</code> header</td>
+<td>Keeps headers/metadata for all commits; collapses commit bodies past the 20th to one line, capped at 200 output lines</td>
 </tr>
 <tr>
+<td>2</td>
+<td>Git diff</td>
+<td><code>diff --git</code> or <code>diff</code> prefix</td>
+<td>Strips diff-mode lines (<code>index</code>, <code>old mode</code>, <code>new file mode</code>, etc.); caps each hunk at 100 shown lines</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Git status</td>
+<td>Porcelain-shaped lines (<code>?? path</code>, <code>M path</code>, ...), 3+ of them</td>
+<td>Caps modified/untracked file lists at 10 entries per category</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Build output</td>
+<td><code>error[</code>, <code>warning:</code>, <code>FAILED</code>, <code>BUILD</code> markers</td>
+<td>Keeps error/warning/failure lines with 3 lines of context, plus the last 30 lines</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Grep output</td>
+<td>5+ <code>path:NN:</code> match lines, majority grep-shaped</td>
+<td>Caps matches at 10 per file; non-matching lines (context, tracebacks, prose) pass through untouched</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Find output</td>
+<td>10+ bare path-like lines, no <code>:</code></td>
+<td>Groups by parent directory, caps at 10 entries shown per directory</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Tree output</td>
+<td><code>├──</code> / <code>└──</code> glyphs</td>
+<td>Keeps the first 200 lines plus a "+N more lines" summary</td>
+</tr>
+<tr>
+<td>8</td>
 <td>File listing</td>
 <td>Lines matching <code>drwxr-xr-x</code> permissions</td>
 <td>Strips permission/user/group prefixes</td>
 </tr>
 <tr>
+<td>9</td>
 <td>Log output</td>
 <td>&gt;50 lines + timestamp/log-level patterns</td>
 <td>Deduplicates lines</td>
 </tr>
 </tbody>
 </table>
-<p>After format-specific compression, RTK applies:</p>
-<ol>
-<li><strong>ANSI stripping</strong> — removes terminal escape sequences.</li>
-<li><strong>Smart truncation</strong> — caps at 8000 characters, cutting at the last word
-   boundary after 80% of the limit, and appends <code>[…truncated…]</code>.</li>
-</ol>
-<p>Content under 50 characters is skipped entirely (not worth processing).</p>
+<p>After format-specific compression, RTK applies <strong>smart truncation</strong>:</p>
+<ul>
+<li>Above <strong>250 lines</strong>, truncation is <strong>line-based</strong>: keeps the first <strong>120</strong>
+  lines and the last <strong>60</strong>, replacing the middle with a
+  <code>[… N lines truncated …]</code> marker.</li>
+<li>Otherwise it falls back to <strong>character-based</strong> truncation, capping at 8000
+  characters and cutting at the last word boundary after 80% of the limit,
+  appended with <code>[…truncated…]</code>.</li>
+</ul>
+<p>Every filter is a <strong>no-op guard</strong>: if a compression pass would produce output
+that's the same size or larger than the input, the original text is kept
+instead — RTK never grows content. It also never empties content outright.</p>
+<p>Guardrails around the whole pipeline:</p>
+<ul>
+<li>Content under <strong>500 bytes</strong> is skipped — not worth processing.</li>
+<li>Content over <strong>10 MiB</strong> is passed through untouched — too large to be worth
+  the CPU cost of scanning.</li>
+<li><code>tool_result</code> parts marked as <strong>errors</strong> are left completely untouched, so
+  error messages and tracebacks stay intact for the model to reason about.</li>
+</ul>
 <p>Enable via YAML (first startup), dashboard <strong>Token Savers</strong> page, or DB settings:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">token_savers</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">rtk</span><span class="p">:</span>
@@ -1320,15 +1418,43 @@ auto-detects the content type and applies the appropriate compression:</p>
 <h2 id="caveman">Caveman<a class="headerlink" href="#caveman" title="Permanent link">&para;</a></h2>
 <p><strong>Default: OFF</strong></p>
 <p>Caveman prepends a brevity-maximizing system prompt that instructs the model to
-cut pleasantries and respond with maximum terseness:</p>
-<blockquote>
-<p>Respond with maximum brevity. Preserve technical substance. No pleasantries,
-no explanations of approach, no commentary. Just the answer. Why use many
-token when few token do trick.</p>
-</blockquote>
+cut pleasantries and respond with maximum terseness. Three levels are
+available (<code>saver_caveman_level</code>, dashboard select), each ported from
+9router's safety-conscious Caveman prompts:</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Prompt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lite</code></td>
+<td>Be brief. Skip pleasantries and skip explaining your approach. Keep code, paths, commands, error messages, and URLs exact — never abbreviate them.</td>
+</tr>
+<tr>
+<td><code>full</code> <em>(default)</em></td>
+<td>Respond with maximum brevity. Preserve technical substance. No pleasantries, no explanations of approach, no commentary. Just the answer. Why use many token when few token do trick. <em>(plus the safety boundaries below)</em></td>
+</tr>
+<tr>
+<td><code>ultra</code></td>
+<td>Max brevity. Drop article, filler, pleasantry. Fragment fine, full sentence not required. No preamble, no commentary. Just answer. Why use many token when few token do trick. <em>(plus the safety boundaries below)</em></td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Safety boundaries</p>
+<p><code>full</code> and <code>ultra</code> always append the same safety boundary clause: security
+warnings, irreversible-action confirmations, and multi-step instructions
+are always written out normally, and code, paths, commands, error
+messages, and URLs are never abbreviated — brevity never gets to compromise
+correctness or safety.</p>
+</div>
 <div class="highlight"><pre><span></span><code><span class="nt">token_savers</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">caveman</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">full</span><span class="w">   </span><span class="c1"># lite | full | ultra</span>
 </code></pre></div>
 <h2 id="ponytail">Ponytail<a class="headerlink" href="#ponytail" title="Permanent link">&para;</a></h2>
 <p><strong>Default: OFF</strong></p>
@@ -1361,6 +1487,23 @@ minimal, dependency-light code. Three levels are available:</p>
 <span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">full</span><span class="w">   </span><span class="c1"># lite | full | ultra</span>
 </code></pre></div>
+<h2 id="headroom">Headroom<a class="headerlink" href="#headroom" title="Permanent link">&para;</a></h2>
+<p><strong>Default: OFF</strong> — requires a separately running <a href="https://github.com/chopratejas/headroom">Headroom</a> proxy.</p>
+<p>Headroom is an external context-compression service. When enabled, Janus sends
+the conversation to Headroom's <code>POST /v1/compress</code> endpoint before any other
+saver runs, then continues normal routing with the compressed messages:</p>
+<div class="highlight"><pre><span></span><code>Client → Janus → Headroom /v1/compress → Janus → provider
+</code></pre></div>
+<p>Local setup:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;headroom-ai[proxy]&quot;</span>
+headroom<span class="w"> </span>proxy<span class="w"> </span>--port<span class="w"> </span><span class="m">8787</span>
+</code></pre></div>
+<p>Enable in Dashboard → Token Savers → Headroom. The URL is configurable
+(default <code>http://localhost:8787</code>) — for Docker use <code>http://headroom:8787</code>
+(same network) or <code>http://host.docker.internal:8787</code> (host machine).</p>
+<p><strong>Fail-open:</strong> if Headroom is down, times out, or returns an error or malformed
+response, Janus sends the original uncompressed request. Headroom can never
+break a request.</p>
 <h2 id="all-savers-together">All savers together<a class="headerlink" href="#all-savers-together" title="Permanent link">&para;</a></h2>
 <p>Savers stack — all enabled savers run in pipeline order. A full configuration:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">token_savers</span><span class="p">:</span>
@@ -1385,11 +1528,33 @@ exception:</p>
 </ul>
 <p>This means you can safely enable savers without worrying about edge cases in
 tool output crashing your request pipeline.</p>
+<h2 id="savings-metrics">Savings metrics<a class="headerlink" href="#savings-metrics" title="Permanent link">&para;</a></h2>
+<p>The <code>SaverPipeline</code> measures each request's size (JSON-serialized <code>messages</code> +
+<code>system</code>) before and after every saver runs, and accumulates the results
+per-saver. The <strong>Token Savers</strong> dashboard page (<code>/dashboard/savers</code>) shows, under
+each saver:</p>
+<blockquote>
+<p>saved <em>X</em> KB across <em>N</em> requests (<em>Y</em>% avg) — since restart</p>
+</blockquote>
+<ul>
+<li>Measured <strong>per request</strong> — every request that passes through an enabled
+  saver updates that saver's running totals.</li>
+<li><strong>In-memory, since restart</strong> — counters live on the running <code>SaverPipeline</code>
+  instance and reset when the process restarts. They are <em>not</em> persisted to
+  the database.</li>
+<li>Displayed savings are clamped to zero — prompt-injecting savers like
+  Caveman and Ponytail can occasionally increase request size (they add a
+  system prompt), and those requests aren't shown as negative savings.</li>
+<li>Counters survive a dashboard-triggered saver reload (e.g. toggling a
+  different saver on/off rebuilds the pipeline) — the new pipeline adopts the
+  old one's cumulative stats rather than resetting to zero.</li>
+</ul>
 <h2 id="dashboard-management">Dashboard management<a class="headerlink" href="#dashboard-management" title="Permanent link">&para;</a></h2>
 <p>Toggle savers at runtime from <code>/dashboard/savers</code>:</p>
 <ul>
+<li>Headroom on/off with proxy URL field</li>
 <li>RTK on/off</li>
-<li>Caveman on/off</li>
+<li>Caveman on/off with level selector (lite / full / ultra)</li>
 <li>Ponytail on/off with level selector (lite / full / ultra)</li>
 </ul>
 <p>Settings are stored in the <code>settings</code> table and hot-reload immediately. After

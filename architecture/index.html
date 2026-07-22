@@ -1089,6 +1089,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#streaming-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming paths
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streaming paths">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#openai-passthrough-9router-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI passthrough (9router-style)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#translate-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Translate path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-on-stream-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle on stream complete
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routing-layer" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1325,6 +1375,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#streaming-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming paths
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streaming paths">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#openai-passthrough-9router-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI passthrough (9router-style)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#translate-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Translate path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-on-stream-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle on stream complete
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#routing-layer" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1524,17 +1624,23 @@ Adding a new format or provider touches exactly one adapter.</p>
    accounts (including inventory-expanded keys), filtering out cooled-down
    accounts.</li>
 <li><strong>Per-attempt loop</strong>: for each target:</li>
+<li>Optional client/model quirks: thinking intent, modality strip, image
+     prefetch, tool dedupe, Claude Code normalize, reasoning-content inject.</li>
 <li><code>build_upstream_request</code> converts the <code>CanonicalRequest</code> to the provider's
-     native format.</li>
+     native format (or transport/native passthrough rebuilds from the post-saver
+     canonical body).</li>
 <li>The provider executes the HTTP call (streaming or non-streaming).</li>
 <li><code>parse_upstream_response</code> converts the provider response to a
-     <code>CanonicalResponse</code>.</li>
+     <code>CanonicalResponse</code> (skipped on same-format passthrough).</li>
 <li><strong>On success</strong>: <code>emit_response</code> converts the <code>CanonicalResponse</code> back to the
-   client's format. <code>record_usage</code> stores token counts and computed cost.</li>
+   client's format. <code>record_usage</code> stores token counts and computed cost.
+   Streaming records usage after the stream completes.</li>
 <li><strong>On fallback-eligible error</strong>: the account is cooled down and the next
    attempt is tried.</li>
 <li><strong>If all attempts fail</strong>: the client receives <code>HTTP 503</code> with an
-   <code>All providers exhausted</code> message.</li>
+   <code>All providers exhausted</code> message. When request logging is enabled, terminal
+   4xx/5xx failures (non-fallback) and exhausted routes are written to
+   <code>request_logs</code>.</li>
 </ol>
 <h2 id="format-adapters">Format adapters<a class="headerlink" href="#format-adapters" title="Permanent link">&para;</a></h2>
 <p>Three format adapters are registered in the <code>FORMATS</code> dict:</p>
@@ -1610,7 +1716,7 @@ Adding a new format or provider touches exactly one adapter.</p>
 format can be routed to an Anthropic provider, with translation handled by the
 canonical round-trip.</p>
 <h2 id="provider-executors">Provider executors<a class="headerlink" href="#provider-executors" title="Permanent link">&para;</a></h2>
-<p>Four provider types are supported, built by <code>_build_provider()</code> in <code>app.py</code>:</p>
+<p>Provider types are built by <code>_build_provider()</code> in <code>app.py</code>:</p>
 <table>
 <thead>
 <tr>
@@ -1628,7 +1734,7 @@ canonical round-trip.</p>
 <tr>
 <td><code>anthropic</code></td>
 <td><code>AnthropicProvider</code></td>
-<td>Anthropic native API</td>
+<td>Anthropic native API (API key)</td>
 </tr>
 <tr>
 <td><code>gemini</code></td>
@@ -1640,6 +1746,36 @@ canonical round-trip.</p>
 <td><code>OpenCodeFreeProvider</code></td>
 <td>OpenCode Zen free tier</td>
 </tr>
+<tr>
+<td><code>github_copilot</code></td>
+<td><code>GitHubCopilotProvider</code></td>
+<td>GitHub Copilot (device OAuth)</td>
+</tr>
+<tr>
+<td><code>codex</code></td>
+<td><code>CodexProvider</code></td>
+<td>ChatGPT Codex Responses API + OAuth refresh</td>
+</tr>
+<tr>
+<td><code>kiro</code></td>
+<td><code>KiroProvider</code></td>
+<td>AWS Kiro / CodeWhisperer + social refresh</td>
+</tr>
+<tr>
+<td><code>cursor</code></td>
+<td><code>CursorProvider</code></td>
+<td>Cursor subscription shell</td>
+</tr>
+<tr>
+<td><code>antigravity</code> / <code>gemini_cli</code></td>
+<td><code>AntigravityProvider</code></td>
+<td>Gemini CLI / Antigravity v1internal + Google OAuth</td>
+</tr>
+<tr>
+<td><code>claude_oauth</code></td>
+<td><code>ClaudeOAuthProvider</code></td>
+<td>Claude Code subscription OAuth</td>
+</tr>
 </tbody>
 </table>
 <p>The <code>Provider</code> protocol requires:</p>
@@ -1648,6 +1784,73 @@ canonical round-trip.</p>
 </code></pre></div>
 <p><code>RawResult</code> carries either <code>json_data</code> (non-streaming) or <code>lines</code> (an
 <code>AsyncIterator[str]</code> of SSE lines for streaming).</p>
+<h2 id="streaming-paths">Streaming paths<a class="headerlink" href="#streaming-paths" title="Permanent link">&para;</a></h2>
+<p>Streaming has three modes, chosen in <code>_handle()</code> after the upstream call
+succeeds:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>When</th>
+<th>Module</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OpenAI passthrough</strong></td>
+<td>Client format is <code>openai</code> and the upstream body is already OpenAI Chat Completions SSE (native or transport path)</td>
+<td><code>streaming/passthrough.py</code> → <code>openai_passthrough_stream</code></td>
+</tr>
+<tr>
+<td><strong>Generic SSE passthrough</strong></td>
+<td>Same client/provider wire format but not OpenAI Chat Completions (Anthropic, Gemini, Responses, …)</td>
+<td><code>streaming/passthrough.py</code> → <code>generic_sse_passthrough</code></td>
+</tr>
+<tr>
+<td><strong>Translate</strong></td>
+<td>Client format ≠ provider format</td>
+<td><code>streaming/translator.py</code> → <code>translate_stream</code> via parser + emitter</td>
+</tr>
+</tbody>
+</table>
+<h3 id="openai-passthrough-9router-style">OpenAI passthrough (9router-style)<a class="headerlink" href="#openai-passthrough-9router-style" title="Permanent link">&para;</a></h3>
+<p>Same-format OpenAI streams do <strong>not</strong> go through the canonical event round-trip.
+<code>openai_passthrough_stream</code> re-emits upstream SSE with these guarantees:</p>
+<ol>
+<li><strong>Framing</strong> — httpx <code>aiter_lines()</code> drops trailing newlines and yields empty
+   strings for blank SSE separators. The passthrough restores <code>\n\n</code> between
+   events so clients parse complete SSE frames.</li>
+<li><strong>Normalization</strong> — inject <code>object</code> / <code>created</code> when missing; fix too-short
+   or generic <code>id</code> values; strip Azure <code>*_filter_results</code>; drop empty
+   <code>delta.tool_calls: []</code> (breaks AI SDK reasoning tracking).</li>
+<li><strong>Garbage filter</strong> — non-JSON <code>data:</code> lines (HTML error pages, plain-text
+   rate-limit messages) are dropped; empty deltas with no finish/usage/role
+   are skipped.</li>
+<li><strong>Usage</strong> — finish chunks without usage get accumulated tracker usage
+   attached; <code>StreamUsageTracker</code> still drives post-stream <code>record_usage</code>.</li>
+<li><strong>Termination</strong> — if upstream never sent a non-null <code>finish_reason</code>, Janus
+   synthesizes <code>finish_reason: stop</code>. If <code>[DONE]</code> is missing, Janus emits it
+   (except Gemini-family providers that reject the sentinel).</li>
+</ol>
+<p>This is what fixed pi/opencode's <code>Stream ended without finish_reason</code> on
+DeepSeek V4 Pro native passthrough.</p>
+<h3 id="translate-path">Translate path<a class="headerlink" href="#translate-path" title="Permanent link">&para;</a></h3>
+<p>Cross-format streams use <code>translate_stream(upstream_lines, parser, emitter)</code>:</p>
+<div class="highlight"><pre><span></span><code>upstream SSE line → StreamParser.feed → CanonicalEvent(s)
+                  → StreamEmitter.feed → client SSE bytes
+stream end        → parser.finish + emitter.finish (includes [DONE] for OpenAI)
+</code></pre></div>
+<p>OpenAI client emitters always end with <code>data: [DONE]\n\n</code> via <code>emitter.finish()</code>.</p>
+<h3 id="lifecycle-on-stream-complete">Lifecycle on stream complete<a class="headerlink" href="#lifecycle-on-stream-complete" title="Permanent link">&para;</a></h3>
+<p>Regardless of mode, the stream generator's <code>finally</code> block:</p>
+<ol>
+<li>Reads <code>tracker.get_usage()</code> (upstream usage or tiktoken estimate)</li>
+<li><code>compute_cost</code> + <code>record_usage</code></li>
+<li>Optional <code>record_request_log</code> when <code>server_request_logging</code> is on</li>
+<li><code>handler.mark_success</code> only if the stream finished without error</li>
+</ol>
+<p>Mid-stream errors do <strong>not</strong> retry another account (partial output can't be
+replayed).</p>
 <h2 id="routing-layer">Routing layer<a class="headerlink" href="#routing-layer" title="Permanent link">&para;</a></h2>
 <h3 id="providerregistry">ProviderRegistry<a class="headerlink" href="#providerregistry" title="Permanent link">&para;</a></h3>
 <p><code>ProviderRegistry</code> stores <code>list[ProviderConfig]</code> per prefix, enabling
@@ -1703,7 +1906,7 @@ auto-created on startup via <code>init_db()</code> in the lifespan handler.</p>
 <tbody>
 <tr>
 <td><code>api_keys</code></td>
-<td>API key storage (SHA256-hashed)</td>
+<td>Client API keys (SHA256-hashed) plus scopes: <code>can_login</code>, <code>allowed_models</code></td>
 </tr>
 <tr>
 <td><code>usage</code></td>

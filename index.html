@@ -546,6 +546,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#client-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#budgets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1329,6 +1340,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#client-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#budgets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1416,14 +1438,19 @@ AI call — facing the developer on one side and every provider on the other.</p
 <p>Janus is a local-first, single-user AI routing gateway. It exposes
 OpenAI/Anthropic/Gemini-compatible HTTP endpoints that your coding tools (Claude Code,
 Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
-40+ AI providers — without either side needing to know the other exists.</p>
+any of 29 built-in AI providers — or any OpenAI-compatible endpoint — without
+either side needing to know the other exists.</p>
 <h2 id="why-janus">Why Janus?<a class="headerlink" href="#why-janus" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>One endpoint, every provider</strong> — point your tools at a single URL, route to OpenAI, Anthropic, Gemini, Groq, DeepSeek, and more</li>
+<li><strong>One endpoint, every provider</strong> — point your tools at a single URL, route to OpenAI, Anthropic, Gemini, Groq, DeepSeek, Copilot, and more</li>
 <li><strong>Automatic fallback</strong> — if one provider is rate-limited or down, Janus rotates to the next automatically</li>
+<li><strong>Fusion combos</strong> — fan a request out to a panel of models in parallel and synthesize one answer with a judge model</li>
 <li><strong>Key inventory</strong> — store and route across many upstream API keys with validation, credit checks, and multi-account expansion</li>
-<li><strong>Cost tracking</strong> — per-request cost estimation with 28 builtin model prices and budget enforcement</li>
-<li><strong>Token savings</strong> — RTK compression strips boilerplate from tool outputs before sending to the model</li>
+<li><strong>Cost tracking</strong> — per-request cost estimation with builtin model prices, budgets, and subscription quota windows</li>
+<li><strong>Token savings</strong> — RTK compression, optional Headroom proxy, and prompt savers before routing, with per-saver savings metrics on the dashboard</li>
+<li><strong>Per-provider model allowlists</strong> — expose only selected models from a provider, by exact name or glob</li>
+<li><strong>Client-native surfaces</strong> — Chat Completions, Responses (Codex), Anthropic, Gemini, and Ollama endpoints</li>
+<li><strong>Request-log user attribution</strong> — captured requests show which API key made each call</li>
 <li><strong>No cloud, no telemetry</strong> — runs entirely on your machine, your keys never leave your system</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
@@ -1453,7 +1480,10 @@ janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w">
 <li><strong>RTK</strong> (default ON) — compresses tool output (git diffs, file listings, logs) before sending</li>
 <li><strong>Caveman</strong> — prepends a brevity-maximizing system prompt</li>
 <li><strong>Ponytail</strong> — prepends a lazy-developer prompt (3 levels: lite, full, ultra)</li>
+<li><strong>Headroom</strong> — optional external conversation compression proxy (<code>/v1/compress</code>), fail-open</li>
 </ul>
+<h3 id="client-surfaces">Client surfaces<a class="headerlink" href="#client-surfaces" title="Permanent link">&para;</a></h3>
+<p>OpenAI Chat Completions, OpenAI Responses (<code>/v1/responses</code> for Codex CLI), Anthropic Messages, Gemini GenerateContent, and Ollama (<code>/api/chat</code>, <code>/api/generate</code>, <code>/api/show</code>, <code>/api/tags</code>). See <a href="client-setup/">Client Setup</a>.</p>
 <h3 id="budgets">Budgets<a class="headerlink" href="#budgets" title="Permanent link">&para;</a></h3>
 <p>Daily spending limits per API key or global. Warn at 80%, block at 100% with <code>429 + Retry-After</code>. Managed via CLI or dashboard.</p>
 <h3 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h3>

@@ -534,13 +534,41 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Claude Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-env-advanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual env (advanced)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
-  <a href="#openai-compatible-tools-codex-cursor-etc" class="md-nav__link">
+  <a href="#codex-cli-responses-api" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OpenAI-Compatible Tools (Codex, Cursor, etc.)
+        Codex CLI (Responses API)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cursor-and-other-chat-completions-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cursor and other Chat Completions tools
       
     </span>
   </a>
@@ -581,10 +609,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#gemini-native-tools" class="md-nav__link">
+  <a href="#gemini-cli-and-gemini-native-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Gemini-Native Tools
+        Gemini CLI and Gemini-native tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ollama-only-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama-Only Tools
       
     </span>
   </a>
@@ -596,6 +635,17 @@
     <span class="md-ellipsis">
       
         Model Naming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscription-oauth-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subscription / OAuth providers
       
     </span>
   </a>
@@ -1211,13 +1261,41 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Claude Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-env-advanced" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual env (advanced)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
-  <a href="#openai-compatible-tools-codex-cursor-etc" class="md-nav__link">
+  <a href="#codex-cli-responses-api" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OpenAI-Compatible Tools (Codex, Cursor, etc.)
+        Codex CLI (Responses API)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cursor-and-other-chat-completions-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cursor and other Chat Completions tools
       
     </span>
   </a>
@@ -1258,10 +1336,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#gemini-native-tools" class="md-nav__link">
+  <a href="#gemini-cli-and-gemini-native-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Gemini-Native Tools
+        Gemini CLI and Gemini-native tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ollama-only-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama-Only Tools
       
     </span>
   </a>
@@ -1273,6 +1362,17 @@
     <span class="md-ellipsis">
       
         Model Naming
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subscription-oauth-providers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subscription / OAuth providers
       
     </span>
   </a>
@@ -1311,27 +1411,60 @@
 
 
 <h1 id="client-setup">Client Setup<a class="headerlink" href="#client-setup" title="Permanent link">&para;</a></h1>
-<p>Point your coding tools at Janus. The base URL is always <code>http://localhost:20128/v1</code> (adjust port if you changed it).</p>
+<p>Point your coding tools at Janus. Most OpenAI/Anthropic clients use
+<code>http://localhost:20128/v1</code> (adjust the port if you changed it). Gemini-native
+and Ollama-native clients use the host root <code>http://localhost:20128</code>.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tool Setup page</p>
 <p>The dashboard at <code>/dashboard/tools</code> shows copy-paste environment variable
 cards for Claude Code, Codex, Cursor, and Cline — tailored to your server URL
-and auth settings.</p>
+and auth settings. For Codex CLI, prefer the <code>config.toml</code> recipe below so
+requests hit <code>/v1/responses</code>.</p>
 </div>
 <h2 id="claude-code">Claude Code<a class="headerlink" href="#claude-code" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_BASE_URL</span><span class="o">=</span>http://localhost:20128/v1
+<p><strong>Recommended:</strong> install <a href="https://github.com/amanverasia/claude-janus">claude-janus</a>, the official launcher that maps Opus/Sonnet/Haiku to your Janus models and sets the right env vars for each session.</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/amanverasia/claude-janus.git
+<span class="nb">cd</span><span class="w"> </span>claude-janus<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./install.sh
+claude-janus
 </code></pre></div>
-<p>If <code>require_api_key</code> is enabled in your config (or toggled from dashboard Settings):</p>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>sk-janus-yourkey
+<h3 id="manual-env-advanced">Manual env (advanced)<a class="headerlink" href="#manual-env-advanced" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_BASE_URL</span><span class="o">=</span>http://localhost:20128
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_AUTH_TOKEN</span><span class="o">=</span>sk-janus-yourkey
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>
 </code></pre></div>
-<p>Claude Code sends Anthropic-format requests. Janus translates and routes them to any configured provider.</p>
-<h2 id="openai-compatible-tools-codex-cursor-etc">OpenAI-Compatible Tools (Codex, Cursor, etc.)<a class="headerlink" href="#openai-compatible-tools-codex-cursor-etc" title="Permanent link">&para;</a></h2>
+<p>Prefer <code>ANTHROPIC_AUTH_TOKEN</code> and a blank <code>ANTHROPIC_API_KEY</code> so Claude Code does not fall back to Anthropic cloud credentials. Base URL should omit <code>/v1</code> if you use Claude Code's default path joining; if you already use <code>.../v1</code>, claude-janus normalizes it.</p>
+<h2 id="codex-cli-responses-api">Codex CLI (Responses API)<a class="headerlink" href="#codex-cli-responses-api" title="Permanent link">&para;</a></h2>
+<p>Codex CLI speaks the OpenAI <strong>Responses</strong> API (<code>POST /v1/responses</code>), not Chat
+Completions. Janus exposes that endpoint natively.</p>
+<p>Add a provider in <code>~/.codex/config.toml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;openai/gpt-4o&quot;</span>
+<span class="n">model_provider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;janus&quot;</span>
+
+<span class="k">[model_providers.janus]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Janus&quot;</span>
+<span class="n">base_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;http://localhost:20128/v1&quot;</span>
+<span class="n">env_key</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;JANUS_API_KEY&quot;</span>
+<span class="n">wire_api</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;responses&quot;</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">JANUS_API_KEY</span><span class="o">=</span>sk-janus-yourkey<span class="w">   </span><span class="c1"># if require_api_key is on</span>
+</code></pre></div>
+<p><code>base_url</code> must include <code>/v1</code> — Codex appends <code>/responses</code>. Use any Janus
+<code>prefix/model</code> or combo name as <code>model</code>. Streaming uses named SSE events
+(<code>response.created</code> … <code>response.completed</code>); there is no <code>[DONE]</code> sentinel.</p>
+<p>Older guides that only set <code>OPENAI_BASE_URL</code> may still work on some Codex
+builds, but <code>config.toml</code> + <code>wire_api = "responses"</code> is the reliable path.</p>
+<h2 id="cursor-and-other-chat-completions-tools">Cursor and other Chat Completions tools<a class="headerlink" href="#cursor-and-other-chat-completions-tools" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>http://localhost:20128/v1
 </code></pre></div>
 <p>If <code>require_api_key</code> is enabled:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-janus-yourkey
 </code></pre></div>
-<p>Tools send OpenAI-format requests to <code>POST /v1/chat/completions</code>. Janus translates and routes.</p>
+<p>Cursor, Cline (OpenAI Compatible mode), and similar tools send OpenAI Chat
+Completions to <code>POST /v1/chat/completions</code>. Janus translates and routes.</p>
+<p>In Cursor: set the OpenAI base URL / custom endpoint to
+<code>http://localhost:20128/v1</code> and the API key to your Janus key. Pick models as
+<code>prefix/model</code> (or a combo name) in the model picker when the tool allows custom
+IDs.</p>
 <h2 id="cline-vs-code">Cline (VS Code)<a class="headerlink" href="#cline-vs-code" title="Permanent link">&para;</a></h2>
 <p>In Cline settings:</p>
 <ol>
@@ -1348,21 +1481,46 @@ and auth settings.</p>
 </ul>
 <h2 id="creating-an-api-key">Creating an API Key<a class="headerlink" href="#creating-an-api-key" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;my-key&quot;</span>
-<span class="c1"># Created key: sk-janus-a1b2c3d4...</span>
+<span class="c1"># API Key (save this — shown once): sk-janus-a1b2c3d4...</span>
 <span class="c1"># ID: 1  Name: my-key</span>
+<span class="c1"># Login: yes</span>
+<span class="c1"># Models: all</span>
 </code></pre></div>
-<p>The full key is shown once. Use it in the <code>Authorization: Bearer &lt;key&gt;</code> header or as your <code>OPENAI_API_KEY</code> / <code>ANTHROPIC_API_KEY</code>.</p>
-<h2 id="gemini-native-tools">Gemini-Native Tools<a class="headerlink" href="#gemini-native-tools" title="Permanent link">&para;</a></h2>
-<p>Point Gemini SDKs and tools at Janus. The base URL is <code>http://localhost:20128</code>
-(the Gemini endpoint is mounted at the root, not under <code>/v1</code>):</p>
+<p>Optional scopes:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># API-only key (cannot open the dashboard), limited models, $5/day budget</span>
+janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;agent&quot;</span><span class="w"> </span>--no-login<span class="w"> </span>--models<span class="w"> </span><span class="s2">&quot;openai/*,my-combo&quot;</span><span class="w"> </span>--daily-budget<span class="w"> </span><span class="m">5</span>
+janus<span class="w"> </span>keys<span class="w"> </span>update<span class="w"> </span><span class="m">1</span><span class="w"> </span>--login<span class="w"> </span>--clear-models<span class="w">   </span><span class="c1"># restore full access later</span>
+</code></pre></div>
+<p>The full key is shown once. Use it in the <code>Authorization: Bearer &lt;key&gt;</code> header or as your <code>OPENAI_API_KEY</code> / <code>ANTHROPIC_API_KEY</code>. Empty model allowlist means all models; patterns may be exact IDs or <code>prefix/*</code>.</p>
+<h2 id="gemini-cli-and-gemini-native-tools">Gemini CLI and Gemini-native tools<a class="headerlink" href="#gemini-cli-and-gemini-native-tools" title="Permanent link">&para;</a></h2>
+<p>Point Gemini SDKs, <strong>Gemini CLI</strong>, and other Gemini-native clients at Janus. The
+base URL is the host root (<code>http://localhost:20128</code>) — the Gemini surface is
+mounted at <code>/v1beta/...</code>, not under <code>/v1</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">GOOGLE_GEMINI_BASE_URL</span><span class="o">=</span>http://localhost:20128
 <span class="nb">export</span><span class="w"> </span><span class="nv">GEMINI_API_KEY</span><span class="o">=</span>sk-janus-yourkey
 </code></pre></div>
-<p>Tools send requests to <code>POST /v1beta/models/{model}:generateContent</code>. Use the
-<code>prefix/model</code> convention in the model path (e.g. <code>openai/gpt-4o</code>) so Janus can
+<p>Some clients use <code>GOOGLE_API_KEY</code> or <code>x-goog-api-key</code> instead of <code>GEMINI_API_KEY</code>;
+Janus accepts the standard Gemini auth styles: <code>x-goog-api-key</code> header or the
+<code>?key=</code> query parameter (when <code>require_api_key</code> is on).</p>
+<p>Tools send requests to <code>POST /v1beta/models/{model}:generateContent</code> (and the
+streaming <code>streamGenerateContent</code> variant). Use the <code>prefix/model</code> convention in
+the model path (e.g. <code>openai/gpt-4o</code> or <code>gemini/gemini-2.5-pro</code>) so Janus can
 route it — the upstream provider does not need to be Gemini.</p>
-<p>If <code>require_api_key</code> is enabled, Janus accepts the standard Gemini auth styles:
-the <code>x-goog-api-key</code> header or the <code>?key=</code> query parameter.</p>
+<p><strong>Cursor</strong> typically uses the OpenAI Chat Completions path above, not this
+Gemini surface. Use Gemini CLI / Google GenAI SDKs here.</p>
+<h2 id="ollama-only-tools">Ollama-Only Tools<a class="headerlink" href="#ollama-only-tools" title="Permanent link">&para;</a></h2>
+<p>Point Ollama-native clients at Janus (base URL <code>http://localhost:20128</code>, not under
+<code>/v1</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OLLAMA_HOST</span><span class="o">=</span>http://localhost:20128
+</code></pre></div>
+<p>If <code>require_api_key</code> is enabled:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">OLLAMA_API_KEY</span><span class="o">=</span>sk-janus-yourkey
+</code></pre></div>
+<p>Clients use <code>POST /api/chat</code> (messages), <code>POST /api/generate</code> (bare prompt), or
+<code>POST /api/show</code> (model metadata handshake). <code>GET /api/tags</code> lists routable models
+(filtered by the key's model allowlist when scopes are set);
+<code>GET /api/version</code> is available for client handshakes. Streaming defaults to
+<strong>on</strong> with <code>application/x-ndjson</code> output.</p>
 <h2 id="model-naming">Model Naming<a class="headerlink" href="#model-naming" title="Permanent link">&para;</a></h2>
 <p>Models are referenced as <code>{prefix}/{model}</code>:</p>
 <table>
@@ -1386,12 +1544,35 @@ the <code>x-goog-api-key</code> header or the <code>?key=</code> query parameter
 <td>Gemini provider, model <code>gemini-2.5-pro</code></td>
 </tr>
 <tr>
+<td><code>copilot/gpt-4o</code></td>
+<td>GitHub Copilot OAuth provider</td>
+</tr>
+<tr>
+<td><code>codex/o3</code></td>
+<td>ChatGPT Codex Responses API (when configured)</td>
+</tr>
+<tr>
+<td><code>claude/claude-sonnet-4-20250514</code></td>
+<td>Claude Code OAuth account (when configured)</td>
+</tr>
+<tr>
 <td><code>best-effort</code></td>
 <td>Combo — tries each model in the combo chain</td>
 </tr>
 </tbody>
 </table>
 <p>See <a href="../combos/">Combos</a> for fallback chain configuration.</p>
+<h2 id="subscription-oauth-providers">Subscription / OAuth providers<a class="headerlink" href="#subscription-oauth-providers" title="Permanent link">&para;</a></h2>
+<p>GitHub Copilot supports <strong>Connect GitHub Account</strong> (device flow) in the Providers
+UI. For Codex, Kiro, Antigravity/Gemini CLI, and Claude Code OAuth, paste either:</p>
+<ul>
+<li>a bare access token into the API key field, or</li>
+<li>a JSON credential blob:
+  <code>{"access_token":"...","refresh_token":"...","expires_at":1710000000}</code></li>
+</ul>
+<p>When <code>refresh_token</code> is present Janus refreshes access tokens automatically
+before expiry. Claude Code clients also get tool-dedupe + wire-shape
+normalization when talking to Anthropic-format upstreams.</p>
 <h2 id="remote-docker-setups">Remote / Docker setups<a class="headerlink" href="#remote-docker-setups" title="Permanent link">&para;</a></h2>
 <p>When Janus runs on another machine or in Docker with <code>host: 0.0.0.0</code>, replace
 <code>localhost</code> with the host's address. Enable <code>require_api_key</code> and use a

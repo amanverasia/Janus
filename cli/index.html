@@ -2173,8 +2173,8 @@ and dashboard workflows.</p>
 <span class="c1"># gAAAAABl...</span>
 </code></pre></div>
 <h3 id="janus-inventory-encrypt-keys"><code>janus inventory encrypt-keys</code><a class="headerlink" href="#janus-inventory-encrypt-keys" title="Permanent link">&para;</a></h3>
-<p>Encrypt plaintext upstream keys at rest. Requires <code>INVENTORY_ENCRYPTION_KEY</code> to
-be set in the environment.</p>
+<p>Encrypt plaintext upstream keys and gateway provider API keys/OAuth credential blobs
+at rest in one pass. Requires <code>INVENTORY_ENCRYPTION_KEY</code> to be set in the environment.</p>
 <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">&#39;gAAAAABl...&#39;</span>
 janus<span class="w"> </span>inventory<span class="w"> </span>encrypt-keys
 </code></pre></div>

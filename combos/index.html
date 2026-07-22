@@ -682,6 +682,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#combo-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Combo strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#using-combos-from-a-client" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -709,6 +720,56 @@
     <span class="md-ellipsis">
       
         Multi-account expansion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fusion
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fusion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tuning-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuning settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost
       
     </span>
   </a>
@@ -1209,6 +1270,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#combo-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Combo strategies
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#using-combos-from-a-client" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1236,6 +1308,56 @@
     <span class="md-ellipsis">
       
         Multi-account expansion
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fusion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fusion
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Fusion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tuning-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuning settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cost
       
     </span>
   </a>
@@ -1339,6 +1461,43 @@ model in order — with automatic cooldowns and multi-account rotation.</p>
 first; if it fails with a fallback-eligible error, the next is tried.</p>
 <p>Use the dashboard <strong>Combos</strong> page to create, edit (with drag-and-drop reorder),
 or delete combos at runtime.</p>
+<h2 id="combo-strategies">Combo strategies<a class="headerlink" href="#combo-strategies" title="Permanent link">&para;</a></h2>
+<p>By default a combo is a <strong>fallback</strong> chain — models are tried in order, each
+falling forward to the next on a fallback-eligible error. Two other strategies
+are available, set globally on the dashboard <strong>Settings</strong> page under <strong>Combo
+Routing</strong> (or via <code>janus settings set combo_strategy &lt;value&gt;</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Strategy</th>
+<th>Setting value</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fallback <em>(default)</em></td>
+<td><code>fallback</code></td>
+<td>Try each model in order until one succeeds</td>
+</tr>
+<tr>
+<td>Round robin</td>
+<td><code>round_robin</code></td>
+<td>Rotate across the combo's models, staying on each for <code>combo_sticky_limit</code> requests before advancing</td>
+</tr>
+<tr>
+<td>Fusion</td>
+<td><code>fusion</code></td>
+<td>Fan the request out to every combo member in parallel and have a judge model synthesize one answer — see <a href="#fusion">Fusion</a> below</td>
+</tr>
+</tbody>
+</table>
+<p><code>combo_sticky_limit</code> (default <code>1</code>) controls how many requests round-robin
+stays on the current member before rotating to the next. A limit of <code>1</code>
+rotates every request; higher values keep several consecutive requests on the
+same model (useful for cache-friendly session affinity).</p>
+<p>The strategy applies to every combo — there is currently no per-combo
+override.</p>
 <h2 id="using-combos-from-a-client">Using combos from a client<a class="headerlink" href="#using-combos-from-a-client" title="Permanent link">&para;</a></h2>
 <p>Send the combo name as the <code>model</code> field — exactly like a normal model name:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/chat/completions<span class="w"> </span><span class="se">\</span>
@@ -1382,6 +1541,85 @@ If you have two OpenAI accounts (<code>openai-primary</code> and <code>openai-ba
 </code></pre></div>
 <p>With this config, <code>openai/gpt-4o</code> yields two attempts. Register as many accounts
 as you need under the same <code>prefix</code>.</p>
+<h2 id="fusion">Fusion<a class="headerlink" href="#fusion" title="Permanent link">&para;</a></h2>
+<p>Fusion is a port of 9router's model-fusion combo strategy: instead of trying
+combo members one at a time, Janus fans the request out to <strong>all</strong> of them in
+parallel, then has a <strong>judge</strong> model synthesize one authoritative answer from
+their responses.</p>
+<h3 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Panel fan-out.</strong> The combo's models become a <em>panel</em>. Each one receives
+   the same request, non-streaming, with tools stripped and any tool-call
+   history flattened into plain assistant text (so panel models keep
+   conversational context without needing tool support).</li>
+<li><strong>Quorum + straggler grace.</strong> Once at least <code>combo_fusion_min_panel</code> panel
+   members have answered, Janus waits a short <strong>straggler grace</strong> window
+   (<code>combo_fusion_straggler_grace_s</code>) for any remaining models to finish, then
+   cancels whatever is still pending. A <strong>hard timeout</strong>
+   (<code>combo_fusion_hard_timeout_s</code>) bounds the whole panel call regardless of
+   quorum, so one hung model can never stall the request indefinitely.</li>
+<li><strong>Anonymized judge synthesis.</strong> Successful panel answers are anonymized as
+   <code>[Source 1]</code>, <code>[Source 2]</code>, ... and handed to a judge model, which is
+   instructed to analyze consensus, contradictions, partial coverage, and
+   blind spots across the sources, then write one final answer addressed
+   directly to the user — without revealing that multiple models were
+   involved. The judge call keeps the client's original <code>stream</code> flag and
+   tools, and rides the normal fallback machinery like any other request.</li>
+<li><strong>Judge selection.</strong> The judge is the model set in <code>combo_fusion_judge</code>,
+   falling back to the first model in the combo if unset. Janus validates
+   that the judge can actually route <strong>before</strong> spending any panel tokens; if
+   the configured judge can't route, it falls back to the first panel model
+   that resolves. If the judge later becomes unavailable after the panel has
+   already answered (e.g. it went into cooldown mid-request), Janus falls
+   back again to the first <em>answering</em> panel model as judge rather than
+   discarding the panel's work.</li>
+<li><strong>Degraded cases.</strong> If every panel model fails, the request returns
+   <code>HTTP 503</code>. If exactly one panel model answers, Janus skips the judge
+   entirely and returns that model's answer directly — there's nothing to
+   synthesize from a single source.</li>
+</ol>
+<p>If the client disconnects mid-panel, in-flight panel calls are cancelled and
+awaited so no upstream spend is left running unattended.</p>
+<h3 id="tuning-settings">Tuning settings<a class="headerlink" href="#tuning-settings" title="Permanent link">&para;</a></h3>
+<p>Configured on the dashboard <strong>Settings</strong> page under <strong>Combo Routing → Fusion</strong>
+(or <code>janus settings set &lt;key&gt; &lt;value&gt;</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>combo_fusion_judge</code></td>
+<td><em>(empty)</em></td>
+<td>Judge model as <code>prefix/model</code>. Empty = first panel member</td>
+</tr>
+<tr>
+<td><code>combo_fusion_min_panel</code></td>
+<td><code>2</code></td>
+<td>Minimum successful panel answers before starting the straggler-grace countdown (clamped to the panel size)</td>
+</tr>
+<tr>
+<td><code>combo_fusion_straggler_grace_s</code></td>
+<td><code>8</code></td>
+<td>Seconds to wait for stragglers once quorum is reached</td>
+</tr>
+<tr>
+<td><code>combo_fusion_hard_timeout_s</code></td>
+<td><code>90</code></td>
+<td>Absolute cap (seconds) on the whole panel call</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cost">Cost<a class="headerlink" href="#cost" title="Permanent link">&para;</a></h3>
+<p>Fusion multiplies upstream spend by the panel size — a 3-model combo run in
+<code>fusion</code> mode makes up to 3 panel calls <strong>plus</strong> a judge call for every
+request, compared to 1 call for <code>fallback</code>/<code>round_robin</code>. Use it for requests
+where synthesized-quality matters more than cost, not as your default combo
+strategy.</p>
 <h2 id="cooldowns">Cooldowns<a class="headerlink" href="#cooldowns" title="Permanent link">&para;</a></h2>
 <p>When a provider returns an error, the account is placed in cooldown — removed
 from the candidate pool for a fixed duration. Cooldowns are stored in SQLite and
