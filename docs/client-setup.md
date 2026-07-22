@@ -12,17 +12,23 @@ and Ollama-native clients use the host root `http://localhost:20128`.
 
 ## Claude Code
 
-```bash
-export ANTHROPIC_BASE_URL=http://localhost:20128/v1
-```
-
-If `require_api_key` is enabled in your config (or toggled from dashboard Settings):
+**Recommended:** install [claude-janus](https://github.com/amanverasia/claude-janus), the official launcher that maps Opus/Sonnet/Haiku to your Janus models and sets the right env vars for each session.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-janus-yourkey
+git clone https://github.com/amanverasia/claude-janus.git
+cd claude-janus && ./install.sh
+claude-janus
 ```
 
-Claude Code sends Anthropic-format requests. Janus translates and routes them to any configured provider.
+### Manual env (advanced)
+
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:20128
+export ANTHROPIC_AUTH_TOKEN=sk-janus-yourkey
+export ANTHROPIC_API_KEY=
+```
+
+Prefer `ANTHROPIC_AUTH_TOKEN` and a blank `ANTHROPIC_API_KEY` so Claude Code does not fall back to Anthropic cloud credentials. Base URL should omit `/v1` if you use Claude Code's default path joining; if you already use `.../v1`, claude-janus normalizes it.
 
 ## Codex CLI (Responses API)
 
