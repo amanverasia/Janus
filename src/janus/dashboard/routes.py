@@ -25,6 +25,7 @@ from fastapi.templating import Jinja2Templates
 from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.catalog import get_provider_logo_map, provider_logo_url
+from janus.dashboard.context import dashboard_context
 from janus.dashboard.credentials import (
     SESSION_COOKIE,
     SETTINGS_PASSWORD_HASH,
@@ -142,6 +143,13 @@ async def _get_usage_stats_safe(db_path: Path) -> dict[str, Any]:
         }
 
 
+async def _render_page(
+    request: Request, template: str, db_path: Path, **extra: Any
+) -> HTMLResponse:
+    context = await dashboard_context(request, db_path, **extra)
+    return _templates.TemplateResponse(request, template, context)
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse:
     if not next.startswith("/dashboard"):
@@ -255,9 +263,11 @@ async def logout(request: Request) -> RedirectResponse:
 async def overview(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     stats = await _get_usage_stats_safe(db_path)
+    from janus.dashboard.live import get_bus
     from janus.storage.providers_db import list_providers
 
     provider_count = len(await list_providers(db_path, enabled_only=True))
+    keys = await list_keys(db_path)
     registry = request.app.state.registry
     today_cost = 0.0
     global_budget = None
@@ -267,16 +277,35 @@ async def overview(request: Request) -> HTMLResponse:
         global_budget = await get_budget_status(db_path, key_id=None)
     except Exception:
         pass
-    context: dict[str, Any] = {
-        "request": request,
-        "stats": stats,
-        "provider_count": provider_count,
-        "combos": registry.combos,
-        "today_cost": today_cost,
-        "global_budget": global_budget,
-        "base_url": _api_v1_base_url(request),
-    }
-    return _templates.TemplateResponse(request, "overview.html", context)
+    live = get_bus().snapshot()
+    from janus.storage.cooldowns import get_active_cooldowns
+
+    now = time.time()
+    cooldown_count = len(
+        {
+            combined.rpartition("::")[0]
+            for combined, (expires_at, _level) in (await get_active_cooldowns(db_path)).items()
+            if expires_at > now
+        }
+    )
+    return await _render_page(
+        request,
+        "overview.html",
+        db_path,
+        stats=stats,
+        provider_count=provider_count,
+        combos=registry.combos,
+        today_cost=today_cost,
+        global_budget=global_budget,
+        base_url=_api_v1_base_url(request),
+        live_inflight=live["inflight"],
+        cooldown_count=cooldown_count,
+        setup_checklist={
+            "has_providers": provider_count > 0,
+            "has_keys": any(k.get("is_active") for k in keys),
+            "has_requests": stats["total_requests"] > 0,
+        },
+    )
 
 
 @router.get("/providers", response_class=HTMLResponse)
@@ -294,14 +323,15 @@ async def providers_page(request: Request) -> HTMLResponse:
             and p["quota"]["status"] in ("warning", "exhausted")
         )
     ]
-    context: dict[str, Any] = {
-        "request": request,
-        "providers": providers,
-        "catalog": get_catalog(),
-        "logo_map": get_provider_logo_map(),
-        "quota_warnings": quota_warnings,
-    }
-    return _templates.TemplateResponse(request, "providers.html", context)
+    return await _render_page(
+        request,
+        "providers.html",
+        db_path,
+        providers=providers,
+        catalog=get_catalog(),
+        logo_map=get_provider_logo_map(),
+        quota_warnings=quota_warnings,
+    )
 
 
 @router.get("/combos", response_class=HTMLResponse)
@@ -315,12 +345,13 @@ async def combos_page(request: Request) -> HTMLResponse:
         parsed = dict(c)
         parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
         combos.append(parsed)
-    context: dict[str, Any] = {
-        "request": request,
-        "combos": combos,
-        "wired_providers": _wired_providers(request),
-    }
-    return _templates.TemplateResponse(request, "combos.html", context)
+    return await _render_page(
+        request,
+        "combos.html",
+        db_path,
+        combos=combos,
+        wired_providers=_wired_providers(request),
+    )
 
 
 def _wired_providers(request: Request) -> list[dict[str, Any]]:
@@ -355,34 +386,49 @@ async def routing_page(request: Request) -> HTMLResponse:
     from janus.storage.routing_overview import get_routing_overview
 
     overview = await get_routing_overview(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "overview": overview,
-    }
-    return _templates.TemplateResponse(request, "routing.html", context)
+    routing_live = request.app.state.fallback_handler.routing_snapshot()
+    return await _render_page(
+        request,
+        "routing.html",
+        db_path,
+        overview=overview,
+        routing_live=routing_live,
+    )
+
+
+@router.get("/api/routing/partial", response_class=HTMLResponse)
+async def api_routing_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    from janus.storage.routing_overview import get_routing_overview
+
+    overview = await get_routing_overview(db_path)
+    routing_live = request.app.state.fallback_handler.routing_snapshot()
+    context = await dashboard_context(
+        request, db_path, overview=overview, routing_live=routing_live
+    )
+    return _templates.TemplateResponse(request, "routing_partial.html", context)
 
 
 @router.get("/keys", response_class=HTMLResponse)
 async def keys_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     keys = await list_keys(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": keys,
-        "new_key": None,
-    }
-    return _templates.TemplateResponse(request, "keys.html", context)
+    return await _render_page(request, "keys.html", db_path, keys=keys, new_key=None)
 
 
 @router.get("/usage", response_class=HTMLResponse)
 async def usage_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     stats = await _get_usage_stats_safe(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "stats": stats,
-    }
-    return _templates.TemplateResponse(request, "usage.html", context)
+    return await _render_page(request, "usage.html", db_path, stats=stats)
+
+
+@router.get("/api/usage/snapshot")
+async def usage_snapshot(_request: Request) -> JSONResponse:
+    from janus.dashboard.live import get_bus
+
+    snap = get_bus().snapshot()
+    return JSONResponse({"inflight": snap["inflight"], "recent": snap["recent"][-5:]})
 
 
 @router.get("/api/usage/live")
@@ -456,10 +502,14 @@ async def request_logs_page(request: Request) -> HTMLResponse:
     from janus.storage.settings import get_all_settings, request_logging_enabled
 
     settings = await get_all_settings(db_path)
-    context = await _request_logs_context(db_path)
-    context["request"] = request
-    context["logging_enabled"] = request_logging_enabled(settings)
-    return _templates.TemplateResponse(request, "request_logs.html", context)
+    log_ctx = await _request_logs_context(db_path)
+    return await _render_page(
+        request,
+        "request_logs.html",
+        db_path,
+        logging_enabled=request_logging_enabled(settings),
+        **log_ctx,
+    )
 
 
 @router.get("/api/request-logs/partial", response_class=HTMLResponse)
@@ -539,16 +589,23 @@ async def analytics_page(
         breakdown = []
         success = {"success_2xx": 0, "client_4xx": 0, "server_5xx": 0, "total": 0}
         flow = {"nodes": [], "links": []}
-    context: dict[str, Any] = {
-        "request": request,
-        "summary": summary,
-        "breakdown": breakdown,
-        "success": success,
-        "flow": flow,
-        "days": days,
-        "dimension": dimension,
-    }
-    return _templates.TemplateResponse(request, "analytics.html", context)
+    raw_unpriced = await get_unpriced_models(db_path, days=days)
+    registry = request.app.state.pricing_registry
+    unpriced_models = [m for m in raw_unpriced if registry.get(m["model"]) is None]
+    unpriced_model_ids = {m["model"] for m in unpriced_models}
+    return await _render_page(
+        request,
+        "analytics.html",
+        db_path,
+        summary=summary,
+        breakdown=breakdown,
+        success=success,
+        flow=flow,
+        days=days,
+        dimension=dimension,
+        unpriced_models=unpriced_models,
+        unpriced_model_ids=unpriced_model_ids,
+    )
 
 
 @router.get("/leaderboard", response_class=HTMLResponse)
@@ -565,13 +622,14 @@ async def leaderboard_page(
         board = await get_leaderboard(db_path, days=days, sort_by=sort)
     except Exception:
         board = []
-    context: dict[str, Any] = {
-        "request": request,
-        "leaderboard": board,
-        "days": days,
-        "sort": sort,
-    }
-    return _templates.TemplateResponse(request, "leaderboard.html", context)
+    return await _render_page(
+        request,
+        "leaderboard.html",
+        db_path,
+        leaderboard=board,
+        days=days,
+        sort=sort,
+    )
 
 
 @router.get("/budgets", response_class=HTMLResponse)
@@ -582,12 +640,13 @@ async def budgets_page(request: Request) -> HTMLResponse:
     except Exception:
         budget_statuses = []
         keys = []
-    context: dict[str, Any] = {
-        "request": request,
-        "budgets": budget_statuses,
-        "keys": keys,
-    }
-    return _templates.TemplateResponse(request, "budgets.html", context)
+    return await _render_page(
+        request,
+        "budgets.html",
+        db_path,
+        budgets=budget_statuses,
+        keys=keys,
+    )
 
 
 @router.post("/api/budgets", response_class=HTMLResponse)
@@ -1310,9 +1369,9 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
 @router.get("/savers", response_class=HTMLResponse)
 async def savers_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    return _templates.TemplateResponse(
-        request, "savers.html", await _savers_context(request, db_path)
-    )
+    saver_ctx = await _savers_context(request, db_path)
+    saver_ctx.pop("request", None)
+    return await _render_page(request, "savers.html", db_path, **saver_ctx)
 
 
 @router.get("/api/savers/partial", response_class=HTMLResponse)
@@ -1413,16 +1472,17 @@ async def api_update_setting(request: Request) -> HTMLResponse:
 
 @router.get("/tools", response_class=HTMLResponse)
 async def tools_page(request: Request) -> HTMLResponse:
-    await _ensure_db(request)
+    db_path = await _ensure_db(request)
     from janus.api.auth import is_require_api_key_enabled
 
     require_key = await is_require_api_key_enabled(request)
-    context: dict[str, Any] = {
-        "request": request,
-        "base_url": _api_v1_base_url(request),
-        "require_key": require_key,
-    }
-    return _templates.TemplateResponse(request, "tools.html", context)
+    return await _render_page(
+        request,
+        "tools.html",
+        db_path,
+        base_url=_api_v1_base_url(request),
+        require_key=require_key,
+    )
 
 
 # ---- Pricing ----
@@ -1528,8 +1588,9 @@ async def _pricing_page_context(request: Request, db_path: Path) -> dict[str, An
 @router.get("/pricing", response_class=HTMLResponse)
 async def pricing_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    context = await _pricing_page_context(request, db_path)
-    return _templates.TemplateResponse(request, "pricing.html", context)
+    pricing_ctx = await _pricing_page_context(request, db_path)
+    pricing_ctx.pop("request", None)
+    return await _render_page(request, "pricing.html", db_path, **pricing_ctx)
 
 
 @router.post("/api/pricing", response_class=HTMLResponse)
@@ -1623,27 +1684,28 @@ async def settings_page(request: Request) -> HTMLResponse:
         "dashboard_session_secret",
     }
     display_settings = {key: value for key, value in settings.items() if key not in hidden_keys}
-    context: dict[str, Any] = {
-        "request": request,
-        "settings": display_settings,
-        "config": request.app.state.config,
-        "dashboard_username": settings.get(SETTINGS_USERNAME, ""),
-        "dashboard_password_set": bool(settings.get(SETTINGS_PASSWORD_HASH)),
-        "require_api_key_enabled": require_api_key_enabled(settings),
-        "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
-        "request_logging_enabled": request_logging_enabled(settings),
-        "request_log_retention": resolve_request_log_retention(settings),
-        "account_strategy": resolve_account_strategy(settings),
-        "sticky_limit": resolve_sticky_limit(settings),
-        "gateway_rate_limit_rpm": resolve_gateway_rate_limit_rpm(settings),
-        "combo_strategy": resolve_combo_strategy(settings),
-        "combo_sticky_limit": resolve_combo_sticky_limit(settings),
-        "combo_fusion_judge": resolve_combo_fusion_judge(settings),
-        "combo_fusion_min_panel": resolve_combo_fusion_min_panel(settings),
-        "combo_fusion_straggler_grace_s": resolve_combo_fusion_straggler_grace_s(settings),
-        "combo_fusion_hard_timeout_s": resolve_combo_fusion_hard_timeout_s(settings),
-    }
-    return _templates.TemplateResponse(request, "settings.html", context)
+    return await _render_page(
+        request,
+        "settings.html",
+        db_path,
+        settings=display_settings,
+        config=request.app.state.config,
+        dashboard_username=settings.get(SETTINGS_USERNAME, ""),
+        dashboard_password_set=bool(settings.get(SETTINGS_PASSWORD_HASH)),
+        require_api_key_enabled=require_api_key_enabled(settings),
+        sticky_client_key_routing_enabled=sticky_client_key_routing_enabled(settings),
+        request_logging_enabled=request_logging_enabled(settings),
+        request_log_retention=resolve_request_log_retention(settings),
+        account_strategy=resolve_account_strategy(settings),
+        sticky_limit=resolve_sticky_limit(settings),
+        gateway_rate_limit_rpm=resolve_gateway_rate_limit_rpm(settings),
+        combo_strategy=resolve_combo_strategy(settings),
+        combo_sticky_limit=resolve_combo_sticky_limit(settings),
+        combo_fusion_judge=resolve_combo_fusion_judge(settings),
+        combo_fusion_min_panel=resolve_combo_fusion_min_panel(settings),
+        combo_fusion_straggler_grace_s=resolve_combo_fusion_straggler_grace_s(settings),
+        combo_fusion_hard_timeout_s=resolve_combo_fusion_hard_timeout_s(settings),
+    )
 
 
 @router.post("/api/settings/credentials", response_class=HTMLResponse)

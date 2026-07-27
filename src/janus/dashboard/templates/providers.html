@@ -418,7 +418,7 @@ function editProvider(id, prefix, apiType, baseUrl, models, hasApiKey, invTotal,
             document.getElementById('providers-grid').innerHTML = html;
             document.getElementById('edit-modal').classList.add('hidden');
         }).catch(err => {
-            alert('Failed to update provider: ' + err.message);
+            janusToast('Failed to update provider: ' + err.message, 'error');
         });
     };
     document.getElementById('edit-modal').classList.remove('hidden');

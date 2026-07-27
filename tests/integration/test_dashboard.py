@@ -370,3 +370,45 @@ async def test_settings_post_combo_fusion_grace_bounds(app):
         )
         assert r.status_code == 200
     assert await get_setting(app.state.db_path, "combo_fusion_straggler_grace_s") == "0"
+
+
+@pytest.mark.asyncio
+async def test_overview_status_strip(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard")
+        assert r.status_code == 200
+        assert "All clear" in r.text or "Attention needed" in r.text or "Action required" in r.text
+
+
+@pytest.mark.asyncio
+async def test_usage_snapshot_endpoint(app):
+    from janus.dashboard.live import get_bus, reset_bus
+
+    reset_bus()
+    get_bus().record_completed(model="t/m1", status=200, input_tokens=1, output_tokens=2)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/api/usage/snapshot")
+        assert r.status_code == 200
+        data = r.json()
+        assert "inflight" in data
+        assert "recent" in data
+        assert len(data["recent"]) >= 1
+    reset_bus()
+
+
+@pytest.mark.asyncio
+async def test_analytics_unpriced_banner(app):
+    from janus.storage.database import get_connection, init_db
+
+    db_path = app.state.db_path
+    await init_db(db_path)
+    async with get_connection(db_path) as conn:
+        await conn.execute(
+            "INSERT INTO usage (model, cost, input_tokens, output_tokens, status, provider_id) "
+            "VALUES ('unknown/model-x', 0, 500, 200, 200, 't')"
+        )
+        await conn.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/analytics?days=30")
+        assert r.status_code == 200
+        assert "pricing" in r.text.lower() or "unpriced" in r.text.lower()

@@ -5,6 +5,74 @@
 {% block content %}
 <h1 class="text-2xl font-bold text-white mb-6">Overview</h1>
 
+<!-- Status strip -->
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
+    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">System</p>
+        {% if alert_summary == 'ok' %}
+        <p class="text-green-400 font-semibold text-sm">All clear</p>
+        {% elif alert_summary == 'warning' %}
+        <p class="text-amber-400 font-semibold text-sm">Attention needed</p>
+        {% else %}
+        <p class="text-red-400 font-semibold text-sm">Action required</p>
+        {% endif %}
+    </div>
+    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">In flight</p>
+        <p class="text-white font-bold text-xl" id="overview-inflight">{{ live_inflight }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Today's spend</p>
+        <p class="text-green-400 font-bold text-xl">${{ "%.4f"|format(today_cost) }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Budget</p>
+        {% if global_budget %}
+        <p class="text-white font-semibold text-sm {% if global_budget.status == 'exceeded' %}text-red-400{% elif global_budget.status == 'warning' %}text-amber-400{% endif %}">
+            {{ "%.0f"|format(global_budget.pct_used) }}%
+        </p>
+        {% else %}
+        <p class="text-gray-500 text-sm">Not set</p>
+        {% endif %}
+    </div>
+    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Cooldowns</p>
+        <p class="text-white font-bold text-xl">{{ cooldown_count }}</p>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Providers</p>
+        <p class="text-white font-bold text-xl">{{ provider_count }}</p>
+    </div>
+</div>
+
+{% if global_alerts %}
+{% include "alerts_partial.html" %}
+{% endif %}
+
+{% if not setup_checklist.has_requests or not setup_checklist.has_providers %}
+<div class="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-8">
+    <h2 class="text-lg font-semibold text-white mb-4">Getting started</h2>
+    <ol class="space-y-2 text-sm">
+        <li class="flex items-center gap-2 {% if setup_checklist.has_providers %}text-green-400{% else %}text-gray-300{% endif %}">
+            <span>{% if setup_checklist.has_providers %}✓{% else %}1{% endif %}</span>
+            <a href="/dashboard/providers" class="hover:underline">Add and enable a provider</a>
+        </li>
+        <li class="flex items-center gap-2 {% if setup_checklist.has_keys %}text-green-400{% else %}text-gray-300{% endif %}">
+            <span>{% if setup_checklist.has_keys %}✓{% else %}2{% endif %}</span>
+            <a href="/dashboard/keys" class="hover:underline">Create a Janus API key</a>
+        </li>
+        <li class="flex items-center gap-2 text-gray-300">
+            <span>3</span>
+            <a href="/dashboard/tools" class="hover:underline">Copy tool configuration</a>
+        </li>
+        <li class="flex items-center gap-2 {% if setup_checklist.has_requests %}text-green-400{% else %}text-gray-300{% endif %}">
+            <span>{% if setup_checklist.has_requests %}✓{% else %}4{% endif %}</span>
+            Send your first request
+        </li>
+    </ol>
+</div>
+{% endif %}
+
 <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-8">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
         <div>
@@ -22,7 +90,25 @@
     </div>
 </div>
 
-<!-- Stats Cards -->
+<!-- Live activity -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+    <div class="lg:col-span-2 bg-gray-800 rounded-xl border border-gray-700 p-5">
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-semibold text-white">Live activity <span class="text-gray-500 font-normal">(last 2 min)</span></h2>
+            <a href="/dashboard/usage" class="text-xs text-blue-400 hover:text-blue-300">Full usage →</a>
+        </div>
+        <canvas id="overviewLiveChart" height="60"></canvas>
+    </div>
+    <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col">
+        <div class="px-4 py-3 border-b border-gray-700">
+            <h2 class="text-sm font-semibold text-white">Recent requests</h2>
+        </div>
+        <ul id="overview-live-feed" class="divide-y divide-gray-700/60 overflow-y-auto text-xs flex-1" style="max-height: 160px;">
+            <li class="px-4 py-6 text-center text-gray-500">Polling…</li>
+        </ul>
+    </div>
+</div>
+
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
     <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
         <p class="text-gray-400 text-sm font-medium mb-1">Total Requests</p>
@@ -42,7 +128,6 @@
     </div>
 </div>
 
-<!-- Today's Spend + Budget -->
 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
     <div class="flex items-center justify-between mb-3">
         <h2 class="text-lg font-semibold text-white">Today's Spend</h2>
@@ -63,7 +148,6 @@
     {% endif %}
 </div>
 
-<!-- Active Combos -->
 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
     <h2 class="text-lg font-semibold text-white mb-4">Active Combos</h2>
     {% if combos %}
@@ -77,16 +161,14 @@
             <div class="flex flex-wrap items-center gap-2">
                 {% for model in models %}
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-900 text-blue-200">{{ model }}</span>
-                {% if not loop.last %}
-                <span class="text-gray-500 text-sm">→</span>
-                {% endif %}
+                {% if not loop.last %}<span class="text-gray-500 text-sm">→</span>{% endif %}
                 {% endfor %}
             </div>
         </div>
         {% endfor %}
     </div>
     {% else %}
-    <p class="text-gray-500 text-sm">No combos configured.</p>
+    <p class="text-gray-500 text-sm">No combos configured. <a href="/dashboard/combos" class="text-blue-400 hover:underline">Create one</a></p>
     {% endif %}
 </div>
 
@@ -94,26 +176,66 @@
 (function() {
     var btn = document.getElementById('copy-base-url-btn');
     var el = document.getElementById('janus-base-url');
-    if (!btn || !el) return;
-    btn.addEventListener('click', function() {
-        var text = el.textContent.trim();
-        var done = function() {
-            var orig = btn.textContent;
-            btn.textContent = 'Copied!';
-            setTimeout(function() { btn.textContent = orig; }, 1500);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(done);
-            return;
+    if (btn && el) {
+        btn.addEventListener('click', function() {
+            var text = el.textContent.trim();
+            var done = function() {
+                var orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(function() { btn.textContent = orig; }, 1500);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done);
+            }
+        });
+    }
+
+    var WINDOW_S = 120;
+    var buckets = new Array(WINDOW_S).fill(0);
+    var windowStart = Math.floor(Date.now() / 1000) - WINDOW_S + 1;
+    var chartEl = document.getElementById('overviewLiveChart');
+    if (chartEl && typeof Chart !== 'undefined') {
+        var chart = new Chart(chartEl.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: new Array(WINDOW_S).fill(''),
+                datasets: [{ data: buckets, backgroundColor: 'rgba(59, 130, 246, 0.65)', borderWidth: 0 }]
+            },
+            options: {
+                animation: false, responsive: true,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: { x: { display: false }, y: { beginAtZero: true, ticks: { color: '#6b7280', precision: 0, maxTicksLimit: 3 }, grid: { color: 'rgba(75,85,99,0.2)' } } }
+            }
+        });
+        function bucketFor(tsSec) {
+            var idx = Math.floor(tsSec) - windowStart;
+            return (idx >= 0 && idx < WINDOW_S) ? idx : -1;
         }
-        var ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        done();
-    });
+        function poll() {
+            fetch('/dashboard/api/usage/snapshot').then(function(r) { return r.json(); }).then(function(data) {
+                var inflight = document.getElementById('overview-inflight');
+                if (inflight) inflight.textContent = data.inflight;
+                var feed = document.getElementById('overview-live-feed');
+                if (feed && data.recent && data.recent.length) {
+                    feed.innerHTML = data.recent.slice().reverse().map(function(ev) {
+                        var model = ev.model || '—';
+                        var st = ev.status || '';
+                        return '<li class="px-4 py-2 text-gray-300"><span class="font-mono text-white">' + model + '</span> <span class="text-gray-500">' + st + '</span></li>';
+                    }).join('');
+                }
+                (data.recent || []).forEach(function(ev) {
+                    if (ev.ts) {
+                        var idx = bucketFor(ev.ts);
+                        if (idx >= 0) buckets[idx]++;
+                    }
+                });
+                chart.data.datasets[0].data = buckets;
+                chart.update('none');
+            }).catch(function() {});
+        }
+        poll();
+        setInterval(poll, 5000);
+    }
 })();
 </script>
 {% endblock %}
