@@ -142,9 +142,7 @@ async def _quota_alerts(db_path: Path, request: Request) -> list[DashboardAlert]
     for provider in providers:
         if not provider.get("quota_window") or not provider.get("quota_limit"):
             continue
-        usage = await get_window_usage(
-            db_path, str(provider["id"]), str(provider["quota_window"])
-        )
+        usage = await get_window_usage(db_path, str(provider["id"]), str(provider["quota_window"]))
         metric = provider.get("quota_metric") or "requests"
         used = usage["tokens"] if metric == "tokens" else usage["requests"]
         limit = int(provider["quota_limit"])
