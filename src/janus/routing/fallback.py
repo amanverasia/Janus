@@ -353,6 +353,9 @@ class FallbackHandler:
         combo_strategy: str = "fallback",
         combo_sticky_limit: int = 1,
     ) -> list[ResolvedTarget]:
+        self._last_strategy = (
+            strategy.value if isinstance(strategy, AccountStrategy) else str(strategy)
+        )
         # Synchronous by design: the rotation-counter and sticky read-modify-writes
         # below have no await between read and write, so they are an atomic critical
         # section under the single-threaded event loop (no lock needed).
@@ -542,3 +545,15 @@ class FallbackHandler:
             if exp is not None and now < exp:
                 return False
         return True
+
+    def routing_snapshot(self) -> dict[str, Any]:
+        sticky = [
+            {"client_key": key, "account_id": account_id, "uses": uses}
+            for key, (account_id, uses) in self._sticky.items()
+        ]
+        return {
+            "account_strategy": getattr(self, "_last_strategy", AccountStrategy.ROUND_ROBIN.value),
+            "rotation_counters": dict(self._rotation_counters),
+            "sticky": sticky,
+            "combo_rotation": dict(self._combo_rotation),
+        }

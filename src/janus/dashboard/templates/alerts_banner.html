@@ -1,0 +1,13 @@
+{% if alert_summary == 'critical' %}
+<div class="mb-6 rounded-lg border border-red-700 bg-red-900/30 px-4 py-3 text-sm text-red-200 flex flex-wrap items-center justify-between gap-2">
+{% else %}
+<div class="mb-6 rounded-lg border border-amber-700 bg-amber-900/30 px-4 py-3 text-sm text-amber-200 flex flex-wrap items-center justify-between gap-2">
+{% endif %}
+    <div class="flex items-center gap-2 min-w-0">
+        <span class="font-medium shrink-0">Attention needed</span>
+        {% if global_alerts %}
+        <span class="truncate opacity-90">{{ global_alerts[0].title }} — {{ global_alerts[0].detail }}</span>
+        {% endif %}
+    </div>
+    <a href="/dashboard#attention" class="shrink-0 text-blue-300 hover:text-blue-200 underline text-xs">View all</a>
+</div>

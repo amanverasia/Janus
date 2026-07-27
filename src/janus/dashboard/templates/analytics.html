@@ -5,6 +5,13 @@
 {% block content %}
 <h1 class="text-2xl font-bold text-white mb-6">Analytics</h1>
 
+{% if unpriced_models %}
+<div class="mb-6 rounded-lg border border-amber-700 bg-amber-900/30 px-4 py-3 text-sm text-amber-200">
+    <span class="font-medium">{{ unpriced_models|length }} model(s)</span> recorded with $0 cost — pricing may be incomplete.
+    <a href="/dashboard/pricing" class="text-blue-300 hover:text-blue-200 underline ml-1">Review pricing →</a>
+</div>
+{% endif %}
+
 <!-- Date Range Selector + View Tabs -->
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
     <div class="flex space-x-2">
@@ -90,7 +97,12 @@
         <tbody class="divide-y divide-gray-700">
             {% for row in breakdown %}
             <tr class="hover:bg-gray-700">
-                <td class="px-4 py-3 text-sm text-white font-mono">{{ row[dimension] or '—' }}</td>
+                <td class="px-4 py-3 text-sm text-white font-mono">
+                    {{ row[dimension] or '—' }}
+                    {% if dimension == 'model' and row.cost == 0 and (row.input_tokens + row.output_tokens) > 0 and row.model in unpriced_model_ids %}
+                    <span class="ml-2 text-xs text-amber-400">Unpriced</span>
+                    {% endif %}
+                </td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ row.requests }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.input_tokens) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-300 text-right">{{ "{:,}".format(row.output_tokens) }}</td>

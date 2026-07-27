@@ -95,7 +95,7 @@ function editCombo(id, name, models) {
             form.onsubmit = null;
             form.reset();
         }).catch(err => {
-            alert('Failed to update combo: ' + err.message);
+            janusToast('Failed to update combo: ' + err.message, 'error');
         });
     };
     document.getElementById('combo-modal').classList.remove('hidden');
