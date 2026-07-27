@@ -44,7 +44,8 @@ async def test_budget_warning_alert(db: Path) -> None:
     await create_or_update_budget(db, key_id=None, daily_limit=10.0, warn_pct=80)
     async with get_connection(db) as conn:
         await conn.execute(
-            "INSERT INTO usage (cost, input_tokens, output_tokens, status) VALUES (9.0, 100, 50, 200)"
+            "INSERT INTO usage (cost, input_tokens, output_tokens, status) "
+            "VALUES (9.0, 100, 50, 200)"
         )
         await conn.commit()
     result = await collect_dashboard_alerts(db, _fake_request())

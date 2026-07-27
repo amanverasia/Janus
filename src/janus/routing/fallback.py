@@ -353,7 +353,9 @@ class FallbackHandler:
         combo_strategy: str = "fallback",
         combo_sticky_limit: int = 1,
     ) -> list[ResolvedTarget]:
-        self._last_strategy = strategy.value if isinstance(strategy, AccountStrategy) else str(strategy)
+        self._last_strategy = (
+            strategy.value if isinstance(strategy, AccountStrategy) else str(strategy)
+        )
         # Synchronous by design: the rotation-counter and sticky read-modify-writes
         # below have no await between read and write, so they are an atomic critical
         # section under the single-threaded event loop (no lock needed).
