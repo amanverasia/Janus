@@ -36,8 +36,17 @@ def test_build_provider_specialized_types():
 @pytest.mark.asyncio
 @respx.mock
 async def test_codex_posts_responses():
+    sse = (
+        'data: {"type":"response.created","response":{"id":"r1","output":[]}}\n\n'
+        'data: {"type":"response.completed","response":'
+        '{"id":"r1","output":[],"status":"completed"}}\n\n'
+    )
     route = respx.post("https://example.test/responses").mock(
-        return_value=httpx.Response(200, json={"id": "r1", "output": []})
+        return_value=httpx.Response(
+            200,
+            content=sse.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
     )
     p = CodexProvider(api_key="sk", base_url="https://example.test")
     result = await p.call(
@@ -45,11 +54,14 @@ async def test_codex_posts_responses():
         stream=False,
     )
     assert result.status_code == 200
+    assert result.json_data is not None
+    assert result.json_data["id"] == "r1"
     assert route.called
     sent = route.calls.last.request
     import json
 
     body = json.loads(sent.content)
+    assert body["stream"] is True
     assert body["input"][0]["role"] == "developer"
     assert body["store"] is False
     await p.close()
