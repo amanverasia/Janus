@@ -160,6 +160,7 @@ Gateway prefix `gemini` maps to inventory provider `google`.
 | Perplexity | `https://api.perplexity.ai` | `openai_compat` | (perplexity models) |
 | xAI (Grok) | `https://api.x.ai/v1` | `openai_compat` | (Grok models) |
 | Qwen / DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `openai_compat` | qwen-max, qwen-plus, qwen-turbo |
+| Ollama Cloud | `https://ollama.com/v1` | `openai_compat` | gpt-oss:20b, gpt-oss:120b, glm-5.2 (use Fetch Models) |
 | OpenCode Zen | *(provided by service)* | `opencode_free` | (free tier models) |
 
 ---
@@ -311,6 +312,27 @@ providers:
     api_key: ${DASHSCOPE_API_KEY}
     models: [qwen-max, qwen-plus, qwen-turbo]
 ```
+
+### Ollama Cloud
+
+Create an API key at [ollama.com/settings/keys](https://ollama.com/settings/keys), then add
+the provider from the dashboard catalog or seed from YAML:
+
+```yaml
+providers:
+  - id: ollama
+    prefix: ollama
+    api_type: openai_compat
+    base_url: https://ollama.com/v1
+    api_key: ${OLLAMA_API_KEY}
+    models: [gpt-oss:20b, gpt-oss:120b]
+```
+
+Use **Fetch Models** in the dashboard to populate the model list from Ollama's
+OpenAI-compatible `/v1/models` endpoint. Route requests as `ollama/gpt-oss:20b`.
+
+Inventory keys for Ollama Cloud are validated with an authenticated chat probe
+because the model list is public without a key.
 
 ### OpenCode Zen
 

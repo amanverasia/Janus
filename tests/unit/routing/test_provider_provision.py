@@ -14,6 +14,7 @@ def test_routing_catalog_maps_google_to_gemini() -> None:
     assert routing_catalog_id_for_inventory("google") == "gemini"
     assert routing_catalog_id_for_inventory("dashscope") == "qwen"
     assert routing_catalog_id_for_inventory("openrouter") == "openrouter"
+    assert routing_catalog_id_for_inventory("ollama") == "ollama"
 
 
 def test_detect_openrouter_key() -> None:
@@ -77,3 +78,20 @@ async def test_ensure_creates_routing_provider(tmp_path) -> None:
     row = await get_provider(db_path, "openrouter")
     assert row is not None
     assert row["prefix"] == "openrouter"
+
+
+@pytest.mark.asyncio
+async def test_ensure_creates_ollama_routing_provider(tmp_path) -> None:
+    from janus.routing.provider_provision import ensure_routing_providers
+    from janus.storage.database import init_db
+    from janus.storage.providers_db import get_provider
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    results = await ensure_routing_providers(db_path, {"ollama"})
+    assert results[0]["action"] == "created"
+    row = await get_provider(db_path, "ollama")
+    assert row is not None
+    assert row["prefix"] == "ollama"
+    assert row["api_type"] == "openai_compat"
+    assert row["base_url"] == "https://ollama.com/v1"

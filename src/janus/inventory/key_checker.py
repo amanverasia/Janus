@@ -67,11 +67,12 @@ CHAT_PROBE_COMPATIBLE = {
     "stepfun",
     "perplexity",
     "zhipu",
+    "ollama",
     "custom",
     "anthropic",
 }
 
-CHAT_VALIDATED_PROVIDERS = {"perplexity", "nvidia", "zhipu"}
+CHAT_VALIDATED_PROVIDERS = {"perplexity", "nvidia", "zhipu", "ollama"}
 
 OPENAI_COMPAT_PROVIDERS = {
     "openai",
@@ -88,6 +89,7 @@ OPENAI_COMPAT_PROVIDERS = {
     "minimax",
     "siliconflow",
     "stepfun",
+    "ollama",
     "custom",
 }
 
@@ -107,6 +109,7 @@ CHEAP_PROBE_MODELS: dict[str, str] = {
     "zhipu": "glm-4-flash",
     "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
     "stepfun": "step-1-flash",
+    "ollama": "gpt-oss:20b",
 }
 
 # Inventory providers that may authenticate on more than one regional base.
@@ -165,6 +168,7 @@ CHAT_PROBE: dict[str, dict[str, Any]] = {
             {"model_id": "glm-4-plus", "display_name": "GLM-4-Plus"},
         ],
     },
+    "ollama": {"model": "gpt-oss:20b"},
 }
 
 
