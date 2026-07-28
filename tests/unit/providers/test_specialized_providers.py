@@ -50,7 +50,11 @@ async def test_codex_posts_responses():
     )
     p = CodexProvider(api_key="sk", base_url="https://example.test")
     result = await p.call(
-        {"model": "o3", "input": [{"role": "system", "content": "x"}]},
+        {
+            "model": "o3",
+            "input": [{"role": "system", "content": "x"}],
+            "max_output_tokens": 32000,
+        },
         stream=False,
     )
     assert result.status_code == 200
@@ -64,6 +68,7 @@ async def test_codex_posts_responses():
     assert body["stream"] is True
     assert body["input"][0]["role"] == "developer"
     assert body["store"] is False
+    assert "max_output_tokens" not in body
     await p.close()
 
 
