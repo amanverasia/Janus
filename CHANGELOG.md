@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-28
+
+### Added
+- **Ollama Cloud provider** — first-class catalog entry (`openai_compat`, `https://ollama.com/v1`, prefix `ollama`) with dashboard Fetch Models / Test Connection and inventory-backed multi-key routing
+- **Ollama Cloud inventory validation** — keys are validated via an authenticated one-token chat probe (`gpt-oss:20b`) because `/v1/models` is public without a key; routable keys auto-provision the gateway provider
+
 ## [1.6.0] - 2026-07-27
 
 ### Added
