@@ -41,6 +41,7 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_account_strategy": "round_robin",
     "server_sticky_limit": "3",
     "server_gateway_rate_limit_rpm": "0",
+    "server_cooldowns_enabled": "true",
     "combo_fusion_min_panel": "2",
     "combo_fusion_straggler_grace_s": "8",
     "combo_fusion_hard_timeout_s": "90",
@@ -118,6 +119,10 @@ def resolve_gateway_rate_limit_rpm(settings: dict[str, str]) -> int:
 
 def require_api_key_enabled(settings: dict[str, str]) -> bool:
     return resolve_server_settings(settings)["server_require_api_key"].lower() == "true"
+
+
+def cooldowns_enabled(settings: dict[str, str]) -> bool:
+    return resolve_server_settings(settings)["server_cooldowns_enabled"].lower() != "false"
 
 
 def sticky_client_key_routing_enabled(settings: dict[str, str]) -> bool:

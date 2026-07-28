@@ -13,7 +13,14 @@ from typing import Any
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
 from janus.routing.capabilities import reorder_combo_by_capabilities
 from janus.routing.errors import RETRY_AFTER_CAP_S, get_cooldown
-from janus.storage.cooldowns import delete_cooldown, get_active_cooldowns, save_cooldown
+from janus.storage.cooldowns import (
+    clear_all_cooldowns as clear_all_cooldowns_db,
+)
+from janus.storage.cooldowns import (
+    delete_cooldown,
+    get_active_cooldowns,
+    save_cooldown,
+)
 from janus.storage.quotas import get_window_usage, window_id
 from janus.storage.usage import get_request_counts_today
 
@@ -66,8 +73,10 @@ class FallbackHandler:
     def __init__(self, registry: ProviderRegistry, db_path: str | Path | None = None) -> None:
         self.registry = registry
         self.db_path = db_path
+        self.cooldowns_enabled: bool = True
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._backoff: dict[tuple[str, str], int] = {}
+        self._cooldown_tasks: set[asyncio.Task[Any]] = set()
         self._rotation_counters: dict[str, int] = {}
         self._sticky: dict[str, tuple[str, int]] = {}
         self._combo_rotation: dict[str, int] = {}
@@ -206,6 +215,7 @@ class FallbackHandler:
         # Cooldowns/backoff are also reloaded from DB; keep live values as a baseline.
         self._cooldowns = dict(other._cooldowns)
         self._backoff = dict(other._backoff)
+        self.cooldowns_enabled = other.cooldowns_enabled
 
     @staticmethod
     def _client_pool_key(
@@ -449,6 +459,8 @@ class FallbackHandler:
         retry_after: float | None = None,
         duration: float | None = None,
     ) -> None:
+        if not self.cooldowns_enabled:
+            return
         model_key = model or "__all__"
         key = (account_id, model_key)
         if duration is not None:
@@ -474,6 +486,20 @@ class FallbackHandler:
             if self.db_path is not None:
                 self._delete_cooldown(account_id, mk)
 
+    def _track_cooldown_task(self, task: asyncio.Task[Any]) -> None:
+        self._cooldown_tasks.add(task)
+
+        def _done(done: asyncio.Task[Any]) -> None:
+            self._cooldown_tasks.discard(done)
+
+        task.add_done_callback(_done)
+
+    async def _drain_cooldown_tasks(self) -> None:
+        pending = list(self._cooldown_tasks)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            self._cooldown_tasks.clear()
+
     def _persist_cooldown(
         self, account_id: str, model: str, expires_at: float, error_type: str, level: int
     ) -> None:
@@ -492,6 +518,7 @@ class FallbackHandler:
                 backoff_level=level,
             )
         )
+        self._track_cooldown_task(task)
         task.add_done_callback(_cooldown_task_callback("save", account_id, model))
 
     def _delete_cooldown(self, account_id: str, model: str) -> None:
@@ -501,6 +528,7 @@ class FallbackHandler:
         except RuntimeError:
             return
         task = loop.create_task(delete_cooldown(self.db_path, account_id, model))
+        self._track_cooldown_task(task)
         task.add_done_callback(_cooldown_task_callback("delete", account_id, model))
 
     async def load_cooldowns(self) -> None:
@@ -536,6 +564,8 @@ class FallbackHandler:
         return min(expiries)
 
     def is_available(self, account_id: str, model: str | None = None) -> bool:
+        if not self.cooldowns_enabled:
+            return True
         now = time.time()
         all_exp = self._cooldowns.get((account_id, "__all__"))
         if all_exp is not None and now < all_exp:
@@ -545,6 +575,16 @@ class FallbackHandler:
             if exp is not None and now < exp:
                 return False
         return True
+
+    async def clear_all_cooldowns(self) -> int:
+        await self._drain_cooldown_tasks()
+        count = len(self._cooldowns)
+        self._cooldowns.clear()
+        self._backoff.clear()
+        db_count = 0
+        if self.db_path is not None:
+            db_count = await clear_all_cooldowns_db(self.db_path)
+        return max(count, db_count)
 
     def routing_snapshot(self) -> dict[str, Any]:
         sticky = [
@@ -556,4 +596,5 @@ class FallbackHandler:
             "rotation_counters": dict(self._rotation_counters),
             "sticky": sticky,
             "combo_rotation": dict(self._combo_rotation),
+            "cooldowns_enabled": self.cooldowns_enabled,
         }

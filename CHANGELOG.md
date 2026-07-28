@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - TBD
+
+### Added
+- **Cooldown override controls** — Settings/CLI toggle `server_cooldowns_enabled` (default on) to disable account cooldown enforcement and marking; Routing **Clear all cooldowns** wipes active memory + SQLite timers without changing the toggle
+
 ## [1.8.0] - 2026-07-28
 
 ### Added

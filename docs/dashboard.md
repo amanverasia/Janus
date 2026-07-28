@@ -184,6 +184,10 @@ Each card shows the exact `export` commands for your server URL and auth setting
 ### Settings — `/dashboard/settings`
 
 - **Require API key** — runtime toggle (stored in DB, overrides YAML default)
+- **Enable account cooldowns** — when on (default), accounts that hit 429/5xx/auth/network
+  errors are skipped until their cooldown expires. Turn off to override and keep
+  retrying those accounts immediately (`server_cooldowns_enabled`). Also available
+  via `janus settings set server_cooldowns_enabled false`
 - **Combo Routing** — `combo_strategy` selector (fallback / round robin /
   fusion), `combo_sticky_limit`, and the Fusion tuning fields (judge model,
   min panel size, straggler grace, hard timeout) — see [Combos &
@@ -194,6 +198,9 @@ Each card shows the exact `export` commands for your server URL and auth setting
 - **Server info** — host, port, data directory
 - **Export Config** — download current DB state as YAML
 - **Reset to Defaults** — wipe DB tables and re-seed from `config.yaml` (danger zone)
+
+On **Routing**, use **Clear all cooldowns** to wipe active in-memory and SQLite
+cooldown timers without changing the enable toggle.
 
 ---
 

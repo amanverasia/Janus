@@ -123,6 +123,34 @@
         </div>
     </div>
 
+    <!-- Account Cooldowns -->
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+            <div class="flex-1 min-w-0">
+                <h2 class="text-lg font-bold text-white">Enable Account Cooldowns</h2>
+                <p class="text-gray-400 text-sm mt-1">
+                    When enabled, accounts that hit 429/5xx/auth/network errors are skipped for a
+                    short cooldown before retry. Turn off to override and keep trying cooled-down
+                    accounts. Takes effect immediately.
+                </p>
+                <p class="text-gray-500 text-xs mt-2">
+                    Default is on. Use Routing → Clear all cooldowns to wipe active timers without
+                    disabling the feature.
+                </p>
+            </div>
+            <label class="janus-toggle">
+                <input type="checkbox"
+                       id="cooldowns-enabled-toggle"
+                       {% if cooldowns_enabled %}checked{% endif %}
+                       hx-post="/dashboard/api/settings"
+                       hx-swap="none"
+                       hx-trigger="change"
+                       hx-on:htmx:config-request="event.detail.parameters.key='server_cooldowns_enabled'; event.detail.parameters.value=event.detail.elt.checked ? 'true' : 'false'">
+                <span class="janus-toggle-track" aria-hidden="true"></span>
+            </label>
+        </div>
+    </div>
+
     <!-- Gateway Rate Limit -->
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <h2 class="text-lg font-bold text-white">Gateway Rate Limit</h2>

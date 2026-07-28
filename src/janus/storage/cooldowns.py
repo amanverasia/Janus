@@ -35,6 +35,13 @@ async def delete_cooldown(db_path: str | Path, account_id: str, model: str) -> N
         await db.commit()
 
 
+async def clear_all_cooldowns(db_path: str | Path) -> int:
+    async with get_connection(db_path) as db:
+        cur = await db.execute("DELETE FROM cooldowns")
+        await db.commit()
+        return int(cur.rowcount or 0)
+
+
 async def get_active_cooldowns(db_path: str | Path) -> dict[str, tuple[float, int]]:
     now = time.time()
     async with get_connection(db_path) as db:

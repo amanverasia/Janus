@@ -8,13 +8,28 @@
         <h1 class="text-2xl font-bold text-white mb-2">Routing &amp; Rotation</h1>
         <p class="text-gray-400 text-sm max-w-3xl">{{ overview.rotation_note }}</p>
     </div>
-    <a href="/dashboard/inventory/keys"
-       class="px-4 py-2 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm">
-        Manage keys
-    </a>
+    <div class="flex flex-wrap items-center gap-3">
+        <button type="button"
+                hx-post="/dashboard/api/routing/cooldowns/clear"
+                hx-target="#cooldown-clear-status"
+                hx-swap="innerHTML"
+                class="px-4 py-2 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm">
+            Clear all cooldowns
+        </button>
+        <a href="/dashboard/inventory/keys"
+           class="px-4 py-2 border border-gray-600 text-gray-300 hover:text-white hover:border-gray-500 rounded-lg text-sm">
+            Manage keys
+        </a>
+    </div>
 </div>
+<p id="cooldown-clear-status" class="mb-4"></p>
 
-{% if overview.cooldown_count > 0 %}
+{% if not cooldowns_enabled %}
+<div class="mb-6 bg-sky-900/30 border border-sky-700 rounded-lg p-4 text-sky-200 text-sm">
+    Account cooldowns are <span class="font-medium">disabled</span> in Settings.
+    Upstream accounts will be retried without cooldown skips. Re-enable anytime under Settings.
+</div>
+{% elif overview.cooldown_count > 0 %}
 <div class="mb-6 bg-amber-900/30 border border-amber-700 rounded-lg p-4 text-amber-200 text-sm">
     {{ overview.cooldown_count }} account(s) are in cooldown after recent errors and are skipped until the timer expires.
 </div>

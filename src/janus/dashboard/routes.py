@@ -384,15 +384,18 @@ def _wired_providers(request: Request) -> list[dict[str, Any]]:
 async def routing_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     from janus.storage.routing_overview import get_routing_overview
+    from janus.storage.settings import cooldowns_enabled, get_all_settings
 
     overview = await get_routing_overview(db_path)
     routing_live = request.app.state.fallback_handler.routing_snapshot()
+    settings = await get_all_settings(db_path)
     return await _render_page(
         request,
         "routing.html",
         db_path,
         overview=overview,
         routing_live=routing_live,
+        cooldowns_enabled=cooldowns_enabled(settings),
     )
 
 
@@ -407,6 +410,17 @@ async def api_routing_partial(request: Request) -> HTMLResponse:
         request, db_path, overview=overview, routing_live=routing_live
     )
     return _templates.TemplateResponse(request, "routing_partial.html", context)
+
+
+@router.post("/api/routing/cooldowns/clear", response_class=HTMLResponse)
+async def api_clear_cooldowns(request: Request) -> HTMLResponse:
+    await _ensure_db(request)
+    handler = request.app.state.fallback_handler
+    n = await handler.clear_all_cooldowns()
+    return HTMLResponse(
+        f'<span class="text-green-400 text-sm">Cleared {n} cooldown(s)</span>',
+        status_code=200,
+    )
 
 
 @router.get("/keys", response_class=HTMLResponse)
@@ -1464,6 +1478,12 @@ async def api_update_setting(request: Request) -> HTMLResponse:
         from janus.dashboard.reload import reload_savers
 
         await reload_savers(request.app)
+    if key == "server_cooldowns_enabled":
+        from janus.storage.settings import cooldowns_enabled as cooldowns_flag
+
+        handler = getattr(request.app.state, "fallback_handler", None)
+        if handler is not None:
+            handler.cooldowns_enabled = cooldowns_flag({key: value})
     return HTMLResponse(content="", status_code=200)
 
 
@@ -1660,6 +1680,7 @@ async def _pricing_partial(request: Request, db_path: Path) -> HTMLResponse:
 async def settings_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
     from janus.storage.settings import (
+        cooldowns_enabled,
         ensure_server_defaults,
         get_all_settings,
         request_logging_enabled,
@@ -1693,6 +1714,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         dashboard_username=settings.get(SETTINGS_USERNAME, ""),
         dashboard_password_set=bool(settings.get(SETTINGS_PASSWORD_HASH)),
         require_api_key_enabled=require_api_key_enabled(settings),
+        cooldowns_enabled=cooldowns_enabled(settings),
         sticky_client_key_routing_enabled=sticky_client_key_routing_enabled(settings),
         request_logging_enabled=request_logging_enabled(settings),
         request_log_retention=resolve_request_log_retention(settings),
