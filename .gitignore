@@ -91,3 +91,4 @@ site/
 # Janus runtime data
 janus-data/
 nohup.out
+.release_log.txt

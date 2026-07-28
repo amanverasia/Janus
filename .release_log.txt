@@ -1,8 +1,0 @@
-Already on 'main'
-M	CHANGELOG.md
-M	pyproject.toml
-M	src/janus/app.py
-Your branch is up to date with 'origin/main'.
-From https://github.com/amanverasia/Janus
- * branch            main       -> FETCH_HEAD
-Already up to date.
