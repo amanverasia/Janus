@@ -65,6 +65,76 @@ _ALLOWLIST = frozenset(
 )
 
 
+def _remember_output_item(
+    by_id: dict[str, dict[str, Any]],
+    order: list[str],
+    anonymous: list[dict[str, Any]],
+    item: dict[str, Any],
+) -> None:
+    """Track streamed ``output_item.done`` payloads for completed-output backfill."""
+    item_id = item.get("id")
+    if isinstance(item_id, str) and item_id:
+        if item_id not in by_id:
+            order.append(item_id)
+        by_id[item_id] = item
+        return
+    anonymous.append(item)
+
+
+def _collected_output_items(
+    by_id: dict[str, dict[str, Any]],
+    order: list[str],
+    anonymous: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [by_id[i] for i in order if i in by_id] + anonymous
+
+
+def _backfill_response_output(
+    response: dict[str, Any],
+    done_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """ChatGPT Codex often emits empty/null ``response.completed.output``.
+
+    Real items arrive earlier as ``response.output_item.done``. Rebuild when needed.
+    """
+    out = response.get("output")
+    if isinstance(out, list) and len(out) > 0:
+        return response
+    if not done_items:
+        return response
+    patched = dict(response)
+    patched["output"] = list(done_items)
+    return patched
+
+
+def _patch_sse_data_line(raw_line: str, done_items: list[dict[str, Any]]) -> str:
+    """Rewrite a completed/incomplete SSE data line when ``output`` is empty."""
+    stripped = raw_line.strip()
+    if not stripped.startswith("data:"):
+        return raw_line
+    payload_s = stripped[5:].strip()
+    if not payload_s or payload_s == "[DONE]":
+        return raw_line
+    try:
+        event = json.loads(payload_s)
+    except json.JSONDecodeError:
+        return raw_line
+    if not isinstance(event, dict):
+        return raw_line
+    if event.get("type") not in ("response.completed", "response.incomplete"):
+        return raw_line
+    response = event.get("response")
+    if not isinstance(response, dict):
+        return raw_line
+    patched_response = _backfill_response_output(response, done_items)
+    if patched_response is response:
+        return raw_line
+    patched_event = dict(event)
+    patched_event["response"] = patched_response
+    prefix = raw_line[: len(raw_line) - len(raw_line.lstrip())]
+    return f"{prefix}data: {json.dumps(patched_event, separators=(',', ':'), ensure_ascii=False)}"
+
+
 class CodexProvider:
     name = "codex"
 
@@ -232,6 +302,9 @@ class CodexProvider:
         assert streamed.lines is not None
         final: dict[str, Any] | None = None
         last_error: dict[str, Any] | None = None
+        by_id: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        anonymous: list[dict[str, Any]] = []
         async for raw_line in streamed.lines:
             line = raw_line.strip()
             if not line.startswith("data:"):
@@ -246,6 +319,10 @@ class CodexProvider:
             if not isinstance(event, dict):
                 continue
             etype = event.get("type")
+            if etype == "response.output_item.done":
+                item = event.get("item")
+                if isinstance(item, dict):
+                    _remember_output_item(by_id, order, anonymous, item)
             if etype == "response.failed" or event.get("error"):
                 err = event.get("error") if isinstance(event.get("error"), dict) else event
                 last_error = err if isinstance(err, dict) else {"error": err}
@@ -256,6 +333,8 @@ class CodexProvider:
             ):
                 final = response
         if final is not None:
+            done_items = _collected_output_items(by_id, order, anonymous)
+            final = _backfill_response_output(final, done_items)
             return RawResult(status_code=streamed.status_code, json_data=final)
         if last_error is not None:
             return RawResult(status_code=400, json_data=last_error)
@@ -277,8 +356,31 @@ class CodexProvider:
             )
 
         async def line_iter() -> AsyncIterator[str]:
+            by_id: dict[str, dict[str, Any]] = {}
+            order: list[str] = []
+            anonymous: list[dict[str, Any]] = []
             try:
                 async for raw_line in r.aiter_lines():
+                    stripped = raw_line.strip()
+                    if stripped.startswith("data:"):
+                        payload_s = stripped[5:].strip()
+                        if payload_s and payload_s != "[DONE]":
+                            try:
+                                ev = json.loads(payload_s)
+                            except json.JSONDecodeError:
+                                ev = None
+                            if isinstance(ev, dict):
+                                if ev.get("type") == "response.output_item.done":
+                                    item = ev.get("item")
+                                    if isinstance(item, dict):
+                                        _remember_output_item(by_id, order, anonymous, item)
+                                if ev.get("type") in (
+                                    "response.completed",
+                                    "response.incomplete",
+                                ):
+                                    done_items = _collected_output_items(by_id, order, anonymous)
+                                    yield _patch_sse_data_line(raw_line, done_items)
+                                    continue
                     yield raw_line
             finally:
                 await cm.__aexit__(None, None, None)
