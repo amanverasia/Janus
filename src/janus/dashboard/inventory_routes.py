@@ -208,6 +208,21 @@ async def _keys_context(
 
 
 def _parse_bulk_keys(raw: str) -> list[dict[str, str]]:
+    text = raw.strip()
+    if text.startswith("{") or text.startswith("["):
+        try:
+            from janus.inventory.codex_credentials import expand_codex_paste
+
+            expanded = expand_codex_paste(text)
+            if expanded:
+                return [{"label": e.get("label") or "", "key": e["key"]} for e in expanded]
+        except ValueError:
+            pass
+        try:
+            json.loads(text)
+            return [{"label": "", "key": text}]
+        except json.JSONDecodeError:
+            pass
     entries: list[dict[str, str]] = []
     for line in raw.splitlines():
         line = line.strip()

@@ -62,8 +62,24 @@ Janus recognizes keys for these providers (auto-detection probes each):
 OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
-Firecrawl, fal.ai, Exa, Brave Search, plus **custom** and **unidentified**
-fallbacks.
+Firecrawl, fal.ai, Exa, Brave Search, **Codex (ChatGPT)** (OAuth blobs — select
+explicitly), plus **custom** and **unidentified** fallbacks.
+
+### Codex / ChatGPT OAuth
+
+Paste one of the following into **Add keys**, then choose provider **Codex (ChatGPT)**:
+
+- A Janus credential JSON blob (`access_token` / `refresh_token` / optional
+  `extra.workspaceId`)
+- A 9router Codex `providerConnections` row (camelCase tokens +
+  `providerSpecificData.chatgptAccountId`)
+- A JSON array of those rows, or a wrapper with a `providerConnections` array
+  (non-Codex connections are skipped)
+- A bare access token (short-lived; prefer blobs that include a refresh token)
+
+Full 9router backup import (settings, combos, other providers) is not supported
+here — only connection objects. Pasting a Codex blob on the **Providers** page
+still works for a single gateway account.
 
 ## Encryption at rest
 

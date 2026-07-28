@@ -400,6 +400,8 @@ def test_all_accounts_cooled_down_combo_carries_retry_after():
 
 def test_all_accounts_cooled_down_min_retry_after():
     """Even a near-expired cooldown reports at least MIN_RETRY_AFTER_S."""
+    import time
+
     registry = ProviderRegistry()
     registry.register(
         ProviderConfig(
@@ -412,7 +414,10 @@ def test_all_accounts_cooled_down_min_retry_after():
         )
     )
     handler = FallbackHandler(registry)
-    handler.mark_cooldown("x", "rate_limit", duration=0.001)
+    handler.mark_cooldown("x", "rate_limit", duration=60.0)
+    # Keep a small positive remaining window so resolve still sees a cooldown,
+    # but small enough that the MIN_RETRY_AFTER_S floor applies.
+    handler._cooldowns[("x", "__all__")] = time.time() + 0.05
     with pytest.raises(AllAccountsCooledDown) as exc_info:
         handler.resolve_attempts("x/m")
     assert exc_info.value.retry_after >= 1.0

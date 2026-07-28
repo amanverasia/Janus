@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from janus.inventory.catalog import get_inventory_provider
+from janus.inventory.codex_credentials import normalize_codex_credential
 from janus.inventory.provider_detection import resolve_provider_for_key
 from janus.inventory.url_guard import is_http_url, mask_key
 from janus.storage.upstream_keys import (
@@ -18,6 +19,7 @@ from janus.storage.upstream_keys import (
 
 MIN_KEY_LENGTH = int(os.environ.get("INVENTORY_MIN_KEY_LENGTH", "16"))
 MAX_KEY_LENGTH = int(os.environ.get("INVENTORY_MAX_KEY_LENGTH", "512"))
+CREDENTIAL_MAX_KEY_LENGTH = int(os.environ.get("INVENTORY_CREDENTIAL_MAX_KEY_LENGTH", "16384"))
 MAX_SUBMIT_BATCH = int(os.environ.get("INVENTORY_MAX_SUBMIT_BATCH", "200"))
 _NON_KEY_PATTERN = re.compile(r"^(https?://|/|\.|\d+$)")
 
@@ -34,15 +36,23 @@ class KeyIngestEntry:
 IngestStatus = Literal["registered", "exists", "rejected", "updated", "skipped", "unidentified"]
 
 
-def validate_key_value(key_value: str) -> str | None:
-    cleaned = key_value.strip().replace("\r", "").replace("\n", "").replace("\t", "")
+def _looks_like_credential_json(key_value: str) -> bool:
+    s = key_value.strip()
+    return s.startswith("{") or s.startswith("[")
+
+
+def validate_key_value(key_value: str, *, provider_id: str | None = None) -> str | None:
+    cleaned = key_value.strip().replace("\r", "")
     if not cleaned:
         return "Key is missing"
-    if len(cleaned) < MIN_KEY_LENGTH:
+    is_credential = provider_id == "codex" or _looks_like_credential_json(cleaned)
+    check_value = cleaned if is_credential else cleaned.replace("\n", "").replace("\t", "")
+    max_len = CREDENTIAL_MAX_KEY_LENGTH if is_credential else MAX_KEY_LENGTH
+    if len(check_value) < MIN_KEY_LENGTH:
         return f"Key too short (min {MIN_KEY_LENGTH} chars)"
-    if len(cleaned) > MAX_KEY_LENGTH:
-        return f"Key too long (max {MAX_KEY_LENGTH} chars)"
-    if _NON_KEY_PATTERN.match(cleaned):
+    if len(check_value) > max_len:
+        return f"Key too long (max {max_len} chars)"
+    if not is_credential and _NON_KEY_PATTERN.match(check_value):
         return "Does not look like an API key"
     return None
 
@@ -50,6 +60,14 @@ def validate_key_value(key_value: str) -> str | None:
 def enforce_batch_size(count: int) -> str | None:
     if count > MAX_SUBMIT_BATCH:
         return f"Too many keys ({count}); max {MAX_SUBMIT_BATCH} per request"
+    return None
+
+
+def _chosen_provider_hint(entry: KeyIngestEntry, chosen_provider: str) -> str | None:
+    if entry.provider and entry.provider != "auto":
+        return entry.provider
+    if chosen_provider and chosen_provider != "auto":
+        return chosen_provider
     return None
 
 
@@ -61,7 +79,8 @@ async def ingest_upstream_key(
     custom_base_url: str | None = None,
     require_provider: bool = False,
 ) -> dict[str, Any]:
-    validation_error = validate_key_value(entry.key)
+    provider_hint = _chosen_provider_hint(entry, chosen_provider)
+    validation_error = validate_key_value(entry.key, provider_id=provider_hint)
     if validation_error:
         return {
             "key_masked": entry.key[:8] + "…" if entry.key else "?",
@@ -70,7 +89,24 @@ async def ingest_upstream_key(
             "error": validation_error,
         }
 
-    key_value = entry.key.strip().replace("\r", "").replace("\n", "").replace("\t", "")
+    raw_key = entry.key.strip()
+    # Normalize early when Codex is explicitly selected so storage/dedupe use
+    # the canonical compact blob. Provider auto-detect still uses stripped keys.
+    if provider_hint == "codex":
+        try:
+            key_value = normalize_codex_credential(raw_key)
+        except ValueError as exc:
+            return {
+                "key_masked": mask_key(raw_key),
+                "label": entry.label,
+                "status": "rejected",
+                "error": str(exc),
+            }
+    elif _looks_like_credential_json(raw_key):
+        key_value = raw_key
+    else:
+        key_value = raw_key.replace("\r", "").replace("\n", "").replace("\t", "")
+
     key_masked = mask_key(key_value)
     base_url = (entry.base_url or custom_base_url or "").strip() or None
     if base_url and not is_http_url(base_url):
@@ -119,6 +155,18 @@ async def ingest_upstream_key(
                 "label": entry.label,
                 "status": "rejected",
                 "error": "Cannot detect provider. Pass provider field.",
+            }
+
+    if resolved_provider == "codex" and provider_hint != "codex":
+        try:
+            key_value = normalize_codex_credential(raw_key)
+            key_masked = mask_key(key_value)
+        except ValueError as exc:
+            return {
+                "key_masked": mask_key(raw_key),
+                "label": entry.label,
+                "status": "rejected",
+                "error": str(exc),
             }
 
     effective_base_url = base_url
