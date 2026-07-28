@@ -76,6 +76,7 @@ class FallbackHandler:
         self.cooldowns_enabled: bool = True
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._backoff: dict[tuple[str, str], int] = {}
+        self._cooldown_tasks: set[asyncio.Task[Any]] = set()
         self._rotation_counters: dict[str, int] = {}
         self._sticky: dict[str, tuple[str, int]] = {}
         self._combo_rotation: dict[str, int] = {}
@@ -485,6 +486,20 @@ class FallbackHandler:
             if self.db_path is not None:
                 self._delete_cooldown(account_id, mk)
 
+    def _track_cooldown_task(self, task: asyncio.Task[Any]) -> None:
+        self._cooldown_tasks.add(task)
+
+        def _done(done: asyncio.Task[Any]) -> None:
+            self._cooldown_tasks.discard(done)
+
+        task.add_done_callback(_done)
+
+    async def _drain_cooldown_tasks(self) -> None:
+        pending = list(self._cooldown_tasks)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            self._cooldown_tasks.clear()
+
     def _persist_cooldown(
         self, account_id: str, model: str, expires_at: float, error_type: str, level: int
     ) -> None:
@@ -503,6 +518,7 @@ class FallbackHandler:
                 backoff_level=level,
             )
         )
+        self._track_cooldown_task(task)
         task.add_done_callback(_cooldown_task_callback("save", account_id, model))
 
     def _delete_cooldown(self, account_id: str, model: str) -> None:
@@ -512,6 +528,7 @@ class FallbackHandler:
         except RuntimeError:
             return
         task = loop.create_task(delete_cooldown(self.db_path, account_id, model))
+        self._track_cooldown_task(task)
         task.add_done_callback(_cooldown_task_callback("delete", account_id, model))
 
     async def load_cooldowns(self) -> None:
@@ -560,6 +577,7 @@ class FallbackHandler:
         return True
 
     async def clear_all_cooldowns(self) -> int:
+        await self._drain_cooldown_tasks()
         count = len(self._cooldowns)
         self._cooldowns.clear()
         self._backoff.clear()
