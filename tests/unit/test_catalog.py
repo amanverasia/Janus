@@ -42,7 +42,7 @@ GATEWAY_FIELDS = {
 
 def test_unified_catalog_counts() -> None:
     assert len(PROVIDERS) == 50
-    assert len(inventory_entries()) == 39
+    assert len(inventory_entries()) == 40
     assert len(gateway_entries()) == 39
 
 
@@ -80,7 +80,7 @@ def test_new_9router_providers_present() -> None:
     ):
         assert pid in PROVIDERS, pid
         assert "gateway" in PROVIDERS[pid], pid
-        if pid not in ("codex", "kiro", "cursor", "antigravity", "claude_oauth", "mimo_free"):
+        if pid not in ("kiro", "cursor", "antigravity", "claude_oauth", "mimo_free"):
             assert "inventory" in PROVIDERS[pid], pid
 
 
@@ -115,7 +115,6 @@ def test_gateway_only_entries_have_no_inventory_block() -> None:
         "opencode_free",
         "mimo_free",
         "claude_oauth",
-        "codex",
         "kiro",
         "cursor",
         "antigravity",
