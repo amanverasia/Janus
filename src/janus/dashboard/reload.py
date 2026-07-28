@@ -17,7 +17,12 @@ from janus.storage.combos_db import list_combos
 from janus.storage.pricing_catalog import get_catalog
 from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
-from janus.storage.settings import ensure_saver_defaults, get_all_settings, resolve_saver_settings
+from janus.storage.settings import (
+    cooldowns_enabled,
+    ensure_saver_defaults,
+    get_all_settings,
+    resolve_saver_settings,
+)
 from janus.storage.upstream_keys import list_routable_upstream_keys
 from janus.tokensavers.base import AsyncTokenSaver, TokenSaver
 from janus.tokensavers.caveman import PROMPTS as CAVEMAN_PROMPTS
@@ -60,6 +65,8 @@ async def reload_providers(app: FastAPI) -> None:
     handler = FallbackHandler(registry, db_path=db_path)
     if isinstance(old_handler, FallbackHandler):
         handler.adopt_runtime_state(old_handler)
+    settings = await get_all_settings(db_path)
+    handler.cooldowns_enabled = cooldowns_enabled(settings)
     app.state.fallback_handler = handler
     await app.state.fallback_handler.load_cooldowns()
     await app.state.fallback_handler.load_request_counts()

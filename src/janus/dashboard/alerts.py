@@ -179,6 +179,19 @@ async def _quota_alerts(db_path: Path, request: Request) -> list[DashboardAlert]
 
 async def _cooldown_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
     del request
+    from janus.storage.settings import cooldowns_enabled, get_all_settings
+
+    settings = await get_all_settings(db_path)
+    if not cooldowns_enabled(settings):
+        return [
+            DashboardAlert(
+                id="cooldown:disabled",
+                severity="info",
+                title="Account cooldowns disabled",
+                detail="Routing will retry cooled-down accounts immediately.",
+                href="/dashboard/settings",
+            )
+        ]
     cooldowns = await get_active_cooldowns(db_path)
     if not cooldowns:
         return []
