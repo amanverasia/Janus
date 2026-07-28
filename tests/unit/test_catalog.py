@@ -41,9 +41,9 @@ GATEWAY_FIELDS = {
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 49
-    assert len(inventory_entries()) == 38
-    assert len(gateway_entries()) == 38
+    assert len(PROVIDERS) == 50
+    assert len(inventory_entries()) == 39
+    assert len(gateway_entries()) == 39
 
 
 def test_groq_default_model_is_valid() -> None:
@@ -76,6 +76,7 @@ def test_new_9router_providers_present() -> None:
         "xiaomi",
         "xiaomi_tokenplan",
         "mimo_free",
+        "ollama",
     ):
         assert pid in PROVIDERS, pid
         assert "gateway" in PROVIDERS[pid], pid
@@ -123,6 +124,15 @@ def test_gateway_only_entries_have_no_inventory_block() -> None:
         assert pid in PROVIDERS
         assert "inventory" not in PROVIDERS[pid]
         assert PROVIDERS[pid]["gateway"]["id"] == pid
+
+
+def test_ollama_cloud_gateway_and_inventory() -> None:
+    entry = PROVIDERS["ollama"]
+    assert entry["gateway"]["api_type"] == "openai_compat"
+    assert entry["gateway"]["base_url"] == "https://ollama.com/v1"
+    assert entry["gateway"]["prefix"] == "ollama"
+    assert entry["inventory"]["billing_model"] == "subscription"
+    assert entry["inventory"]["base_url"] == "https://ollama.com/v1"
 
 
 def test_shared_entries_agree_on_base_urls_where_expected() -> None:

@@ -59,7 +59,7 @@ key-management tool.
 
 Janus recognizes keys for these providers (auto-detection probes each):
 
-OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Groq, Together, Perplexity,
+OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
 Firecrawl, fal.ai, Exa, Brave Search, plus **custom** and **unidentified**

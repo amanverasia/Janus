@@ -129,6 +129,44 @@ async def test_validate_key_nvidia_via_chat():
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_validate_key_ollama_requires_authenticated_chat_probe():
+    respx.get("https://ollama.com/v1/models").mock(
+        return_value=Response(
+            200,
+            json={"object": "list", "data": [{"id": "gpt-oss:20b"}, {"id": "glm-5.2"}]},
+        )
+    )
+    respx.post("https://ollama.com/v1/chat/completions").mock(
+        return_value=Response(401, json={"error": "Unauthorized"})
+    )
+
+    result = await validate_key("ollama-test-key", "ollama")
+    assert result["is_valid"] is False
+    assert "Auth failed" in result["error"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_validate_key_ollama_success_via_chat_probe():
+    respx.get("https://ollama.com/v1/models").mock(
+        return_value=Response(
+            200,
+            json={"object": "list", "data": [{"id": "gpt-oss:20b"}, {"id": "glm-5.2"}]},
+        )
+    )
+    respx.post("https://ollama.com/v1/chat/completions").mock(
+        return_value=Response(200, json={"id": "chatcmpl-test"})
+    )
+
+    result = await validate_key("ollama-test-key", "ollama")
+    assert result["is_valid"] is True
+    assert result["is_usable"] is True
+    assert len(result["models"]) == 2
+    assert result["models"][0]["model_id"] == "gpt-oss:20b"
+
+
+@pytest.mark.asyncio
 async def test_validate_key_blocks_private_url():
     result = await validate_key(
         "sk-test",
