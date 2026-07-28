@@ -824,6 +824,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Supported inventory providers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#codex-chatgpt-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codex / ChatGPT OAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1417,6 +1434,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Supported inventory providers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#codex-chatgpt-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codex / ChatGPT OAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1602,8 +1636,22 @@ key-management tool.</p>
 <p>OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
-Firecrawl, fal.ai, Exa, Brave Search, plus <strong>custom</strong> and <strong>unidentified</strong>
-fallbacks.</p>
+Firecrawl, fal.ai, Exa, Brave Search, <strong>Codex (ChatGPT)</strong> (OAuth blobs — select
+explicitly), plus <strong>custom</strong> and <strong>unidentified</strong> fallbacks.</p>
+<h3 id="codex-chatgpt-oauth">Codex / ChatGPT OAuth<a class="headerlink" href="#codex-chatgpt-oauth" title="Permanent link">&para;</a></h3>
+<p>Paste one of the following into <strong>Add keys</strong>, then choose provider <strong>Codex (ChatGPT)</strong>:</p>
+<ul>
+<li>A Janus credential JSON blob (<code>access_token</code> / <code>refresh_token</code> / optional
+  <code>extra.workspaceId</code>)</li>
+<li>A 9router Codex <code>providerConnections</code> row (camelCase tokens +
+  <code>providerSpecificData.chatgptAccountId</code>)</li>
+<li>A JSON array of those rows, or a wrapper with a <code>providerConnections</code> array
+  (non-Codex connections are skipped)</li>
+<li>A bare access token (short-lived; prefer blobs that include a refresh token)</li>
+</ul>
+<p>Full 9router backup import (settings, combos, other providers) is not supported
+here — only connection objects. Pasting a Codex blob on the <strong>Providers</strong> page
+still works for a single gateway account.</p>
 <h2 id="encryption-at-rest">Encryption at rest<a class="headerlink" href="#encryption-at-rest" title="Permanent link">&para;</a></h2>
 <p>Set <code>INVENTORY_ENCRYPTION_KEY</code> to a Fernet key before adding credentials. Inventory
 upstream keys and gateway provider API keys/OAuth credential blobs are then stored
