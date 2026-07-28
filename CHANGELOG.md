@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-28
+
+### Added
+- **Codex inventory credentials** — paste Janus OAuth JSON, 9router Codex connection objects, or `providerConnections` arrays into Key Inventory; select Codex (ChatGPT); validate via OAuth refresh; expand into multi-account `codex/<model>` routing while keeping Providers-page paste working
+
 ## [1.7.0] - 2026-07-28
 
 ### Added
