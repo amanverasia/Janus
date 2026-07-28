@@ -875,6 +875,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ollama-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Cloud
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#opencode-zen" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1606,6 +1617,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ollama-cloud" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Cloud
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#opencode-zen" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1916,6 +1938,12 @@ inventory keys exist.</p>
 <td>qwen-max, qwen-plus, qwen-turbo</td>
 </tr>
 <tr>
+<td>Ollama Cloud</td>
+<td><code>https://ollama.com/v1</code></td>
+<td><code>openai_compat</code></td>
+<td>gpt-oss:20b, gpt-oss:120b, glm-5.2 (use Fetch Models)</td>
+</tr>
+<tr>
 <td>OpenCode Zen</td>
 <td><em>(provided by service)</em></td>
 <td><code>opencode_free</code></td>
@@ -2037,6 +2065,21 @@ Use the full model IDs (e.g. <code>anthropic/claude-3.5-sonnet</code>) in the <c
 <span class="w">    </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${DASHSCOPE_API_KEY}</span>
 <span class="w">    </span><span class="nt">models</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">qwen-max</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">qwen-plus</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">qwen-turbo</span><span class="p p-Indicator">]</span>
 </code></pre></div>
+<h3 id="ollama-cloud">Ollama Cloud<a class="headerlink" href="#ollama-cloud" title="Permanent link">&para;</a></h3>
+<p>Create an API key at <a href="https://ollama.com/settings/keys">ollama.com/settings/keys</a>, then add
+the provider from the dashboard catalog or seed from YAML:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">providers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ollama</span>
+<span class="w">    </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ollama</span>
+<span class="w">    </span><span class="nt">api_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_compat</span>
+<span class="w">    </span><span class="nt">base_url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://ollama.com/v1</span>
+<span class="w">    </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${OLLAMA_API_KEY}</span>
+<span class="w">    </span><span class="nt">models</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">gpt-oss</span><span class="p p-Indicator">:</span><span class="nv">20b</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">gpt-oss</span><span class="p p-Indicator">:</span><span class="nv">120b</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>Use <strong>Fetch Models</strong> in the dashboard to populate the model list from Ollama's
+OpenAI-compatible <code>/v1/models</code> endpoint. Route requests as <code>ollama/gpt-oss:20b</code>.</p>
+<p>Inventory keys for Ollama Cloud are validated with an authenticated chat probe
+because the model list is public without a key.</p>
 <h3 id="opencode-zen">OpenCode Zen<a class="headerlink" href="#opencode-zen" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="nt">providers</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">opencode</span>
