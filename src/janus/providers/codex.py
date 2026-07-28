@@ -6,6 +6,7 @@ Ported from 9router ``open-sse/executors/codex.js`` (core transform + OAuth refr
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -163,12 +164,13 @@ class CodexProvider:
                 body.pop("tool_choice", None)
 
     def _normalize_payload(self, payload: dict[str, Any], stream: bool) -> dict[str, Any]:
+        del stream  # Codex upstream always requires stream=true
         body = {k: v for k, v in payload.items() if k in _ALLOWLIST}
         # Preserve a few optional extras that some clients attach
         for extra in ("metadata", "user", "max_output_tokens"):
             if extra in payload and extra not in body:
                 body[extra] = payload[extra]
-        body["stream"] = bool(stream or body.get("stream"))
+        body["stream"] = True
         body.setdefault("store", False)
         instructions = body.get("instructions")
         if not isinstance(instructions, str) or not instructions.strip():
@@ -218,21 +220,49 @@ class CodexProvider:
         if err is not None:
             return err
         url = f"{self.base_url}/responses"
-        body = self._normalize_payload(payload, stream)
-        if stream:
-            return await self._call_stream(url, body)
-        r = await self._client.post(url, json=body, headers=self._headers())
-        if r.status_code >= 400:
-            return RawResult(
-                status_code=r.status_code,
-                json_data=parse_error_body(r.content),
-                retry_after=parse_retry_after(r.headers),
-            )
-        try:
-            data = r.json()
-        except Exception:
-            data = {"error": r.text[:500]}
-        return RawResult(status_code=r.status_code, json_data=data)
+        # ChatGPT Codex rejects non-streaming requests ("Stream must be set to true").
+        body = self._normalize_payload(payload, stream=True)
+        streamed = await self._call_stream(url, body)
+        if stream or streamed.lines is None:
+            return streamed
+        return await self._buffer_forced_stream(streamed)
+
+    async def _buffer_forced_stream(self, streamed: RawResult) -> RawResult:
+        """Consume forced upstream SSE into a single Responses JSON object."""
+        assert streamed.lines is not None
+        final: dict[str, Any] | None = None
+        last_error: dict[str, Any] | None = None
+        async for raw_line in streamed.lines:
+            line = raw_line.strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if not data or data == "[DONE]":
+                continue
+            try:
+                event = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            etype = event.get("type")
+            if etype == "response.failed" or event.get("error"):
+                err = event.get("error") if isinstance(event.get("error"), dict) else event
+                last_error = err if isinstance(err, dict) else {"error": err}
+                continue
+            response = event.get("response")
+            if isinstance(response, dict) and (
+                etype in ("response.completed", "response.incomplete") or final is None
+            ):
+                final = response
+        if final is not None:
+            return RawResult(status_code=streamed.status_code, json_data=final)
+        if last_error is not None:
+            return RawResult(status_code=400, json_data=last_error)
+        return RawResult(
+            status_code=streamed.status_code,
+            json_data={"error": "Codex stream ended without a completed response"},
+        )
 
     async def _call_stream(self, url: str, payload: dict[str, Any]) -> RawResult:
         cm = self._client.stream("POST", url, json=payload, headers=self._headers())
