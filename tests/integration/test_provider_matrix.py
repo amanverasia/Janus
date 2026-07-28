@@ -118,7 +118,7 @@ _RESPONSES_JSON = {
 }
 
 _RESPONSES_SSE = (
-    f'data: {json.dumps({"type": "response.completed", "response": _RESPONSES_JSON})}\n\n'
+    f"data: {json.dumps({'type': 'response.completed', 'response': _RESPONSES_JSON})}\n\n"
 )
 
 _API_TYPE_CLASS = {
