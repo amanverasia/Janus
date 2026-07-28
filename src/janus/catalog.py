@@ -1280,6 +1280,24 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
     "codex": {
+        "inventory": {
+            "id": "codex",
+            "name": "codex",
+            "display_name": "Codex (ChatGPT)",
+            "base_url": "https://chatgpt.com/backend-api/codex",
+            "auth_type": "oauth",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": None,
+            "models_endpoint": None,
+            "health_check_endpoint": None,
+            "credit_check_endpoint": None,
+            "billing_model": "subscription",
+            "is_direct": True,
+            "routing_note": "Paste a Janus OAuth JSON blob, a 9router Codex connection "
+            "object (or providerConnections array), or a bare access token. "
+            "Select Codex explicitly. Providers-page paste still works.",
+        },
         "gateway": {
             "id": "codex",
             "name": "Codex (ChatGPT)",
