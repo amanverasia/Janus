@@ -117,6 +117,10 @@ _RESPONSES_JSON = {
     "usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
 }
 
+_RESPONSES_SSE = (
+    f'data: {json.dumps({"type": "response.completed", "response": _RESPONSES_JSON})}\n\n'
+)
+
 _API_TYPE_CLASS = {
     "openai_compat": OpenAICompatProvider,
     "anthropic": AnthropicProvider,
@@ -394,7 +398,11 @@ async def test_codex_via_openai_client_translate(tmp_path: Any) -> None:
     await _seed_and_reload(app)
 
     route = respx.post(f"{base}/responses").mock(
-        return_value=httpx.Response(200, json=_RESPONSES_JSON)
+        return_value=httpx.Response(
+            200,
+            content=_RESPONSES_SSE.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
@@ -407,6 +415,7 @@ async def test_codex_via_openai_client_translate(tmp_path: Any) -> None:
         sent = json.loads(route.calls.last.request.content)
         assert "input" in sent
         assert sent.get("store") is False
+        assert sent.get("stream") is True
 
 
 @pytest.mark.asyncio
