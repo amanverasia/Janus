@@ -166,10 +166,10 @@ class CodexProvider:
     def _normalize_payload(self, payload: dict[str, Any], stream: bool) -> dict[str, Any]:
         del stream  # Codex upstream always requires stream=true
         body = {k: v for k, v in payload.items() if k in _ALLOWLIST}
-        # Preserve a few optional extras that some clients attach
-        for extra in ("metadata", "user", "max_output_tokens"):
+        for extra in ("metadata", "user"):
             if extra in payload and extra not in body:
                 body[extra] = payload[extra]
+        body.pop("max_output_tokens", None)
         body["stream"] = True
         body.setdefault("store", False)
         instructions = body.get("instructions")
