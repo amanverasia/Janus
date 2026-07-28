@@ -1978,6 +1978,10 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <h3 id="settings-dashboardsettings">Settings — <code>/dashboard/settings</code><a class="headerlink" href="#settings-dashboardsettings" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Require API key</strong> — runtime toggle (stored in DB, overrides YAML default)</li>
+<li><strong>Enable account cooldowns</strong> — when on (default), accounts that hit 429/5xx/auth/network
+  errors are skipped until their cooldown expires. Turn off to override and keep
+  retrying those accounts immediately (<code>server_cooldowns_enabled</code>). Also available
+  via <code>janus settings set server_cooldowns_enabled false</code></li>
 <li><strong>Combo Routing</strong> — <code>combo_strategy</code> selector (fallback / round robin /
   fusion), <code>combo_sticky_limit</code>, and the Fusion tuning fields (judge model,
   min panel size, straggler grace, hard timeout) — see <a href="../combos/#combo-strategies">Combos &amp;
@@ -1989,6 +1993,8 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <li><strong>Export Config</strong> — download current DB state as YAML</li>
 <li><strong>Reset to Defaults</strong> — wipe DB tables and re-seed from <code>config.yaml</code> (danger zone)</li>
 </ul>
+<p>On <strong>Routing</strong>, use <strong>Clear all cooldowns</strong> to wipe active in-memory and SQLite
+cooldown timers without changing the enable toggle.</p>
 <hr />
 <h2 id="management-api">Management API<a class="headerlink" href="#management-api" title="Permanent link">&para;</a></h2>
 <p>Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.</p>
