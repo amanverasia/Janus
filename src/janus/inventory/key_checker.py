@@ -928,6 +928,53 @@ async def _validate_multi_base_key(
     return {"is_valid": False, "error": last_error}
 
 
+async def _validate_codex_key(
+    key_value: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    del metadata  # reserved for future regional overrides
+    from janus.inventory.codex_credentials import normalize_codex_credential
+    from janus.providers.oauth_tokens import (
+        access_token,
+        apply_token_response,
+        parse_credential,
+        refresh_codex,
+        refresh_token,
+        serialize_credential,
+    )
+
+    try:
+        normalized = normalize_codex_credential(key_value)
+    except ValueError as exc:
+        return {"is_valid": False, "error": str(exc)}
+
+    cred = parse_credential(normalized)
+    rt = refresh_token(cred)
+    if not rt:
+        if not access_token(cred):
+            return {"is_valid": False, "error": "Codex credential missing tokens"}
+        return {
+            "is_valid": True,
+            "is_usable": True,
+            "usability_status": "unknown",
+            "usability_note": "Access token present; no refresh token to verify",
+            "key_value": normalized,
+        }
+
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        tokens = await refresh_codex(rt, client)
+    if tokens is None:
+        return {"is_valid": False, "error": "Codex OAuth refresh failed"}
+    updated = apply_token_response(cred, tokens)
+    return {
+        "is_valid": True,
+        "is_usable": True,
+        "usability_status": "usable",
+        "usability_note": "OAuth refresh succeeded",
+        "key_value": serialize_credential(updated),
+    }
+
+
 async def validate_key(
     key_value: str,
     provider_id: str,
@@ -940,6 +987,9 @@ async def validate_key(
         return {"is_valid": False, "error": f"Unknown provider: {provider_id}"}
 
     try:
+        if provider_id == "codex":
+            return await _validate_codex_key(key_value, metadata)
+
         if provider_id == TOKENPLAN_PROVIDER_ID:
             return await _validate_tokenplan_key(
                 provider, key_value, metadata, skip_probe=skip_probe
@@ -1162,6 +1212,9 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
             }
             if custom_base:
                 update_fields["custom_base_url"] = str(custom_base).rstrip("/")
+            rotated = result.get("key_value")
+            if isinstance(rotated, str) and rotated and rotated != key["key_value"]:
+                update_fields["key_value"] = rotated
 
             await update_upstream_key(
                 db_path,

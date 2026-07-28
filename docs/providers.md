@@ -69,6 +69,14 @@ as usual.
     Routing Copilot through third-party tooling may be subject to GitHub's
     terms of service. Use with your own account at your own discretion.
 
+## Codex (ChatGPT) OAuth
+
+Codex uses ChatGPT subscription OAuth (Responses API). Paste a credential blob
+or bare access token on the **Providers** page (API type `codex`), or add one or
+more accounts via **Key Inventory** (select **Codex (ChatGPT)**) for multi-account
+fallback. Inventory accepts Janus JSON, 9router Codex connection objects, and
+`providerConnections` arrays — see [Key Inventory](inventory.md#codex--chatgpt-oauth).
+
 ## Subscription quotas
 
 Any provider can be given a **quota window** — useful for subscription plans

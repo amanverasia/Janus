@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import os
 import re
 import socket
@@ -229,6 +230,17 @@ async def safe_fetch(
 
 
 def mask_key(key: str) -> str:
+    text = key.strip()
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                for field in ("access_token", "accessToken", "refresh_token", "refreshToken"):
+                    val = data.get(field)
+                    if isinstance(val, str) and val:
+                        return mask_key(val)
+        except json.JSONDecodeError:
+            pass
     if len(key) <= 8:
         return "****"
     return f"{key[:4]}****{key[-6:]}"
