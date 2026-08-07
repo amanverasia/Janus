@@ -16,7 +16,7 @@ from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.routes import _ensure_db, _templates
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
-from janus.inventory.key_checker import check_all_upstream_keys
+from janus.inventory.key_checker import check_all_upstream_keys, validate_key
 from janus.inventory.key_encryption import encryption_enabled
 from janus.inventory.migrate import import_dashboard_json, verify_inventory
 from janus.inventory.rate_limit import get_submit_rate_limiter
@@ -43,14 +43,18 @@ from janus.storage.providers_db import (
 from janus.storage.upstream_keys import (
     DEFAULT_PAGE_SIZE,
     SORT_COLUMNS,
+    archive_upstream_keys,
     count_pending_upstream_keys,
     count_storage_encryption_state,
     count_upstream_keys_filtered,
     delete_upstream_key,
+    delete_upstream_keys,
     export_upstream_keys,
+    get_upstream_key,
     get_upstream_key_detail,
     get_upstream_keys_by_ids,
     list_upstream_key_history,
+    list_upstream_key_ids_filtered,
     list_upstream_keys,
     list_upstream_keys_page,
     reencrypt_plaintext_upstream_keys,
@@ -155,11 +159,13 @@ async def _keys_context(
 ) -> dict[str, Any]:
     providers = await list_inventory_providers(db_path, active_only=True)
     page_size = _clamp_page_size(limit)
+    archived_view = status == "archived"
     total = await count_upstream_keys_filtered(
         db_path,
         provider_id=provider_id or None,
         status=status or None,
         search=search or None,
+        include_archived=archived_view,
     )
     if total > 0 and offset >= total:
         offset = max(0, ((total - 1) // page_size) * page_size)
@@ -173,6 +179,7 @@ async def _keys_context(
         limit=page_size,
         offset=offset,
         masked=True,
+        include_archived=archived_view,
     )
     has_pending = await count_pending_upstream_keys(db_path) > 0
     page = (offset // page_size) + 1 if total else 1
@@ -562,6 +569,130 @@ async def api_submit_upstream_keys(
     )
 
 
+@router.post("/api/inventory/keys/bulk/archive", response_class=HTMLResponse)
+async def api_bulk_archive_upstream_keys(
+    request: Request,
+    key_ids: str = Form(""),
+    apply_to_all: str = Form(""),
+    action: str = Form("archive"),
+    provider_id: str = Form(""),
+    status: str = Form(""),
+    search: str = Form(""),
+    sort: str = Form("credits"),
+    dir: str = Form("desc"),
+    limit: int = Form(DEFAULT_PAGE_SIZE),
+    offset: int = Form(0),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    ids = await _resolve_bulk_ids(
+        db_path,
+        key_ids=_parse_key_ids(key_ids),
+        apply_to_all=apply_to_all.lower() in {"true", "1", "yes", "on"},
+        provider_id=provider_id,
+        status=status,
+        search=search,
+    )
+    archived = action.lower() != "restore"
+    count = await archive_upstream_keys(db_path, ids, archived=archived)
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    verb = "Archived" if archived else "Restored"
+    message = f"{verb} {count} key(s)."
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
+        submit_message=message,
+    )
+
+
+@router.post("/api/inventory/keys/bulk/recheck", response_class=HTMLResponse)
+async def api_bulk_recheck_upstream_keys(
+    request: Request,
+    key_ids: str = Form(""),
+    apply_to_all: str = Form(""),
+    provider_id: str = Form(""),
+    status: str = Form(""),
+    search: str = Form(""),
+    sort: str = Form("credits"),
+    dir: str = Form("desc"),
+    limit: int = Form(DEFAULT_PAGE_SIZE),
+    offset: int = Form(0),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    ids = await _resolve_bulk_ids(
+        db_path,
+        key_ids=_parse_key_ids(key_ids),
+        apply_to_all=apply_to_all.lower() in {"true", "1", "yes", "on"},
+        provider_id=provider_id,
+        status=status,
+        search=search,
+    )
+    for key_id in ids:
+        _schedule_recheck(key_id, db_path)
+    message = f"Rechecking {len(ids)} key(s) in background."
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
+        submit_message=message,
+    )
+
+
+@router.post("/api/inventory/keys/bulk/delete", response_class=HTMLResponse)
+async def api_bulk_delete_upstream_keys(
+    request: Request,
+    key_ids: str = Form(""),
+    apply_to_all: str = Form(""),
+    provider_id: str = Form(""),
+    status: str = Form(""),
+    search: str = Form(""),
+    sort: str = Form("credits"),
+    dir: str = Form("desc"),
+    limit: int = Form(DEFAULT_PAGE_SIZE),
+    offset: int = Form(0),
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    ids = await _resolve_bulk_ids(
+        db_path,
+        key_ids=_parse_key_ids(key_ids),
+        apply_to_all=apply_to_all.lower() in {"true", "1", "yes", "on"},
+        provider_id=provider_id,
+        status=status,
+        search=search,
+    )
+    count = await delete_upstream_keys(db_path, ids)
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    message = f"Deleted {count} key(s)."
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
+        submit_message=message,
+    )
+
+
 @router.post("/api/inventory/keys/{key_id}/recheck", response_class=HTMLResponse)
 async def api_recheck_upstream_key(
     request: Request,
@@ -614,6 +745,153 @@ async def api_delete_upstream_key(
         direction=dir,
         limit=limit,
         offset=offset,
+    )
+
+
+def _parse_key_ids(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+async def _resolve_bulk_ids(
+    db_path: Path,
+    *,
+    key_ids: list[str],
+    apply_to_all: bool,
+    provider_id: str,
+    status: str,
+    search: str,
+) -> list[str]:
+    if apply_to_all:
+        archived_view = status == "archived"
+        return await list_upstream_key_ids_filtered(
+            db_path,
+            provider_id=provider_id or None,
+            status=status or None,
+            search=search or None,
+            include_archived=archived_view,
+        )
+    return key_ids
+
+
+async def _build_key_metadata(key: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    raw_meta = key.get("metadata")
+    if raw_meta and isinstance(raw_meta, str):
+        try:
+            parsed = json.loads(raw_meta)
+            if isinstance(parsed, dict):
+                metadata.update(parsed)
+        except json.JSONDecodeError:
+            pass
+    if key.get("custom_base_url"):
+        metadata["custom_base_url"] = key["custom_base_url"]
+    return metadata
+
+
+@router.post("/api/inventory/keys/{key_id}/test")
+async def api_test_upstream_key(request: Request, key_id: str) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    key = await get_upstream_key(db_path, key_id)
+    if key is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    metadata = await _build_key_metadata(key)
+    try:
+        result = await validate_key(
+            str(key["key_value"]),
+            key["provider_id"],
+            metadata,
+        )
+    except TimeoutError:
+        return JSONResponse(
+            {"ok": False, "usable": False, "message": "Request timed out"}, status_code=504
+        )
+    except Exception as exc:
+        logger.warning("Test for key %s failed: %s", key_id, exc)
+        return JSONResponse(
+            {"ok": False, "usable": False, "message": f"{type(exc).__name__}: {exc}"},
+            status_code=502,
+        )
+    is_valid = bool(result.get("is_valid"))
+    message = (
+        result.get("usability_note")
+        or result.get("error")
+        or ("Valid key" if is_valid else "Key is not valid")
+    )
+    models = result.get("models")
+    payload: dict[str, Any] = {
+        "ok": is_valid,
+        "usable": bool(result.get("is_usable")),
+        "usability_status": result.get("usability_status", "unknown"),
+        "message": message,
+    }
+    if isinstance(models, list):
+        payload["models"] = len(models)
+    if result.get("credits_remaining") is not None:
+        payload["credits_remaining"] = result["credits_remaining"]
+    return JSONResponse(payload)
+
+
+@router.post("/api/inventory/keys/{key_id}/archive", response_class=HTMLResponse)
+async def api_archive_upstream_key(
+    request: Request,
+    key_id: str,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    await archive_upstream_keys(db_path, [key_id], archived=True)
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
+        submit_message="Key archived — excluded from routing.",
+    )
+
+
+@router.post("/api/inventory/keys/{key_id}/restore", response_class=HTMLResponse)
+async def api_restore_upstream_key(
+    request: Request,
+    key_id: str,
+    provider_id: str = "",
+    status: str = "",
+    search: str = "",
+    sort: str = "credits",
+    dir: str = "desc",
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
+) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    await archive_upstream_keys(db_path, [key_id], archived=False)
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return await _keys_partial(
+        request,
+        db_path,
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        sort=sort,
+        direction=dir,
+        limit=limit,
+        offset=offset,
+        submit_message="Key restored.",
     )
 
 

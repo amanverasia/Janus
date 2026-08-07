@@ -58,3 +58,34 @@ async def test_migration_adds_allowed_models_column_to_existing_db(tmp_path):
         rows = await cursor.fetchall()
     columns = {row[1] for row in rows}
     assert "allowed_models" in columns
+
+
+@pytest.mark.asyncio
+async def test_init_db_adds_is_archived_column(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA table_info(upstream_keys)")
+        rows = await cursor.fetchall()
+    columns = {row[1]: row for row in rows}
+    assert "is_archived" in columns
+    assert columns["is_archived"][4] == "0"
+
+
+@pytest.mark.asyncio
+async def test_existing_keys_default_to_not_archived(tmp_path):
+    import aiosqlite
+
+    from janus.storage.upstream_keys import create_upstream_key, get_upstream_key
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(db_path, provider_id="openai", key_value="sk-test")
+    # Simulate a DB created before is_archived existed.
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute("ALTER TABLE upstream_keys DROP COLUMN is_archived")
+        await db.commit()
+    await init_db(db_path)
+    key = await get_upstream_key(db_path, record["id"])
+    assert key is not None
+    assert key["is_archived"] == 0

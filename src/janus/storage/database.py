@@ -212,6 +212,7 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_ts ON request_logs(timestamp);
 
 _UPSTREAM_KEY_NEW_COLUMNS = [
     ("key_hash", "TEXT"),
+    ("is_archived", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 _NEW_USAGE_COLUMNS = [
