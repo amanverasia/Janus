@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import time
 from collections.abc import AsyncIterator, Callable
@@ -57,6 +58,7 @@ from janus.storage.settings import VALID_COMBO_STRATEGIES, get_setting, set_sett
 from janus.storage.usage import get_unpriced_models, get_usage_stats
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
+logger = logging.getLogger(__name__)
 
 _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _templates.env.filters["urlencode"] = lambda value: quote(str(value))
@@ -873,6 +875,15 @@ async def api_create_provider(request: Request) -> HTMLResponse:
         return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
 
+    await _sync_provider_key_safe(
+        db_path,
+        {
+            "id": params["id"][0],
+            "prefix": params["prefix"][0],
+            "base_url": params.get("base_url", [""])[0],
+            "api_key": params.get("api_key", [""])[0] or None,
+        },
+    )
     await reload_providers(request.app)
     return await _providers_partial(request, db_path)
 
@@ -916,6 +927,15 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
         return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
 
+    await _sync_provider_key_safe(
+        db_path,
+        {
+            "id": provider_id,
+            "prefix": params["prefix"][0],
+            "base_url": params.get("base_url", [""])[0],
+            "api_key": new_key,
+        },
+    )
     await reload_providers(request.app)
     return await _providers_partial(request, db_path)
 
@@ -938,10 +958,29 @@ async def api_delete_provider(request: Request, provider_id: str) -> HTMLRespons
     from janus.storage.providers_db import delete_provider
 
     await delete_provider(db_path, provider_id)
+    await _delete_mirrored_provider_key_safe(db_path, provider_id)
     from janus.dashboard.reload import reload_providers
 
     await reload_providers(request.app)
     return await _providers_partial(request, db_path)
+
+
+async def _sync_provider_key_safe(db_path: Path, provider: dict[str, Any]) -> None:
+    from janus.inventory.provider_key_sync import sync_provider_key
+
+    try:
+        await sync_provider_key(db_path, provider=provider, schedule_recheck=True)
+    except Exception:
+        logger.warning("Provider key mirror failed for %s", provider.get("id"), exc_info=True)
+
+
+async def _delete_mirrored_provider_key_safe(db_path: Path, provider_id: str) -> None:
+    from janus.inventory.provider_key_sync import delete_mirrored_provider_key
+
+    try:
+        await delete_mirrored_provider_key(db_path, provider_id)
+    except Exception:
+        logger.warning("Mirrored key cleanup failed for %s", provider_id, exc_info=True)
 
 
 async def _resolve_provider_api_key(db_path: Path, provider: dict[str, Any]) -> str:

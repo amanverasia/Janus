@@ -106,6 +106,15 @@ async def _initial_pricing_sync(app: FastAPI) -> None:
         logger.exception("Startup pricing sync raised an unexpected error")
 
 
+async def _backfill_provider_keys(db_path: Path) -> None:
+    from janus.inventory.provider_key_sync import backfill_provider_keys
+
+    try:
+        await backfill_provider_keys(db_path)
+    except Exception:
+        logger.warning("Provider key backfill failed", exc_info=True)
+
+
 async def _pricing_catalog_needs_sync(app: FastAPI) -> bool:
     from janus.pricing.scheduler import sync_interval_hours
     from janus.storage.pricing_catalog import catalog_count
@@ -144,6 +153,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     bind_reload_app(app)
     await reload_providers(app)
+    await _backfill_provider_keys(db_path)
     await reload_combos(app)
     await reload_savers(app)
     await reload_pricing(app)

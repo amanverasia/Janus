@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-08-07
+
+### Fixed
+- **Custom provider keys now appear in Key Inventory** — keys added via the Providers page are mirrored into `upstream_keys` (the canonical routable store) on create/update/delete, with a one-time backfill on startup for existing/seeded providers. Custom providers with arbitrary prefixes get an `inventory_providers` row so the key is searchable and visible; known-catalog prefixes (openai, anthropic, …) map to their existing inventory id. Mirrored keys go through the normal background validation probe. Closes #71
+
 ## [2.1.0] - 2026-08-07
 
 ### Added
