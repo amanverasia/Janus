@@ -89,6 +89,172 @@ async def test_inventory_import_page(client):
     assert "Expected JSON format" in r.text
 
 
+async def _seed_upstream_key(app, provider_id: str, key_value: str) -> str:
+    from janus.inventory.ingestion import KeyIngestEntry, ingest_upstream_key
+    from janus.storage.database import init_db, seed_from_config
+
+    db_path = app.state.db_path
+    await init_db(db_path)
+    await seed_from_config(db_path, app.state.config)
+    item = await ingest_upstream_key(
+        db_path, KeyIngestEntry(key=key_value), chosen_provider=provider_id
+    )
+    return str(item["id"])
+
+
+async def test_test_upstream_key_endpoint_reports_valid(client, app, monkeypatch):
+    key_id = await _seed_upstream_key(app, "openai", "sk-valid-key-1234567890")
+
+    async def fake_validate(key_value, provider_id, metadata, *, skip_probe=False):
+        return {
+            "is_valid": True,
+            "is_usable": True,
+            "usability_status": "usable",
+            "usability_note": "Inference OK (probed gpt-4.1-nano)",
+            "models": [{"model_id": "gpt-4.1-nano"}],
+            "credits_remaining": 5.0,
+        }
+
+    monkeypatch.setattr("janus.dashboard.inventory_routes.validate_key", fake_validate)
+    r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/test")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["usable"] is True
+    assert data["usability_status"] == "usable"
+    assert data["models"] == 1
+    assert data["credits_remaining"] == 5.0
+    assert "Inference OK" in data["message"]
+
+
+async def test_test_upstream_key_endpoint_reports_invalid(client, app, monkeypatch):
+    key_id = await _seed_upstream_key(app, "openai", "sk-bad-key-1234567890")
+
+    async def fake_validate(key_value, provider_id, metadata, *, skip_probe=False):
+        return {"is_valid": False, "error": "Auth failed (401)"}
+
+    monkeypatch.setattr("janus.dashboard.inventory_routes.validate_key", fake_validate)
+    r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/test")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is False
+    assert "Auth failed" in data["message"]
+
+
+async def test_test_upstream_key_unknown_returns_404(client):
+    r = await client.post("/dashboard/api/inventory/keys/does-not-exist/test")
+    assert r.status_code == 404
+
+
+async def test_archive_and_restore_upstream_key_endpoints(client, app):
+    from janus.storage.upstream_keys import get_upstream_key
+
+    db_path = app.state.db_path
+    key_id = await _seed_upstream_key(app, "openai", "sk-archive-me-1234567")
+
+    r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/archive")
+    assert r.status_code == 200
+    assert "archived" in r.text.lower()
+    archived = await get_upstream_key(db_path, key_id)
+    assert archived is not None
+    assert archived["is_archived"] == 1
+
+    r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/restore")
+    assert r.status_code == 200
+    assert "restored" in r.text.lower()
+    restored = await get_upstream_key(db_path, key_id)
+    assert restored is not None
+    assert restored["is_archived"] == 0
+
+
+async def test_archived_keys_hidden_by_default_visible_with_filter(client, app):
+    key_id = await _seed_upstream_key(app, "openai", "sk-hidden-arch-123456")
+
+    await client.post(f"/dashboard/api/inventory/keys/{key_id}/archive")
+
+    r = await client.get("/dashboard/api/inventory/keys/partial")
+    assert r.status_code == 200
+    assert key_id not in r.text
+
+    r = await client.get("/dashboard/api/inventory/keys/partial?status=archived")
+    assert r.status_code == 200
+    assert key_id in r.text
+
+
+async def test_bulk_archive_by_ids(client, app):
+    from janus.storage.upstream_keys import get_upstream_key
+
+    db_path = app.state.db_path
+    a = await _seed_upstream_key(app, "openai", "sk-bulk-a-1234567890")
+    b = await _seed_upstream_key(app, "openai", "sk-bulk-b-1234567890")
+
+    r = await client.post(
+        "/dashboard/api/inventory/keys/bulk/archive",
+        data={"key_ids": f"{a},{b}", "action": "archive"},
+    )
+    assert r.status_code == 200
+    assert "Archived 2" in r.text
+    for kid in (a, b):
+        key = await get_upstream_key(db_path, kid)
+        assert key is not None
+        assert key["is_archived"] == 1
+
+
+async def test_bulk_archive_apply_to_all(client, app):
+    from janus.storage.upstream_keys import get_upstream_key
+
+    db_path = app.state.db_path
+    a = await _seed_upstream_key(app, "openai", "sk-all-a-1234567890")
+    b = await _seed_upstream_key(app, "groq", "gsk_all_b_1234567890")
+
+    r = await client.post(
+        "/dashboard/api/inventory/keys/bulk/archive",
+        data={"apply_to_all": "true", "action": "archive"},
+    )
+    assert r.status_code == 200
+    assert "Archived 2" in r.text
+    for kid in (a, b):
+        key = await get_upstream_key(db_path, kid)
+        assert key is not None
+        assert key["is_archived"] == 1
+
+
+async def test_bulk_delete_by_ids(client, app):
+    from janus.storage.upstream_keys import get_upstream_key
+
+    db_path = app.state.db_path
+    a = await _seed_upstream_key(app, "openai", "sk-del-a-1234567890")
+    b = await _seed_upstream_key(app, "openai", "sk-del-b-1234567890")
+
+    r = await client.post(
+        "/dashboard/api/inventory/keys/bulk/delete",
+        data={"key_ids": f"{a},{b}"},
+    )
+    assert r.status_code == 200
+    assert "Deleted 2" in r.text
+    for kid in (a, b):
+        assert await get_upstream_key(db_path, kid) is None
+
+
+async def test_bulk_recheck_schedules(client, app, monkeypatch):
+    scheduled: list[str] = []
+
+    def fake_schedule(key_id, db_path):
+        scheduled.append(key_id)
+
+    monkeypatch.setattr("janus.dashboard.inventory_routes._schedule_recheck", fake_schedule)
+    a = await _seed_upstream_key(app, "openai", "sk-rc-a-1234567890")
+    b = await _seed_upstream_key(app, "openai", "sk-rc-b-1234567890")
+
+    r = await client.post(
+        "/dashboard/api/inventory/keys/bulk/recheck",
+        data={"key_ids": f"{a},{b}"},
+    )
+    assert r.status_code == 200
+    assert "Rechecking 2" in r.text
+    assert set(scheduled) == {a, b}
+
+
 async def test_routing_page(client):
     r = await client.get("/dashboard/routing")
     assert r.status_code == 200

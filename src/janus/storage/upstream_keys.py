@@ -144,15 +144,21 @@ def _list_filters(
     provider_id: str | None,
     status: str | None,
     search: str | None,
+    include_archived: bool = False,
 ) -> tuple[str, list[Any]]:
     clauses = ["k.status != 'revoked'"]
     params: list[Any] = []
+    if status == "archived":
+        clauses.append("k.is_archived = 1")
+    else:
+        if not include_archived:
+            clauses.append("k.is_archived = 0")
+        if status:
+            clauses.append("k.status = ?")
+            params.append(status)
     if provider_id:
         clauses.append("k.provider_id = ?")
         params.append(provider_id)
-    if status:
-        clauses.append("k.status = ?")
-        params.append(status)
     if search:
         clauses.append("(k.key_label LIKE ? OR k.key_masked LIKE ? OR k.provider_id LIKE ?)")
         pattern = f"%{search}%"
@@ -174,8 +180,14 @@ async def count_upstream_keys_filtered(
     provider_id: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    include_archived: bool = False,
 ) -> int:
-    where, params = _list_filters(provider_id=provider_id, status=status, search=search)
+    where, params = _list_filters(
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        include_archived=include_archived,
+    )
     query = f"""
         SELECT COUNT(*)
         FROM upstream_keys k
@@ -201,8 +213,14 @@ async def list_upstream_keys_page(
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
     masked: bool = True,
+    include_archived: bool = False,
 ) -> list[dict[str, Any]]:
-    where, params = _list_filters(provider_id=provider_id, status=status, search=search)
+    where, params = _list_filters(
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        include_archived=include_archived,
+    )
     sort_key = _normalize_sort(sort)
     sort_col = SORT_COLUMNS[sort_key]
     sort_dir = _normalize_direction(direction)
@@ -272,10 +290,13 @@ async def list_upstream_keys(
     status: str | None = None,
     search: str | None = None,
     limit: int | None = None,
+    include_archived: bool = False,
 ) -> list[dict[str, Any]]:
     query = "SELECT * FROM upstream_keys"
     clauses: list[str] = ["status != 'revoked'"]
     params: list[Any] = []
+    if not include_archived:
+        clauses.append("is_archived = 0")
     if provider_id is not None:
         clauses.append("provider_id = ?")
         params.append(provider_id)
@@ -383,6 +404,68 @@ async def delete_upstream_key(db_path: str | Path, key_id: str) -> None:
         await db.commit()
 
 
+async def delete_upstream_keys(db_path: str | Path, key_ids: list[str]) -> int:
+    if not key_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in key_ids)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"DELETE FROM upstream_models WHERE upstream_key_id IN ({placeholders})",
+            key_ids,
+        )
+        await db.execute(
+            f"DELETE FROM upstream_key_history WHERE upstream_key_id IN ({placeholders})",
+            key_ids,
+        )
+        cur = await db.execute(f"DELETE FROM upstream_keys WHERE id IN ({placeholders})", key_ids)
+        await db.commit()
+    return cur.rowcount if cur.rowcount is not None else 0
+
+
+async def archive_upstream_keys(
+    db_path: str | Path, key_ids: list[str], archived: bool = True
+) -> int:
+    if not key_ids:
+        return 0
+    placeholders = ", ".join("?" for _ in key_ids)
+    flag = 1 if archived else 0
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            f"UPDATE upstream_keys SET is_archived = ?, updated_at = datetime('now') "
+            f"WHERE id IN ({placeholders})",
+            [flag, *key_ids],
+        )
+        await db.commit()
+    return cur.rowcount if cur.rowcount is not None else 0
+
+
+async def list_upstream_key_ids_filtered(
+    db_path: str | Path,
+    *,
+    provider_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    include_archived: bool = False,
+) -> list[str]:
+    where, params = _list_filters(
+        provider_id=provider_id,
+        status=status,
+        search=search,
+        include_archived=include_archived,
+    )
+    query = f"""
+        SELECT k.id
+        FROM upstream_keys k
+        JOIN inventory_providers p ON k.provider_id = p.id
+        WHERE {where}
+        ORDER BY k.created_at ASC
+    """
+    async with get_connection(db_path) as db:
+        async with db.execute(query, params) as cur:
+            rows = await cur.fetchall()
+    return [str(row["id"]) for row in rows]
+
+
 async def record_upstream_key_history(
     db_path: str | Path,
     *,
@@ -405,7 +488,7 @@ async def record_upstream_key_history(
 async def count_upstream_keys(db_path: str | Path) -> int:
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT COUNT(*) FROM upstream_keys WHERE status != 'revoked'"
+            "SELECT COUNT(*) FROM upstream_keys WHERE status != 'revoked' AND is_archived = 0"
         ) as cur:
             row = await cur.fetchone()
     if row is None:
@@ -424,6 +507,7 @@ async def list_routable_upstream_keys(
                  AND status = 'active'
                  AND is_valid = 1
                  AND is_usable = 1
+                 AND is_archived = 0
                  AND (
                    is_daily_limited = 0
                    OR daily_credit_limit IS NULL
@@ -453,7 +537,7 @@ async def summarize_upstream_keys_for_inventory(
                    THEN 1 ELSE 0 END) AS routable,
                  SUM(CASE WHEN status = 'pending_validation' THEN 1 ELSE 0 END) AS pending
                FROM upstream_keys
-               WHERE provider_id = ? AND status != 'revoked'""",
+               WHERE provider_id = ? AND status != 'revoked' AND is_archived = 0""",
             (inventory_provider_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -476,7 +560,7 @@ async def get_probe_upstream_key(
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT key_value FROM upstream_keys
-               WHERE provider_id = ? AND status != 'revoked'
+               WHERE provider_id = ? AND status != 'revoked' AND is_archived = 0
                ORDER BY created_at ASC LIMIT 1""",
             (inventory_provider_id,),
         ) as cur:

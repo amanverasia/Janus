@@ -4,12 +4,17 @@ from janus.catalog import inventory_entries
 from janus.storage.database import init_db, seed_inventory_providers
 from janus.storage.inventory_providers import get_inventory_provider, list_inventory_providers
 from janus.storage.upstream_keys import (
+    archive_upstream_keys,
     count_upstream_keys,
+    count_upstream_keys_filtered,
     create_upstream_key,
     delete_upstream_key,
+    delete_upstream_keys,
     get_upstream_key,
+    list_upstream_key_ids_filtered,
     list_upstream_keys,
     list_upstream_keys_masked,
+    list_upstream_keys_page,
     record_upstream_key_history,
     update_upstream_key,
 )
@@ -98,3 +103,83 @@ async def test_list_upstream_keys_filters(tmp_path):
     openai_keys = await list_upstream_keys(db_path, provider_id="openai")
     assert len(openai_keys) == 1
     assert openai_keys[0]["provider_id"] == "openai"
+
+
+@pytest.mark.asyncio
+async def test_archive_and_restore_upstream_keys(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    a = await create_upstream_key(db_path, provider_id="openai", key_value="sk-proj-a")
+    b = await create_upstream_key(db_path, provider_id="groq", key_value="gsk_b")
+
+    archived_count = await archive_upstream_keys(db_path, [a["id"], b["id"]])
+    assert archived_count == 2
+
+    archived = await get_upstream_key(db_path, a["id"])
+    assert archived is not None
+    assert archived["is_archived"] == 1
+
+    default_keys = await list_upstream_keys_page(db_path)
+    assert default_keys == []
+    archived_keys = await list_upstream_keys_page(db_path, status="archived")
+    assert {k["id"] for k in archived_keys} == {a["id"], b["id"]}
+
+    assert await count_upstream_keys_filtered(db_path, status="archived") == 2
+
+    restored = await archive_upstream_keys(db_path, [a["id"]], archived=False)
+    assert restored == 1
+    visible = await list_upstream_keys_page(db_path)
+    assert [k["id"] for k in visible] == [a["id"]]
+
+
+@pytest.mark.asyncio
+async def test_list_upstream_key_ids_filtered_matches_filter(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    a = await create_upstream_key(db_path, provider_id="openai", key_value="sk-proj-a")
+    await create_upstream_key(db_path, provider_id="groq", key_value="gsk_b")
+
+    ids = await list_upstream_key_ids_filtered(db_path, provider_id="openai")
+    assert ids == [a["id"]]
+
+    await archive_upstream_keys(db_path, [a["id"]])
+    active_ids = await list_upstream_key_ids_filtered(db_path, provider_id="openai")
+    assert active_ids == []
+    all_ids = await list_upstream_key_ids_filtered(
+        db_path, provider_id="openai", include_archived=True
+    )
+    assert all_ids == [a["id"]]
+
+
+@pytest.mark.asyncio
+async def test_delete_upstream_keys_cascades(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    a = await create_upstream_key(db_path, provider_id="openai", key_value="sk-proj-a")
+    b = await create_upstream_key(db_path, provider_id="groq", key_value="gsk_b")
+    await record_upstream_key_history(
+        db_path,
+        upstream_key_id=a["id"],
+        new_status="pending_validation",
+    )
+
+    count = await delete_upstream_keys(db_path, [a["id"], b["id"]])
+    assert count == 2
+    assert await get_upstream_key(db_path, a["id"]) is None
+    assert await get_upstream_key(db_path, b["id"]) is None
+    assert await count_upstream_keys(db_path) == 0
+
+
+@pytest.mark.asyncio
+async def test_list_upstream_keys_excludes_archived(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    a = await create_upstream_key(db_path, provider_id="openai", key_value="sk-proj-a")
+    b = await create_upstream_key(db_path, provider_id="groq", key_value="gsk_b")
+    await archive_upstream_keys(db_path, [a["id"]])
+
+    keys = await list_upstream_keys(db_path)
+    assert [k["id"] for k in keys] == [b["id"]]
+
+    keys_all = await list_upstream_keys(db_path, include_archived=True)
+    assert len(keys_all) == 2

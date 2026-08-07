@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-07
+
+### Added
+- **Key Inventory "Test" button** — per-key synchronous test that sends a minimal "hi" chat completion (reusing `validate_key`'s models + usability probe) and shows the result inline (pass/fail + the actual error message), non-persisting. Complements the existing background Recheck action
+- **Bulk-select + soft archive on Key Inventory** — checkbox column with select-all-on-page, a bulk-action toolbar (Archive / Restore / Recheck / Delete) that survives HTMX partial swaps, and a "Select all N matching" affordance across filtered pages. Archive is a new reversible `is_archived` state: archived keys are hidden by default, excluded from routing/counts/recheck-all, and restorable under a new `archived` status filter without losing their validation status
+
 ## [2.0.0] - 2026-07-28
 
 ### Added
