@@ -7,6 +7,7 @@ thinking field strip, Google OAuth refresh.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -95,7 +96,11 @@ class AntigravityProvider:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {access_token(self._cred)}",
-            "User-Agent": "antigravity" if self.variant == "antigravity" else "gemini-cli",
+            "User-Agent": (
+                "antigravity/ide/2.1.1 darwin/arm64"
+                if self.variant == "antigravity"
+                else "gemini-cli"
+            ),
         }
         if self.project_id:
             headers["X-Goog-User-Project"] = self.project_id
@@ -138,7 +143,15 @@ class AntigravityProvider:
         body = self._sanitize(payload)
         body.pop("model", None)
         if "request" not in body and ("contents" in body or "generationConfig" in body):
-            body = {"request": body, "model": f"models/{model}"}
+            request = body
+            body = {
+                "model": f"models/{model}",
+                "userAgent": "antigravity",
+                "requestId": f"agent-{uuid.uuid4()}",
+                "request": request,
+            }
+            if self.project_id:
+                body["project"] = self.project_id
         elif "model" not in body:
             body["model"] = f"models/{model}"
         if stream:

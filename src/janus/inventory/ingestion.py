@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from janus.inventory.antigravity_credentials import normalize_antigravity_credential
 from janus.inventory.catalog import get_inventory_provider
 from janus.inventory.codex_credentials import normalize_codex_credential
 from janus.inventory.provider_detection import resolve_provider_for_key
@@ -45,7 +46,7 @@ def validate_key_value(key_value: str, *, provider_id: str | None = None) -> str
     cleaned = key_value.strip().replace("\r", "")
     if not cleaned:
         return "Key is missing"
-    is_credential = provider_id == "codex" or _looks_like_credential_json(cleaned)
+    is_credential = provider_id in {"codex", "antigravity"} or _looks_like_credential_json(cleaned)
     check_value = cleaned if is_credential else cleaned.replace("\n", "").replace("\t", "")
     max_len = CREDENTIAL_MAX_KEY_LENGTH if is_credential else MAX_KEY_LENGTH
     if len(check_value) < MIN_KEY_LENGTH:
@@ -90,9 +91,19 @@ async def ingest_upstream_key(
         }
 
     raw_key = entry.key.strip()
-    # Normalize early when Codex is explicitly selected so storage/dedupe use
-    # the canonical compact blob. Provider auto-detect still uses stripped keys.
-    if provider_hint == "codex":
+    # Normalize early for OAuth providers so storage/dedupe use canonical blobs.
+    # Provider auto-detect still uses stripped keys.
+    if provider_hint == "antigravity":
+        try:
+            key_value = normalize_antigravity_credential(raw_key)
+        except ValueError as exc:
+            return {
+                "key_masked": mask_key(raw_key),
+                "label": entry.label,
+                "status": "rejected",
+                "error": str(exc),
+            }
+    elif provider_hint == "codex":
         try:
             key_value = normalize_codex_credential(raw_key)
         except ValueError as exc:
@@ -157,7 +168,18 @@ async def ingest_upstream_key(
                 "error": "Cannot detect provider. Pass provider field.",
             }
 
-    if resolved_provider == "codex" and provider_hint != "codex":
+    if resolved_provider == "antigravity" and provider_hint != "antigravity":
+        try:
+            key_value = normalize_antigravity_credential(raw_key)
+            key_masked = mask_key(key_value)
+        except ValueError as exc:
+            return {
+                "key_masked": mask_key(raw_key),
+                "label": entry.label,
+                "status": "rejected",
+                "error": str(exc),
+            }
+    elif resolved_provider == "codex" and provider_hint != "codex":
         try:
             key_value = normalize_codex_credential(raw_key)
             key_masked = mask_key(key_value)

@@ -1279,6 +1279,41 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         },
         "capabilities": {"vision": True, "pdf": False, "tool_use": True},
     },
+    "antigravity": {
+        "inventory": {
+            "id": "antigravity",
+            "name": "antigravity",
+            "display_name": "Antigravity (Google)",
+            "base_url": "https://cloudcode-pa.googleapis.com",
+            "auth_type": "oauth",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": None,
+            "models_endpoint": None,
+            "health_check_endpoint": None,
+            "credit_check_endpoint": None,
+            "billing_model": "subscription",
+            "is_direct": True,
+            "routing_note": "Paste an Antigravity OAuth JSON blob with access/refresh tokens. "
+            "Project discovery and onboarding use Cloud Code Assist.",
+        },
+        "gateway": {
+            "id": "antigravity",
+            "name": "Antigravity (Google)",
+            "icon": "✨",
+            "logo": "",
+            "api_type": "antigravity",
+            "base_url": "https://daily-cloudcode-pa.googleapis.com",
+            "prefix": "antigravity",
+            "default_models": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+        },
+        "capabilities": {
+            "vision": True,
+            "pdf": False,
+            "tool_use": True,
+            "reasoning": True,
+        },
+    },
     "codex": {
         "inventory": {
             "id": "codex",
@@ -1340,24 +1375,6 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "default_models": ["composer-1", "gpt-4o", "claude-sonnet-4"],
         },
         "capabilities": {"vision": True, "pdf": False, "tool_use": True},
-    },
-    "antigravity": {
-        "gateway": {
-            "id": "antigravity",
-            "name": "Antigravity / Gemini CLI",
-            "icon": "✨",
-            "logo": "",
-            "api_type": "antigravity",
-            "base_url": "https://cloudcode-pa.googleapis.com",
-            "prefix": "antigravity",
-            "default_models": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-        },
-        "capabilities": {
-            "vision": True,
-            "pdf": False,
-            "tool_use": True,
-            "reasoning": True,
-        },
     },
     "claude_oauth": {
         "gateway": {

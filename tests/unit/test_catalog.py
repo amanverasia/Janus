@@ -42,7 +42,7 @@ GATEWAY_FIELDS = {
 
 def test_unified_catalog_counts() -> None:
     assert len(PROVIDERS) == 50
-    assert len(inventory_entries()) == 40
+    assert len(inventory_entries()) == 41
     assert len(gateway_entries()) == 39
 
 
@@ -117,7 +117,6 @@ def test_gateway_only_entries_have_no_inventory_block() -> None:
         "claude_oauth",
         "kiro",
         "cursor",
-        "antigravity",
     )
     for pid in gateway_only:
         assert pid in PROVIDERS
