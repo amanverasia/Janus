@@ -6,7 +6,7 @@ import respx
 
 from janus.dashboard.inventory_routes import _parse_bulk_keys
 from janus.inventory.ingestion import KeyIngestEntry, ingest_upstream_key, validate_key_value
-from janus.inventory.key_checker import validate_key
+from janus.inventory.key_checker import CODEX_RESPONSES_URL, validate_key
 from janus.providers.oauth_tokens import CODEX_TOKEN_URL
 from janus.storage.database import init_db, seed_inventory_providers
 from janus.storage.upstream_keys import get_upstream_key
@@ -101,8 +101,35 @@ async def test_codex_validate_refresh_success() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_codex_validate_refresh_failure() -> None:
+async def test_codex_validate_refresh_failure_falls_back_to_access_token() -> None:
+    respx.post(CODEX_TOKEN_URL).mock(
+        return_value=httpx.Response(
+            401,
+            json={
+                "error": {
+                    "code": "refresh_token_reused",
+                    "message": "refresh token already used",
+                }
+            },
+        )
+    )
+    respx.post(CODEX_RESPONSES_URL).mock(
+        return_value=httpx.Response(200, text="event: response.created\\ndata: {}\\n")
+    )
+    blob = json.dumps({"access_token": "old-at", "refresh_token": "old-rt"})
+    result = await validate_key(blob, "codex")
+    assert result["is_valid"] is True
+    assert result["is_usable"] is True
+    assert result["usability_status"] == "access_token_only"
+    assert "already used" in result["usability_note"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_codex_validate_refresh_and_access_probe_failure() -> None:
     respx.post(CODEX_TOKEN_URL).mock(return_value=httpx.Response(401, json={}))
+    respx.post(CODEX_RESPONSES_URL).mock(return_value=httpx.Response(401, json={}))
     blob = json.dumps({"access_token": "old-at", "refresh_token": "old-rt"})
     result = await validate_key(blob, "codex")
     assert result["is_valid"] is False
+    assert "access-token probe failed" in result["error"]

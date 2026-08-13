@@ -120,7 +120,11 @@ KIRO_DEVICE_AUTH_URL = "https://oidc.us-east-1.amazonaws.com/device_authorizatio
 KIRO_REGISTER_CLIENT_URL = "https://oidc.us-east-1.amazonaws.com/client/register"
 
 
-async def refresh_codex(refresh_tok: str, client: httpx.AsyncClient) -> dict[str, Any] | None:
+async def refresh_codex_detailed(
+    refresh_tok: str,
+    client: httpx.AsyncClient,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Refresh a Codex credential and retain a safe, structured error result."""
     r = await client.post(
         CODEX_TOKEN_URL,
         json={
@@ -130,12 +134,21 @@ async def refresh_codex(refresh_tok: str, client: httpx.AsyncClient) -> dict[str
         },
         headers={"Content-Type": "application/json", "Accept": "application/json"},
     )
+    try:
+        data = r.json()
+    except (ValueError, json.JSONDecodeError):
+        data = None
     if r.status_code >= 400:
-        return None
-    data = r.json()
+        return None, data if isinstance(data, dict) else None
     if not isinstance(data, dict) or not data.get("access_token"):
-        return None
-    return dict(data)
+        return None, data if isinstance(data, dict) else None
+    return dict(data), None
+
+
+async def refresh_codex(refresh_tok: str, client: httpx.AsyncClient) -> dict[str, Any] | None:
+    """Backward-compatible Codex refresh wrapper."""
+    tokens, _error = await refresh_codex_detailed(refresh_tok, client)
+    return tokens
 
 
 async def refresh_claude(refresh_tok: str, client: httpx.AsyncClient) -> dict[str, Any] | None:
