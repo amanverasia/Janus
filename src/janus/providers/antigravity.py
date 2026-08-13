@@ -55,6 +55,7 @@ class AntigravityProvider:
         base_url: str = DEFAULT_AG_BASE,
         *,
         project_id: str | None = None,
+        credential_expires_at: float | None = None,
         variant: str = "antigravity",
     ) -> None:
         self.base_url = (base_url or DEFAULT_AG_BASE).rstrip("/")
@@ -64,6 +65,9 @@ class AntigravityProvider:
         self.project_id = project_id or (
             extra.get("projectId") if isinstance(extra.get("projectId"), str) else None
         )
+        if not self.project_id:
+            self.project_id = None
+        self.credential_expires_at = credential_expires_at
         self.variant = variant
         self._refresh_lock = asyncio.Lock()
         self._client = httpx.AsyncClient(limits=_DEFAULT_LIMITS, timeout=_DEFAULT_TIMEOUT)
@@ -72,7 +76,16 @@ class AntigravityProvider:
         return serialize_credential(self._cred)
 
     async def _ensure_token(self) -> RawResult | None:
-        if not needs_refresh(self._cred):
+        # Older inventory rows may have a refresh token but no expires_at. Treat
+        # those credentials as needing one refresh so the returned expiry is
+        # captured instead of sending a stale access token forever.
+        has_refresh = bool(refresh_token(self._cred))
+        has_expiry = (
+            self._cred.get("expires_at") is not None
+            or self._cred.get("expiresAt") is not None
+            or self.credential_expires_at is not None
+        )
+        if not needs_refresh(self._cred) and (has_expiry or not has_refresh):
             return None
         rt = refresh_token(self._cred)
         if not rt:
@@ -126,11 +139,13 @@ class AntigravityProvider:
         body = self._sanitize(payload)
         body.pop("model", None)
         request = body if "request" not in body else body["request"]
+        if isinstance(request, dict) and "request" in request:
+            request = request["request"]
         seed = self.project_id or access_token(self._cred) or "antigravity"
         conversation = self._stable_uuid(f"antigravity:conversation:{seed}")
         trajectory = self._stable_uuid(f"antigravity:trajectory:{seed}:{model}:agent")
         envelope: dict[str, Any] = {
-            "project": self.project_id or "",
+            "project": self.project_id,
             "model": model,
             "userAgent": "antigravity",
             "requestType": "agent",

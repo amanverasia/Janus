@@ -25,6 +25,7 @@ class ProviderConfig(BaseModel):
     models: list[str] = Field(default_factory=list)
     allowed_models: list[str] = Field(default_factory=list)
     upstream_key_id: str | None = None
+    credential_expires_at: float | None = None
     rate_limit_rpm: int | None = None
     rate_limit_rpd: int | None = None
     quota_window: str | None = None  # "5h" | "daily" | "weekly" | "monthly"

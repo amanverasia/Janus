@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from typing import Any
 
@@ -57,6 +58,11 @@ def normalize_antigravity_credential(raw: str) -> str:
     if refresh:
         out["refresh_token"] = refresh
     expires = _expires_at(data.get("expires_at", data.get("expiresAt")))
+    if expires is None and data.get("expires_in") is not None:
+        try:
+            expires = time.time() + float(data["expires_in"])
+        except (TypeError, ValueError):
+            raise ValueError("Invalid expiresIn") from None
     if expires is not None:
         out["expires_at"] = expires
     for key in ("id_token", "idToken"):

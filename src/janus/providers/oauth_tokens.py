@@ -109,6 +109,9 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 # Google OAuth clients are public desktop/CLI apps, but must not be hard-coded in
 # the repo (GitHub push protection). Set via env when using Antigravity / Gemini CLI.
+# Installed-app OAuth clients are supplied by deployment configuration. Keeping
+# these out of source avoids publishing client material and supports separately
+# registered clients for different deployments.
 ANTIGRAVITY_CLIENT_ID = os.environ.get("JANUS_ANTIGRAVITY_CLIENT_ID", "")
 ANTIGRAVITY_CLIENT_SECRET = os.environ.get("JANUS_ANTIGRAVITY_CLIENT_SECRET", "")
 GOOGLE_CLI_CLIENT_ID = os.environ.get("JANUS_GOOGLE_CLI_CLIENT_ID", "")
