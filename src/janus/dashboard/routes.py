@@ -1132,6 +1132,65 @@ async def api_fetch_models(request: Request) -> JSONResponse:
             )
             return JSONResponse({"models": models})
 
+        if api_type == "antigravity":
+            from janus.inventory.antigravity_credentials import normalize_antigravity_credential
+            from janus.inventory.key_checker import validate_key
+            from janus.providers.oauth_tokens import access_token, parse_credential
+
+            if not api_key:
+                return JSONResponse(
+                    {"error": "No Antigravity OAuth credential available"}, status_code=400
+                )
+            try:
+                normalized = normalize_antigravity_credential(api_key)
+                validation = await validate_key(normalized, "antigravity")
+            except ValueError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+            if not validation.get("is_valid"):
+                return JSONResponse(
+                    {"error": validation.get("error", "Antigravity credential is invalid")},
+                    status_code=502,
+                )
+            credential = parse_credential(str(validation.get("key_value") or normalized))
+            token = access_token(credential)
+            if not token:
+                return JSONResponse(
+                    {"error": "No Antigravity access token available"}, status_code=502
+                )
+            models_url = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "User-Agent": "antigravity/ide/2.1.1 darwin/arm64",
+                "X-Client-Name": "antigravity",
+                "X-Client-Version": "2.1.1",
+            }
+            project = (credential.get("extra") or {}).get("projectId")
+            payload = {"project": project} if isinstance(project, str) and project else {}
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(models_url, headers=headers, json=payload)
+            if resp.status_code != 200:
+                return JSONResponse(
+                    {"error": f"Upstream returned {resp.status_code}"}, status_code=502
+                )
+            data = resp.json()
+            raw_models = data.get("models", {}) if isinstance(data, dict) else {}
+            if isinstance(raw_models, dict):
+                models = sorted(
+                    str(model_id)
+                    for model_id, info in raw_models.items()
+                    if isinstance(info, dict) and not info.get("isInternal")
+                )
+            elif isinstance(raw_models, list):
+                models = sorted(
+                    str(item.get("id") or item.get("name"))
+                    for item in raw_models
+                    if isinstance(item, dict) and (item.get("id") or item.get("name"))
+                )
+            else:
+                models = []
+            return JSONResponse({"models": models})
+
         if api_type == "github_copilot":
             from janus.providers.github_copilot import GitHubCopilotProvider
 
