@@ -7,7 +7,8 @@ thinking field strip, Google OAuth refresh.
 from __future__ import annotations
 
 import asyncio
-import uuid
+import hashlib
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -63,7 +64,7 @@ class AntigravityProvider:
         self.project_id = project_id or (
             extra.get("projectId") if isinstance(extra.get("projectId"), str) else None
         )
-        self.variant = variant  # antigravity | gemini_cli
+        self.variant = variant
         self._refresh_lock = asyncio.Lock()
         self._client = httpx.AsyncClient(limits=_DEFAULT_LIMITS, timeout=_DEFAULT_TIMEOUT)
 
@@ -93,7 +94,7 @@ class AntigravityProvider:
         return None
 
     def _headers(self) -> dict[str, str]:
-        headers = {
+        return {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {access_token(self._cred)}",
             "User-Agent": (
@@ -102,9 +103,6 @@ class AntigravityProvider:
                 else "gemini-cli"
             ),
         }
-        if self.project_id:
-            headers["X-Goog-User-Project"] = self.project_id
-        return headers
 
     def _sanitize(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = dict(payload)
@@ -114,51 +112,49 @@ class AntigravityProvider:
         if isinstance(req, dict):
             for key in _THINKING_BLACKLIST:
                 req.pop(key, None)
-            # Cloak tool names that conflict with Gemini built-ins (light version)
-            tools = req.get("tools")
-            if isinstance(tools, list):
-                for tool in tools:
-                    if not isinstance(tool, dict):
-                        continue
-                    decls = tool.get("functionDeclarations")
-                    if not isinstance(decls, list):
-                        continue
-                    for d in decls:
-                        if isinstance(d, dict) and isinstance(d.get("name"), str):
-                            # Gemini reserves some names; prefix client tools
-                            name = d["name"]
-                            if name in ("googleSearch", "codeExecution"):
-                                d["name"] = f"client_{name}"
         return body
+
+    @staticmethod
+    def _stable_uuid(seed: str) -> str:
+        digest = bytearray(hashlib.sha256(seed.encode()).digest()[:16])
+        digest[6] = (digest[6] & 0x0F) | 0x50
+        digest[8] = (digest[8] & 0x3F) | 0x80
+        value = digest.hex()
+        return f"{value[:8]}-{value[8:12]}-{value[12:16]}-{value[16:20]}-{value[20:]}"
+
+    def _build_body(self, payload: dict[str, Any], model: str) -> dict[str, Any]:
+        body = self._sanitize(payload)
+        body.pop("model", None)
+        request = body if "request" not in body else body["request"]
+        seed = self.project_id or access_token(self._cred) or "antigravity"
+        conversation = self._stable_uuid(f"antigravity:conversation:{seed}")
+        trajectory = self._stable_uuid(f"antigravity:trajectory:{seed}:{model}:agent")
+        envelope: dict[str, Any] = {
+            "project": self.project_id or "",
+            "model": model,
+            "userAgent": "antigravity",
+            "requestType": "agent",
+            "requestId": f"agent/{conversation}/{int(time.time() * 1000)}/{trajectory}/1",
+            "request": request,
+        }
+        return envelope
 
     async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:
         err = await self._ensure_token()
         if err is not None:
             return err
-        model = payload.get("model", "gemini-2.0-flash")
-        if isinstance(model, str):
-            model = model.removeprefix("models/")
-        else:
-            model = "gemini-2.0-flash"
-        body = self._sanitize(payload)
-        body.pop("model", None)
-        if "request" not in body and ("contents" in body or "generationConfig" in body):
-            request = body
-            body = {
-                "model": f"models/{model}",
-                "userAgent": "antigravity",
-                "requestId": f"agent-{uuid.uuid4()}",
-                "request": request,
-            }
-            if self.project_id:
-                body["project"] = self.project_id
-        elif "model" not in body:
-            body["model"] = f"models/{model}"
+        raw_model = payload.get("model", "gemini-2.0-flash")
+        model = (
+            raw_model.removeprefix("models/") if isinstance(raw_model, str) else "gemini-2.0-flash"
+        )
+        body = self._build_body(payload, model)
         if stream:
-            url = f"{self.base_url}/v1internal:streamGenerateContent?alt=sse"
-            return await self._call_stream(url, body)
-        url = f"{self.base_url}/v1internal:generateContent"
-        r = await self._client.post(url, json=body, headers=self._headers())
+            return await self._call_stream(
+                f"{self.base_url}/v1internal:streamGenerateContent?alt=sse", body
+            )
+        r = await self._client.post(
+            f"{self.base_url}/v1internal:generateContent", json=body, headers=self._headers()
+        )
         if r.status_code >= 400:
             return RawResult(
                 status_code=r.status_code,

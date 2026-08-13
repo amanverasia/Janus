@@ -168,6 +168,11 @@ async def test_antigravity_strips_thinking_root():
     assert "thinking" not in body
     assert "reasoning_effort" not in body
     assert "request" in body
+    assert body["model"] == "gemini-2.0-flash"
+    assert body["requestType"] == "agent"
+    assert body["requestId"].startswith("agent/")
+    assert body["requestId"].count("/") == 4
+    assert body["project"] == ""
     await p.close()
 
 
