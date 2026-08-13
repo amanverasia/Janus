@@ -133,3 +133,15 @@ async def test_codex_validate_refresh_and_access_probe_failure() -> None:
     result = await validate_key(blob, "codex")
     assert result["is_valid"] is False
     assert "access-token probe failed" in result["error"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_codex_validate_probe_rate_limit_is_inconclusive() -> None:
+    respx.post(CODEX_TOKEN_URL).mock(return_value=httpx.Response(401, json={}))
+    respx.post(CODEX_RESPONSES_URL).mock(return_value=httpx.Response(429, json={}))
+    blob = json.dumps({"access_token": "old-at", "refresh_token": "old-rt"})
+    result = await validate_key(blob, "codex")
+    assert result.get("is_valid") is not True
+    assert result["probe_inconclusive"] is True
+    assert "HTTP 429" in result["error"]
