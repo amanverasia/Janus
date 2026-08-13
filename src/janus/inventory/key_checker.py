@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 import httpx
 
+from janus.inventory.antigravity_credentials import normalize_antigravity_credential
 from janus.inventory.catalog import get_inventory_provider
 from janus.inventory.currency import normalize_credits_to_usd
 from janus.inventory.model_catalog import enrich_model_with_catalog
@@ -56,6 +57,9 @@ TPM_WARNING_THRESHOLD = int(os.environ.get("TPM_WARNING_THRESHOLD", "1000"))
 USABILITY_PROBE_ENABLED = os.environ.get("USABILITY_PROBE", "true").lower() != "false"
 CHECK_CONCURRENCY = int(os.environ.get("CHECK_CONCURRENCY", "8"))
 FETCH_TIMEOUT = 15.0
+ANTIGRAVITY_LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+ANTIGRAVITY_ONBOARD_URL = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser"
+ANTIGRAVITY_USER_AGENT = "antigravity/ide/2.1.1 darwin/arm64"
 
 CHAT_PROBE_COMPATIBLE = {
     "openai",
@@ -986,6 +990,144 @@ async def _probe_codex_access_token(
         return None
 
 
+async def _validate_antigravity_key(
+    key_value: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    del metadata
+    from janus.providers.oauth_tokens import (
+        ANTIGRAVITY_CLIENT_ID,
+        ANTIGRAVITY_CLIENT_SECRET,
+        access_token,
+        apply_token_response,
+        parse_credential,
+        refresh_google,
+        refresh_token,
+        serialize_credential,
+    )
+
+    try:
+        normalized = normalize_antigravity_credential(key_value)
+    except ValueError as exc:
+        return {"is_valid": False, "error": str(exc)}
+    cred = parse_credential(normalized)
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        rt = refresh_token(cred)
+        if rt:
+            tokens = await refresh_google(
+                rt,
+                client,
+                client_id=ANTIGRAVITY_CLIENT_ID,
+                client_secret=ANTIGRAVITY_CLIENT_SECRET,
+            )
+            if tokens:
+                cred = apply_token_response(cred, tokens)
+                normalized = serialize_credential(cred)
+            elif not access_token(cred):
+                return {"is_valid": False, "error": "Antigravity OAuth refresh failed"}
+        if not access_token(cred):
+            return {"is_valid": False, "error": "Antigravity credential missing access token"}
+
+        headers = {
+            "Authorization": f"Bearer {access_token(cred)}",
+            "Content-Type": "application/json",
+            "User-Agent": ANTIGRAVITY_USER_AGENT,
+        }
+        metadata_body = {"ideType": 9, "platform": 3, "pluginType": 2}
+        try:
+            load = await client.post(
+                ANTIGRAVITY_LOAD_CODE_ASSIST_URL,
+                headers=headers,
+                json={"metadata": metadata_body},
+            )
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            return {"probe_inconclusive": True, "error": f"Antigravity probe unavailable: {exc}"}
+        if load.status_code in {401, 403}:
+            return {
+                "is_valid": False,
+                "error": f"Antigravity access-token probe failed ({load.status_code})",
+            }
+        if load.status_code >= 400:
+            return {
+                "probe_inconclusive": True,
+                "error": f"Antigravity loadCodeAssist returned HTTP {load.status_code}",
+            }
+        try:
+            data = load.json()
+        except (ValueError, json.JSONDecodeError):
+            return {
+                "probe_inconclusive": True,
+                "error": "Antigravity loadCodeAssist returned invalid JSON",
+            }
+        project = data.get("cloudaicompanionProject") if isinstance(data, dict) else None
+        project_id = project.get("id") if isinstance(project, dict) else project
+        tier_id = "legacy-tier"
+        tiers = data.get("allowedTiers") if isinstance(data, dict) else None
+        if isinstance(tiers, list):
+            for tier in tiers:
+                if isinstance(tier, dict) and tier.get("isDefault") and tier.get("id"):
+                    tier_id = str(tier["id"]).strip()
+                    break
+        onboarding_note = ""
+        for _attempt in range(10 if not project_id else 1):
+            try:
+                onboard = await client.post(
+                    ANTIGRAVITY_ONBOARD_URL,
+                    headers=headers,
+                    json={
+                        "tierId": tier_id,
+                        "metadata": metadata_body,
+                        **(
+                            {"cloudaicompanionProject": project_id}
+                            if isinstance(project_id, str) and project_id
+                            else {}
+                        ),
+                    },
+                )
+            except (httpx.TimeoutException, httpx.RequestError):
+                onboarding_note = "OAuth valid; onboarding unavailable"
+                break
+            if onboard.status_code not in {200, 201}:
+                onboarding_note = f"OAuth valid; onboarding returned HTTP {onboard.status_code}"
+                break
+            try:
+                onboard_data = onboard.json()
+            except (ValueError, json.JSONDecodeError):
+                onboarding_note = "OAuth valid; onboarding returned invalid JSON"
+                break
+            if not isinstance(onboard_data, dict):
+                onboarding_note = "OAuth valid; onboarding returned invalid data"
+                break
+            response = onboard_data.get("response")
+            response_project = (
+                response.get("cloudaicompanionProject") if isinstance(response, dict) else None
+            )
+            if isinstance(response_project, dict):
+                response_project = response_project.get("id")
+            if isinstance(response_project, str) and response_project:
+                project_id = response_project
+            if onboard_data.get("done") is True or project_id:
+                onboarding_note = "OAuth valid; Cloud Code Assist project verified"
+                break
+            await asyncio.sleep(5)
+        else:
+            onboarding_note = "OAuth valid; onboarding timed out"
+    if not onboarding_note:
+        onboarding_note = "OAuth valid; project onboarding required"
+    raw_extra = cred.get("extra")
+    extra: dict[str, Any] = dict(raw_extra) if isinstance(raw_extra, dict) else {}
+    extra["projectId"] = project_id
+    cred["extra"] = extra
+    return {
+        "is_valid": True,
+        "is_usable": True,
+        "usability_status": "usable",
+        "usability_note": onboarding_note,
+        "key_value": serialize_credential(cred),
+        "metadata": {"projectId": project_id},
+    }
+
+
 async def _validate_codex_key(
     key_value: str,
     metadata: dict[str, Any] | None = None,
@@ -1076,6 +1218,8 @@ async def validate_key(
     try:
         if provider_id == "codex":
             return await _validate_codex_key(key_value, metadata)
+        if provider_id == "antigravity":
+            return await _validate_antigravity_key(key_value, metadata)
 
         if provider_id == TOKENPLAN_PROVIDER_ID:
             return await _validate_tokenplan_key(
