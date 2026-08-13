@@ -38,7 +38,13 @@ def _now() -> str:
 
 HealthStatus = Literal["healthy", "warning", "critical", "exhausted"]
 UsabilityStatus = Literal[
-    "usable", "no_quota", "rate_limited", "restricted", "unknown", "auth_failed"
+    "usable",
+    "access_token_only",
+    "no_quota",
+    "rate_limited",
+    "restricted",
+    "unknown",
+    "auth_failed",
 ]
 
 CREDIT_WARNING_THRESHOLD = float(os.environ.get("CREDIT_WARNING_THRESHOLD", "5"))
@@ -928,6 +934,58 @@ async def _validate_multi_base_key(
     return {"is_valid": False, "error": last_error}
 
 
+CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
+
+
+async def _probe_codex_access_token(
+    client: httpx.AsyncClient,
+    cred: dict[str, Any],
+) -> int | None:
+    """Check an existing Codex access token without consuming the refresh token.
+
+    Codex refresh tokens are single-use/rotating. An exported credential can
+    therefore contain a live access token alongside a refresh token that has
+    already been exchanged elsewhere. Validation must not discard that usable
+    access token just because refresh fails.
+    """
+    from janus.providers.oauth_tokens import access_token
+
+    token = access_token(cred)
+    if not token:
+        return 401
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "OpenAI-Beta": "responses=experimental",
+        "originator": "codex_cli_rs",
+        "User-Agent": "codex_cli_rs/0.136.0",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    extra = cred.get("extra")
+    workspace_id = extra.get("workspaceId") if isinstance(extra, dict) else None
+    if isinstance(workspace_id, str) and workspace_id:
+        headers["chatgpt-account-id"] = workspace_id
+        headers["session_id"] = workspace_id
+    payload = {
+        "model": "gpt-5.5",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hey"}],
+            }
+        ],
+        "instructions": "Reply with one short greeting.",
+        "stream": True,
+        "store": False,
+    }
+    try:
+        async with client.stream("POST", CODEX_RESPONSES_URL, headers=headers, json=payload) as r:
+            return r.status_code
+    except (httpx.TimeoutException, httpx.RequestError):
+        return None
+
+
 async def _validate_codex_key(
     key_value: str,
     metadata: dict[str, Any] | None = None,
@@ -938,7 +996,7 @@ async def _validate_codex_key(
         access_token,
         apply_token_response,
         parse_credential,
-        refresh_codex,
+        refresh_codex_detailed,
         refresh_token,
         serialize_credential,
     )
@@ -962,9 +1020,38 @@ async def _validate_codex_key(
         }
 
     async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
-        tokens = await refresh_codex(rt, client)
-    if tokens is None:
-        return {"is_valid": False, "error": "Codex OAuth refresh failed"}
+        tokens, refresh_error = await refresh_codex_detailed(rt, client)
+        if tokens is None:
+            probe_status = await _probe_codex_access_token(client, cred)
+            if probe_status is not None and probe_status < 400:
+                error_code = ""
+                if isinstance(refresh_error, dict):
+                    error = refresh_error.get("error")
+                    if isinstance(error, dict):
+                        error_code = str(error.get("code") or "")
+                suffix = f" ({error_code})" if error_code else ""
+                return {
+                    "is_valid": True,
+                    "is_usable": True,
+                    "usability_status": "access_token_only",
+                    "usability_note": (
+                        "Access token works, but the refresh token was rejected or already used"
+                        f"{suffix}"
+                    ),
+                    "key_value": normalized,
+                }
+            if probe_status in (401, 403):
+                return {
+                    "is_valid": False,
+                    "error": "Codex OAuth refresh and access-token probe failed",
+                }
+            status_note = (
+                f"HTTP {probe_status}" if probe_status is not None else "probe unavailable"
+            )
+            return {
+                "probe_inconclusive": True,
+                "error": f"Codex OAuth refresh failed; access-token probe {status_note}",
+            }
     updated = apply_token_response(cred, tokens)
     return {
         "is_valid": True,
@@ -1174,7 +1261,21 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
         result = await validate_key(key["key_value"], key["provider_id"], metadata)
         final_status = _resolve_status(key, bool(result.get("is_valid")))
 
-        if result.get("is_valid") and result.get("partial_check"):
+        if result.get("probe_inconclusive"):
+            # A rate limit, unavailable model, timeout, or other transient probe
+            # failure must not invalidate an otherwise routable credential.
+            error = result.get("error") or "Codex probe inconclusive"
+            final_status = str(previous_status or "pending_validation")
+            await update_upstream_key(
+                db_path,
+                key_id,
+                {
+                    "status": final_status,
+                    "last_checked_at": _now(),
+                    "last_error": error,
+                },
+            )
+        elif result.get("is_valid") and result.get("partial_check"):
             await update_upstream_key(
                 db_path,
                 key_id,
