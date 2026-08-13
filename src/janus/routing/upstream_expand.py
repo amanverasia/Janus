@@ -77,6 +77,7 @@ def expand_gateway_provider(
                     models=models,
                     allowed_models=allowed_models,
                     upstream_key_id=key["id"],
+                    credential_expires_at=key.get("credential_expires_at"),
                     rate_limit_rpm=key.get("rate_limit_rpm"),
                     rate_limit_rpd=key.get("rate_limit_rpd"),
                     quota_window=quota_window,

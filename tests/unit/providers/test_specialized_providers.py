@@ -172,7 +172,7 @@ async def test_antigravity_strips_thinking_root():
     assert body["requestType"] == "agent"
     assert body["requestId"].startswith("agent/")
     assert body["requestId"].count("/") == 4
-    assert body["project"] == ""
+    assert body["project"] is None
     await p.close()
 
 

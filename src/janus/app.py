@@ -81,6 +81,7 @@ def _build_provider(config: ProviderConfig) -> Provider:
         return AntigravityProvider(
             api_key=config.api_key or "",
             base_url=config.base_url,
+            credential_expires_at=config.credential_expires_at,
             variant=variant,
         )
     if config.api_type in ("claude_oauth", "claude"):

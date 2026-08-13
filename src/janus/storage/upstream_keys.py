@@ -42,6 +42,13 @@ def _decode_upstream_row(row: Any) -> dict[str, Any]:
     key_value = item.get("key_value")
     if isinstance(key_value, str):
         item["key_value"] = decrypt_key_value(key_value)
+        try:
+            parsed = json.loads(item["key_value"])
+            expires = parsed.get("expires_at") or parsed.get("expiresAt")
+            if isinstance(expires, (int, float)):
+                item["credential_expires_at"] = float(expires)
+        except (TypeError, json.JSONDecodeError):
+            pass
     return item
 
 
