@@ -25,9 +25,7 @@ def test_normalize_antigravity_camel_case_credential() -> None:
 
 
 def test_normalize_antigravity_bare_token() -> None:
-    assert json.loads(normalize_antigravity_credential("token")) == {
-        "access_token": "token"
-    }
+    assert json.loads(normalize_antigravity_credential("token")) == {"access_token": "token"}
 
 
 def test_normalize_antigravity_requires_access_token() -> None:
