@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-08-14
+
 ### Fixed
 
 - **Kiro EventStream completeness** — decode AWS `:event-type` headers and surface `toolUseEvent`, `reasoningContentEvent`, `messageStopEvent`, and `metricsEvent` in both stream and JSON paths; strip `<thinking>` blocks while keeping `codeEvent` content raw; map stop reasons to OpenAI finish reasons; remove unavailable `claude-sonnet-4-thinking` from default models
