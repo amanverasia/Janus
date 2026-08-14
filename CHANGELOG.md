@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-08-14
+
+### Fixed
+
+- **Codex usage-limit cooldowns** — 429 `usage_limit_reached` bodies (`resets_at` / `resets_in_seconds`) now set a precise per-model cooldown instead of a blind exponential backoff, so exhausted ChatGPT accounts are not hammered on every request
+- **Codex in-stream errors** — "Selected model is at capacity" and `server_is_overloaded` events inside 200-OK SSE streams surface as a routable 503 (rotating to the next account) instead of a broken client stream
+- **Gemini/Antigravity rate-limit resets** — `google.rpc.RetryInfo` retry delays and "retry in Ns" / "reset after XhYmZs" message phrases in 429 bodies are honored as cooldown durations
+- **GitHub Copilot monthly limits** — 402 premium-request exhaustion cools the account down toward the next UTC month instead of retrying every five minutes
+- **Kiro account rotation** — bare 400 "Improperly formed request." (CodeWhisperer's quota/account signal), "request not allowed", and "no credentials" errors rotate to the next account instead of failing the request
+- **Rate-limit headers** — `x-ratelimit-reset-after` and `x-ratelimit-reset` headers are parsed alongside `Retry-After`
+
+### Added
+
+- **Fallback observability** — the "All providers exhausted" 503 detail and request log now list every attempted account (`account: status`), and each fallback is logged at WARNING level
+
 ## [2.1.3] - 2026-08-14
 
 ### Fixed
