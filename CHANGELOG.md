@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-08-14
+
+### Fixed
+
+- **Kiro agent compatibility** — native request translation now preserves Pi system prompts, tools, tool results, and multi-turn history; AWS EventStream responses are converted to correctly framed OpenAI SSE/JSON, with auth-aware Kiro/CodeWhisperer/Amazon Q endpoint selection and AWS/social credential refresh
+- **Kiro inventory and model discovery** — Kiro credentials can be imported, natively validated, and used for live `ListAvailableModels` discovery; inventory-backed gateways try alternate active accounts when an otherwise valid account cannot list models
+- **Antigravity agent compatibility** — Cloud Code response envelopes are unwrapped, imported OAuth credentials refresh reliably, complex Pi tool schemas are reduced to Antigravity's supported Gemini subset, and tool call/result IDs and names survive multi-turn Claude requests
+
 ## [2.1.1] - 2026-08-07
 
 ### Fixed
