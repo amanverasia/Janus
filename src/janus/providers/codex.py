@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -133,6 +134,31 @@ def _patch_sse_data_line(raw_line: str, done_items: list[dict[str, Any]]) -> str
     patched_event["response"] = patched_response
     prefix = raw_line[: len(raw_line) - len(raw_line.lstrip())]
     return f"{prefix}data: {json.dumps(patched_event, separators=(',', ':'), ensure_ascii=False)}"
+
+
+def _usage_limit_retry_after(status_code: int, body: dict[str, Any] | None) -> float | None:
+    """Precise reset delay (seconds) from a Codex ``usage_limit_reached`` 429 body.
+
+    ChatGPT's Codex backend reports quota exhaustion in the JSON body
+    (``resets_at`` epoch seconds / ``resets_in_seconds``) without sending a
+    Retry-After header. Mirrors 9router's codex executor ``parseError`` so the
+    fallback handler can cool the account down until the reported reset
+    (capped by RETRY_AFTER_CAP_S in the routing layer).
+    """
+    if status_code != 429 or not isinstance(body, dict):
+        return None
+    err = body.get("error")
+    if not isinstance(err, dict) or err.get("type") != "usage_limit_reached":
+        return None
+    resets_at = err.get("resets_at")
+    if isinstance(resets_at, (int, float)) and not isinstance(resets_at, bool):
+        delay = float(resets_at) - time.time()
+        if delay > 0:
+            return delay
+    resets_in = err.get("resets_in_seconds")
+    if isinstance(resets_in, (int, float)) and not isinstance(resets_in, bool) and resets_in > 0:
+        return float(resets_in)
+    return None
 
 
 class CodexProvider:
@@ -349,10 +375,12 @@ class CodexProvider:
         if r.status_code >= 400:
             body = await r.aread()
             await cm.__aexit__(None, None, None)
+            error_body = parse_error_body(body)
             return RawResult(
                 status_code=r.status_code,
-                json_data=parse_error_body(body),
-                retry_after=parse_retry_after(r.headers),
+                json_data=error_body,
+                retry_after=parse_retry_after(r.headers)
+                or _usage_limit_retry_after(r.status_code, error_body),
             )
 
         async def line_iter() -> AsyncIterator[str]:
