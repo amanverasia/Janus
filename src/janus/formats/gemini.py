@@ -56,6 +56,7 @@ class GeminiStreamParser:
         self._text_index = 0
         self._next_block = 0
         self._tool_indices: dict[str, int] = {}
+        self._finished = False
         self._done = False
 
     def feed(self, line: str) -> list[CanonicalEvent]:
@@ -76,6 +77,18 @@ class GeminiStreamParser:
         candidate = candidates[0]
         content = candidate.get("content") or {}
         finish_reason = candidate.get("finishReason")
+        usage_meta = chunk.get("usageMetadata")
+        if self._finished:
+            if usage_meta:
+                events.append(
+                    MessageDelta(
+                        usage=Usage(
+                            input_tokens=usage_meta.get("promptTokenCount", 0),
+                            output_tokens=usage_meta.get("candidatesTokenCount", 0),
+                        )
+                    )
+                )
+            return events
 
         if not self._started:
             self._started = True
@@ -119,8 +132,8 @@ class GeminiStreamParser:
                 events.append(BlockStop(index=ci))
             self._tool_indices.clear()
             events.append(MessageDelta(stop_reason=finish_reason))
+            self._finished = True
 
-        usage_meta = chunk.get("usageMetadata")
         if usage_meta:
             events.append(
                 MessageDelta(

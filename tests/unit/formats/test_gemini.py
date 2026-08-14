@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from janus.canonical.events import MessageDelta
 from janus.canonical.models import (
     CanonicalRequest,
     CanonicalResponse,
@@ -10,7 +11,7 @@ from janus.canonical.models import (
     TextPart,
     Usage,
 )
-from janus.formats.gemini import GeminiAdapter, _sanitize_parameter_schema
+from janus.formats.gemini import GeminiAdapter, GeminiStreamParser, _sanitize_parameter_schema
 
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 
@@ -108,6 +109,40 @@ def test_parse_upstream_response():
     assert isinstance(resp.content[0], TextPart)
     assert resp.content[0].text == "Hello!"
     assert resp.usage.input_tokens == 5
+
+
+def test_gemini_stream_parser_emits_stop_reason_once_and_late_usage():
+    parser = GeminiStreamParser()
+    chunk = json.dumps(
+        {
+            "candidates": [
+                {
+                    "content": {"role": "model", "parts": [{"text": "hi"}]},
+                    "finishReason": "STOP",
+                }
+            ]
+        }
+    )
+    first = parser.feed(chunk)
+    assert [e for e in first if isinstance(e, MessageDelta) and e.stop_reason] == [
+        MessageDelta(stop_reason="STOP")
+    ]
+
+    repeated = parser.feed(chunk)
+    assert [e for e in repeated if isinstance(e, MessageDelta) and e.stop_reason] == []
+
+    late = parser.feed(
+        json.dumps(
+            {
+                "candidates": [{"content": {"parts": []}, "finishReason": "STOP"}],
+                "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 2},
+            }
+        )
+    )
+    usage_deltas = [e for e in late if isinstance(e, MessageDelta) and e.usage is not None]
+    assert len(usage_deltas) == 1
+    assert usage_deltas[0].usage.input_tokens == 3
+    assert usage_deltas[0].usage.output_tokens == 2
 
 
 def test_reasoning_part_does_not_crash_build():

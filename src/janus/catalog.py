@@ -1377,7 +1377,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "api_type": "kiro",
             "base_url": "https://runtime.us-east-1.kiro.dev",
             "prefix": "kiro",
-            "default_models": ["claude-sonnet-4", "claude-sonnet-4-thinking"],
+            "default_models": ["claude-sonnet-4"],
         },
         "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
     },

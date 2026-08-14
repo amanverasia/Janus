@@ -66,12 +66,17 @@ def test_kiro_endpoint_order_and_headers_match_9router():
     assert "eu-west-1.amazonaws.com" in idc._ordered_bases()[0]
 
 
-def _eventstream_frame(payload: dict[str, object]) -> bytes:
+def _eventstream_frame(payload: object, event_type: str | None = None) -> bytes:
     body = json.dumps(payload, separators=(",", ":")).encode()
-    total = 16 + len(body)
-    prelude = total.to_bytes(4, "big") + (0).to_bytes(4, "big")
+    headers = b""
+    if event_type:
+        name = b":event-type"
+        value = event_type.encode()
+        headers = bytes([len(name)]) + name + b"\x07" + len(value).to_bytes(2, "big") + value
+    total = 16 + len(headers) + len(body)
+    prelude = total.to_bytes(4, "big") + len(headers).to_bytes(4, "big")
     prelude_crc = zlib.crc32(prelude).to_bytes(4, "big")
-    without_crc = prelude + prelude_crc + body
+    without_crc = prelude + prelude_crc + headers + body
     return without_crc + zlib.crc32(without_crc).to_bytes(4, "big")
 
 
@@ -116,6 +121,100 @@ async def test_kiro_native_stream_separates_each_openai_sse_event():
     await provider.close()
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_kiro_stream_emits_tool_use_stop_and_usage_deltas():
+    upstream = b"".join(
+        [
+            _eventstream_frame(
+                {"toolUseId": "call_9", "name": "read", "input": '{"path":"x"}'},
+                "toolUseEvent",
+            ),
+            _eventstream_frame({"stopReason": "tool_use"}, "messageStopEvent"),
+            _eventstream_frame(
+                {"metricsEvent": {"inputTokens": 7, "outputTokens": 2}}, "metricsEvent"
+            ),
+        ]
+    )
+    respx.post("https://runtime.us-east-1.kiro.dev/generateAssistantResponse").mock(
+        return_value=httpx.Response(
+            200,
+            content=upstream,
+            headers={"content-type": "application/vnd.amazon.eventstream"},
+        )
+    )
+    provider = KiroProvider(
+        api_key='{"accessToken":"tok","authMethod":"google"}',
+        base_url="https://runtime.us-east-1.kiro.dev",
+    )
+    result = await provider.call(
+        {"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "read x"}]},
+        stream=True,
+    )
+    assert result.lines is not None
+    events: list[dict[str, object]] = []
+    data_lines: list[str] = []
+    async for line in result.lines:
+        if line == "":
+            events.append(json.loads("\n".join(data_lines)))
+            data_lines = []
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    tool_event, stop_event, usage_event = events
+    assert tool_event["choices"][0]["delta"]["tool_calls"] == [
+        {
+            "index": 0,
+            "id": "call_9",
+            "type": "function",
+            "function": {"name": "read", "arguments": '{"path":"x"}'},
+        }
+    ]
+    assert stop_event["choices"][0]["finish_reason"] == "tool_calls"
+    assert usage_event["usage"] == {
+        "prompt_tokens": 7,
+        "completion_tokens": 2,
+        "total_tokens": 9,
+    }
+    await provider.close()
+
+
+def test_kiro_nonstream_decodes_tools_reasoning_stop_and_usage():
+    raw = b"".join(
+        [
+            _eventstream_frame({"content": "<thinking>hidden"}, "assistantResponseEvent"),
+            _eventstream_frame(
+                {"reasoningContentEvent": {"text": "reason"}}, "reasoningContentEvent"
+            ),
+            _eventstream_frame(
+                {"toolUseId": "call_1", "name": "read", "input": '{"path":"a.txt"}'},
+                "toolUseEvent",
+            ),
+            _eventstream_frame({"stopReason": "tool_use"}, "messageStopEvent"),
+            _eventstream_frame(
+                {"metricsEvent": {"inputTokens": 12, "outputTokens": 3}}, "metricsEvent"
+            ),
+        ]
+    )
+    provider = KiroProvider(api_key="tok")
+    response = provider._parse_eventstream_response(raw, {"model": "claude-sonnet-4"})
+    choice = response["choices"][0]
+    assert choice["message"]["content"] == ""
+    assert choice["message"]["reasoning_content"] == "reason"
+    assert choice["message"]["tool_calls"] == [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "read", "arguments": '{"path":"a.txt"}'},
+        }
+    ]
+    assert choice["finish_reason"] == "tool_calls"
+    assert response["usage"] == {
+        "prompt_tokens": 12,
+        "completion_tokens": 3,
+        "total_tokens": 15,
+    }
+
+
 def test_kiro_payload_uses_last_user_as_current_and_preserves_model():
     p = KiroProvider(
         api_key='{"accessToken":"tok","extra":{"profileArn":"arn:test"}}',
@@ -147,6 +246,30 @@ def test_kiro_payload_uses_last_user_as_current_and_preserves_model():
         "temperature": 0.2,
         "topP": 0.9,
     }
+
+
+def test_kiro_payload_preserves_inline_images():
+    provider = KiroProvider(api_key="tok")
+    body = provider._to_kiro_payload(
+        {
+            "model": "claude-sonnet-4",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "describe"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png;base64,aGVsbG8="},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    current = body["conversationState"]["currentMessage"]["userInputMessage"]
+    assert current["content"] == "describe"
+    assert current["images"] == [{"format": "png", "source": {"bytes": "aGVsbG8="}}]
 
 
 def test_kiro_payload_preserves_pi_system_tools_and_tool_results():

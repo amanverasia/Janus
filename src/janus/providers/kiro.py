@@ -38,6 +38,123 @@ DEFAULT_KIRO_BASES = (
 )
 
 
+def _decode_eventstream_headers(raw: bytes) -> dict[str, Any]:
+    """Decode AWS EventStream headers (notably ``:event-type``)."""
+    headers: dict[str, Any] = {}
+    offset = 0
+    while offset < len(raw):
+        name_len = raw[offset]
+        offset += 1
+        if offset + name_len + 1 > len(raw):
+            raise ValueError("truncated EventStream header")
+        name = raw[offset : offset + name_len].decode()
+        offset += name_len
+        value_type = raw[offset]
+        offset += 1
+        if value_type in (0, 1):
+            value: Any = value_type == 0
+        elif value_type == 2:
+            value = int.from_bytes(raw[offset : offset + 1], "big", signed=True)
+            offset += 1
+        elif value_type == 3:
+            value = int.from_bytes(raw[offset : offset + 2], "big", signed=True)
+            offset += 2
+        elif value_type == 4:
+            value = int.from_bytes(raw[offset : offset + 4], "big", signed=True)
+            offset += 4
+        elif value_type in (5, 8):
+            value = int.from_bytes(raw[offset : offset + 8], "big", signed=value_type == 5)
+            offset += 8
+        elif value_type in (6, 7):
+            value_len = int.from_bytes(raw[offset : offset + 2], "big")
+            offset += 2
+            value_raw = raw[offset : offset + value_len]
+            offset += value_len
+            value = value_raw.decode() if value_type == 7 else value_raw
+        elif value_type == 9:
+            value = raw[offset : offset + 16]
+            offset += 16
+        else:
+            raise ValueError(f"unsupported EventStream header type {value_type}")
+        headers[name] = value
+    return headers
+
+
+def _eventstream_frames(raw: bytes) -> list[tuple[str, Any]]:
+    frames: list[tuple[str, Any]] = []
+    offset = 0
+    while offset + 16 <= len(raw):
+        total = int.from_bytes(raw[offset : offset + 4], "big")
+        headers_len = int.from_bytes(raw[offset + 4 : offset + 8], "big")
+        if total < 16 or headers_len > total - 16 or offset + total > len(raw):
+            break
+        headers_start = offset + 12
+        payload_start = headers_start + headers_len
+        try:
+            headers = _decode_eventstream_headers(raw[headers_start:payload_start])
+            payload_raw = raw[payload_start : offset + total - 4]
+            payload = json.loads(payload_raw) if payload_raw.strip() else {}
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            offset += total
+            continue
+        if isinstance(payload, (dict, list)):
+            event_type = str(headers.get(":event-type") or "")
+            # Headerless fixtures/bridges historically exposed content directly.
+            if (
+                not event_type
+                and isinstance(payload, dict)
+                and isinstance(payload.get("content"), str)
+            ):
+                event_type = "assistantResponseEvent"
+            frames.append((event_type, payload))
+        offset += total
+    return frames
+
+
+def _strip_thinking_tags(content: str, in_thinking: bool) -> tuple[str, bool]:
+    if in_thinking:
+        end = content.find("</thinking>")
+        if end < 0:
+            return "", True
+        content = content[end + len("</thinking>") :].removeprefix("\n")
+        in_thinking = False
+    while True:
+        start = content.find("<thinking>")
+        if start < 0:
+            return content, in_thinking
+        end = content.find("</thinking>", start + len("<thinking>"))
+        if end < 0:
+            return content[:start], True
+        content = content[:start] + content[end + len("</thinking>") :].removeprefix("\n")
+
+
+def _reasoning_text(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get("text") or value.get("content")
+    return None
+
+
+def _stop_reason(value: Any, *, has_tools: bool = False) -> str:
+    normalized = str(value or "").lower().replace("-", "_")
+    if normalized in {"tool_use", "tool_calls", "tooluse"} or has_tools:
+        return "tool_calls"
+    if normalized in {"max_tokens", "length", "token_limit"}:
+        return "length"
+    if normalized in {"content_filter", "safety"}:
+        return "content_filter"
+    return "stop"
+
+
+def _tool_input(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
 class KiroProvider:
     name = "kiro"
 
@@ -310,47 +427,100 @@ class KiroProvider:
     def _parse_eventstream_response(self, raw: bytes, request: dict[str, Any]) -> dict[str, Any]:
         """Decode Kiro's AWS EventStream response for OpenAI JSON clients."""
         text_parts: list[str] = []
-        stop_reason = "stop"
-        offset = 0
-        while offset + 16 <= len(raw):
-            total = int.from_bytes(raw[offset : offset + 4], "big")
-            headers_len = int.from_bytes(raw[offset + 4 : offset + 8], "big")
-            if total < 16 or offset + total > len(raw):
-                break
-            payload_start = offset + 12 + headers_len
-            payload_end = offset + total - 4
-            try:
-                event = json.loads(raw[payload_start:payload_end])
-            except (ValueError, json.JSONDecodeError):
-                offset += total
-                continue
-            if isinstance(event, dict):
+        reasoning_parts: list[str] = []
+        tools: dict[str, dict[str, Any]] = {}
+        usage: dict[str, Any] | None = None
+        finish_value: Any = None
+        in_thinking = False
+        frames = _eventstream_frames(raw)
+        for event_type, event in frames:
+            if event_type == "assistantResponseEvent" and isinstance(event, dict):
                 content = event.get("content")
                 if isinstance(content, str):
+                    content, in_thinking = _strip_thinking_tags(content, in_thinking)
+                    if content:
+                        text_parts.append(content)
+            elif event_type == "codeEvent" and isinstance(event, dict):
+                content = event.get("content")
+                if isinstance(content, str) and content:
                     text_parts.append(content)
-                if event.get("stopReason"):
-                    stop_reason = "stop"
-            offset += total
-        if not text_parts:
+            elif event_type == "reasoningContentEvent" and isinstance(event, dict):
+                value = event.get("reasoningContentEvent") or event
+                content = _reasoning_text(value)
+                if content:
+                    reasoning_parts.append(content)
+            elif event_type == "toolUseEvent":
+                values = event if isinstance(event, list) else [event]
+                for index, value in enumerate(values):
+                    if not isinstance(value, dict) or not value.get("name"):
+                        continue
+                    tool_id = str(value.get("toolUseId") or f"call_{len(tools) + index + 1}")
+                    tool = tools.setdefault(tool_id, {"name": str(value["name"]), "input": []})
+                    fragment = _tool_input(value.get("input"))
+                    if fragment:
+                        tool["input"].append(fragment)
+            elif event_type in {
+                "messageStopEvent",
+                "metadataEvent",
+                "MetadataEvent",
+            } and isinstance(event, dict):
+                metadata = event.get("metadataEvent") or event.get("metadata") or event
+                finish_value = metadata.get("stopReason") or metadata.get("stop_reason")
+            elif event_type == "metricsEvent" and isinstance(event, dict):
+                metrics = event.get("metricsEvent") or event
+                prompt = int(metrics.get("inputTokens") or 0)
+                completion = int(metrics.get("outputTokens") or 0)
+                usage = {
+                    "prompt_tokens": prompt,
+                    "completion_tokens": completion,
+                    "total_tokens": prompt + completion,
+                }
+                cache_read = int(
+                    metrics.get("cacheReadInputTokens")
+                    or metrics.get("cache_read_input_tokens")
+                    or 0
+                )
+                if cache_read:
+                    usage["prompt_tokens_details"] = {"cached_tokens": cache_read}
+
+        if not frames:
             try:
                 parsed = json.loads(raw)
                 if isinstance(parsed, dict):
                     return parsed
             except (ValueError, json.JSONDecodeError):
                 pass
+        message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
+        if reasoning_parts:
+            message["reasoning_content"] = "".join(reasoning_parts)
+        if tools:
+            message["tool_calls"] = [
+                {
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "arguments": "".join(tool["input"]) or "{}",
+                    },
+                }
+                for tool_id, tool in tools.items()
+            ]
         model = self._payload_model(request)
-        return {
+        result: dict[str, Any] = {
             "id": f"chatcmpl-{uuid4().hex[:12]}",
             "object": "chat.completion",
             "model": model,
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": "".join(text_parts)},
-                    "finish_reason": stop_reason,
+                    "message": message,
+                    "finish_reason": _stop_reason(finish_value, has_tools=bool(tools)),
                 }
             ],
         }
+        if usage is not None:
+            result["usage"] = usage
+        return result
 
     @staticmethod
     def _payload_model(payload: dict[str, Any]) -> str:
@@ -367,19 +537,44 @@ class KiroProvider:
         return str(user.get("modelId") or "") if isinstance(user, dict) else ""
 
     @staticmethod
-    def _message_text(content: Any) -> str:
+    def _message_parts(content: Any) -> tuple[str, list[dict[str, Any]]]:
         if isinstance(content, str):
-            return content
+            return content, []
         if not isinstance(content, list):
-            return str(content or "")
-        parts: list[str] = []
+            return str(content or ""), []
+        text_parts: list[str] = []
+        images: list[dict[str, Any]] = []
         for item in content:
             if not isinstance(item, dict):
                 continue
             text = item.get("text")
             if isinstance(text, str):
-                parts.append(text)
-        return "\n".join(parts)
+                text_parts.append(text)
+            image_url = item.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else None
+            if isinstance(url, str) and url.startswith("data:") and "," in url:
+                metadata, encoded = url.split(",", 1)
+                media_type = metadata[5:].split(";", 1)[0]
+                images.append(
+                    {
+                        "format": (media_type.split("/", 1)[-1] or "png").replace("jpeg", "jpg"),
+                        "source": {"bytes": encoded},
+                    }
+                )
+            source = item.get("source")
+            if isinstance(source, dict) and source.get("type") == "base64" and source.get("data"):
+                media_type = str(source.get("media_type") or "image/png")
+                images.append(
+                    {
+                        "format": (media_type.split("/", 1)[-1] or "png").replace("jpeg", "jpg"),
+                        "source": {"bytes": str(source["data"])},
+                    }
+                )
+        return "\n".join(text_parts), images
+
+    @classmethod
+    def _message_text(cls, content: Any) -> str:
+        return cls._message_parts(content)[0]
 
     @staticmethod
     def _kiro_tools(tools: Any) -> list[dict[str, Any]]:
@@ -438,7 +633,7 @@ class KiroProvider:
             if not isinstance(msg, dict):
                 continue
             role = msg.get("role")
-            content = self._message_text(msg.get("content", ""))
+            content, images = self._message_parts(msg.get("content", ""))
             if role in {"system", "developer"}:
                 if content:
                     system_parts.append(content)
@@ -465,9 +660,13 @@ class KiroProvider:
                     }
                 )
             else:
-                converted.append(
-                    {"userInputMessage": {"content": content or "continue", "modelId": model}}
-                )
+                user_message: dict[str, Any] = {
+                    "content": content or "continue",
+                    "modelId": model,
+                }
+                if images:
+                    user_message["images"] = images
+                converted.append({"userInputMessage": user_message})
 
         current_index = next(
             (i for i in range(len(converted) - 1, -1, -1) if "userInputMessage" in converted[i]),
@@ -558,44 +757,98 @@ class KiroProvider:
         async def line_iter() -> AsyncIterator[str]:
             buffer = bytearray()
             response_id = f"chatcmpl-{uuid4().hex[:12]}"
+            in_thinking = False
+            saw_tools = False
             try:
                 async for chunk in r.aiter_bytes():
                     buffer.extend(chunk)
                     while len(buffer) >= 16:
                         total = int.from_bytes(buffer[:4], "big")
-                        headers_len = int.from_bytes(buffer[4:8], "big")
                         if total < 16 or len(buffer) < total:
                             break
                         frame = bytes(buffer[:total])
                         del buffer[:total]
-                        start = 12 + headers_len
-                        try:
-                            event = json.loads(frame[start : total - 4])
-                        except (ValueError, json.JSONDecodeError):
+                        frames = _eventstream_frames(frame)
+                        if not frames:
                             continue
-                        content = event.get("content") if isinstance(event, dict) else None
-                        if isinstance(content, str) and content:
-                            yield "data: " + json.dumps(
-                                {
-                                    "id": response_id,
-                                    "object": "chat.completion.chunk",
-                                    "model": model,
-                                    "choices": [
-                                        {
-                                            "index": 0,
-                                            "delta": {"content": content},
-                                            "finish_reason": None,
-                                        }
-                                    ],
-                                },
-                                separators=(",", ":"),
+                        event_type, event = frames[0]
+                        delta: dict[str, Any] = {}
+                        finish_reason: str | None = None
+                        usage: dict[str, Any] | None = None
+                        if event_type == "assistantResponseEvent" and isinstance(event, dict):
+                            content = event.get("content")
+                            if isinstance(content, str):
+                                content, in_thinking = _strip_thinking_tags(content, in_thinking)
+                                if content:
+                                    delta["content"] = content
+                        elif event_type == "codeEvent" and isinstance(event, dict):
+                            content = event.get("content")
+                            if isinstance(content, str) and content:
+                                delta["content"] = content
+                        elif event_type == "reasoningContentEvent" and isinstance(event, dict):
+                            value = event.get("reasoningContentEvent") or event
+                            content = _reasoning_text(value)
+                            if content:
+                                delta["reasoning_content"] = content
+                        elif event_type == "toolUseEvent":
+                            values = event if isinstance(event, list) else [event]
+                            tool_calls: list[dict[str, Any]] = []
+                            for index, value in enumerate(values):
+                                if not isinstance(value, dict) or not value.get("name"):
+                                    continue
+                                saw_tools = True
+                                call_id = str(value.get("toolUseId") or f"call_{uuid4().hex[:12]}")
+                                tool_calls.append(
+                                    {
+                                        "index": index,
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": str(value["name"]),
+                                            "arguments": _tool_input(value.get("input")),
+                                        },
+                                    }
+                                )
+                            if tool_calls:
+                                delta["tool_calls"] = tool_calls
+                        elif event_type in {
+                            "messageStopEvent",
+                            "metadataEvent",
+                            "MetadataEvent",
+                        } and isinstance(event, dict):
+                            metadata = event.get("metadataEvent") or event.get("metadata") or event
+                            finish_reason = _stop_reason(
+                                metadata.get("stopReason") or metadata.get("stop_reason"),
+                                has_tools=saw_tools,
                             )
-                            # RawResult.lines follows httpx.aiter_lines semantics:
-                            # an empty item represents the blank line terminating
-                            # an SSE event. Without it, OpenAI/Pi joins adjacent
-                            # data lines and attempts to parse both JSON objects as
-                            # one event.
-                            yield ""
+                        elif event_type == "metricsEvent" and isinstance(event, dict):
+                            metrics = event.get("metricsEvent") or event
+                            prompt = int(metrics.get("inputTokens") or 0)
+                            completion = int(metrics.get("outputTokens") or 0)
+                            usage = {
+                                "prompt_tokens": prompt,
+                                "completion_tokens": completion,
+                                "total_tokens": prompt + completion,
+                            }
+                        if not delta and finish_reason is None and usage is None:
+                            continue
+                        data: dict[str, Any] = {
+                            "id": response_id,
+                            "object": "chat.completion.chunk",
+                            "model": model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": delta,
+                                    "finish_reason": finish_reason,
+                                }
+                            ],
+                        }
+                        if usage is not None:
+                            data["usage"] = usage
+                        yield "data: " + json.dumps(data, separators=(",", ":"))
+                        # Empty line is the SSE event terminator in aiter_lines form.
+                        yield ""
             finally:
                 await cm.__aexit__(None, None, None)
 
