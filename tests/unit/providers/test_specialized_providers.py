@@ -623,3 +623,59 @@ async def test_codex_429_retry_after_header_takes_precedence():
     assert result.status_code == 429
     assert result.retry_after == 30.0
     await p.close()
+
+
+# ── Codex SSE errors inside 200-OK bodies ───────────────────────────────────
+
+_CODEX_CAPACITY_SSE = (
+    'data: {"type":"response.created","response":{"id":"resp_1","output":[]}}\n\n'
+    'data: {"type":"error","error":{"type":"server_error",'
+    '"message":"Selected model is at capacity. Please try a different model."}}\n\n'
+)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_codex_sse_capacity_error_becomes_routable_503():
+    respx.post("https://example.test/responses").mock(
+        return_value=httpx.Response(
+            200,
+            content=_CODEX_CAPACITY_SSE.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    p = CodexProvider(api_key="sk", base_url="https://example.test")
+    result = await p.call({"model": "gpt-5.6-sol", "input": "hi"}, stream=True)
+    assert result.status_code == 503
+    assert result.lines is None
+    assert result.json_data is not None
+    assert "at capacity" in result.json_data["error"]["message"]
+    await p.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_codex_sse_peek_replays_normal_stream_intact():
+    sse = (
+        'data: {"type":"response.output_text.delta","delta":"He"}\n\n'
+        'data: {"type":"response.output_text.delta","delta":"llo"}\n\n'
+        'data: {"type":"response.completed","response":{"id":"r1","output":[]}}\n\n'
+        "data: [DONE]\n\n"
+    )
+    respx.post("https://example.test/responses").mock(
+        return_value=httpx.Response(
+            200,
+            content=sse.encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    p = CodexProvider(api_key="sk", base_url="https://example.test")
+    result = await p.call({"model": "gpt-5.6-sol", "input": "hi"}, stream=True)
+    assert result.status_code == 200
+    assert result.lines is not None
+    collected = [line async for line in result.lines if line.strip()]
+    assert len(collected) == 4
+    assert '"delta":"He"' in collected[0]
+    assert '"delta":"llo"' in collected[1]
+    assert "[DONE]" in collected[3]
+    await p.close()

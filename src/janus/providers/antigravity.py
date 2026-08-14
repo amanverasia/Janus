@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from .base import RawResult, parse_error_body, parse_retry_after
+from .base import RawResult, parse_error_body, parse_google_retry_info, parse_retry_after
 from .oauth_tokens import (
     ANTIGRAVITY_CLIENT_ID,
     ANTIGRAVITY_CLIENT_SECRET,
@@ -203,10 +203,11 @@ class AntigravityProvider:
             f"{self.base_url}/v1internal:generateContent", json=body, headers=self._headers()
         )
         if r.status_code >= 400:
+            error_body = parse_error_body(r.content)
             return RawResult(
                 status_code=r.status_code,
-                json_data=parse_error_body(r.content),
-                retry_after=parse_retry_after(r.headers),
+                json_data=error_body,
+                retry_after=parse_retry_after(r.headers) or parse_google_retry_info(error_body),
             )
         try:
             data = r.json()
@@ -225,10 +226,11 @@ class AntigravityProvider:
         if r.status_code >= 400:
             body = await r.aread()
             await cm.__aexit__(None, None, None)
+            error_body = parse_error_body(body)
             return RawResult(
                 status_code=r.status_code,
-                json_data=parse_error_body(body),
-                retry_after=parse_retry_after(r.headers),
+                json_data=error_body,
+                retry_after=parse_retry_after(r.headers) or parse_google_retry_info(error_body),
             )
 
         async def line_iter() -> AsyncIterator[str]:
