@@ -544,3 +544,82 @@ async def test_claude_oauth_posts_messages():
     assert route.called
     assert "Bearer oauth-token" in route.calls.last.request.headers["Authorization"]
     await p.close()
+
+
+# ── Codex usage_limit_reached retry-after parsing ──────────────────────────
+
+_CODEX_USAGE_LIMIT_BODY = {
+    "error": {
+        "type": "usage_limit_reached",
+        "message": "The usage limit has been reached",
+        "plan_type": "plus",
+        "resets_at": None,
+        "eligible_promo": None,
+        "resets_in_seconds": 575_990,
+    }
+}
+
+
+def test_usage_limit_retry_after_from_resets_in_seconds():
+    from janus.providers.codex import _usage_limit_retry_after
+
+    assert _usage_limit_retry_after(429, _CODEX_USAGE_LIMIT_BODY) == 575_990.0
+
+
+def test_usage_limit_retry_after_prefers_resets_at():
+    import time
+
+    from janus.providers.codex import _usage_limit_retry_after
+
+    body = {
+        "error": {
+            "type": "usage_limit_reached",
+            "resets_at": time.time() + 1_000,
+            "resets_in_seconds": 5,
+        }
+    }
+    delay = _usage_limit_retry_after(429, body)
+    assert delay is not None
+    assert 990 < delay <= 1_000
+
+
+def test_usage_limit_retry_after_ignores_other_errors():
+    from janus.providers.codex import _usage_limit_retry_after
+
+    assert _usage_limit_retry_after(429, {"error": {"type": "rate_limit"}}) is None
+    assert _usage_limit_retry_after(429, {"error": "nope"}) is None
+    assert _usage_limit_retry_after(429, None) is None
+    assert _usage_limit_retry_after(500, _CODEX_USAGE_LIMIT_BODY) is None
+    # Stale resets_at in the past and boolean junk must not produce a delay.
+    stale = {"error": {"type": "usage_limit_reached", "resets_at": 100, "resets_in_seconds": True}}
+    assert _usage_limit_retry_after(429, stale) is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_codex_429_usage_limit_sets_retry_after_from_body():
+    respx.post("https://example.test/responses").mock(
+        return_value=httpx.Response(429, json=_CODEX_USAGE_LIMIT_BODY)
+    )
+    p = CodexProvider(api_key="sk", base_url="https://example.test")
+    result = await p.call({"model": "gpt-5.6-sol", "input": "hi"}, stream=False)
+    assert result.status_code == 429
+    assert result.retry_after == 575_990.0
+    assert result.json_data is not None
+    assert result.json_data["error"]["type"] == "usage_limit_reached"
+    await p.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_codex_429_retry_after_header_takes_precedence():
+    respx.post("https://example.test/responses").mock(
+        return_value=httpx.Response(
+            429, headers={"retry-after": "30"}, json=_CODEX_USAGE_LIMIT_BODY
+        )
+    )
+    p = CodexProvider(api_key="sk", base_url="https://example.test")
+    result = await p.call({"model": "gpt-5.6-sol", "input": "hi"}, stream=False)
+    assert result.status_code == 429
+    assert result.retry_after == 30.0
+    await p.close()

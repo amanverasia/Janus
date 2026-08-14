@@ -618,7 +618,17 @@ async def _handle(
         )
         raise HTTPException(status_code=400, detail=str(e))
 
-    last_error = "Unknown error"
+    attempt_errors: list[str] = []
+
+    def _note_attempt_failure(failed: ResolvedTarget, detail: str) -> None:
+        attempt_errors.append(f"{failed.account_id}: {detail}")
+        logger.warning(
+            "Fallback: account %s failed for %s (%s); trying next account",
+            failed.account_id,
+            canonical_req.model,
+            detail,
+        )
+
     for target in attempts:
         if not handler.is_available(target.account_id, target.model):
             continue
@@ -677,7 +687,7 @@ async def _handle(
                     )
                 except (httpx.TimeoutException, httpx.ConnectError) as e:
                     handler.mark_cooldown(target.account_id, "network", model=target.model)
-                    last_error = f"{target.account_id}: {type(e).__name__}"
+                    _note_attempt_failure(target, type(e).__name__)
                     continue
                 if result is None:
                     continue
@@ -689,7 +699,7 @@ async def _handle(
                             model=target.model,
                             retry_after=getattr(result, "retry_after", None),
                         )
-                        last_error = f"{target.account_id}: {result.status_code}"
+                        _note_attempt_failure(target, str(result.status_code))
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
@@ -883,7 +893,7 @@ async def _handle(
                     )
                 except (httpx.TimeoutException, httpx.ConnectError) as e:
                     handler.mark_cooldown(target.account_id, "network", model=target.model)
-                    last_error = f"{target.account_id}: {type(e).__name__}"
+                    _note_attempt_failure(target, type(e).__name__)
                     continue
                 if native_result.status_code >= 400:
                     if is_fallback_eligible_refined(
@@ -897,7 +907,7 @@ async def _handle(
                             model=target.model,
                             retry_after=getattr(native_result, "retry_after", None),
                         )
-                        last_error = f"{target.account_id}: {native_result.status_code}"
+                        _note_attempt_failure(target, str(native_result.status_code))
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
@@ -1095,7 +1105,7 @@ async def _handle(
                             model=target.model,
                             retry_after=result.retry_after,
                         )
-                        last_error = f"{target.account_id}: {result.status_code}"
+                        _note_attempt_failure(target, str(result.status_code))
                         continue
                     await _log_error_and_raise(
                         log_requests=log_requests,
@@ -1190,7 +1200,7 @@ async def _handle(
                         model=target.model,
                         retry_after=result.retry_after,
                     )
-                    last_error = f"{target.account_id}: {result.status_code}"
+                    _note_attempt_failure(target, str(result.status_code))
                     continue
                 await _log_error_and_raise(
                     log_requests=log_requests,
@@ -1274,9 +1284,13 @@ async def _handle(
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             handler.mark_cooldown(target.account_id, "network", model=target.model)
-            last_error = f"{target.account_id}: {type(e).__name__}"
+            _note_attempt_failure(target, type(e).__name__)
             continue
 
+    attempts_trail = "; ".join(attempt_errors) if attempt_errors else "no attempts made"
+    exhausted_detail = (
+        f"All providers exhausted ({len(attempt_errors)} attempt(s)): {attempts_trail}"
+    )
     if log_requests:
         await record_request_log(
             db_path,
@@ -1285,12 +1299,12 @@ async def _handle(
             status=503,
             duration_ms=_elapsed_ms(),
             request_body=logged_request_body,
-            error=f"All providers exhausted: {last_error}",
+            error=exhausted_detail,
             client_key_id=client_key_id,
             client_key_label=client_key_label,
             max_rows=retention,
         )
-    raise HTTPException(status_code=503, detail=f"All providers exhausted: {last_error}")
+    raise HTTPException(status_code=503, detail=exhausted_detail)
 
 
 @router.get("/models", dependencies=[Depends(require_gateway_rate_limit)])
