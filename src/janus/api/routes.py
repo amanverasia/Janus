@@ -627,7 +627,7 @@ async def _handle(
         attempt_thinking = thinking_intent or alias_intent
         model_caps = get_capabilities_for_model(target.prefix, target.model)
         attempt_req = strip_unsupported_modalities(canonical_req, model_caps)
-        if target.native_format in ("gemini", "ollama", "antigravity", "kiro", "vertex"):
+        if target.native_format in ("gemini", "ollama", "antigravity", "vertex"):
             attempt_req = await prefetch_remote_images(attempt_req, target.native_format)
 
         # ── Multi-endpoint transport passthrough ──────────────────────
