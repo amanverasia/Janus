@@ -136,3 +136,16 @@ def test_refine_int_body_no_crash_falls_back_to_status():
 def test_refine_none_body_unchanged():
     assert refine_error_type(400, None) == ErrorType.CLIENT_ERROR
     assert not is_fallback_eligible_refined(400, None)
+
+
+def test_kiro_improperly_formed_request_rotates():
+    # Kiro/CodeWhisperer reports quota/account problems as a bare 400
+    # "Improperly formed request." — must rotate to the next account.
+    body = {"message": "Improperly formed request."}
+    assert refine_error_type(400, body) == ErrorType.SERVER_ERROR
+    assert is_fallback_eligible_refined(400, body)
+
+
+def test_request_not_allowed_and_no_credentials_rotate():
+    assert is_fallback_eligible_refined(400, {"error": "Request not allowed"})
+    assert is_fallback_eligible_refined(400, {"error": "No credentials available"})

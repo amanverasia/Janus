@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from .base import RawResult, parse_error_body, parse_retry_after
+from .base import RawResult, parse_error_body, parse_google_retry_info, parse_retry_after
 
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
@@ -39,10 +39,11 @@ class GeminiProvider:
         r = await self._client.post(url, json=payload, headers={"Content-Type": "application/json"})
         if r.status_code >= 400:
             body = await r.aread()
+            error_body = parse_error_body(body)
             return RawResult(
                 status_code=r.status_code,
-                json_data=parse_error_body(body),
-                retry_after=parse_retry_after(r.headers),
+                json_data=error_body,
+                retry_after=parse_retry_after(r.headers) or parse_google_retry_info(error_body),
             )
         return RawResult(status_code=r.status_code, json_data=r.json())
 
@@ -57,10 +58,11 @@ class GeminiProvider:
         if r.status_code >= 400:
             body = await r.aread()
             await cm.__aexit__(None, None, None)
+            error_body = parse_error_body(body)
             return RawResult(
                 status_code=r.status_code,
-                json_data=parse_error_body(body),
-                retry_after=parse_retry_after(r.headers),
+                json_data=error_body,
+                retry_after=parse_retry_after(r.headers) or parse_google_retry_info(error_body),
             )
 
         async def line_iter() -> AsyncIterator[str]:

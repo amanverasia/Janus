@@ -66,6 +66,11 @@ BODY_PROVIDER_MISS_MARKERS: tuple[str, ...] = (
     "last message must be a user",
     "must end with a user message",
     "messages must alternate",
+    # Kiro/CodeWhisperer signals quota or account problems as a bare 400
+    # "Improperly formed request." — 9router rotates accounts on these.
+    "improperly formed request",
+    "request not allowed",
+    "no credentials",
 )
 
 

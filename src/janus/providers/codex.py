@@ -136,6 +136,93 @@ def _patch_sse_data_line(raw_line: str, done_items: list[dict[str, Any]]) -> str
     return f"{prefix}data: {json.dumps(patched_event, separators=(',', ':'), ensure_ascii=False)}"
 
 
+# SSE error markers inside 200-OK Codex bodies (9router parity): capacity and
+# overload errors must surface as a routable error instead of a broken stream.
+_SSE_ERROR_MARKERS = (
+    "selected model is at capacity",
+    "model_at_capacity",
+    "server_is_overloaded",
+    "service_unavailable_error",
+)
+_SSE_OUTPUT_MARKERS = (
+    "response.output_text.delta",
+    "response.function_call_arguments.delta",
+)
+_SSE_PEEK_MAX_BYTES = 262_144
+
+
+def _find_nested_message(value: Any, depth: int = 0) -> str | None:
+    if depth > 6:
+        return None
+    if isinstance(value, list):
+        for item in value:
+            found = _find_nested_message(item, depth + 1)
+            if found:
+                return found
+        return None
+    if not isinstance(value, dict):
+        return None
+    message = value.get("message")
+    if isinstance(message, str) and message.strip():
+        return message
+    for child in value.values():
+        found = _find_nested_message(child, depth + 1)
+        if found:
+            return found
+    return None
+
+
+def _extract_sse_error_message(lines: list[str]) -> str:
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped.startswith("data:"):
+            continue
+        data = stripped[5:].strip()
+        if not data or data == "[DONE]":
+            continue
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        message = _find_nested_message(event)
+        if message:
+            return message
+    return "Codex model is at capacity or overloaded"
+
+
+async def _peek_sse_transient_error(
+    line_gen: AsyncIterator[str],
+) -> tuple[list[str], RawResult | None]:
+    """Peek leading SSE lines for capacity/overload errors inside 200-OK bodies.
+
+    ChatGPT Codex reports "Selected model is at capacity" and
+    server_is_overloaded as SSE events in an otherwise-200 stream. Detect them
+    before committing the stream so the router can rotate to the next account
+    (mirrors 9router's _peekSseTransientError). Returns the consumed lines
+    (for replay) and an error RawResult when a marker matched.
+    """
+    buffered: list[str] = []
+    seen = 0
+    async for raw_line in line_gen:
+        buffered.append(raw_line)
+        seen += len(raw_line)
+        low = raw_line.lower()
+        if any(marker in low for marker in _SSE_ERROR_MARKERS):
+            return buffered, RawResult(
+                status_code=503,
+                json_data={
+                    "error": {
+                        "message": _extract_sse_error_message(buffered),
+                        "type": "server_error",
+                        "code": "service_unavailable",
+                    }
+                },
+            )
+        if any(marker in low for marker in _SSE_OUTPUT_MARKERS) or seen >= _SSE_PEEK_MAX_BYTES:
+            break
+    return buffered, None
+
+
 def _usage_limit_retry_after(status_code: int, body: dict[str, Any] | None) -> float | None:
     """Precise reset delay (seconds) from a Codex ``usage_limit_reached`` 429 body.
 
@@ -383,12 +470,24 @@ class CodexProvider:
                 or _usage_limit_retry_after(r.status_code, error_body),
             )
 
+        line_gen = r.aiter_lines()
+        buffered, sse_error = await _peek_sse_transient_error(line_gen)
+        if sse_error is not None:
+            await cm.__aexit__(None, None, None)
+            return sse_error
+
+        async def _replay_lines() -> AsyncIterator[str]:
+            for line in buffered:
+                yield line
+            async for line in line_gen:
+                yield line
+
         async def line_iter() -> AsyncIterator[str]:
             by_id: dict[str, dict[str, Any]] = {}
             order: list[str] = []
             anonymous: list[dict[str, Any]] = []
             try:
-                async for raw_line in r.aiter_lines():
+                async for raw_line in _replay_lines():
                     stripped = raw_line.strip()
                     if stripped.startswith("data:"):
                         payload_s = stripped[5:].strip()

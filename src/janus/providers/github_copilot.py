@@ -1,13 +1,41 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 
 from .base import RawResult, parse_error_body, parse_retry_after
+
+
+def _monthly_usage_retry_after(status_code: int, body: Any | None) -> float | None:
+    """Delay until the next UTC month for Copilot premium-request exhaustion.
+
+    GitHub returns 402 with "you've reached your ... usage limit for your
+    plan" when the monthly premium-request budget is spent; the quota only
+    resets on the 1st of the next month. Mirrors 9router's
+    githubMonthlyResetMs so the account cools down instead of being retried
+    every few minutes for the rest of the month.
+    """
+    if status_code != 402 or body is None:
+        return None
+    try:
+        text = json.dumps(body).lower()
+    except (TypeError, ValueError):
+        text = str(body).lower()
+    if "usage limit" not in text:
+        return None
+    now = datetime.now(UTC)
+    if now.month == 12:
+        next_month = datetime(now.year + 1, 1, 1, tzinfo=UTC)
+    else:
+        next_month = datetime(now.year, now.month + 1, 1, tzinfo=UTC)
+    return max(1.0, (next_month - now).total_seconds())
+
 
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
@@ -174,7 +202,8 @@ class GitHubCopilotProvider:
             return RawResult(
                 status_code=r.status_code,
                 json_data=json_data,
-                retry_after=parse_retry_after(r.headers),
+                retry_after=parse_retry_after(r.headers)
+                or _monthly_usage_retry_after(r.status_code, json_data),
             )
         return RawResult(status_code=r.status_code, json_data=json_data)
 
@@ -185,10 +214,12 @@ class GitHubCopilotProvider:
         if r.status_code >= 400:
             body = await r.aread()
             await cm.__aexit__(None, None, None)
+            error_body = parse_error_body(body)
             return RawResult(
                 status_code=r.status_code,
-                json_data=parse_error_body(body),
-                retry_after=parse_retry_after(r.headers),
+                json_data=error_body,
+                retry_after=parse_retry_after(r.headers)
+                or _monthly_usage_retry_after(r.status_code, error_body),
             )
 
         async def line_iter() -> AsyncIterator[str]:
