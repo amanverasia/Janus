@@ -1,3 +1,6 @@
+import json
+import zlib
+
 import httpx
 import pytest
 import respx
@@ -31,6 +34,195 @@ def test_build_provider_specialized_types():
             )
         )
         assert isinstance(p, cls)
+
+
+def test_kiro_endpoint_order_and_headers_match_9router():
+    social = KiroProvider(
+        api_key='{"accessToken":"tok","authMethod":"google"}',
+        base_url="https://codewhisperer.us-east-1.amazonaws.com",
+    )
+    assert "kiro.dev" in social._ordered_bases()[0]
+    assert "X-Amz-Target" not in social._headers(
+        "https://runtime.us-east-1.kiro.dev/generateAssistantResponse"
+    )
+    assert (
+        social._headers("https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse")[
+            "X-Amz-Target"
+        ]
+        == "AmazonCodeWhispererStreamingService.GenerateAssistantResponse"
+    )
+
+    api_key = KiroProvider(
+        api_key='{"accessToken":"tok","authMethod":"api_key"}',
+        base_url="https://runtime.us-east-1.kiro.dev",
+    )
+    assert api_key._ordered_bases()[0].startswith("https://q.")
+    assert api_key._headers(api_key._ordered_bases()[0])["tokentype"] == "API_KEY"
+
+    idc = KiroProvider(
+        api_key=('{"accessToken":"tok","authMethod":"idc","extra":{"region":"eu-west-1"}}'),
+        base_url="https://runtime.us-east-1.kiro.dev",
+    )
+    assert "eu-west-1.amazonaws.com" in idc._ordered_bases()[0]
+
+
+def _eventstream_frame(payload: dict[str, object]) -> bytes:
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    total = 16 + len(body)
+    prelude = total.to_bytes(4, "big") + (0).to_bytes(4, "big")
+    prelude_crc = zlib.crc32(prelude).to_bytes(4, "big")
+    without_crc = prelude + prelude_crc + body
+    return without_crc + zlib.crc32(without_crc).to_bytes(4, "big")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_kiro_native_stream_separates_each_openai_sse_event():
+    upstream = _eventstream_frame({"content": "hello"}) + _eventstream_frame({"content": " world"})
+    respx.post("https://runtime.us-east-1.kiro.dev/generateAssistantResponse").mock(
+        return_value=httpx.Response(
+            200,
+            content=upstream,
+            headers={"content-type": "application/vnd.amazon.eventstream"},
+        )
+    )
+    provider = KiroProvider(
+        api_key='{"accessToken":"tok","authMethod":"google"}',
+        base_url="https://runtime.us-east-1.kiro.dev",
+    )
+    result = await provider.call(
+        {"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "hi"}]},
+        stream=True,
+    )
+    assert result.lines is not None
+    lines = [line async for line in result.lines]
+    assert len(lines) == 4
+    assert lines[1] == lines[3] == ""
+
+    # Model the OpenAI SDK SSEDecoder: data lines within one event are joined
+    # with a newline and parsed only when the blank separator arrives.
+    events: list[dict[str, object]] = []
+    data_lines: list[str] = []
+    for line in lines:
+        if line == "":
+            events.append(json.loads("\n".join(data_lines)))
+            data_lines = []
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    assert [event["choices"][0]["delta"]["content"] for event in events] == [
+        "hello",
+        " world",
+    ]
+    await provider.close()
+
+
+def test_kiro_payload_uses_last_user_as_current_and_preserves_model():
+    p = KiroProvider(
+        api_key='{"accessToken":"tok","extra":{"profileArn":"arn:test"}}',
+        base_url="https://runtime.us-east-1.kiro.dev",
+    )
+    body = p._to_kiro_payload(
+        {
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "answer"},
+                {"role": "user", "content": "last"},
+            ],
+            "max_tokens": 17,
+            "temperature": 0.2,
+            "top_p": 0.9,
+        }
+    )
+    state = body["conversationState"]
+    assert state["currentMessage"]["userInputMessage"]["content"] == "last"
+    assert state["currentMessage"]["userInputMessage"]["modelId"] == "claude-sonnet-4"
+    assert state["history"] == [
+        {"userInputMessage": {"content": "first", "modelId": "claude-sonnet-4"}},
+        {"assistantResponseMessage": {"content": "answer"}},
+    ]
+    assert body["profileArn"] == "arn:test"
+    assert body["inferenceConfig"] == {
+        "maxTokens": 17,
+        "temperature": 0.2,
+        "topP": 0.9,
+    }
+
+
+def test_kiro_payload_preserves_pi_system_tools_and_tool_results():
+    p = KiroProvider(api_key="tok", base_url="https://runtime.us-east-1.kiro.dev")
+    body = p._to_kiro_payload(
+        {
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": "You are Pi."},
+                {"role": "user", "content": "Read a file."},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "read", "arguments": '{"path":"a.txt"}'},
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": "call_1",
+                    "content": "contents",
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "description": "Read a file",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"path": {"type": "string"}},
+                            "required": ["path"],
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+    state = body["conversationState"]
+    current = state["currentMessage"]["userInputMessage"]
+    assert current["content"] == "You are Pi.\n\ncontinue"
+    assert current["userInputMessageContext"]["toolResults"] == [
+        {
+            "toolUseId": "call_1",
+            "content": [{"text": "contents"}],
+            "status": "success",
+        }
+    ]
+    assert current["userInputMessageContext"]["tools"][0]["toolSpecification"]["name"] == "read"
+    assert state["history"][1]["assistantResponseMessage"]["toolUses"] == [
+        {"toolUseId": "call_1", "name": "read", "input": {"path": "a.txt"}}
+    ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_kiro_bridge_keeps_openai_payload():
+    route = respx.post("https://bridge.test/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": []})
+    )
+    p = KiroProvider(api_key="tok", base_url="https://bridge.test/v1")
+    result = await p.call(
+        {"model": "m1", "messages": [{"role": "user", "content": "hi"}]},
+        stream=False,
+    )
+    assert result.status_code == 200
+    import json
+
+    assert json.loads(route.calls.last.request.content)["messages"][0]["content"] == "hi"
+    await p.close()
 
 
 @pytest.mark.asyncio

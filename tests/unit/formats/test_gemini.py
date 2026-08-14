@@ -10,9 +10,42 @@ from janus.canonical.models import (
     TextPart,
     Usage,
 )
-from janus.formats.gemini import GeminiAdapter
+from janus.formats.gemini import GeminiAdapter, _sanitize_parameter_schema
 
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
+
+
+def test_antigravity_schema_sanitizer_flattens_pi_browser_union():
+    schema = {
+        "type": "object",
+        "properties": {
+            "qa": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "attached": {"type": "boolean", "const": True},
+                            "name": {"type": ["string", "null"], "minLength": 1},
+                        },
+                        "required": ["attached", "missing"],
+                        "additionalProperties": False,
+                    },
+                    {"type": "string"},
+                ]
+            }
+        },
+        "additionalProperties": False,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+    }
+    cleaned = _sanitize_parameter_schema(schema)
+    qa = cleaned["properties"]["qa"]
+    assert "anyOf" not in qa
+    assert qa["type"] == "object"
+    assert qa["properties"]["attached"] == {"type": "boolean", "enum": ["True"]}
+    assert qa["properties"]["name"] == {"type": "string"}
+    assert qa["required"] == ["attached"]
+    assert "additionalProperties" not in cleaned
+    assert "$schema" not in cleaned
 
 
 def test_parse_generate_content():
@@ -88,6 +121,41 @@ def test_reasoning_part_does_not_crash_build():
     assert payload is not None
     text_parts = [p for p in payload["contents"][0]["parts"] if "text" in p]
     assert any(p["text"] == "hi" for p in text_parts)
+
+
+def test_tool_history_preserves_ids_and_function_names_for_antigravity_claude():
+    from janus.canonical.models import ToolResult, ToolUse
+
+    req = CanonicalRequest(
+        model="claude-opus-4-6-thinking",
+        messages=[
+            Message(
+                role=Role.ASSISTANT,
+                content=[
+                    TextPart(text="checking"),
+                    ToolUse(id="call_browser_1", name="agent_browser", input={"args": ["open"]}),
+                ],
+            ),
+            Message(
+                role=Role.TOOL,
+                content=[ToolResult(tool_use_id="call_browser_1", content="page")],
+            ),
+        ],
+    )
+    payload = GeminiAdapter().build_upstream_request(req, "claude-opus-4-6-thinking")
+    function_call = payload["contents"][0]["parts"][1]["functionCall"]
+    function_response = payload["contents"][1]["parts"][0]["functionResponse"]
+    assert function_call == {
+        "id": "call_browser_1",
+        "name": "agent_browser",
+        "args": {"args": ["open"]},
+    }
+    assert function_response == {
+        "id": "call_browser_1",
+        "name": "agent_browser",
+        "response": {"result": "page"},
+    }
+    assert payload["contents"][1]["role"] == "user"
 
 
 def test_tool_choice_required_maps_to_gemini_any():

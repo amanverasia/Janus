@@ -107,11 +107,8 @@ CLAUDE_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
-# Google OAuth clients are public desktop/CLI apps, but must not be hard-coded in
-# the repo (GitHub push protection). Set via env when using Antigravity / Gemini CLI.
-# Installed-app OAuth clients are supplied by deployment configuration. Keeping
-# these out of source avoids publishing client material and supports separately
-# registered clients for different deployments.
+# Public installed-app OAuth client credentials are deployment supplied. This
+# keeps provider fingerprints configurable and avoids publishing credentials.
 ANTIGRAVITY_CLIENT_ID = os.environ.get("JANUS_ANTIGRAVITY_CLIENT_ID", "")
 ANTIGRAVITY_CLIENT_SECRET = os.environ.get("JANUS_ANTIGRAVITY_CLIENT_SECRET", "")
 GOOGLE_CLI_CLIENT_ID = os.environ.get("JANUS_GOOGLE_CLI_CLIENT_ID", "")
@@ -198,6 +195,39 @@ async def refresh_google(
     if not isinstance(data, dict) or not data.get("access_token"):
         return None
     return dict(data)
+
+
+async def refresh_kiro_aws(
+    refresh_tok: str,
+    client: httpx.AsyncClient,
+    *,
+    client_id: str,
+    client_secret: str,
+    region: str = "us-east-1",
+) -> dict[str, Any] | None:
+    """Refresh AWS Builder ID/IDC Kiro credentials."""
+    endpoint = f"https://oidc.{region}.amazonaws.com/token"
+    r = await client.post(
+        endpoint,
+        json={
+            "clientId": client_id,
+            "clientSecret": client_secret,
+            "refreshToken": refresh_tok,
+            "grantType": "refresh_token",
+        },
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    if r.status_code >= 400:
+        return None
+    data = r.json()
+    if not isinstance(data, dict) or not data.get("accessToken"):
+        return None
+    return {
+        "access_token": data["accessToken"],
+        "refresh_token": data.get("refreshToken") or refresh_tok,
+        "expires_in": data.get("expiresIn"),
+        "profileArn": data.get("profileArn"),
+    }
 
 
 async def refresh_kiro_social(
