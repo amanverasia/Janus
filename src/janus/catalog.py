@@ -1351,13 +1351,31 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         },
     },
     "kiro": {
+        "inventory": {
+            "id": "kiro",
+            "name": "kiro",
+            "display_name": "Kiro (AWS)",
+            "base_url": "https://runtime.us-east-1.kiro.dev",
+            "auth_type": "oauth",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": None,
+            "models_endpoint": None,
+            "health_check_endpoint": None,
+            "credit_check_endpoint": None,
+            "billing_model": "subscription",
+            "is_direct": True,
+            "routing_note": (
+                "Paste a Kiro OAuth credential JSON blob containing accessToken and refreshToken."
+            ),
+        },
         "gateway": {
             "id": "kiro",
             "name": "Kiro",
             "icon": "☁️",
             "logo": "",
             "api_type": "kiro",
-            "base_url": "https://codewhisperer.us-east-1.amazonaws.com",
+            "base_url": "https://runtime.us-east-1.kiro.dev",
             "prefix": "kiro",
             "default_models": ["claude-sonnet-4", "claude-sonnet-4-thinking"],
         },

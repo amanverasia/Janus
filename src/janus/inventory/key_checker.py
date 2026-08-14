@@ -84,6 +84,10 @@ CHAT_PROBE_COMPATIBLE = {
 
 CHAT_VALIDATED_PROVIDERS = {"perplexity", "nvidia", "zhipu", "ollama"}
 
+# Kiro uses AWS EventStream and has no /models endpoint. Validate with a
+# native GenerateAssistantResponse probe instead of the generic /models check.
+KIRO_PROBE_MODEL = "claude-sonnet-4"
+
 OPENAI_COMPAT_PROVIDERS = {
     "openai",
     "groq",
@@ -990,6 +994,48 @@ async def _probe_codex_access_token(
         return None
 
 
+async def _validate_kiro_key(
+    key_value: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate Kiro through its native EventStream inference endpoint."""
+    from janus.providers.kiro import KiroProvider
+
+    provider = KiroProvider(api_key=key_value, base_url="https://runtime.us-east-1.kiro.dev")
+    try:
+        result = await provider.call(
+            {
+                "model": KIRO_PROBE_MODEL,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 1,
+            },
+            stream=False,
+        )
+        if result.status_code in {200, 201}:
+            return {
+                "is_valid": True,
+                "is_usable": True,
+                "usability_status": "usable",
+                "usability_note": "Native Kiro inference probe succeeded",
+                # Persist the refreshed access token and expires_at. Without
+                # this, every provider reload starts from the stale export.
+                "key_value": provider.credential_blob(),
+            }
+        if result.status_code in {401, 403}:
+            return {"is_valid": False, "error": f"Kiro auth failed ({result.status_code})"}
+        if result.status_code == 429:
+            return {
+                "is_valid": True,
+                "partial_check": True,
+                "is_usable": False,
+                "usability_status": "rate_limited",
+                "error": "Kiro probe rate limited",
+            }
+        return {"is_valid": False, "error": f"Kiro probe HTTP {result.status_code}"}
+    finally:
+        await provider.close()
+
+
 async def _validate_antigravity_key(
     key_value: str,
     metadata: dict[str, Any] | None = None,
@@ -1220,6 +1266,8 @@ async def validate_key(
             return await _validate_codex_key(key_value, metadata)
         if provider_id == "antigravity":
             return await _validate_antigravity_key(key_value, metadata)
+        if provider_id == "kiro":
+            return await _validate_kiro_key(key_value, metadata)
 
         if provider_id == TOKENPLAN_PROVIDER_ID:
             return await _validate_tokenplan_key(

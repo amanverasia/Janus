@@ -1191,6 +1191,43 @@ async def api_fetch_models(request: Request) -> JSONResponse:
                 models = []
             return JSONResponse({"models": models})
 
+        if api_type == "kiro":
+            from janus.providers.kiro import KiroProvider
+
+            if not api_key:
+                return JSONResponse({"error": "No Kiro credential available"}, status_code=400)
+            kiro_credentials: list[str] = [api_key]
+            if provider_id:
+                # A gateway backed by inventory has many credentials. The first
+                # routable account may be valid for chat but lack permission for
+                # ListAvailableModels, so try all active accounts until one can
+                # return the shared Kiro catalog.
+                from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
+                from janus.storage.providers_db import get_provider
+                from janus.storage.upstream_keys import list_routable_upstream_keys
+
+                provider = await get_provider(db_path, provider_id)
+                if provider:
+                    inventory_id = inventory_provider_id_for_prefix(str(provider["prefix"]))
+                    rows = await list_routable_upstream_keys(db_path, inventory_id)
+                    inventory_credentials = [str(row["key_value"]) for row in rows]
+                    if inventory_credentials:
+                        kiro_credentials = inventory_credentials
+
+            errors: list[str] = []
+            for kiro_credential in kiro_credentials:
+                kiro = KiroProvider(api_key=kiro_credential, base_url=base_url)
+                try:
+                    kiro_models, error = await kiro.list_models()
+                finally:
+                    await kiro.close()
+                if kiro_models:
+                    return JSONResponse({"models": kiro_models})
+                if error and error not in errors:
+                    errors.append(error)
+            detail = "; ".join(errors[:3]) or "No Kiro account returned a model catalog"
+            return JSONResponse({"error": detail}, status_code=502)
+
         if api_type == "github_copilot":
             from janus.providers.github_copilot import GitHubCopilotProvider
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -44,6 +45,31 @@ _THINKING_BLACKLIST = frozenset(
         "thinkingConfig",
     }
 )
+
+
+def _unwrap_envelope_line(raw: str) -> str:
+    """Rewrite an SSE line so envelope-wrapped payloads look like plain Gemini chunks.
+
+    Antigravity streams ``data: {"response": {"candidates": [...]}, "traceId": ...}``;
+    the translator and OpenAI passthrough both expect ``data: {"candidates": [...]}``.
+    """
+    prefix = ""
+    line = raw
+    if raw.startswith("data: "):
+        prefix = "data: "
+        line = raw[6:].lstrip()
+    elif raw.startswith("data:"):
+        prefix = "data:"
+        line = raw[5:].lstrip()
+    if not line.startswith("{"):
+        return raw
+    try:
+        parsed = json.loads(line)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("response"), dict):
+        return raw
+    return prefix + json.dumps(parsed["response"], separators=(",", ":"), ensure_ascii=False)
 
 
 class AntigravityProvider:
@@ -91,7 +117,13 @@ class AntigravityProvider:
         if not rt:
             return None
         async with self._refresh_lock:
-            if not needs_refresh(self._cred):
+            has_refresh = bool(refresh_token(self._cred))
+            has_expiry = (
+                self._cred.get("expires_at") is not None
+                or self._cred.get("expiresAt") is not None
+                or self.credential_expires_at is not None
+            )
+            if not needs_refresh(self._cred) and (has_expiry or not has_refresh):
                 return None
             if self.variant in ("gemini_cli", "gemini-cli"):
                 cid, csec = GOOGLE_CLI_CLIENT_ID, GOOGLE_CLI_CLIENT_SECRET
@@ -180,6 +212,11 @@ class AntigravityProvider:
             data = r.json()
         except Exception:
             data = {"error": r.text[:500]}
+        # Antigravity wraps every response in an envelope:
+        # {"response": {...}, "traceId": ..., "metadata": ...}. Unwrap so the
+        # canonical adapter sees candidates/usageMetadata at the top level.
+        if isinstance(data, dict) and isinstance(data.get("response"), dict):
+            data = data["response"]
         return RawResult(status_code=r.status_code, json_data=data)
 
     async def _call_stream(self, url: str, payload: dict[str, Any]) -> RawResult:
@@ -197,7 +234,7 @@ class AntigravityProvider:
         async def line_iter() -> AsyncIterator[str]:
             try:
                 async for raw_line in r.aiter_lines():
-                    yield raw_line
+                    yield _unwrap_envelope_line(raw_line)
             finally:
                 await cm.__aexit__(None, None, None)
 

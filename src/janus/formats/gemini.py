@@ -95,14 +95,16 @@ class GeminiStreamParser:
             fc = part.get("functionCall")
             if fc:
                 name = fc.get("name", "")
-                if name not in self._tool_indices:
+                tool_id = fc.get("id") or name
+                tool_key = str(tool_id or name)
+                if tool_key not in self._tool_indices:
                     ci = self._next_block
                     self._next_block += 1
-                    self._tool_indices[name] = ci
+                    self._tool_indices[tool_key] = ci
                     events.append(
                         ToolUseBlockStart(
                             index=ci,
-                            id=name,
+                            id=str(tool_id),
                             name=name,
                         )
                     )
@@ -204,6 +206,151 @@ class GeminiStreamEmitter:
         if not self._finished:
             self._finished = True
         return []
+
+
+_UNSUPPORTED_SCHEMA_KEYS = frozenset(
+    {
+        "minLength",
+        "maxLength",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "minItems",
+        "maxItems",
+        "format",
+        "multipleOf",
+        "uniqueItems",
+        "contains",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "contentSchema",
+        "default",
+        "examples",
+        "$schema",
+        "$defs",
+        "definitions",
+        "$ref",
+        "$comment",
+        "deprecated",
+        "readOnly",
+        "writeOnly",
+        "additionalProperties",
+        "propertyNames",
+        "patternProperties",
+        "enumDescriptions",
+        "not",
+        "dependencies",
+        "dependentSchemas",
+        "dependentRequired",
+        "title",
+        "optional",
+        "if",
+        "then",
+        "else",
+        "contentMediaType",
+        "contentEncoding",
+    }
+)
+
+
+def _schema_score(schema: Any) -> int:
+    if not isinstance(schema, dict) or schema.get("type") == "null":
+        return -1
+    if schema.get("type") == "object" or schema.get("properties"):
+        return 3
+    if schema.get("type") == "array" or schema.get("items"):
+        return 2
+    return 1 if schema.get("type") else 0
+
+
+def _sanitize_parameter_schema(schema: Any) -> Any:
+    """Port 9router's Antigravity-compatible JSON Schema reduction.
+
+    Cloud Code forwards tool schemas to multiple model backends. Its accepted
+    subset is narrower than JSON Schema 2020-12, so complex Pi tool schemas
+    must be flattened and stripped before transmission.
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    working = dict(schema)
+    const = working.pop("const", None)
+    if const is not None and "enum" not in working:
+        working["enum"] = [str(const)]
+        working.setdefault("type", "string")
+
+    for union_key in ("anyOf", "oneOf"):
+        variants = working.pop(union_key, None)
+        if isinstance(variants, list) and variants:
+            choices = [item for item in variants if _schema_score(item) >= 0]
+            if choices:
+                selected = max(choices, key=_schema_score)
+                if isinstance(selected, dict):
+                    working.update(selected)
+
+    all_of = working.pop("allOf", None)
+    if isinstance(all_of, list):
+        properties = dict(working.get("properties") or {})
+        required = list(working.get("required") or [])
+        for item in all_of:
+            if not isinstance(item, dict):
+                continue
+            properties.update(item.get("properties") or {})
+            for name in item.get("required") or []:
+                if name not in required:
+                    required.append(name)
+        if properties:
+            working["properties"] = properties
+        if required:
+            working["required"] = required
+
+    schema_type = working.get("type")
+    if isinstance(schema_type, list):
+        non_null = [item for item in schema_type if item != "null"]
+        working["type"] = non_null[0] if non_null else "string"
+    if "properties" in working and not working.get("type"):
+        working["type"] = "object"
+
+    out: dict[str, Any] = {}
+    for key, value in working.items():
+        if key in _UNSUPPORTED_SCHEMA_KEYS or key.startswith("x-"):
+            continue
+        if key == "properties" and isinstance(value, dict):
+            out[key] = {name: _sanitize_parameter_schema(item) for name, item in value.items()}
+        elif key == "items" and isinstance(value, dict):
+            out[key] = _sanitize_parameter_schema(value)
+        elif isinstance(value, dict):
+            out[key] = _sanitize_parameter_schema(value)
+        elif isinstance(value, list) and key != "enum":
+            out[key] = [
+                _sanitize_parameter_schema(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        elif key == "enum" and isinstance(value, list):
+            out[key] = [str(item) for item in value]
+            out.setdefault("type", "string")
+        else:
+            out[key] = value
+
+    out_properties = out.get("properties")
+    out_required = out.get("required")
+    if isinstance(out_properties, dict) and isinstance(out_required, list):
+        valid = [name for name in out_required if name in out_properties]
+        if valid:
+            out["required"] = valid
+        else:
+            out.pop("required", None)
+    if not out or (out.get("type") == "object" and not out.get("properties")):
+        out = {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Brief explanation of why you are calling this tool",
+                }
+            },
+            "required": ["reason"],
+        }
+    return out
 
 
 class GeminiAdapter:
@@ -309,7 +456,14 @@ class GeminiAdapter:
 
     def build_upstream_request(self, req: CanonicalRequest, model: str) -> dict[str, Any]:
         system_parts = [{"text": b.text} for b in req.system]
-        contents = [self._build_content(msg) for msg in req.messages]
+        tool_names: dict[str, str] = {}
+        for message in req.messages:
+            if not isinstance(message.content, list):
+                continue
+            for part in message.content:
+                if isinstance(part, ToolUse) and part.id:
+                    tool_names[part.id] = part.name
+        contents = [self._build_content(msg, tool_names) for msg in req.messages]
 
         payload: dict[str, Any] = {
             "model": model,
@@ -337,7 +491,7 @@ class GeminiAdapter:
                         {
                             "name": t.function.name,
                             "description": t.function.description,
-                            "parameters": t.function.parameters,
+                            "parameters": _sanitize_parameter_schema(t.function.parameters),
                         }
                         for t in req.tools
                     ]
@@ -365,7 +519,7 @@ class GeminiAdapter:
         return {"function_calling_config": {"mode": "ANY"}}
 
     @staticmethod
-    def _build_content(msg: Message) -> dict[str, Any]:
+    def _build_content(msg: Message, tool_names: dict[str, str] | None = None) -> dict[str, Any]:
         role = _ROLE_TO_GEMINI.get(msg.role.value, "user")
         if isinstance(msg.content, str):
             return {"role": role, "parts": [{"text": msg.content}]}
@@ -375,14 +529,35 @@ class GeminiAdapter:
             if isinstance(part, TextPart):
                 parts.append({"text": part.text})
             elif isinstance(part, ToolUse):
-                parts.append({"functionCall": {"name": part.name, "args": part.input}})
+                # Cloud Code may route Gemini-shaped requests to Claude. The
+                # bridge requires a stable id to construct Anthropic tool_use;
+                # omitting it causes intermittent `tool_use.id: Field required`
+                # once a Pi conversation contains tool history.
+                parts.append(
+                    {
+                        "functionCall": {
+                            "id": part.id,
+                            "name": part.name,
+                            "args": part.input,
+                        }
+                    }
+                )
             elif isinstance(part, ToolResult):
                 content_str = tool_result_text(part.content)
                 try:
                     response = json.loads(content_str)
                 except (json.JSONDecodeError, TypeError):
                     response = {"result": content_str}
-                parts.append({"functionResponse": {"id": part.tool_use_id, "response": response}})
+                name = (tool_names or {}).get(part.tool_use_id) or part.tool_use_id or "tool"
+                parts.append(
+                    {
+                        "functionResponse": {
+                            "id": part.tool_use_id,
+                            "name": name,
+                            "response": response,
+                        }
+                    }
+                )
         return {"role": role, "parts": parts}
 
     # ---- response parsing ----
@@ -403,7 +578,7 @@ class GeminiAdapter:
                 fc = part["functionCall"] or {}
                 parts.append(
                     ToolUse(
-                        id=fc.get("name", ""),
+                        id=fc.get("id") or fc.get("name", ""),
                         name=fc.get("name", ""),
                         input=fc.get("args") or {},
                     )
@@ -430,7 +605,15 @@ class GeminiAdapter:
             if isinstance(part, TextPart):
                 parts.append({"text": part.text})
             elif isinstance(part, ToolUse):
-                parts.append({"functionCall": {"name": part.name, "args": part.input}})
+                parts.append(
+                    {
+                        "functionCall": {
+                            "id": part.id,
+                            "name": part.name,
+                            "args": part.input,
+                        }
+                    }
+                )
 
         return {
             "candidates": [
