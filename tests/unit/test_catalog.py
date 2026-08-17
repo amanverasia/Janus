@@ -41,9 +41,9 @@ GATEWAY_FIELDS = {
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 50
-    assert len(inventory_entries()) == 42
-    assert len(gateway_entries()) == 39
+    assert len(PROVIDERS) == 51
+    assert len(inventory_entries()) == 43
+    assert len(gateway_entries()) == 40
 
 
 def test_groq_default_model_is_valid() -> None:

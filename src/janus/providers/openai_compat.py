@@ -5,8 +5,9 @@ from typing import Any
 
 import httpx
 
-from .base import RawResult, parse_error_body, parse_retry_after
 from janus.inventory.url_guard import BROWSER_USER_AGENT
+
+from .base import RawResult, parse_error_body, parse_retry_after
 
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 _DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=5.0)
