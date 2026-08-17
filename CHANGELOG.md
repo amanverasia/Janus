@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.5] - 2026-08-17
+### Added
+- **Gorouter provider** — `gorouter` (`https://gorouter.app/v1`) is registered in the provider catalog as an OpenAI-compatible gateway with its Claude models (`claude-opus-5-thinking`, `claude-opus-5`, `claude-opus-4-8`, `claude-opus-4-8-thinking`); gorouter keys are validated with a real chat probe
+### Fixed
+- **Cloudflare-protected upstreams** — outbound requests (key validation/probes, dashboard "fetch models", and runtime OpenAI-compatible calls) now send a browser-like User-Agent by default, so gateways behind Cloudflare bot protection (gorouter / new-api style) no longer return a 403 to plain `httpx` fingerprints
+
 ## [2.1.4] - 2026-08-14
 
 ### Fixed

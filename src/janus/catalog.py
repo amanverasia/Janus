@@ -1206,6 +1206,40 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "routing_note": "Web search API. Keys start with BSA.",
         }
     },
+    "gorouter": {
+        "inventory": {
+            "id": "gorouter",
+            "name": "gorouter",
+            "display_name": "Gorouter",
+            "base_url": "https://gorouter.app/v1",
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": "GOROUTER_API_KEY",
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "unknown",
+            "is_direct": True,
+            "routing_note": "OpenAI-compatible Claude gateway behind Cloudflare (gorouter.app).",
+        },
+        "gateway": {
+            "id": "gorouter",
+            "name": "Gorouter",
+            "icon": "🔀",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": "https://gorouter.app/v1",
+            "prefix": "gorouter",
+            "default_models": [
+                "claude-opus-5-thinking",
+                "claude-opus-5",
+                "claude-opus-4-8",
+                "claude-opus-4-8-thinking",
+            ],
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+    },
     "custom": {
         "inventory": {
             "id": "custom",
@@ -1457,6 +1491,7 @@ GATEWAY_ORDER: list[str] = [
     "xiaomi",
     "xiaomi_tokenplan",
     "mimo_free",
+    "gorouter",
     "custom",
 ]
 

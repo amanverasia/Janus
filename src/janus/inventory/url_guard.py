@@ -189,6 +189,18 @@ def _resolve_redirect(current_url: str, location: str) -> str:
     return str(httpx.URL(location, base=current_url))
 
 
+# Some upstream gateways (e.g. new-api/gorouter-style dashboards) sit behind
+# Cloudflare bot protection that returns a 403 challenge to clients that do not
+# present a browser-like User-Agent (plain httpx/python-httpx fingerprints are
+# blocked). Send a real browser UA by default so validation/probes/health
+# checks are not mistaken for bots. Callers may still override it.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+)
+DEFAULT_HTTP_HEADERS = {"User-Agent": BROWSER_USER_AGENT}
+
+
 async def safe_fetch(
     url: str,
     *,
@@ -202,12 +214,15 @@ async def safe_fetch(
     current_content = content
 
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+        merged_headers = dict(DEFAULT_HTTP_HEADERS)
+        if headers:
+            merged_headers.update(headers)
         for hop in range(MAX_REDIRECTS + 1):
             await assert_public_url(current_url)
             response = await client.request(
                 current_method,
                 current_url,
-                headers=headers,
+                headers=merged_headers,
                 content=current_content,
             )
 

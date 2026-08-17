@@ -5,6 +5,8 @@ from typing import Any
 
 import httpx
 
+from janus.inventory.url_guard import BROWSER_USER_AGENT
+
 from .base import RawResult, parse_error_body, parse_retry_after
 
 _DEFAULT_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
@@ -26,6 +28,7 @@ class OpenAICompatProvider:
         self._client = httpx.AsyncClient(
             limits=_DEFAULT_LIMITS,
             timeout=_DEFAULT_TIMEOUT,
+            headers={"User-Agent": BROWSER_USER_AGENT},
         )
 
     @property
