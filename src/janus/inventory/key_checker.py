@@ -80,6 +80,7 @@ CHAT_PROBE_COMPATIBLE = {
     "ollama",
     "custom",
     "anthropic",
+    "gorouter",
 }
 
 CHAT_VALIDATED_PROVIDERS = {"perplexity", "nvidia", "zhipu", "ollama"}
@@ -124,6 +125,7 @@ CHEAP_PROBE_MODELS: dict[str, str] = {
     "siliconflow": "Qwen/Qwen2.5-7B-Instruct",
     "stepfun": "step-1-flash",
     "ollama": "gpt-oss:20b",
+    "gorouter": "claude-opus-4-8",
 }
 
 # Inventory providers that may authenticate on more than one regional base.

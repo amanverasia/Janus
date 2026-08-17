@@ -1067,6 +1067,8 @@ async def api_fetch_models(request: Request) -> JSONResponse:
 
     import httpx
 
+    from janus.inventory.url_guard import BROWSER_USER_AGENT
+
     db_path = await _ensure_db(request)
     body = await request.body()
     params = parse_qs(body.decode())
@@ -1087,7 +1089,10 @@ async def api_fetch_models(request: Request) -> JSONResponse:
 
     try:
         if api_type == "openai_compat":
-            headers: dict[str, str] = {"Content-Type": "application/json"}
+            headers: dict[str, str] = {
+                "Content-Type": "application/json",
+                "User-Agent": BROWSER_USER_AGENT,
+            }
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
             async with httpx.AsyncClient(timeout=15) as client:
@@ -1105,6 +1110,7 @@ async def api_fetch_models(request: Request) -> JSONResponse:
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
+                "User-Agent": BROWSER_USER_AGENT,
             }
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(f"{base_url}/v1/models", headers=headers)
@@ -1121,7 +1127,11 @@ async def api_fetch_models(request: Request) -> JSONResponse:
             if api_key:
                 params_dict["key"] = api_key
             async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(f"{base_url}/v1beta/models", params=params_dict)
+                resp = await client.get(
+                    f"{base_url}/v1beta/models",
+                    params=params_dict,
+                    headers={"User-Agent": BROWSER_USER_AGENT},
+                )
             if resp.status_code != 200:
                 return JSONResponse(
                     {"error": f"Upstream returned {resp.status_code}"}, status_code=502
