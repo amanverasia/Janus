@@ -428,8 +428,64 @@ async def api_clear_cooldowns(request: Request) -> HTMLResponse:
 @router.get("/keys", response_class=HTMLResponse)
 async def keys_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
-    keys = await list_keys(db_path)
-    return await _render_page(request, "keys.html", db_path, keys=keys, new_key=None)
+    all_keys = await list_keys(db_path)
+    active = [k for k in all_keys if k["is_active"]]
+    revoked = [k for k in all_keys if not k["is_active"]]
+    return await _render_page(
+        request,
+        "keys.html",
+        db_path,
+        keys=active,
+        active_count=len(active),
+        revoked_count=len(revoked),
+        new_key=None,
+    )
+
+
+@router.get("/api/keys/partial", response_class=HTMLResponse)
+async def keys_partial(request: Request) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    status = request.query_params.get("status", "active").lower()
+    new_key = request.query_params.get("new_key")
+    all_keys = await list_keys(db_path)
+    active = [k for k in all_keys if k["is_active"]]
+    revoked = [k for k in all_keys if not k["is_active"]]
+    if status == "revoked":
+        shown = revoked
+    elif status == "all":
+        shown = all_keys
+    else:
+        shown = active
+        status = "active"
+    context: dict[str, Any] = {
+        "request": request,
+        "keys": shown,
+        "status": status,
+        "active_count": len(active),
+        "revoked_count": len(revoked),
+        "new_key": new_key if new_key else None,
+    }
+    return _templates.TemplateResponse(request, "keys_partial.html", context)
+
+
+@router.get("/api/keys/{key_id}/edit", response_class=HTMLResponse)
+async def keys_edit_form(request: Request, key_id: int) -> HTMLResponse:
+    db_path = await _ensure_db(request)
+    all_keys = await list_keys(db_path)
+    key = next((k for k in all_keys if k["id"] == key_id), None)
+    if key is None:
+        return HTMLResponse("Key not found", status_code=404)
+    budget = await get_budget_status(db_path, key_id=key_id)
+    daily_budget = f"{budget['daily_limit']:.2f}" if budget else ""
+    allowed_models = key.get("allowed_models")
+    models_text = ", ".join(allowed_models) if allowed_models else ""
+    context: dict[str, Any] = {
+        "request": request,
+        "key": key,
+        "daily_budget": daily_budget,
+        "models_text": models_text,
+    }
+    return _templates.TemplateResponse(request, "keys_edit_modal.html", context)
 
 
 @router.get("/usage", response_class=HTMLResponse)
@@ -721,6 +777,34 @@ async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
     return _templates.TemplateResponse(request, "budgets_partial.html", context)
 
 
+async def _keys_partial_response(
+    request: Request,
+    db_path: Path,
+    *,
+    status: str = "active",
+    new_key: str | None = None,
+) -> HTMLResponse:
+    all_keys = await list_keys(db_path)
+    active = [k for k in all_keys if k["is_active"]]
+    revoked = [k for k in all_keys if not k["is_active"]]
+    if status == "revoked":
+        shown = revoked
+    elif status == "all":
+        shown = all_keys
+    else:
+        shown = active
+        status = "active"
+    context: dict[str, Any] = {
+        "request": request,
+        "keys": shown,
+        "status": status,
+        "active_count": len(active),
+        "revoked_count": len(revoked),
+        "new_key": new_key,
+    }
+    return _templates.TemplateResponse(request, "keys_partial.html", context)
+
+
 @router.post("/api/keys", response_class=HTMLResponse)
 async def create_api_key(
     request: Request,
@@ -752,13 +836,7 @@ async def create_api_key(
             from janus.storage.budgets import create_or_update_budget
 
             await create_or_update_budget(db_path, key_id=int(record["id"]), daily_limit=limit)
-    keys = await list_keys(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": keys,
-        "new_key": new_key,
-    }
-    return _templates.TemplateResponse(request, "keys_partial.html", context)
+    return await _keys_partial_response(request, db_path, new_key=new_key, status="active")
 
 
 @router.post("/api/keys/{key_id}", response_class=HTMLResponse)
@@ -795,26 +873,15 @@ async def update_api_key(
             from janus.storage.budgets import create_or_update_budget
 
             await create_or_update_budget(db_path, key_id=key_id, daily_limit=limit)
-    keys = await list_keys(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": keys,
-        "new_key": None,
-    }
-    return _templates.TemplateResponse(request, "keys_partial.html", context)
+    status = request.query_params.get("status", "active").lower()
+    return await _keys_partial_response(request, db_path, status=status)
 
 
 @router.delete("/api/keys/{key_id}", response_class=HTMLResponse)
 async def revoke_api_key(request: Request, key_id: int) -> HTMLResponse:
     db_path = await _ensure_db(request)
     await revoke_key(db_path, key_id)
-    keys = await list_keys(db_path)
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": keys,
-        "new_key": None,
-    }
-    return _templates.TemplateResponse(request, "keys_partial.html", context)
+    return await _keys_partial_response(request, db_path, status="active")
 
 
 # ---- Provider CRUD ----
