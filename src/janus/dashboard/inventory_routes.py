@@ -17,7 +17,7 @@ from janus.dashboard.routes import _ensure_db, _templates
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
 from janus.inventory.key_checker import check_all_upstream_keys, validate_key
-from janus.inventory.key_encryption import encryption_enabled
+from janus.inventory.key_encryption import CredentialEncryptionError, encryption_enabled
 from janus.inventory.migrate import import_dashboard_json, verify_inventory
 from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
@@ -64,6 +64,7 @@ from janus.storage.upstream_models import list_models_for_key
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
 logger = logging.getLogger(__name__)
+_NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 
 def _client_id(request: Request) -> str:
@@ -1099,7 +1100,10 @@ async def api_export_upstream_keys(
             "count": len(exported),
             "keys": exported,
         },
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            **_NO_STORE_HEADERS,
+        },
     )
 
 
@@ -1167,6 +1171,36 @@ async def api_get_upstream_key_json(request: Request, key_id: str) -> JSONRespon
     )
 
 
+@router.post("/api/inventory/keys/{key_id}/reveal")
+async def api_reveal_upstream_key(request: Request, key_id: str) -> JSONResponse:
+    try:
+        db_path = await _ensure_db(request)
+        detail = await get_upstream_key_detail(db_path, key_id, include_secret=True)
+    except CredentialEncryptionError:
+        logger.warning(
+            "Credential reveal failed for key %s due to encryption configuration", key_id
+        )
+        return JSONResponse(
+            {"detail": "Credential unavailable"},
+            status_code=503,
+            headers=_NO_STORE_HEADERS,
+        )
+    if detail is None:
+        return JSONResponse(
+            {"detail": "Key not found"},
+            status_code=404,
+            headers=_NO_STORE_HEADERS,
+        )
+    key_value = detail.get("key_value")
+    if not isinstance(key_value, str):
+        return JSONResponse(
+            {"detail": "Credential unavailable"},
+            status_code=503,
+            headers=_NO_STORE_HEADERS,
+        )
+    return JSONResponse({"key_value": key_value}, headers=_NO_STORE_HEADERS)
+
+
 @router.post("/api/inventory/keys/{key_id}/priority", response_class=HTMLResponse)
 async def api_update_upstream_key_priority(
     request: Request,
@@ -1213,7 +1247,7 @@ async def api_upstream_key_detail_partial(request: Request, key_id: str) -> HTML
 @router.get("/api/inventory/keys/{key_id}/json")
 async def api_upstream_key_agent_json(request: Request, key_id: str) -> JSONResponse:
     db_path = await _ensure_db(request)
-    detail = await get_upstream_key_detail(db_path, key_id)
+    detail = await get_upstream_key_detail(db_path, key_id, include_secret=True)
     if detail is None:
         raise HTTPException(status_code=404, detail="Key not found")
     models = await list_models_for_key(db_path, key_id)
@@ -1230,7 +1264,10 @@ async def api_upstream_key_agent_json(request: Request, key_id: str) -> JSONResp
     }
     return JSONResponse(
         payload,
-        headers={"Content-Disposition": f'attachment; filename="janus-key-{key_id}.json"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="janus-key-{key_id}.json"',
+            **_NO_STORE_HEADERS,
+        },
     )
 
 

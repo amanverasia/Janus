@@ -7,6 +7,7 @@ For server-process configuration (port, host, data dir), see ``janus.settings``.
 from __future__ import annotations
 
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .database import get_connection
 
@@ -42,6 +43,7 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_sticky_limit": "3",
     "server_gateway_rate_limit_rpm": "0",
     "server_cooldowns_enabled": "true",
+    "server_reporting_timezone": "UTC",
     "combo_fusion_min_panel": "2",
     "combo_fusion_straggler_grace_s": "8",
     "combo_fusion_hard_timeout_s": "90",
@@ -115,6 +117,29 @@ def resolve_gateway_rate_limit_rpm(settings: dict[str, str]) -> int:
         return max(0, int(value))
     except ValueError:
         return 0
+
+
+def validate_reporting_timezone(value: str) -> str:
+    timezone_name = value.strip()
+    if not timezone_name:
+        raise ValueError("must be an IANA timezone name")
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as e:
+        raise ValueError("must be a valid IANA timezone name") from e
+    return timezone_name
+
+
+def resolve_reporting_timezone(settings: dict[str, str]) -> str:
+    value = resolve_server_settings(settings)["server_reporting_timezone"]
+    try:
+        return validate_reporting_timezone(value)
+    except ValueError:
+        return "UTC"
+
+
+async def get_reporting_timezone(db_path: str | Path) -> str:
+    return resolve_reporting_timezone(await get_all_settings(db_path))
 
 
 def require_api_key_enabled(settings: dict[str, str]) -> bool:

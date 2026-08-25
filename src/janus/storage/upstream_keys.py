@@ -37,8 +37,11 @@ def _prepare_key_storage(key_value: str) -> tuple[str, str, str]:
     return stored_value, hash_upstream_key(key_value), mask_key(key_value)
 
 
-def _decode_upstream_row(row: Any) -> dict[str, Any]:
+def _decode_upstream_row(row: Any, *, include_secret: bool = True) -> dict[str, Any]:
     item = dict(row)
+    if not include_secret:
+        item.pop("key_value", None)
+        return item
     key_value = item.get("key_value")
     if isinstance(key_value, str):
         item["key_value"] = decrypt_key_value(key_value)
@@ -262,11 +265,15 @@ async def list_upstream_key_history(
 ) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT id, upstream_key_id, previous_status, new_status,
-                      credits_remaining, notes, changed_at
-               FROM upstream_key_history
-               WHERE upstream_key_id = ?
-               ORDER BY changed_at DESC
+            """SELECT h.id, h.upstream_key_id, h.previous_status, h.new_status,
+                      h.credits_remaining, h.notes, h.changed_at,
+                      p.billing_model AS provider_billing_model
+               FROM upstream_key_history h
+               JOIN upstream_keys k ON h.upstream_key_id = k.id
+               JOIN inventory_providers p ON k.provider_id = p.id
+               WHERE h.upstream_key_id = ?
+                 AND (h.previous_status IS NULL OR h.previous_status != h.new_status)
+               ORDER BY h.changed_at DESC
                LIMIT ?""",
             (upstream_key_id, limit),
         ) as cur:
@@ -274,7 +281,12 @@ async def list_upstream_key_history(
     return [dict(row) for row in rows]
 
 
-async def get_upstream_key_detail(db_path: str | Path, key_id: str) -> dict[str, Any] | None:
+async def get_upstream_key_detail(
+    db_path: str | Path,
+    key_id: str,
+    *,
+    include_secret: bool = False,
+) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT k.*,
@@ -287,7 +299,7 @@ async def get_upstream_key_detail(db_path: str | Path, key_id: str) -> dict[str,
             (key_id,),
         ) as cur:
             row = await cur.fetchone()
-    return _decode_upstream_row(row) if row else None
+    return _decode_upstream_row(row, include_secret=include_secret) if row else None
 
 
 async def list_upstream_keys(
@@ -482,6 +494,8 @@ async def record_upstream_key_history(
     credits_remaining: float | None = None,
     notes: str | None = None,
 ) -> None:
+    if previous_status == new_status:
+        return
     async with get_connection(db_path) as db:
         await db.execute(
             """INSERT INTO upstream_key_history

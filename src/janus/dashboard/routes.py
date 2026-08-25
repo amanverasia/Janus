@@ -40,6 +40,7 @@ from janus.dashboard.credentials import (
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
+    get_calendar_day_spend_summary,
     get_flow,
     get_leaderboard,
     get_spend_summary,
@@ -54,7 +55,13 @@ from janus.storage.budgets import (
 )
 from janus.storage.database import init_db
 from janus.storage.key_access import parse_models_input
-from janus.storage.settings import VALID_COMBO_STRATEGIES, get_setting, set_setting
+from janus.storage.settings import (
+    VALID_COMBO_STRATEGIES,
+    get_reporting_timezone,
+    get_setting,
+    set_setting,
+    validate_reporting_timezone,
+)
 from janus.storage.usage import get_unpriced_models, get_usage_stats
 
 router = APIRouter(dependencies=[Depends(require_dashboard_access)])
@@ -274,9 +281,10 @@ async def overview(request: Request) -> HTMLResponse:
     today_cost = 0.0
     global_budget = None
     try:
-        summary = await get_spend_summary(db_path, days=1)
+        reporting_now = datetime.now(UTC)
+        summary = await get_calendar_day_spend_summary(db_path, now=reporting_now)
         today_cost = summary["total_cost"]
-        global_budget = await get_budget_status(db_path, key_id=None)
+        global_budget = await get_budget_status(db_path, key_id=None, now=reporting_now)
     except Exception:
         pass
     live = get_bus().snapshot()
@@ -707,6 +715,7 @@ async def leaderboard_page(
 @router.get("/budgets", response_class=HTMLResponse)
 async def budgets_page(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
+    reporting_timezone = await get_reporting_timezone(db_path)
     try:
         budget_statuses, keys = await _build_budget_statuses(db_path)
     except Exception:
@@ -718,24 +727,50 @@ async def budgets_page(request: Request) -> HTMLResponse:
         db_path,
         budgets=budget_statuses,
         keys=keys,
+        reporting_timezone=reporting_timezone,
     )
 
 
 @router.post("/api/budgets", response_class=HTMLResponse)
 async def create_budget(
     request: Request,
-    key_select: str = Form(...),
-    daily_limit: float = Form(...),
-    warn_pct: float = Form(80),
+    key_select: str = Form(""),
+    daily_limit: str = Form(""),
+    warn_pct: str = Form("80"),
 ) -> HTMLResponse:
     db_path = await _ensure_db(request)
+    selected = key_select.strip()
     key_id: int | None = None
-    if key_select != "global":
-        key_id = int(key_select)
+    if selected != "global":
+        if not selected.isascii() or not selected.isdigit() or int(selected) <= 0:
+            return _budget_validation_error("Select a valid budget scope.")
+        key_id = int(selected)
+        keys = await list_keys(db_path)
+        if not any(key["id"] == key_id for key in keys):
+            return _budget_validation_error("The selected API key does not exist.")
+    try:
+        parsed_daily_limit = float(daily_limit)
+    except ValueError:
+        return _budget_validation_error("Daily limit must be a number greater than zero.")
+    if not math.isfinite(parsed_daily_limit) or parsed_daily_limit <= 0:
+        return _budget_validation_error("Daily limit must be a number greater than zero.")
+    try:
+        parsed_warn_pct = float(warn_pct)
+    except ValueError:
+        return _budget_validation_error("Warning percentage must be between 1 and 100.")
+    if not math.isfinite(parsed_warn_pct) or not 1 <= parsed_warn_pct <= 100:
+        return _budget_validation_error("Warning percentage must be between 1 and 100.")
     await create_or_update_budget(
-        db_path, key_id=key_id, daily_limit=daily_limit, warn_pct=warn_pct
+        db_path,
+        key_id=key_id,
+        daily_limit=parsed_daily_limit,
+        warn_pct=parsed_warn_pct,
     )
     return await _budgets_partial(request, db_path)
+
+
+def _budget_validation_error(message: str) -> HTMLResponse:
+    return HTMLResponse(content=message, status_code=422)
 
 
 @router.delete("/api/budgets/{budget_id}", response_class=HTMLResponse)
@@ -747,12 +782,15 @@ async def delete_budget_endpoint(request: Request, budget_id: int) -> HTMLRespon
 
 async def _build_budget_statuses(
     db_path: Path,
+    *,
+    now: datetime | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    reporting_now = now or datetime.now(UTC)
     budgets = await get_budgets(db_path)
     keys = await list_keys(db_path)
     budget_statuses: list[dict[str, Any]] = []
     for b in budgets:
-        status = await get_budget_status(db_path, key_id=b["key_id"])
+        status = await get_budget_status(db_path, key_id=b["key_id"], now=reporting_now)
         key_name = "Global"
         if b["key_id"] is not None:
             key_name = next(
@@ -773,6 +811,7 @@ async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
         "request": request,
         "budgets": budget_statuses,
         "keys": keys,
+        "reporting_timezone": await get_reporting_timezone(db_path),
     }
     return _templates.TemplateResponse(request, "budgets_partial.html", context)
 
@@ -1624,12 +1663,17 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
     "server_sticky_limit": lambda v: _require_int(v, min_value=1),
     "server_gateway_rate_limit_rpm": lambda v: _require_int(v, min_value=0, max_value=100_000),
+    "server_reporting_timezone": lambda v: _require_reporting_timezone(v),
 }
 
 
 def _require_choice(value: str, choices: frozenset[str]) -> None:
     if value not in choices:
         raise ValueError(f"must be one of: {', '.join(sorted(choices))}")
+
+
+def _require_reporting_timezone(value: str) -> None:
+    validate_reporting_timezone(value)
 
 
 def _require_int(value: str, *, min_value: int, max_value: int | None = None) -> None:
@@ -1685,6 +1729,8 @@ async def api_update_setting(request: Request) -> HTMLResponse:
             validator(value)
         except ValueError as e:
             return HTMLResponse(content=f"Invalid value for {key}: {e}", status_code=400)
+    if key == "server_reporting_timezone":
+        value = value.strip()
     await set_setting(db_path, key, value)
     if key.startswith("saver_"):
         from janus.dashboard.reload import reload_savers
@@ -1905,6 +1951,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         resolve_combo_sticky_limit,
         resolve_combo_strategy,
         resolve_gateway_rate_limit_rpm,
+        resolve_reporting_timezone,
         resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
@@ -1933,6 +1980,7 @@ async def settings_page(request: Request) -> HTMLResponse:
         account_strategy=resolve_account_strategy(settings),
         sticky_limit=resolve_sticky_limit(settings),
         gateway_rate_limit_rpm=resolve_gateway_rate_limit_rpm(settings),
+        reporting_timezone=resolve_reporting_timezone(settings),
         combo_strategy=resolve_combo_strategy(settings),
         combo_sticky_limit=resolve_combo_sticky_limit(settings),
         combo_fusion_judge=resolve_combo_fusion_judge(settings),

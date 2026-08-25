@@ -173,6 +173,24 @@
 </div>
 
 <script>
+function renderOverviewLiveFeed(feed, recent) {
+    var fragment = document.createDocumentFragment();
+    recent.slice().reverse().forEach(function(event) {
+        var ev = event || {};
+        var item = document.createElement('li');
+        item.className = 'px-4 py-2 text-gray-300';
+        var model = document.createElement('span');
+        model.className = 'font-mono text-white';
+        model.textContent = ev.model || '—';
+        var status = document.createElement('span');
+        status.className = 'text-gray-500';
+        status.textContent = ev.status || '';
+        item.append(model, document.createTextNode(' '), status);
+        fragment.appendChild(item);
+    });
+    feed.replaceChildren(fragment);
+}
+
 (function() {
     var btn = document.getElementById('copy-base-url-btn');
     var el = document.getElementById('janus-base-url');
@@ -237,11 +255,7 @@
                 if (inflight) inflight.textContent = data.inflight;
                 var feed = document.getElementById('overview-live-feed');
                 if (feed && data.recent && data.recent.length) {
-                    feed.innerHTML = data.recent.slice().reverse().map(function(ev) {
-                        var model = ev.model || '—';
-                        var st = ev.status || '';
-                        return '<li class="px-4 py-2 text-gray-300"><span class="font-mono text-white">' + model + '</span> <span class="text-gray-500">' + st + '</span></li>';
-                    }).join('');
+                    renderOverviewLiveFeed(feed, data.recent);
                 }
                 (data.recent || []).forEach(function(ev) {
                     if (ev.ts) {

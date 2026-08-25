@@ -5,6 +5,7 @@ from janus.storage.inventory_overview import get_best_upstream_keys, get_top_key
 from janus.storage.upstream_keys import (
     count_upstream_keys_filtered,
     create_upstream_key,
+    get_upstream_key_detail,
     list_upstream_keys_page,
     update_upstream_key,
 )
@@ -66,7 +67,26 @@ async def test_get_best_upstream_keys_one_per_provider(tmp_path) -> None:
     best = await get_best_upstream_keys(db_path)
     assert len(best) == 1
     assert best[0]["id"] == second["id"]
-    assert best[0]["key_value"] == "sk-proj-best-two"
+    assert "key_value" not in best[0]
+
+
+@pytest.mark.asyncio
+async def test_get_upstream_key_detail_masks_secret_by_default(tmp_path) -> None:
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-detail-secret",
+    )
+
+    masked = await get_upstream_key_detail(db_path, record["id"])
+    revealed = await get_upstream_key_detail(db_path, record["id"], include_secret=True)
+
+    assert masked is not None
+    assert "key_value" not in masked
+    assert revealed is not None
+    assert revealed["key_value"] == "sk-proj-detail-secret"
 
 
 @pytest.mark.asyncio

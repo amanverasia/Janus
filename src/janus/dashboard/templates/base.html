@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Janus Dashboard{% endblock %}</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏛️</text></svg>">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/dashboard/static/css/dashboard.min.css">
+    <script src="/dashboard/static/vendor/htmx-2.0.4.min.js"></script>
+    <script src="/dashboard/static/vendor/chart.js-4.4.1.umd.min.js"></script>
     <style>
         html, body { height: 100%; }
         body { background-color: #111827; overflow: hidden; }
@@ -142,8 +142,16 @@
         var colors = { success: 'border-green-600 bg-green-900/90 text-green-100', error: 'border-red-600 bg-red-900/90 text-red-100', warning: 'border-amber-600 bg-amber-900/90 text-amber-100', info: 'border-gray-600 bg-gray-800/95 text-gray-100' };
         var el = document.createElement('div');
         el.className = 'rounded-lg border px-4 py-3 text-sm shadow-lg flex items-start justify-between gap-2 ' + (colors[type] || colors.info);
-        el.innerHTML = '<span class="flex-1">' + message + '</span><button type="button" class="opacity-70 hover:opacity-100 text-lg leading-none">&times;</button>';
-        el.querySelector('button').onclick = function() { el.remove(); };
+        var messageEl = document.createElement('span');
+        messageEl.className = 'flex-1';
+        messageEl.textContent = message;
+        var closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'opacity-70 hover:opacity-100 text-lg leading-none';
+        closeButton.setAttribute('aria-label', 'Dismiss notification');
+        closeButton.textContent = '×';
+        closeButton.onclick = function() { el.remove(); };
+        el.append(messageEl, closeButton);
         stack.appendChild(el);
         setTimeout(function() { if (el.parentNode) el.remove(); }, 4000);
     }

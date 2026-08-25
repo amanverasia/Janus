@@ -293,6 +293,9 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_usage_cost_key ON usage(client_key_id, date(timestamp))"
     )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_usage_key_ts ON usage(client_key_id, timestamp)"
+    )
 
 
 async def _migrate_request_log_columns(db: aiosqlite.Connection) -> None:

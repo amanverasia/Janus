@@ -354,6 +354,19 @@
         </div>
     </div>
 
+    <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <h2 class="text-lg font-bold text-white">Reporting Timezone</h2>
+        <p class="text-gray-400 text-sm mt-1">
+            Sets the calendar-day boundary shared by today's spend and daily budget enforcement.
+            Use an IANA timezone name such as <span class="font-mono">UTC</span> or
+            <span class="font-mono">Asia/Kolkata</span>. Changes apply immediately.
+        </p>
+        <input type="text" value="{{ reporting_timezone }}"
+               class="mt-4 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white w-64 font-mono"
+               hx-post="/dashboard/api/settings" hx-swap="none" hx-trigger="change"
+               hx-on:htmx:config-request="event.detail.parameters.key='server_reporting_timezone'; event.detail.parameters.value=event.detail.elt.value">
+    </div>
+
     <!-- Request Logging -->
     <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
         <div class="flex items-center justify-between gap-4">

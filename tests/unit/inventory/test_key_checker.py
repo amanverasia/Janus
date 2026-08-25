@@ -8,7 +8,12 @@ from janus.inventory.key_checker import (
     validate_key,
 )
 from janus.storage.database import init_db
-from janus.storage.upstream_keys import create_upstream_key, get_upstream_key
+from janus.storage.upstream_keys import (
+    create_upstream_key,
+    get_upstream_key,
+    list_upstream_key_history,
+    update_upstream_key,
+)
 from janus.storage.upstream_models import list_models_for_key
 
 
@@ -306,6 +311,94 @@ async def test_check_upstream_key_marks_invalid(tmp_path):
     assert updated["status"] == "invalid"
     assert updated["is_valid"] == 0
     assert updated["last_error"] is not None
+
+
+@pytest.mark.asyncio
+async def test_check_upstream_key_unchanged_status_updates_without_history(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-active",
+    )
+    await update_upstream_key(
+        db_path,
+        record["id"],
+        {"status": "active", "is_valid": 1, "credits_remaining": 9.0},
+    )
+
+    async def fake_validate(key_value, provider_id, metadata):
+        return {
+            "is_valid": True,
+            "is_usable": True,
+            "usability_status": "usable",
+            "credits_remaining": 7.5,
+            "credits_total": 10.0,
+            "credits_used": 2.5,
+            "models": [{"model_id": "gpt-test"}],
+            "metadata": {"account": "updated"},
+        }
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+
+    await check_upstream_key(db_path, record["id"])
+
+    updated = await get_upstream_key(db_path, record["id"])
+    assert updated is not None
+    assert updated["status"] == "active"
+    assert updated["credits_remaining"] == 7.5
+    assert updated["credits_total"] == 10.0
+    assert updated["credits_used"] == 2.5
+    assert updated["last_checked_at"] is not None
+    assert "updated" in str(updated["metadata"])
+    assert await list_upstream_key_history(db_path, record["id"]) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("previous_status", "validation_result", "expected_status"),
+    [
+        (
+            "invalid",
+            {
+                "is_valid": True,
+                "is_usable": True,
+                "usability_status": "usable",
+                "credits_remaining": 4.25,
+            },
+            "active",
+        ),
+        ("active", {"is_valid": False, "error": "Auth failed (401)"}, "invalid"),
+    ],
+)
+async def test_check_upstream_key_records_real_status_transition(
+    tmp_path,
+    monkeypatch,
+    previous_status,
+    validation_result,
+    expected_status,
+):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-transition",
+    )
+    await update_upstream_key(db_path, record["id"], {"status": previous_status})
+
+    async def fake_validate(key_value, provider_id, metadata):
+        return validation_result
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+
+    await check_upstream_key(db_path, record["id"])
+
+    history = await list_upstream_key_history(db_path, record["id"])
+    assert len(history) == 1
+    assert history[0]["previous_status"] == previous_status
+    assert history[0]["new_status"] == expected_status
 
 
 def test_multi_base_candidates_minimax_and_moonshot() -> None:

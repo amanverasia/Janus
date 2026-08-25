@@ -10,10 +10,12 @@ from janus.providers.registry import ProviderRegistry
 from janus.storage.api_keys import create_key
 from janus.storage.budgets import create_or_update_budget
 from janus.storage.database import get_connection, init_db
+from janus.storage.settings import set_setting
 
 
 def _ts(days_ago: int) -> str:
-    return (datetime.datetime.now() - datetime.timedelta(days=days_ago)).isoformat()
+    value = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days_ago)
+    return value.replace(tzinfo=None).isoformat(sep=" ")
 
 
 async def _seed_cost(db_path: str | Path, cost: float, key_id: int | None = None) -> None:
@@ -103,3 +105,33 @@ async def test_budget_block_response_has_retry_after(tmp_path):
         )
     assert resp.status_code == 429
     assert "retry-after" in {k.lower() for k in resp.headers.keys()}
+
+
+@pytest.mark.asyncio
+async def test_budget_block_uses_configured_reporting_timezone(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+
+    registry = ProviderRegistry()
+    config = JanusConfig(
+        server=ServerSettings(require_api_key=True, data_dir=tmp_path),
+    )
+    app = create_app(registry=registry, config=config)
+    app.state.db_path = db_path
+
+    raw_key, record = await create_key(db_path, name="test")
+    await set_setting(db_path, "server_reporting_timezone", "Asia/Kolkata")
+    await create_or_update_budget(db_path, key_id=record["id"], daily_limit=1.0, warn_pct=80)
+    await _seed_cost(db_path, 1.5, record["id"])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={"model": "nonexistent", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {raw_key}"},
+        )
+
+    assert resp.status_code == 429
+    assert "midnight (Asia/Kolkata)" in resp.json()["error"]["message"]
+    assert 1 <= int(resp.headers["Retry-After"]) <= 25 * 60 * 60

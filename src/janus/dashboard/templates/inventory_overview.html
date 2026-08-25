@@ -127,6 +127,7 @@
                 <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Key</th>
                 <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Provider</th>
                 <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Change</th>
+                <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">Balance snapshot</th>
                 <th class="px-4 py-2 text-left text-xs text-gray-400 uppercase">When</th>
             </tr>
         </thead>
@@ -139,6 +140,13 @@
                     <span class="inline-flex px-2 py-0.5 rounded text-xs {{ status_badge(item.new_status) }}">
                         {{ item.previous_status or '—' }} → {{ item.new_status }}
                     </span>
+                </td>
+                <td data-history-balance class="px-4 py-2 text-sm text-gray-400">
+                    {% if item.credits_remaining is not none %}
+                    {{ "%.2f"|format(item.credits_remaining) }} credits
+                    {% else %}
+                    —
+                    {% endif %}
                 </td>
                 <td class="px-4 py-2 text-sm text-gray-500">{{ item.changed_at }}</td>
             </tr>

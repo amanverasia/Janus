@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .database import get_connection
+from .time_windows import current_reporting_day
 
 
 async def create_or_update_budget(
@@ -59,8 +61,13 @@ async def delete_budget(db_path: str | Path, budget_id: int) -> bool:
 
 
 async def get_budget_status(
-    db_path: str | Path, *, key_id: int | None = None
+    db_path: str | Path,
+    *,
+    key_id: int | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
+    window = await current_reporting_day(db_path, now=now)
+    start_utc, end_utc = window.query_bounds
     async with get_connection(db_path) as db:
         if key_id is not None:
             async with db.execute(
@@ -72,8 +79,8 @@ async def get_budget_status(
                 return None
             async with db.execute(
                 "SELECT COALESCE(SUM(cost), 0.0) as spent FROM usage "
-                "WHERE client_key_id = ? AND date(timestamp) = date('now', 'localtime')",
-                (key_id,),
+                "WHERE client_key_id = ? AND timestamp >= ? AND timestamp < ?",
+                (key_id, start_utc, end_utc),
             ) as cur:
                 spent_row = await cur.fetchone()
         else:
@@ -85,7 +92,8 @@ async def get_budget_status(
                 return None
             async with db.execute(
                 "SELECT COALESCE(SUM(cost), 0.0) as spent FROM usage "
-                "WHERE date(timestamp) = date('now', 'localtime')"
+                "WHERE timestamp >= ? AND timestamp < ?",
+                (start_utc, end_utc),
             ) as cur:
                 spent_row = await cur.fetchone()
 
@@ -108,4 +116,7 @@ async def get_budget_status(
         "pct_used": pct_used,
         "status": status,
         "warn_pct": warn_pct,
+        "reporting_timezone": window.timezone,
+        "retry_after": window.retry_after_seconds,
+        "resets_at": window.end_utc.isoformat(),
     }
