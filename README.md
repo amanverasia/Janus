@@ -9,6 +9,10 @@ Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
 any of 29 built-in AI providers — or any OpenAI-compatible endpoint — without
 either side needing to know the other exists.
 
+Janus 3 includes **Cloudline**, a responsive Svelte dashboard for monitoring and
+operating the gateway. The original server-rendered dashboard remains available
+as a legacy fallback.
+
 ## First-time setup
 
 Janus needs Python **3.11+**. Everything lives under `~/.janus/` — a seed
@@ -83,9 +87,11 @@ curl http://localhost:20128/v1/health
 # {"status":"ok"}
 ```
 
-Open the dashboard at [http://localhost:20128/dashboard](http://localhost:20128/dashboard).
-The root URL `/` redirects there. Dashboard access always requires a Janus API
-key, including from localhost.
+Open Cloudline at
+[http://localhost:20128/dashboard/ui](http://localhost:20128/dashboard/ui).
+The legacy dashboard remains at `/dashboard`, and the root URL `/` redirects to
+that legacy route. Both interfaces always require a Janus API key, including
+from localhost.
 
 ### 5. Configure via dashboard
 
@@ -183,7 +189,7 @@ disable dashboard authentication.
 
 ```bash
 curl http://localhost:20128/v1/health
-open http://localhost:20128/dashboard    # macOS; or visit in your browser
+open http://localhost:20128/dashboard/ui    # macOS; or visit in your browser
 ```
 
 ## Configuration
@@ -250,7 +256,7 @@ combos:
 
 See step 7 in [First-time setup](#first-time-setup) for the basics. Full guides:
 [Client Setup](https://amanverasia.github.io/Janus/client-setup/). The dashboard
-**Tool Setup** page (`/dashboard/tools`) generates copy-paste env vars for your
+**Tools** page (`/dashboard/ui/tools`) generates copy-paste env vars for your
 exact server URL and auth settings.
 
 **Claude Code / Anthropic tools:**
@@ -286,14 +292,16 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Request logging** — opt-in debug capture of request/response bodies (Settings → Request Logs)
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
 - **Pricing** — builtin model prices, YAML/DB overrides, cache token rates
-- **Dashboard** — API-key-authenticated HTMX UI at `/dashboard` with charts, budgets, usage, routing overview, and self-hosted frontend assets (no runtime CDN dependency)
-- **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/inventory`)
+- **Cloudline dashboard** — responsive SvelteKit 2 + Svelte 5 + TypeScript SPA at `/dashboard/ui`, with light/dark/system themes, a command palette, live usage, analytics, routing visibility, and modular management screens
+- **Legacy dashboard** — the original server-rendered HTMX interface remains available at `/dashboard`
+- **Self-hosted frontend** — the versioned Cloudline bundle and legacy assets ship with Janus; production rendering has no runtime CDN or Node.js dependency
+- **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/ui/inventory`)
 
 ## Upstream Key Inventory
 
 Built-in dashboard for upstream provider API keys: health checks, credit tracking, and automatic routing through the best available key.
 
-**Dashboard:** `http://127.0.0.1:20128/dashboard/inventory`
+**Dashboard:** `http://127.0.0.1:20128/dashboard/ui/inventory`
 
 - Overview stats, paginated/sortable keys table, key detail modal, best-keys widget
 - Add keys, bulk submit, import from Dashboard export JSON, re-identify misclassified keys
@@ -346,11 +354,16 @@ pip install -e ".[dev]"
 
 # Start dev server
 .venv/bin/janus serve --port 20128 --reload
+
+# Verify and rebuild the Cloudline frontend
+.venv/bin/python scripts/build_dashboard_ui.py --check
+.venv/bin/python scripts/build_dashboard_ui.py
 ```
 
 ## Tech Stack
 
-Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / Jinja2 / HTMX / Chart.js
+Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / SvelteKit 2 /
+Svelte 5 / TypeScript / Jinja2 / HTMX
 
 ## License
 

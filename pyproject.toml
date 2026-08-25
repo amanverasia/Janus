@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "janus-ai"
-version = "2.2.2"
+version = "3.0.0"
 description = "The two-faced AI routing gateway"
 readme = "README.md"
 license = "GPL-3.0-only"

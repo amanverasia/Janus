@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-25
+
+### Added
+
+- **Cloudline dashboard** — a responsive SvelteKit 2, Svelte 5, and TypeScript control plane at
+  `/dashboard/ui` covers all 18 operational views with deep links, mobile navigation, light/dark
+  themes, command search, live usage, interactive routing visibility, and one-time secret actions
+- **Dashboard state API** — authenticated, non-cacheable JSON endpoints under
+  `/dashboard/api/v2/state/{section}` provide stable contracts for modular present and future
+  control-plane clients
+- **Reproducible frontend packaging** — the dashboard build, exact lockfile, local static bundle,
+  wheel/sdist contents, Docker image, and CI are checked together without runtime CDN dependencies
+
+### Changed
+
+- **Modular dashboard architecture** — Cloudline is split into reusable components and independent
+  feature pages so new routing, inventory, analytics, and future peer-topology modules can be added
+  without rebuilding a monolithic server-rendered interface
+- **Progressive dashboard migration** — the existing `/dashboard` HTMX interface remains available
+  while `/dashboard/ui` becomes the modern application surface on the same FastAPI backend
+- **Inventory mutations** — add, import, encryption, and credential-management workflows support
+  safe JSON responses for Cloudline while retaining their legacy HTML/HTMX behavior
+
+### Security
+
+- **Credential-safe browser contracts** — state responses recursively strip secrets, explicit reveal
+  actions remain non-cacheable and time-limited, untrusted values use safe DOM rendering, and all
+  Cloudline routes honor Janus's API-key-only dashboard authentication policy
+
 ## [2.2.2] - 2026-08-25
 
 ### Fixed

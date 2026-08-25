@@ -1,25 +1,34 @@
 # Dashboard
 
-Janus includes a built-in web UI at `/dashboard`. It's an HTMX-powered,
-dark-themed interface — no build step, no npm, no JavaScript framework. Pinned
-Tailwind, HTMX, Chart.js, D3, and d3-sankey assets are served locally, so the
-dashboard has no runtime CDN dependency.
+Janus 3 includes **Cloudline**, a responsive control plane at `/dashboard/ui`.
+It is a static SvelteKit 2, Svelte 5, and TypeScript application with modular
+screens, responsive navigation, light/dark/system themes, and a searchable
+command palette.
+
+FastAPI serves the committed production bundle from
+`src/janus/dashboard/static/app/`. Node.js and npm are development/build-time
+dependencies only; a running Janus server does not need them. All Cloudline and
+legacy dashboard assets are served locally, so neither interface has a runtime
+CDN dependency.
 
 Open it in your browser:
 
 ```
-http://localhost:20128/dashboard
+http://localhost:20128/dashboard/ui
 ```
 
-The root URL `/` redirects here.
+The original server-rendered HTMX dashboard is retained at `/dashboard` for
+compatibility and operational fallback. The root URL `/` continues to redirect
+to that legacy route.
 
 ## Authentication
 
 Every dashboard client must authenticate with a valid Janus API key, including
 clients on `127.0.0.1` and `localhost`. There is no loopback bypass and no
-username/password login. Unauthenticated browser requests are redirected to
-`/dashboard/login`, which sets an httponly `janus_dashboard_key` cookie (30-day
-max-age). API-style requests without a valid key or cookie receive `401`.
+username/password login. Unauthenticated browser requests to either interface
+are redirected to `/dashboard/login`, which sets an httponly
+`janus_dashboard_key` cookie (30-day max-age) and returns to the originally
+requested page. API-style requests without a valid key or cookie receive `401`.
 
 DB-managed keys must be active and have **Allow dashboard login**
 (`can_login=true`). Static API keys configured in YAML are also accepted. Manage
@@ -38,20 +47,26 @@ Accepted auth methods (same as the API):
 
 ## Navigation
 
-The sidebar groups 13 pages into four sections:
+Cloudline's responsive sidebar groups its primary screens into three sections.
+On narrow viewports it becomes a drawer, and the command palette (`Ctrl+K`,
+`Cmd+K`, or `/`) can open any screen directly.
 
 | Section | Pages |
 |---|---|
-| **Monitor** | Overview, Usage, Analytics, Key Inventory |
-| **Manage** | Providers, Combos, Token Savers, Budgets |
-| **Access** | API Keys, Tool Setup |
-| **System** | Pricing, Settings |
+| **Observe** | Overview, Usage, Analytics, Leaderboard, Request Logs |
+| **Route** | Inventory, Providers, Combos, Routing, Token Savers |
+| **Manage** | Budgets, API Keys, Tools, Pricing, Settings |
+
+Inventory adds dedicated All Keys, Add Keys, and Import JSON screens. Cloudline
+uses real deep links under `/dashboard/ui`, so browser navigation and bookmarks
+work normally. The theme control cycles through system, light, and dark modes
+and stores the preference in the browser.
 
 ---
 
-## Monitor
+## Observe
 
-### Overview — `/dashboard`
+### Overview — `/dashboard/ui`
 
 Summary landing page:
 
@@ -60,20 +75,29 @@ Summary landing page:
 - Today's total cost
 - Global budget status bar
 
-### Usage — `/dashboard/usage`
+### Usage — `/dashboard/ui/usage`
 
-- Total requests, input tokens, output tokens
-- Per-model breakdown
+- Live in-flight request count and recent gateway events
+- Historical request volume, token use, and cost
+- Automatic live-stream reconnection after transient disconnects
 
-### Request Logs — `/dashboard/request-logs`
+### Analytics — `/dashboard/ui/analytics`
+
+- Spend trajectory for 7, 30, 90, or 365 days
+- Breakdown by model, provider, account, or client key
+- Request, token, cost, and success-rate summaries
+
+### Leaderboard — `/dashboard/ui/leaderboard`
+
+- Rank clients by tokens, cost, or requests
+- Compare request volume, success rate, token use, and cost
+
+### Request Logs — `/dashboard/ui/request-logs`
 
 Debug view of captured API requests (**off by default** — enable **Request
 Logging** under Settings, or set `server_request_logging=true`):
 
-- Table of recent requests: time, format, **user**, model, provider, status, duration
-- **User column** — which client API key made the call: the key's name for
-  DB-issued keys, the config label for static YAML keys
-  (`client_key_label`), or `—` for anonymous requests (no key required)
+- Paginated table of recent requests: time, model, provider, status, and latency
 - Per-request JSON detail (full request/response bodies, truncated at 64 KB)
 - Successful completions (stream + non-stream), exhausted fallbacks (`503`), and
   non-fallback upstream errors (e.g. `400`) are recorded when logging is on
@@ -82,6 +106,10 @@ Logging** under Settings, or set `server_request_logging=true`):
   `500`, clamped between 50 and 5000) on the Settings page — oldest rows
   beyond the limit are pruned automatically
 
+The legacy table also has a **User** column. It shows the DB-issued key name,
+the configured static-key label (`client_key_label`), or `—` when an API request
+was allowed without a client key.
+
 If the page is empty, logging is almost always still disabled — check the banner
 and the Settings toggle.
 
@@ -89,82 +117,73 @@ and the Settings toggle.
     Captured bodies contain prompts and completions. Leave request logging off
     unless actively debugging.
 
-### Analytics — `/dashboard/analytics`
+## Route
 
-Interactive Chart.js visualizations:
-
-- **Spend trend** — daily cost over time
-- **Breakdown** — by model, provider, account, or client key
-- **Success rate donut** — 2xx vs 4xx vs 5xx
-
-| Parameter | Default | Options |
-|---|---|---|
-| `days` | `30` | Any integer (e.g. `?days=7`) |
-| `dimension` | `model` | `model`, `provider`, `account`, `client_key` |
-
-### Key Inventory — `/dashboard/inventory`
+### Key Inventory — `/dashboard/ui/inventory`
 
 Upstream key management — overview, key list, add, import, encryption status.
 See [Key Inventory](inventory.md) for full documentation.
 
----
-
-## Manage
-
-### Providers — `/dashboard/providers`
+### Providers — `/dashboard/ui/providers`
 
 Full CRUD for gateway providers:
 
-- **Catalog gallery** — 14 known providers (OpenAI, Anthropic, Gemini, Groq,
-  DeepSeek, OpenRouter, Mistral, Fireworks, Perplexity, xAI, Qwen, Together,
-  OpenCode Zen, Custom) with logos and pre-filled defaults
-- **Add / Edit** — set prefix, API type, base URL, API key, models
-- **Fetch Models** — auto-populate models from upstream `/models` endpoint
+- **Add / Edit** — set prefix, API type, base URL, API key, models, allowlists,
+  and subscription quota
 - **Test Connection** — 1-token probe with status and latency
 - **Enable / Disable** — toggle without deleting
 - **Delete** — remove provider (closes its HTTP client)
+
+The legacy `/dashboard/providers` screen retains the provider catalog gallery
+and **Fetch Models** helper.
 
 When editing, leave the API key field **blank** to preserve the existing key.
 
 Changes hot-reload — no server restart needed.
 
-### Combos — `/dashboard/combos`
+### Combos — `/dashboard/ui/combos`
 
 Full CRUD for fallback chains:
 
 - **Create / Edit** — name and ordered model list
-- **Drag-and-drop reorder** — Sortable.js for priority changes
 - **Delete** — remove combo
 
-### Token Savers — `/dashboard/savers`
+### Routing — `/dashboard/ui/routing`
+
+- Enabled provider and account readiness at a glance
+- Current account strategy and try order
+- Active cooldowns with remaining duration
+- Quota-deprioritized accounts and a guarded clear-cooldowns action
+
+### Token Savers — `/dashboard/ui/savers`
 
 Toggle savers at runtime:
 
 - **RTK** — on/off (default on)
 - **Caveman** — on/off
 - **Ponytail** — on/off with level selector (lite / full / ultra)
+- **Headroom** — on/off with a configurable local proxy URL
 
 Settings are stored in the DB and take effect immediately.
 
-### Budgets — `/dashboard/budgets`
+## Manage
+
+### Budgets — `/dashboard/ui/budgets`
 
 - **Budget list** — scope (global or key name), daily limit, spent today,
   percentage, status badge (`ok` / `warning` / `exceeded`)
 - **Create** — select key scope, enter daily limit and warn percentage
 - **Delete** — remove budget
 
----
-
-## Access
-
-### API Keys — `/dashboard/keys`
+### API Keys — `/dashboard/ui/keys`
 
 - **Key list** — ID, prefix, name, login permission, model allowlist, status (active/revoked)
-- **Create** — HTMX form with **Allow dashboard login**, allowed models (`exact` or `prefix/*`), and daily budget; full `sk-janus-...` key shown **once**
+- **Create** — modal with **Allow dashboard login**, allowed models (`exact` or
+  `prefix/*`), and daily budget; full `sk-janus-...` key shown **once**
 - **Edit** — update name, dashboard access, models, or daily budget
 - **Revoke** — deactivate key
 
-### Tool Setup — `/dashboard/tools`
+### Tools — `/dashboard/ui/tools`
 
 Copy-paste environment variable cards for:
 
@@ -175,33 +194,31 @@ Copy-paste environment variable cards for:
 
 Each card shows the exact `export` commands for your server URL and auth settings.
 
----
-
-## System
-
-### Pricing — `/dashboard/pricing`
+### Pricing — `/dashboard/ui/pricing`
 
 - View all ~28 builtin model prices
 - **Add / Edit / Delete** custom pricing overrides
 - Overrides merge with builtins at request recording time
 
-### Settings — `/dashboard/settings`
+### Settings — `/dashboard/ui/settings`
 
 - **Require API key** — runtime toggle (stored in DB, overrides YAML default)
 - **Enable account cooldowns** — when on (default), accounts that hit 429/5xx/auth/network
   errors are skipped until their cooldown expires. Turn off to override and keep
   retrying those accounts immediately (`server_cooldowns_enabled`). Also available
   via `janus settings set server_cooldowns_enabled false`
-- **Combo Routing** — `combo_strategy` selector (fallback / round robin /
-  fusion), `combo_sticky_limit`, and the Fusion tuning fields (judge model,
-  min panel size, straggler grace, hard timeout) — see [Combos &
-  Fallback](combos.md#combo-strategies) for what each does. Changes are
-  validated server-side (strategy must be one of the three known values;
-  numeric fields must be finite and within bounds)
+- **Sticky client routing** and account strategy
+- **Reporting timezone** and request-log retention
 - **Request Logging** — capture full request/response bodies for debugging (off by default), plus the log retention limit
-- **Server info** — host, port, data directory
-- **Export Config** — download current DB state as YAML
-- **Reset to Defaults** — wipe DB tables and re-seed from `config.yaml` (danger zone)
+- **Export secrets** — download current DB state as YAML after an explicit
+  plaintext-credential warning
+
+The legacy `/dashboard/settings` page additionally exposes the advanced combo
+routing controls (`combo_strategy`, sticky limit, and Fusion tuning), server
+information, and **Reset to Defaults**. See [Combos &
+Fallback](combos.md#combo-strategies) for the routing fields. Values are
+validated server-side, and reset wipes the relevant DB state before re-seeding
+from `config.yaml`.
 
 Settings does not contain a dashboard username or password. Dashboard identity
 and access are API-key based, and **API Keys** is the place to grant or revoke
@@ -215,7 +232,25 @@ cooldown timers without changing the enable toggle.
 
 ## Management API
 
-Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.
+Cloudline reads authenticated, non-cacheable JSON state from the v2 API and
+uses the existing dashboard endpoints for mutations. The v2 responses include
+`section`, `alerts`, `data`, and `meta`; credentials and other sensitive fields
+are removed before serialization.
+
+| Method | Path | Action |
+|---|---|---|
+| `GET` | `/dashboard/api/v2/state/{section}` | Read state for a Cloudline screen |
+| `POST` | `/dashboard/api/v2/keys` | Create an API key and return its plaintext value once |
+
+Supported state sections are `overview`, `usage`, `analytics`, `leaderboard`,
+`request-logs`, `inventory`, `inventory-keys`, `providers`, `combos`, `routing`,
+`savers`, `budgets`, `keys`, `tools`, `pricing`, and `settings`. Every request
+requires dashboard access; state and one-time credential responses use
+`Cache-Control: private, no-store`.
+
+The legacy management endpoints below default to HTML/HTMX responses. Endpoints
+marked as JSON, and several endpoints used by Cloudline, also support JSON
+responses. For scripting, prefer the [CLI](cli.md).
 
 ### API Keys
 
@@ -272,4 +307,5 @@ Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.
 
 See [Key Inventory — Push API](inventory.md#push-api) for `POST /dashboard/api/inventory/push`.
 
-For scripting, prefer the [CLI](cli.md) over HTMX endpoints.
+Legacy page routes remain under `/dashboard`; Cloudline page routes use the same
+screen names under `/dashboard/ui`.
