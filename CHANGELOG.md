@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-25
+
+### Security
+
+- **Credential-safe inventory views** — ordinary dashboard responses no longer embed decrypted
+  upstream credentials; authenticated users must explicitly reveal or copy a credential, revealed
+  values are served with no-store headers, and the browser clears them after 30 seconds
+- **Dashboard DOM rendering** — toast messages, live activity, and provider verification results
+  now use safe text/DOM construction instead of interpreting dynamic values as HTML
+
+### Added
+
+- **Reporting timezone** — Today's Spend, daily budget enforcement, analytics, alerts, and retry
+  windows share a configurable IANA timezone with daylight-saving-aware UTC query bounds
+- **Self-hosted dashboard assets** — pinned Tailwind, HTMX, Chart.js, D3, and d3-sankey assets ship
+  with licenses, checksums, and a reproducible updater, removing the runtime CDN dependency
+
+### Fixed
+
+- **Budget validation** — malformed amounts and invalid key selections return actionable validation
+  responses instead of server errors
+- **Inventory history quality** — no-op status transitions are no longer recorded or displayed,
+  while historical balance snapshots appear as unit-neutral credits
+
 ## [2.1.5] - 2026-08-17
 ### Added
 - **Gorouter provider** — `gorouter` (`https://gorouter.app/v1`) is registered in the provider catalog as an OpenAI-compatible gateway with its Claude models (`claude-opus-5-thinking`, `claude-opus-5`, `claude-opus-4-8`, `claude-opus-4-8-thinking`); gorouter keys are validated with a real chat probe

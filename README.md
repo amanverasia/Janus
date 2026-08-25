@@ -97,6 +97,7 @@ editing YAML and restarting will not re-apply changes. Use the dashboard instead
 | Add providers | **Providers** | Pick from the catalog or add custom; fetch models, test connection |
 | Create a client key | **API Keys** | `sk-janus-...` shown once — save it |
 | Enable auth | **Settings** | Toggle **Require API key** (recommended for remote access) |
+| Set reporting timezone | **Settings** | Choose an IANA timezone for Today's Spend and daily-budget boundaries |
 | Set dashboard login | **Settings → Dashboard Login** | Username + password for remote browser sign-in |
 | Connect your tools | **Tool Setup** | Copy-paste env vars for Claude Code, Codex, Cursor, Cline |
 
@@ -280,7 +281,7 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Request logging** — opt-in debug capture of request/response bodies (Settings → Request Logs)
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
 - **Pricing** — builtin model prices, YAML/DB overrides, cache token rates
-- **Dashboard** — HTMX UI at `/dashboard` with charts, budgets, usage, routing overview, and remote login
+- **Dashboard** — HTMX UI at `/dashboard` with charts, budgets, usage, routing overview, remote login, and self-hosted frontend assets (no runtime CDN dependency)
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/inventory`)
 
 ## Upstream Key Inventory
@@ -292,6 +293,8 @@ Built-in dashboard for upstream provider API keys: health checks, credit trackin
 - Overview stats, paginated/sortable keys table, key detail modal, best-keys widget
 - Add keys, bulk submit, import from Dashboard export JSON, re-identify misclassified keys
 - Encryption at rest; routable keys wired into gateway fallback rotation
+- Credentials masked by default; authenticated Reveal/Copy actions clear the value after 30 seconds
+- History shows real status transitions and credit snapshots without no-op transition noise
 - Detected rate limits (RPM/RPD) deprioritize near-quota keys during routing
 - Background recheck scheduler (twice daily by default)
 
