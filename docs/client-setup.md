@@ -115,6 +115,11 @@ janus keys update 1 --login --clear-models   # restore full access later
 
 The full key is shown once. Use it in the `Authorization: Bearer <key>` header or as your `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`. Empty model allowlist means all models; patterns may be exact IDs or `prefix/*`.
 
+Dashboard login is API-key-only for local and remote clients. A DB-managed key
+can sign in only while active and configured with **Allow dashboard login**
+(`can_login=true`); configured static keys are also accepted. Manage this
+permission from **API Keys**. Username/password login is not available.
+
 ## Gemini CLI and Gemini-native tools
 
 Point Gemini SDKs, **Gemini CLI**, and other Gemini-native clients at Janus. The
@@ -192,5 +197,6 @@ normalization when talking to Anthropic-format upstreams.
 
 When Janus runs on another machine or in Docker with `host: 0.0.0.0`, replace
 `localhost` with the host's address. Enable `require_api_key` and use a
-dashboard-created key. The dashboard requires login from non-loopback clients —
-see [Dashboard — Authentication](dashboard.md#authentication).
+dashboard-created key for API requests. The dashboard requires an authorized API
+key from every client, including loopback, regardless of `require_api_key` — see
+[Dashboard — Authentication](dashboard.md#authentication).

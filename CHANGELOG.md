@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **API-key-only dashboard login** — dashboard authentication now applies to localhost and remote
+  clients alike; username/password login and the loopback bypass are removed, DB keys require
+  `can_login=true`, and legacy dashboard credential settings are purged during initialization
+
 ## [2.2.0] - 2026-08-25
 
 ### Security

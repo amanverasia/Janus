@@ -1,8 +1,9 @@
 # Dashboard
 
 Janus includes a built-in web UI at `/dashboard`. It's an HTMX-powered,
-dark-themed interface — no build step, no npm, no JavaScript framework. Tailwind,
-HTMX, and Chart.js are loaded via CDN.
+dark-themed interface — no build step, no npm, no JavaScript framework. Pinned
+Tailwind, HTMX, Chart.js, D3, and d3-sankey assets are served locally, so the
+dashboard has no runtime CDN dependency.
 
 Open it in your browser:
 
@@ -14,12 +15,16 @@ The root URL `/` redirects here.
 
 ## Authentication
 
-**Loopback clients** (`127.0.0.1`, `localhost`) access the dashboard without auth.
+Every dashboard client must authenticate with a valid Janus API key, including
+clients on `127.0.0.1` and `localhost`. There is no loopback bypass and no
+username/password login. Unauthenticated browser requests are redirected to
+`/dashboard/login`, which sets an httponly `janus_dashboard_key` cookie (30-day
+max-age). API-style requests without a valid key or cookie receive `401`.
 
-**Remote clients** must authenticate with a valid Janus API key. Unauthenticated
-browser requests are redirected to `/dashboard/login`, which sets an httponly
-`janus_dashboard_key` cookie (30-day max-age). API-style requests without a cookie
-receive `401`.
+DB-managed keys must be active and have **Allow dashboard login**
+(`can_login=true`). Static API keys configured in YAML are also accepted. Manage
+DB-key access from **API Keys**; the **Require API key** setting controls API
+endpoint authentication and never makes the dashboard anonymous.
 
 Accepted auth methods (same as the API):
 
@@ -27,10 +32,9 @@ Accepted auth methods (same as the API):
 - `x-goog-api-key: <key>`
 - `?key=<key>`
 
-!!! warning "Remote access"
-    When binding to `0.0.0.0` (Docker default), enable `require_api_key` and use
-    the login page for dashboard access from other machines. See
-    [Deployment](deployment.md).
+!!! warning "Credential migration"
+    Legacy dashboard username/password settings are removed during database
+    initialization. Use an authorized API key to sign in after upgrading.
 
 ## Navigation
 
@@ -156,8 +160,8 @@ Settings are stored in the DB and take effect immediately.
 ### API Keys — `/dashboard/keys`
 
 - **Key list** — ID, prefix, name, login permission, model allowlist, status (active/revoked)
-- **Create** — HTMX form with optional dashboard login, allowed models (`exact` or `prefix/*`), and daily budget; full `sk-janus-...` key shown **once**
-- **Edit** — update name, login, models, or daily budget
+- **Create** — HTMX form with **Allow dashboard login**, allowed models (`exact` or `prefix/*`), and daily budget; full `sk-janus-...` key shown **once**
+- **Edit** — update name, dashboard access, models, or daily budget
 - **Revoke** — deactivate key
 
 ### Tool Setup — `/dashboard/tools`
@@ -199,6 +203,11 @@ Each card shows the exact `export` commands for your server URL and auth setting
 - **Export Config** — download current DB state as YAML
 - **Reset to Defaults** — wipe DB tables and re-seed from `config.yaml` (danger zone)
 
+Settings does not contain a dashboard username or password. Dashboard identity
+and access are API-key based, and **API Keys** is the place to grant or revoke
+**Allow dashboard login**. Any legacy username/password settings are purged at
+database initialization.
+
 On **Routing**, use **Clear all cooldowns** to wipe active in-memory and SQLite
 cooldown timers without changing the enable toggle.
 
@@ -212,8 +221,8 @@ Dashboard HTMX endpoints return HTML partials. JSON endpoints are noted.
 
 | Method | Path | Action |
 |---|---|---|
-| `POST` | `/dashboard/api/keys` | Create an API key (optional login/models/budget) |
-| `POST` | `/dashboard/api/keys/{id}` | Update key scopes / optional daily budget |
+| `POST` | `/dashboard/api/keys` | Create an API key (dashboard access/models/budget) |
+| `POST` | `/dashboard/api/keys/{id}` | Update key scopes and optional daily budget |
 | `DELETE` | `/dashboard/api/keys/{id}` | Revoke an API key |
 
 ### Budgets

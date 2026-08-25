@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def app(tmp_path):
         ],
         combos=[ComboConfig(name="stk", models=["t/m1"])],
     )
-    return create_app(config=cfg)
+    return with_dashboard_auth(create_app(config=cfg))
 
 
 @pytest.mark.asyncio
@@ -123,7 +124,7 @@ async def test_combo_modal_hides_allowlist_blocked_models(tmp_path):
             )
         ],
     )
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/dashboard/combos")
         assert r.status_code == 200

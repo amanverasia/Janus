@@ -84,7 +84,8 @@ curl http://localhost:20128/v1/health
 ```
 
 Open the dashboard at [http://localhost:20128/dashboard](http://localhost:20128/dashboard).
-The root URL `/` redirects there.
+The root URL `/` redirects there. Dashboard access always requires a Janus API
+key, including from localhost.
 
 ### 5. Configure via dashboard
 
@@ -98,14 +99,16 @@ editing YAML and restarting will not re-apply changes. Use the dashboard instead
 | Create a client key | **API Keys** | `sk-janus-...` shown once — save it |
 | Enable auth | **Settings** | Toggle **Require API key** (recommended for remote access) |
 | Set reporting timezone | **Settings** | Choose an IANA timezone for Today's Spend and daily-budget boundaries |
-| Set dashboard login | **Settings → Dashboard Login** | Username + password for remote browser sign-in |
+| Grant dashboard access | **API Keys** | Enable **Allow dashboard login** on the keys permitted to sign in |
 | Connect your tools | **Tool Setup** | Copy-paste env vars for Claude Code, Codex, Cursor, Cline |
 
 **Dashboard access rules:**
 
-- **localhost** — no sign-in required
-- **Remote** (LAN, Tailscale, Docker on `0.0.0.0`) — sign in at `/dashboard/login`
-  with your dashboard username/password or a Janus API key
+- **All clients**, including localhost and loopback — sign in at `/dashboard/login`
+  with a Janus API key
+- DB-managed keys must be active and have **Allow dashboard login** (`can_login=true`)
+- Static keys configured in YAML are also accepted
+- Username/password login and the loopback bypass are not supported
 
 Create a key from the CLI instead:
 
@@ -173,8 +176,10 @@ The image binds to `0.0.0.0:20128`. SQLite and config persist in `./janus-data/`
 After first startup, manage providers and settings from the dashboard — not by
 editing YAML alone.
 
-**Remote dashboard:** enable **Require API key** in Settings, create a Janus API
-key, and set a dashboard username/password under **Dashboard Login**.
+**Dashboard:** create a Janus API key with **Allow dashboard login** enabled, then
+use that key at `/dashboard/login`. This is required on localhost too. The
+**Require API key** setting controls API endpoint authentication; it does not
+disable dashboard authentication.
 
 ```bash
 curl http://localhost:20128/v1/health
@@ -276,12 +281,12 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Combos** — named ordered model sequences (e.g., `"model": "best-effort"`)
 - **Token savers** — RTK compression (default ON), Caveman, Ponytail, and optional Headroom compression proxy
 - **GitHub Copilot OAuth** — device-code connect from the dashboard; session tokens refreshed automatically
-- **API key scopes** — API-only keys (`can_login`), model allowlists (`prefix/*`), optional daily budgets
+- **API key scopes** — dashboard access (`can_login`), model allowlists (`prefix/*`), optional daily budgets
 - **Budgets** — daily spending limits per API key or global, with warn/block thresholds
 - **Request logging** — opt-in debug capture of request/response bodies (Settings → Request Logs)
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
 - **Pricing** — builtin model prices, YAML/DB overrides, cache token rates
-- **Dashboard** — HTMX UI at `/dashboard` with charts, budgets, usage, routing overview, remote login, and self-hosted frontend assets (no runtime CDN dependency)
+- **Dashboard** — API-key-authenticated HTMX UI at `/dashboard` with charts, budgets, usage, routing overview, and self-hosted frontend assets (no runtime CDN dependency)
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/inventory`)
 
 ## Upstream Key Inventory

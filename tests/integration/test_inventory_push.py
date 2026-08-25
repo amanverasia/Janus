@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.fixture
@@ -10,7 +11,7 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("INVENTORY_SCHEDULER_ENABLED", "false")
     monkeypatch.setenv("INVENTORY_PUSH_TOKEN", "test-push-token")
     cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
-    return create_app(config=cfg)
+    return with_dashboard_auth(create_app(config=cfg))
 
 
 @pytest.fixture

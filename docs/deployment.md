@@ -91,10 +91,16 @@ API keys and use TLS termination (reverse proxy) for anything beyond a trusted L
 
 ### Dashboard authentication
 
-Loopback clients (`127.0.0.1`, `localhost`) access the dashboard without auth.
-Remote clients are redirected to `/dashboard/login` and must authenticate with a
-valid Janus API key (sets an httponly cookie). See
+Every client, including `127.0.0.1` and `localhost`, is redirected to
+`/dashboard/login` until it authenticates with a valid Janus API key. DB-managed
+keys must be active and have **Allow dashboard login** (`can_login=true`);
+configured static keys are also accepted. Username/password login and the
+loopback bypass are not supported. Legacy dashboard credential settings are
+purged during database initialization. See
 [Dashboard — Authentication](dashboard.md#authentication).
+
+The `require_api_key` setting controls API endpoint authentication only. It does
+not make the dashboard anonymous when disabled.
 
 ## Reverse proxy
 
