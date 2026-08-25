@@ -9,7 +9,9 @@
                     class="text-gray-400 hover:text-white text-xl leading-none cursor-pointer">&times;</button>
         </div>
         <div id="keys-edit-body" class="p-6">
-            <form hx-post="/dashboard/api/keys/{{ key.id }}{% if status %}?status={{ status }}{% endif %}"
+            <form method="post"
+                  action="/dashboard/api/keys/{{ key.id }}{% if status %}?status={{ status }}{% endif %}"
+                  hx-post="/dashboard/api/keys/{{ key.id }}{% if status %}?status={{ status }}{% endif %}"
                   hx-target="#keys-content"
                   hx-swap="innerHTML"
                   hx-sync="#keys-content:replace"
