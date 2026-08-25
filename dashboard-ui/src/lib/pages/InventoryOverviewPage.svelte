@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
+  import { copyText } from '$lib/clipboard';
   import Icon from '$lib/components/Icon.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
@@ -75,7 +76,7 @@
   async function copy(id: string) {
     const value = revealed[id];
     if (!value) return;
-    await navigator.clipboard.writeText(value);
+    await copyText(value);
     copied = id;
     window.setTimeout(() => {
       if (copied === id) copied = '';

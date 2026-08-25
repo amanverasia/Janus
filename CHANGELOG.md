@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-08-25
+
+### Fixed
+
+- **API-key copying** — the dashboard now provides a working one-time full-key copy action after
+  key creation, labels stored-key actions as prefix copies, and falls back when the modern
+  Clipboard API is unavailable or rejected
+
+## [2.2.1] - 2026-08-25
+
+### Security
+
+- **API-key-only dashboard login** — dashboard authentication now applies to localhost and remote
+  clients alike; username/password login and the loopback bypass are removed, DB keys require
+  `can_login=true`, and legacy dashboard credential settings are purged during initialization
+
+### Fixed
+
+- **Dashboard access editing** — dynamically loaded API-key edit forms are initialized before
+  submission, so disabling a key's dashboard access persists instead of navigating with form data
+  in the URL
+
 ## [2.2.0] - 2026-08-25
 
 ### Security

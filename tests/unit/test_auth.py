@@ -9,7 +9,6 @@ from janus.api.auth import (
     authenticate_api_key,
     extract_api_key,
     is_require_api_key_enabled,
-    is_trusted_dashboard_client,
 )
 from janus.config.schema import JanusConfig, ServerSettings
 
@@ -40,21 +39,6 @@ def test_extract_api_key_bearer() -> None:
 def test_extract_api_key_cookie() -> None:
     req = _request(cookies={"janus_dashboard_key": "sk-janus-abc"})
     assert extract_api_key(req, "", "", "") == "sk-janus-abc"
-
-
-def test_is_trusted_loopback() -> None:
-    assert is_trusted_dashboard_client(_request(host="127.0.0.1")) is True
-    assert is_trusted_dashboard_client(_request(host="::1")) is True
-    assert is_trusted_dashboard_client(_request(host="testclient")) is True
-
-
-def test_unknown_client_is_not_trusted() -> None:
-    # BUG-002: a request with no client info must fail closed, not grant access.
-    assert is_trusted_dashboard_client(_request(host=None)) is False
-
-
-def test_is_trusted_remote() -> None:
-    assert is_trusted_dashboard_client(_request(host="192.168.1.10")) is False
 
 
 @pytest.mark.asyncio

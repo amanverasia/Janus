@@ -1,14 +1,19 @@
 <script lang="ts">
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Icon from '$lib/components/Icon.svelte';
+  import { copyText } from '$lib/clipboard';
   import { text } from '$lib/data';
   import type { JsonObject } from '$lib/types';
   export let data: JsonObject;
   let copied = '';
   $: base = text(data.base_url, `${location.origin}/v1`);
   async function copy(value: string, label: string) {
-    await navigator.clipboard.writeText(value);
-    copied = label;
+    try {
+      await copyText(value);
+      copied = label;
+    } catch {
+      copied = 'error';
+    }
     setTimeout(() => (copied = ''), 1800);
   }
 </script>
@@ -27,7 +32,11 @@
     <div class="code-block">{base}</div>
     <div class="card-actions">
       <button class="button" on:click={() => copy(base, 'url')}>
-        <Icon name="check" size={14} />{copied === 'url' ? 'Copied' : 'Copy URL'}
+        <Icon name="check" size={14} />{copied === 'url'
+          ? 'Copied'
+          : copied === 'error'
+            ? 'Copy failed'
+            : 'Copy URL'}
       </button>
     </div>
   </article>

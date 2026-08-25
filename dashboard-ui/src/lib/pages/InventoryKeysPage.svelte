@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
+  import { copyText } from '$lib/clipboard';
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -201,6 +202,10 @@
   function closeDetail() {
     clearReveal();
     detailOpen = false;
+  }
+
+  async function copyRevealedDetail() {
+    if (revealedDetail) await copyText(revealedDetail);
   }
 
   async function savePriority() {
@@ -558,11 +563,7 @@
             ? 'Revealing…'
             : 'Reveal for 30s'}
       </button>
-      <button
-        class="button"
-        disabled={!revealedDetail}
-        on:click={() => navigator.clipboard.writeText(revealedDetail)}
-      >
+      <button class="button" disabled={!revealedDetail} on:click={copyRevealedDetail}>
         <Icon name="download" size={15} />Copy
       </button>
       <a

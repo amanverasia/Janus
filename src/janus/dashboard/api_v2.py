@@ -473,15 +473,16 @@ async def _keys_data(db_path: Path, *, status: str) -> dict[str, Any]:
 
 
 async def _settings_data(db_path: Path) -> dict[str, Any]:
-    from janus.dashboard.credentials import SETTINGS_PASSWORD_HASH, SETTINGS_USERNAME
-
     await ensure_server_defaults(db_path)
     settings = await get_all_settings(db_path)
     safe_values = {key: settings[key] for key in _SAFE_SETTING_KEYS if key in settings}
     return {
         "values": safe_values,
-        "dashboard_username": settings.get(SETTINGS_USERNAME, ""),
-        "dashboard_password_set": bool(settings.get(SETTINGS_PASSWORD_HASH)),
+        "dashboard_access": {
+            "mode": "api_key",
+            "keys_url": "/dashboard/ui/keys",
+            "localhost_requires_auth": True,
+        },
         "status": {
             "require_api_key_enabled": require_api_key_enabled(settings),
             "cooldowns_enabled": cooldowns_enabled(settings),

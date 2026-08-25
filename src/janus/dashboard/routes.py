@@ -27,16 +27,6 @@ from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.catalog import get_provider_logo_map, provider_logo_url
 from janus.dashboard.context import dashboard_context
-from janus.dashboard.credentials import (
-    SESSION_COOKIE,
-    SETTINGS_PASSWORD_HASH,
-    SETTINGS_USERNAME,
-    create_session_token,
-    get_or_create_session_secret,
-    hash_password,
-    is_password_login_configured,
-    verify_password,
-)
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
@@ -59,7 +49,6 @@ from janus.storage.settings import (
     VALID_COMBO_STRATEGIES,
     get_reporting_timezone,
     get_setting,
-    set_setting,
     validate_reporting_timezone,
 )
 from janus.storage.usage import get_unpriced_models, get_usage_stats
@@ -163,12 +152,11 @@ async def _render_page(
 async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse:
     if not next.startswith("/dashboard"):
         next = "/dashboard"
-    db_path = await _ensure_db(request)
+    await _ensure_db(request)
     context: dict[str, Any] = {
         "request": request,
         "next": next,
         "error": None,
-        "password_login_enabled": await is_password_login_configured(db_path),
     }
     return _templates.TemplateResponse(request, "login.html", context)
 
@@ -177,57 +165,17 @@ async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse
 async def login_submit(
     request: Request,
     api_key: str = Form(""),
-    username: str = Form(""),
-    password: str = Form(""),
     next: str = Form("/dashboard"),
 ) -> Response:
     if not next.startswith("/dashboard"):
         next = "/dashboard"
-    db_path = await _ensure_db(request)
-    password_login_enabled = await is_password_login_configured(db_path)
-
-    if username.strip() or password:
-        if not password_login_enabled:
-            context: dict[str, Any] = {
-                "request": request,
-                "next": next,
-                "error": "Username/password login is not configured",
-                "password_login_enabled": False,
-            }
-            return _templates.TemplateResponse(request, "login.html", context, status_code=401)
-        stored_username = await get_setting(db_path, SETTINGS_USERNAME)
-        stored_hash = await get_setting(db_path, SETTINGS_PASSWORD_HASH)
-        if (
-            not stored_username
-            or not stored_hash
-            or username.strip() != stored_username
-            or not verify_password(password, stored_hash)
-        ):
-            context = {
-                "request": request,
-                "next": next,
-                "error": "Invalid username or password",
-                "password_login_enabled": password_login_enabled,
-            }
-            return _templates.TemplateResponse(request, "login.html", context, status_code=401)
-        secret = await get_or_create_session_secret(db_path)
-        token = create_session_token(secret, stored_username)
-        response = RedirectResponse(url=next, status_code=303)
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            httponly=True,
-            samesite="lax",
-            max_age=30 * 86400,
-        )
-        return response
+    await _ensure_db(request)
 
     if not api_key.strip():
-        context = {
+        context: dict[str, Any] = {
             "request": request,
             "next": next,
             "error": "API key is required",
-            "password_login_enabled": password_login_enabled,
         }
         return _templates.TemplateResponse(request, "login.html", context, status_code=401)
 
@@ -236,7 +184,6 @@ async def login_submit(
             "request": request,
             "next": next,
             "error": "Invalid API key",
-            "password_login_enabled": password_login_enabled,
         }
         return _templates.TemplateResponse(request, "login.html", context, status_code=401)
     from janus.api.auth import key_can_login
@@ -246,7 +193,6 @@ async def login_submit(
             "request": request,
             "next": next,
             "error": "This API key cannot access the dashboard",
-            "password_login_enabled": password_login_enabled,
         }
         return _templates.TemplateResponse(request, "login.html", context, status_code=401)
     response = RedirectResponse(url=next, status_code=303)
@@ -264,7 +210,7 @@ async def login_submit(
 async def logout(request: Request) -> RedirectResponse:
     response = RedirectResponse(url="/dashboard/login", status_code=303)
     response.delete_cookie("janus_dashboard_key")
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie("janus_dashboard_session")
     return response
 
 
@@ -1998,19 +1944,20 @@ async def settings_page(request: Request) -> HTMLResponse:
 
     await ensure_server_defaults(db_path)
     settings = await get_all_settings(db_path)
-    hidden_keys = {
-        SETTINGS_PASSWORD_HASH,
+    legacy_dashboard_settings = {
+        "dashboard_username",
+        "dashboard_password_hash",
         "dashboard_session_secret",
     }
-    display_settings = {key: value for key, value in settings.items() if key not in hidden_keys}
+    display_settings = {
+        key: value for key, value in settings.items() if key not in legacy_dashboard_settings
+    }
     return await _render_page(
         request,
         "settings.html",
         db_path,
         settings=display_settings,
         config=request.app.state.config,
-        dashboard_username=settings.get(SETTINGS_USERNAME, ""),
-        dashboard_password_set=bool(settings.get(SETTINGS_PASSWORD_HASH)),
         require_api_key_enabled=require_api_key_enabled(settings),
         cooldowns_enabled=cooldowns_enabled(settings),
         sticky_client_key_routing_enabled=sticky_client_key_routing_enabled(settings),
@@ -2026,29 +1973,6 @@ async def settings_page(request: Request) -> HTMLResponse:
         combo_fusion_min_panel=resolve_combo_fusion_min_panel(settings),
         combo_fusion_straggler_grace_s=resolve_combo_fusion_straggler_grace_s(settings),
         combo_fusion_hard_timeout_s=resolve_combo_fusion_hard_timeout_s(settings),
-    )
-
-
-@router.post("/api/settings/credentials", response_class=HTMLResponse)
-async def api_update_dashboard_credentials(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    password_confirm: str = Form(...),
-) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    username = username.strip()
-    if not username:
-        return HTMLResponse(content="Username is required", status_code=400)
-    if len(password) < 8:
-        return HTMLResponse(content="Password must be at least 8 characters", status_code=400)
-    if password != password_confirm:
-        return HTMLResponse(content="Passwords do not match", status_code=400)
-    await set_setting(db_path, SETTINGS_USERNAME, username)
-    await set_setting(db_path, SETTINGS_PASSWORD_HASH, hash_password(password))
-    return HTMLResponse(
-        '<span class="text-green-400">Dashboard credentials saved</span>',
-        status_code=200,
     )
 
 

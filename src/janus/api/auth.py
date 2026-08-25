@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 
 from fastapi import Request
 
@@ -70,18 +69,3 @@ async def authenticate_api_key(request: Request, key: str | None) -> bool:
             request.state.allowed_models = None
         return True
     return False
-
-
-def is_trusted_dashboard_client(request: Request) -> bool:
-    client = request.client
-    if client is None:
-        # Unknown peer (e.g. a misconfigured proxy that strips client info):
-        # fail closed rather than granting unauthenticated dashboard access.
-        return False
-    host = client.host
-    if not host or host in {"testclient", "localhost"}:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False

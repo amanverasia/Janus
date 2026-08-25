@@ -247,8 +247,13 @@ async def test_state_responses_do_not_leak_credentials(app):
     assert "metadata" not in inventory_key
     assert inventory_key["key_masked"]
     settings = payloads[SECTIONS.index("settings")]["data"]
-    assert settings["dashboard_username"] == "dashboard-operator"
-    assert settings["dashboard_password_set"] is True
+    assert "dashboard_username" not in settings
+    assert "dashboard_password_set" not in settings
+    assert settings["dashboard_access"] == {
+        "mode": "api_key",
+        "keys_url": "/dashboard/ui/keys",
+        "localhost_requires_auth": True,
+    }
     assert "server_api_token" not in settings["values"]
 
 

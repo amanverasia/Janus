@@ -215,7 +215,7 @@
     {:else if active.section === 'pricing'}
       <PricingPage {data} {action} />
     {:else if active.section === 'settings'}
-      <SettingsPage {data} {action} />
+      <SettingsPage {data} {action} {navigate} />
     {:else}
       <section class="error-state">
         <Icon name="warning" size={26} />

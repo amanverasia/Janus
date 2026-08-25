@@ -1,5 +1,6 @@
 <script lang="ts">
   import DataTable from '$lib/components/DataTable.svelte';
+  import { copyText } from '$lib/clipboard';
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
@@ -13,7 +14,8 @@
   let open = false;
   let editing: JsonObject | undefined;
   let revealed = '';
-  let copied = false;
+  let copied = '';
+  let copyError = '';
   $: keys = firstList(data, 'keys', 'api_keys', 'items');
   $: status = text(data.status, 'active');
   $: counts = object(data.counts);
@@ -49,7 +51,8 @@
       );
       if (!editing) {
         revealed = text(object(result).api_key, '');
-        copied = false;
+        copied = '';
+        copyError = '';
       }
     } catch {
       return;
@@ -57,10 +60,28 @@
     open = false;
   }
 
+  async function copy(value: string, target: string) {
+    copied = '';
+    copyError = '';
+    try {
+      await copyText(value);
+      copied = target;
+    } catch {
+      copyError = target;
+    }
+    window.setTimeout(() => {
+      if (copied === target) copied = '';
+      if (copyError === target) copyError = '';
+    }, 1800);
+  }
+
   async function copyKey() {
-    await navigator.clipboard.writeText(revealed);
-    copied = true;
-    window.setTimeout(() => (copied = false), 1800);
+    if (revealed) await copy(revealed, 'new-key');
+  }
+
+  async function copyPrefix(row: JsonObject) {
+    const prefix = text(row.prefix ?? row.key_prefix, '');
+    if (prefix) await copy(prefix, `prefix-${idOf(row)}`);
   }
 </script>
 
@@ -93,12 +114,24 @@
       <div class="secret" style="margin-top:8px">{revealed}</div>
     </div>
     <button class="button" type="button" on:click={copyKey}>
-      {copied ? 'Copied' : 'Copy key'}
+      {copied === 'new-key' ? 'Copied!' : copyError === 'new-key' ? 'Copy failed' : 'Copy key'}
     </button>
   </div>{/if}
 <section class="panel">
   <DataTable rows={keys} columns={cols} emptyTitle="No API keys">
     <svelte:fragment slot="actions" let:row>
+      <button
+        class="icon-button"
+        title={copyError === `prefix-${idOf(row)}`
+          ? 'Unable to copy key prefix'
+          : copied === `prefix-${idOf(row)}`
+            ? 'Key prefix copied'
+            : 'Copy key prefix'}
+        aria-label={copied === `prefix-${idOf(row)}` ? 'Key prefix copied' : 'Copy key prefix'}
+        on:click={() => copyPrefix(row)}
+      >
+        <Icon name={copied === `prefix-${idOf(row)}` ? 'check' : 'copy'} size={15} />
+      </button>
       <button
         class="icon-button"
         title="Edit"

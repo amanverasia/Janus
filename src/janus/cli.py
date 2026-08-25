@@ -666,7 +666,11 @@ def settings_list(
     asyncio.run(ensure_server_defaults(db_path))
     asyncio.run(ensure_saver_defaults(db_path))
     settings = asyncio.run(get_all_settings(db_path))
-    hidden = {"dashboard_password_hash", "dashboard_session_secret"}
+    hidden = {
+        "dashboard_username",
+        "dashboard_password_hash",
+        "dashboard_session_secret",
+    }
     for key in sorted(settings):
         if key in hidden:
             continue

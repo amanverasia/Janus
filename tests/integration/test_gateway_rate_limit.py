@@ -7,12 +7,13 @@ from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
 from janus.storage.database import init_db
 from janus.storage.settings import set_setting
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.fixture
 async def app(tmp_path):
     cfg = JanusConfig(server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path))
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     await init_db(app.state.db_path)
     return app
 

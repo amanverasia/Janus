@@ -17,6 +17,7 @@
     | 'logout'
     | 'eye'
     | 'edit'
+    | 'copy'
     | 'more' = 'home';
   export let size = 18;
 </script>
@@ -95,6 +96,8 @@
   {:else if name === 'eye'}<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" />
     <circle cx="12" cy="12" r="2.5" />
   {:else if name === 'edit'}<path d="m14 5 5 5M4 20l3.5-.7L19 7.8 16.2 5 4.7 16.5 4 20Z" />
+  {:else if name === 'copy'}<rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
   {:else if name === 'more'}<circle cx="5" cy="12" r="1" fill="currentColor" />
     <circle cx="12" cy="12" r="1" fill="currentColor" />
     <circle cx="19" cy="12" r="1" fill="currentColor" />

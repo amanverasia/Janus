@@ -7,6 +7,7 @@
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;
+  export let navigate: (href: string) => void;
 
   let exporting = false;
   let exportError = '';
@@ -25,16 +26,6 @@
     body.set('key', key);
     body.set('value', value);
     await action('/dashboard/api/settings', { body, success: 'Setting saved' });
-  }
-
-  async function credentials(event: SubmitEvent) {
-    const form = event.currentTarget as HTMLFormElement;
-    const result = await action('/dashboard/api/settings/credentials', {
-      body: new FormData(form),
-      success: 'Dashboard credentials saved',
-      refresh: false
-    });
-    if (result !== undefined) form.reset();
   }
 
   async function exportConfiguration() {
@@ -163,40 +154,32 @@
   <section class="panel">
     <div class="panel-header">
       <div>
-        <h2>Dashboard credentials</h2>
-        <p>Set a username and a password of at least 8 characters</p>
+        <h2>Dashboard access</h2>
+        <p>API-key authentication protects every dashboard route</p>
       </div>
     </div>
-    <div class="panel-body">
-      <form on:submit|preventDefault={credentials}>
-        <div class="field-grid">
-          <label class="field full">
-            <span>Username</span>
-            <input name="username" required value={text(data.dashboard_username, '')} />
-          </label>
-          <label class="field">
-            <span>New password</span>
-            <input
-              name="password"
-              type="password"
-              minlength="8"
-              required
-              autocomplete="new-password"
-            />
-          </label>
-          <label class="field">
-            <span>Confirm</span>
-            <input
-              name="password_confirm"
-              type="password"
-              minlength="8"
-              required
-              autocomplete="new-password"
-            />
-          </label>
+    <div class="panel-body metric-list">
+      <div class="item-card">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <Icon name="key" size={20} />
+          <div>
+            <strong>API keys only</strong>
+            <p class="muted" style="margin:5px 0 0;line-height:1.55">
+              Sign in with an active Janus API key that has dashboard access enabled. This also
+              applies on localhost; username and password sign-in is not supported.
+            </p>
+          </div>
         </div>
-        <div class="form-actions"><button class="button primary">Save credentials</button></div>
-      </form>
+      </div>
+      <div class="form-actions">
+        <button
+          class="button primary"
+          type="button"
+          on:click={() => navigate('/dashboard/ui/keys')}
+        >
+          <Icon name="key" size={15} />Manage API keys
+        </button>
+      </div>
     </div>
   </section>
 </div>

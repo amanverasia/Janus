@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 TOKEN_URL = "https://api.github.com/copilot_internal/v2/token"
 CHAT_URL = "https://api.githubcopilot.com/chat/completions"
@@ -44,7 +45,7 @@ async def app(tmp_path):
         server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
     )
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     await _seed_and_reload(app)
     return app
 
@@ -145,7 +146,7 @@ async def test_oauth_poll_endpoint(app):
 @respx.mock
 async def test_create_copilot_provider_via_dashboard(tmp_path):
     cfg = JanusConfig(server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path))
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     _mock_copilot_upstream()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(

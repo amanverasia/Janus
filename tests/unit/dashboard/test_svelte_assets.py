@@ -5,6 +5,7 @@ from importlib.resources import files
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[3]
+DASHBOARD_UI_ROOT = PROJECT_ROOT / "dashboard-ui"
 APP_ROOT = PROJECT_ROOT / "src" / "janus" / "dashboard" / "static" / "app"
 APP_URL_PREFIX = "/dashboard/static/app/"
 CDN_HOST_PATTERN = re.compile(
@@ -68,3 +69,15 @@ def test_svelte_bundle_has_no_external_runtime_cdn_dependencies() -> None:
     for path in emitted_files:
         contents = path.read_text(encoding="utf-8", errors="ignore")
         assert CDN_HOST_PATTERN.search(contents) is None, path.relative_to(APP_ROOT).as_posix()
+
+
+def test_svelte_api_key_copy_uses_clipboard_fallback_and_raw_prefix() -> None:
+    helper = (DASHBOARD_UI_ROOT / "src" / "lib" / "clipboard.ts").read_text(encoding="utf-8")
+    keys_page = (DASHBOARD_UI_ROOT / "src" / "lib" / "pages" / "KeysPage.svelte").read_text(
+        encoding="utf-8"
+    )
+
+    assert "navigator.clipboard?.writeText" in helper
+    assert "document.execCommand('copy')" in helper
+    assert "row.prefix ?? row.key_prefix" in keys_page
+    assert "Copy key prefix" in keys_page
