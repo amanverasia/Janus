@@ -1541,14 +1541,15 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 },
             )
 
-        await record_upstream_key_history(
-            db_path,
-            upstream_key_id=key_id,
-            previous_status=previous_status,
-            new_status=final_status,
-            credits_remaining=result.get("credits_remaining"),
-            notes=result.get("error"),
-        )
+        if previous_status != final_status:
+            await record_upstream_key_history(
+                db_path,
+                upstream_key_id=key_id,
+                previous_status=previous_status,
+                new_status=final_status,
+                credits_remaining=result.get("credits_remaining"),
+                notes=result.get("error"),
+            )
     except Exception as exc:
         await update_upstream_key(
             db_path,

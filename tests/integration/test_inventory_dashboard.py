@@ -424,9 +424,10 @@ async def test_inventory_keys_json_pagination(client):
 
 
 async def test_inventory_key_detail_endpoints(client):
+    secret = "sk-proj-detail-endpoint-key"
     create = await client.post(
         "/dashboard/api/inventory/keys",
-        data={"keys_text": "sk-proj-detail-endpoint-key", "provider_id": "openai"},
+        data={"keys_text": secret, "provider_id": "openai"},
     )
     assert create.status_code == 200
     export = await client.get("/dashboard/api/inventory/export")
@@ -438,25 +439,113 @@ async def test_inventory_key_detail_endpoints(client):
     assert body["id"] == key_id
     assert "models" in body
     assert "history" in body
+    assert "key_value" not in body
+    assert secret not in detail.text
 
     partial = await client.get(f"/dashboard/api/inventory/keys/{key_id}/partial")
     assert partial.status_code == 200
     assert "Key Detail" not in partial.text
     assert body["key_masked"] in partial.text or "sk-proj" in partial.text
+    assert secret not in partial.text
+    assert "full-key-value" not in partial.text
 
     agent = await client.get(f"/dashboard/api/inventory/keys/{key_id}/json")
     assert agent.status_code == 200
-    assert agent.json()["key_value"]
+    assert agent.json()["key_value"] == secret
+    assert agent.headers["cache-control"] == "no-store"
+
+    reveal = await client.post(f"/dashboard/api/inventory/keys/{key_id}/reveal")
+    assert reveal.status_code == 200
+    assert reveal.json() == {"key_value": secret}
+    assert reveal.headers["cache-control"] == "no-store"
+    assert reveal.headers["pragma"] == "no-cache"
 
 
 async def test_inventory_best_keys_endpoint(client):
+    secret = "sk-proj-best-endpoint-key"
     await client.post(
         "/dashboard/api/inventory/keys",
-        data={"keys_text": "sk-proj-best-endpoint-key", "provider_id": "openai"},
+        data={"keys_text": secret, "provider_id": "openai"},
     )
     response = await client.get("/dashboard/api/inventory/best-keys")
     assert response.status_code == 200
     assert "bestKeys" in response.json()
+    assert secret not in response.text
+
+
+async def test_inventory_overview_and_best_keys_partial_do_not_embed_secret(client, app):
+    from janus.storage.upstream_keys import update_upstream_key
+
+    secret = "sk-proj-overview-secret-value"
+    key_id = await _seed_upstream_key(app, "openai", secret)
+    await update_upstream_key(
+        app.state.db_path,
+        key_id,
+        {
+            "status": "active",
+            "is_valid": 1,
+            "is_usable": 1,
+            "credits_remaining": 25.0,
+        },
+    )
+
+    overview = await client.get("/dashboard/inventory")
+    partial = await client.get("/dashboard/api/inventory/best-keys/partial")
+    best_keys = await client.get("/dashboard/api/inventory/best-keys")
+
+    assert overview.status_code == 200
+    assert partial.status_code == 200
+    assert best_keys.status_code == 200
+    assert secret not in overview.text
+    assert secret not in partial.text
+    assert secret not in best_keys.text
+    assert "best-key-full" not in partial.text
+
+
+async def test_inventory_key_reveal_requires_dashboard_login(app):
+    from janus.storage.api_keys import create_key
+
+    secret = "sk-proj-reveal-auth-secret"
+    key_id = await _seed_upstream_key(app, "openai", secret)
+    login_key, _ = await create_key(app.state.db_path, "dashboard", can_login=True)
+    api_only_key, _ = await create_key(app.state.db_path, "api-only", can_login=False)
+    transport = ASGITransport(app=app, client=("203.0.113.10", 43100))
+    async with AsyncClient(transport=transport, base_url="http://test") as remote:
+        unauthenticated = await remote.post(f"/dashboard/api/inventory/keys/{key_id}/reveal")
+        api_only = await remote.post(
+            f"/dashboard/api/inventory/keys/{key_id}/reveal",
+            headers={"Authorization": f"Bearer {api_only_key}"},
+        )
+        authorized = await remote.post(
+            f"/dashboard/api/inventory/keys/{key_id}/reveal",
+            headers={"Authorization": f"Bearer {login_key}"},
+        )
+
+    assert unauthenticated.status_code == 401
+    assert api_only.status_code == 401
+    assert authorized.status_code == 200
+    assert authorized.json() == {"key_value": secret}
+    assert authorized.headers["cache-control"] == "no-store"
+
+
+async def test_inventory_key_reveal_error_is_non_cacheable_and_does_not_leak(
+    client, app, monkeypatch
+):
+    from cryptography.fernet import Fernet
+
+    encryption_key = Fernet.generate_key().decode()
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", encryption_key)
+    secret = "sk-proj-encrypted-reveal-secret"
+    key_id = await _seed_upstream_key(app, "openai", secret)
+    await client.get("/dashboard/inventory")
+    monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
+
+    response = await client.post(f"/dashboard/api/inventory/keys/{key_id}/reveal")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Credential unavailable"}
+    assert response.headers["cache-control"] == "no-store"
+    assert secret not in response.text
 
 
 async def test_inventory_export_provider_filter(client):
@@ -474,6 +563,7 @@ async def test_inventory_export_provider_filter(client):
     assert payload["count"] == 1
     assert payload["keys"][0]["provider_id"] == "groq"
     assert "attachment" in export.headers.get("content-disposition", "")
+    assert export.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio

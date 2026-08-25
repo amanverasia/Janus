@@ -21,9 +21,10 @@
                         {% if key.credits_total %}<p class="text-xs text-gray-500">/ ${{ "%.2f"|format(key.credits_total) }}</p>{% endif %}
                     </div>
                 </div>
-                <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center gap-2">
-                    <code class="best-key-mask text-xs font-mono text-gray-500 truncate flex-1">{{ key.key_masked }}</code>
-                    <span class="best-key-full hidden">{{ key.key_value }}</span>
+                <div class="bg-gray-900 border border-gray-700 rounded-lg p-3 flex items-center gap-2"
+                     data-key-id="{{ key.id }}">
+                    <code class="best-key-mask text-xs font-mono text-gray-500 truncate flex-1"
+                          data-masked="{{ key.key_masked }}">{{ key.key_masked }}</code>
                     <button type="button" onclick="toggleBestKey(this)"
                             class="px-2 py-1 text-xs border border-gray-600 rounded hover:bg-gray-700 cursor-pointer">Reveal</button>
                     <button type="button" onclick="copyBestKey(this)"
@@ -36,41 +37,99 @@
     </div>
 </div>
 <script>
-function toggleBestKey(btn) {
-  const card = btn.closest('.bg-gray-900');
-  if (!card) return;
-  const mask = card.querySelector('.best-key-mask');
-  const full = card.querySelector('.best-key-full');
-  if (!mask || !full) return;
-  const revealed = btn.dataset.revealed === '1';
-  if (revealed) {
-    mask.textContent = mask.dataset.masked || mask.textContent;
-    mask.classList.remove('text-green-300');
-    btn.textContent = 'Reveal';
-    btn.dataset.revealed = '0';
-  } else {
-    mask.dataset.masked = mask.textContent;
-    mask.textContent = full.textContent;
-    mask.classList.add('text-green-300');
-    btn.textContent = 'Hide';
-    btn.dataset.revealed = '1';
+(function () {
+  const revealLifetimeMs = 30000;
+
+  function getCard(btn) {
+    return btn.closest('[data-key-id]');
   }
-}
-function copyBestKey(btn) {
-  const card = btn.closest('.bg-gray-900');
-  const full = card && card.querySelector('.best-key-full');
-  if (!full) return;
-  const value = full.textContent;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(value);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.value = value;
-    document.body.appendChild(ta);
-    ta.select();
+
+  async function fetchBestKey(card) {
+    const response = await fetch(
+      '/dashboard/api/inventory/keys/' + encodeURIComponent(card.dataset.keyId) + '/reveal',
+      { method: 'POST', cache: 'no-store', headers: { Accept: 'application/json' } }
+    );
+    if (!response.ok) throw new Error('Credential reveal failed');
+    const payload = await response.json();
+    if (typeof payload.key_value !== 'string') throw new Error('Credential unavailable');
+    return payload.key_value;
+  }
+
+  function clearBestKey(card) {
+    const display = card.querySelector('.best-key-mask');
+    const revealButton = card.querySelector('button[data-revealed]');
+    if (display) {
+      display.textContent = display.dataset.masked || '';
+      display.classList.remove('text-green-300');
+    }
+    if (revealButton) {
+      revealButton.textContent = 'Reveal';
+      revealButton.dataset.revealed = '0';
+    }
+    if (card.dataset.revealTimer) {
+      window.clearTimeout(Number(card.dataset.revealTimer));
+      delete card.dataset.revealTimer;
+    }
+  }
+
+  function scheduleClear(card) {
+    if (card.dataset.revealTimer) window.clearTimeout(Number(card.dataset.revealTimer));
+    card.dataset.revealTimer = String(window.setTimeout(function () {
+      clearBestKey(card);
+    }, revealLifetimeMs));
+  }
+
+  async function copyText(value) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    document.body.appendChild(textarea);
+    textarea.select();
     document.execCommand('copy');
-    document.body.removeChild(ta);
+    textarea.remove();
   }
-}
+
+  window.toggleBestKey = async function (btn) {
+    const card = getCard(btn);
+    if (!card) return;
+    if (btn.dataset.revealed === '1') {
+      clearBestKey(card);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const value = await fetchBestKey(card);
+      const display = card.querySelector('.best-key-mask');
+      if (!display) return;
+      display.textContent = value;
+      display.classList.add('text-green-300');
+      btn.textContent = 'Hide';
+      btn.dataset.revealed = '1';
+      scheduleClear(card);
+    } catch (_error) {
+      if (window.janusToast) window.janusToast('Could not reveal credential', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  window.copyBestKey = async function (btn) {
+    const card = getCard(btn);
+    if (!card) return;
+    btn.disabled = true;
+    try {
+      const value = await fetchBestKey(card);
+      await copyText(value);
+      if (window.janusToast) window.janusToast('Credential copied', 'success');
+    } catch (_error) {
+      if (window.janusToast) window.janusToast('Could not copy credential', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+})();
 </script>
 {% endif %}

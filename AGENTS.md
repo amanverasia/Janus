@@ -91,6 +91,19 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 - **Dashboard routes do lazy `init_db` guard** because ASGITransport doesn't run the FastAPI lifespan handler. `_ensure_db()` (in `dashboard/routes.py`) now also triggers `seed_from_config()` + all reload functions, so tests that hit dashboard routes get a fully seeded + warmed app. If you add dashboard routes that touch the DB, call `_ensure_db(request)` first.
 - API route tests that need providers/combos must call `init_db()` + `seed_from_config()` + reload functions explicitly in their fixture (ASGITransport skips lifespan). See pattern in `tests/integration/test_api.py`.
 
+## Dashboard security and data semantics
+
+- Never send decrypted provider or inventory credentials in initial HTML, ordinary JSON detail responses, HTML attributes, hidden elements, logs, snapshots, or test output. Mask by default and fetch a secret only through an explicit authenticated, non-cacheable reveal action.
+- Treat request models, provider/upstream error text, labels, and other database/client values as untrusted in browser JavaScript. Use `textContent` and DOM construction rather than interpolating dynamic data into `innerHTML`.
+- A history row must represent a meaningful event. Do not record status history when `previous_status == new_status`; credit-only history needs an explicit event type rather than an `active → active` entry.
+- All UI and enforcement code labeled “today” must share the same configured timezone and calendar-day boundaries. A rolling 24-hour metric must be labeled “Last 24 hours.”
+- Dashboard form routes validate values and referenced row IDs server-side and return HTMX-friendly 400/422 responses; browser dropdown constraints are not sufficient validation.
+- Dashboard runtime assets should be served locally and included in wheels, sdists, and Docker images. Core dashboard rendering must not require public CDN access.
+
+## Active dashboard audit handoff
+
+The production-data dashboard audit from 2026-08-25 is documented in `docs/audits/2026-08-25-dashboard-audit-handoff.md`. It contains evidence, proposed designs, file ownership, cleanup safety guidance, required tests, and acceptance criteria for GitHub issues #88 through #94. Read that report before changing inventory credential reveal, history, budget-time semantics, dashboard DOM rendering, or frontend asset packaging.
+
 ## SQLite storage
 
 Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup via FastAPI lifespan (`app.py`). Schema migrations are idempotent — `init_db()` uses `PRAGMA table_info` + `ALTER TABLE ADD COLUMN` for new columns.

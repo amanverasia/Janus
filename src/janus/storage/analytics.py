@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from .database import get_connection
+from .time_windows import current_reporting_day
 
 Dimension = Literal["model", "provider", "account", "client_key"]
 
@@ -55,6 +57,38 @@ async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str,
         "total_cache_creation_tokens": row["cc"],
         "total_cache_read_tokens": row["cr"],
         "daily": [dict(r) for r in daily_rows],
+    }
+
+
+async def get_calendar_day_spend_summary(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    window = await current_reporting_day(db_path, now=now)
+    start_utc, end_utc = window.query_bounds
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT COUNT(*) as cnt,
+                      COALESCE(SUM(input_tokens), 0) as inp,
+                      COALESCE(SUM(output_tokens), 0) as outp,
+                      COALESCE(SUM(cache_creation_tokens), 0) as cc,
+                      COALESCE(SUM(cache_read_tokens), 0) as cr,
+                      COALESCE(SUM(cost), 0.0) as cost
+               FROM usage
+               WHERE timestamp >= ? AND timestamp < ?""",
+            (start_utc, end_utc),
+        ) as cur:
+            row = await cur.fetchone()
+            assert row is not None
+    return {
+        "total_cost": row["cost"],
+        "total_requests": row["cnt"],
+        "total_input_tokens": row["inp"],
+        "total_output_tokens": row["outp"],
+        "total_cache_creation_tokens": row["cc"],
+        "total_cache_read_tokens": row["cr"],
+        "reporting_timezone": window.timezone,
     }
 
 

@@ -77,10 +77,12 @@ async def get_recent_activity(db_path: str | Path, limit: int = 20) -> list[dict
                  h.changed_at,
                  k.key_masked,
                  k.key_label,
-                 p.display_name as provider_display_name
+                 p.display_name as provider_display_name,
+                 p.billing_model as provider_billing_model
                FROM upstream_key_history h
                JOIN upstream_keys k ON h.upstream_key_id = k.id
                JOIN inventory_providers p ON k.provider_id = p.id
+               WHERE h.previous_status IS NULL OR h.previous_status != h.new_status
                ORDER BY h.changed_at DESC
                LIMIT ?""",
             (limit,),
@@ -113,11 +115,9 @@ async def get_credit_summary(db_path: str | Path) -> list[dict[str, Any]]:
 
 
 async def get_best_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
-    from janus.inventory.key_encryption import decrypt_key_value
-
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT k.id, k.key_value, k.key_label, k.key_masked, k.provider_id,
+            """SELECT k.id, k.key_label, k.key_masked, k.provider_id,
                       p.display_name AS provider_display_name,
                       p.name AS provider_name,
                       k.credits_remaining, k.credits_total, k.rate_limit_rpm,
@@ -134,9 +134,6 @@ async def get_best_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:
     best_by_provider: dict[str, dict[str, Any]] = {}
     for row in rows:
         item = dict(row)
-        key_value = item.get("key_value")
-        if isinstance(key_value, str):
-            item["key_value"] = decrypt_key_value(key_value)
         provider_id = str(item["provider_id"])
         if provider_id not in best_by_provider:
             best_by_provider[provider_id] = item

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .database import get_connection
+from .time_windows import current_reporting_day
 
 if TYPE_CHECKING:
     from janus.pricing.registry import PricingRegistry
@@ -165,16 +167,22 @@ async def get_usage_stats(db_path: str | Path) -> dict[str, Any]:
     }
 
 
-async def get_today_total_cost(db_path: str | Path) -> float:
-    """Sum of ``usage.cost`` for rows timestamped today (local time).
+async def get_today_total_cost(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+) -> float:
+    """Sum of ``usage.cost`` for the configured reporting calendar day.
 
     Used to report how much a backfill moved today's measured spend, which
     is what budget enforcement reads from.
     """
+    window = await current_reporting_day(db_path, now=now)
     async with get_connection(db_path) as db:
         async with db.execute(
             "SELECT COALESCE(SUM(cost), 0.0) as total FROM usage "
-            "WHERE date(timestamp) = date('now', 'localtime')"
+            "WHERE timestamp >= ? AND timestamp < ?",
+            window.query_bounds,
         ) as cur:
             row = await cur.fetchone()
     return float(row["total"]) if row is not None else 0.0

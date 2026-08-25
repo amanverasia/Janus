@@ -111,23 +111,23 @@ async def _check_budgets(
 ) -> Response | None:
     try:
         statuses: list[dict[str, Any]] = []
-        key_status = await get_budget_status(db_path, key_id=client_key_id)
-        if key_status is not None:
-            statuses.append(key_status)
-        global_status = await get_budget_status(db_path, key_id=None)
+        reporting_now = datetime.datetime.now(datetime.UTC)
+        if client_key_id is not None:
+            key_status = await get_budget_status(db_path, key_id=client_key_id, now=reporting_now)
+            if key_status is not None:
+                statuses.append(key_status)
+        global_status = await get_budget_status(db_path, key_id=None, now=reporting_now)
         if global_status is not None:
             statuses.append(global_status)
         for s in statuses:
             if s["status"] == "exceeded":
-                now = datetime.datetime.now()
-                midnight = now.replace(hour=23, minute=59, second=59, microsecond=0)
-                retry_after = int((midnight - now).total_seconds()) + 1
+                retry_after = int(s["retry_after"])
                 error_body: dict[str, Any] = {
                     "error": {
                         "message": (
                             f"Daily budget exceeded. "
                             f"Spent ${s['today_spend']:.2f} of ${s['daily_limit']:.2f} limit. "
-                            f"Resets at midnight."
+                            f"Resets at midnight ({s['reporting_timezone']})."
                         ),
                         "type": "budget_exceeded",
                         "today_spend": round(s["today_spend"], 4),

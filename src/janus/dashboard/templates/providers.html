@@ -263,6 +263,49 @@ function copilotConnectVisibility() {
 
 var copilotPollTimer = null;
 
+function copilotVerificationUrl(value) {
+    try {
+        var url = new URL(String(value));
+        if (url.protocol === 'https:' || url.protocol === 'http:') return url.href;
+    } catch (error) {
+        return null;
+    }
+    return null;
+}
+
+function renderCopilotVerification(statusEl, verificationUri, userCode) {
+    var safeUrl = copilotVerificationUrl(verificationUri);
+    var destination = document.createElement(safeUrl ? 'a' : 'span');
+    destination.textContent = verificationUri || 'the verification page';
+    if (safeUrl) {
+        destination.href = safeUrl;
+        destination.target = '_blank';
+        destination.rel = 'noopener noreferrer';
+        destination.className = 'text-blue-400 underline';
+    }
+    var code = document.createElement('strong');
+    code.className = 'text-white font-mono text-base';
+    code.textContent = userCode || '';
+    var waiting = document.createElement('span');
+    waiting.className = 'text-gray-500';
+    waiting.textContent = 'Waiting for authorization…';
+    statusEl.replaceChildren(
+        document.createTextNode('Open '),
+        destination,
+        document.createTextNode(' and enter code: '),
+        code,
+        document.createElement('br'),
+        waiting
+    );
+}
+
+function renderCopilotStatus(statusEl, message, className) {
+    var result = document.createElement('span');
+    result.className = className;
+    result.textContent = message;
+    statusEl.replaceChildren(result);
+}
+
 function startCopilotAuth() {
     var statusEl = document.getElementById('copilot-auth-status');
     var btn = document.getElementById('copilot-connect-btn');
@@ -281,9 +324,7 @@ function startCopilotAuth() {
                 btn.classList.remove('opacity-50');
                 return;
             }
-            statusEl.innerHTML = 'Open <a href="' + data.verification_uri + '" target="_blank" class="text-blue-400 underline">' +
-                data.verification_uri + '</a> and enter code: <strong class="text-white font-mono text-base">' +
-                data.user_code + '</strong><br><span class="text-gray-500">Waiting for authorization\u2026</span>';
+            renderCopilotVerification(statusEl, data.verification_uri, data.user_code);
             var interval = Math.max((data.interval || 5) * 1000, 5000);
             copilotPollTimer = setInterval(function() {
                 var body = new URLSearchParams();
@@ -297,13 +338,21 @@ function startCopilotAuth() {
                         clearInterval(copilotPollTimer);
                         copilotPollTimer = null;
                         document.getElementById('f-api_key').value = poll.access_token;
-                        statusEl.innerHTML = '<span class="text-green-400">Connected! Token filled in. Click Create Provider to finish.</span>';
+                        renderCopilotStatus(
+                            statusEl,
+                            'Connected! Token filled in. Click Create Provider to finish.',
+                            'text-green-400'
+                        );
                         btn.disabled = false;
                         btn.classList.remove('opacity-50');
                     } else if (poll.status === 'error') {
                         clearInterval(copilotPollTimer);
                         copilotPollTimer = null;
-                        statusEl.innerHTML = '<span class="text-red-400">Authorization failed: ' + poll.error + '</span>';
+                        renderCopilotStatus(
+                            statusEl,
+                            'Authorization failed: ' + poll.error,
+                            'text-red-400'
+                        );
                         btn.disabled = false;
                         btn.classList.remove('opacity-50');
                     }

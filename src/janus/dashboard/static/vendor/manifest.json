@@ -1,0 +1,22 @@
+{
+  "files": {
+    "css/dashboard.min.css": "60e54a76b4e75a21df21cff26d29d68fe93fa01ce4960b2376ff2da8c4ff845e",
+    "vendor/chart.js-4.4.1.umd.min.js": "d2af8974e95271638772e9e9524db5b9a6f58d6ec2d5d781400447b4a31c681e",
+    "vendor/d3-7.9.0.min.js": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539",
+    "vendor/d3-sankey-0.12.3.min.js": "8286db5d6aa049cc6e8a546708943b79dfb4daaefb0ccf42af674ec0ee4c86be",
+    "vendor/htmx-2.0.4.min.js": "e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447",
+    "vendor/licenses/chart.js-4.4.1.LICENSE.txt": "5a0877ad6d818529be4f33009d0942cdf7e2ed7656156f4aba7308459a546030",
+    "vendor/licenses/d3-7.9.0.LICENSE.txt": "3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4",
+    "vendor/licenses/d3-sankey-0.12.3.LICENSE.txt": "2bf785e778d67a4f5266cffcd4f2cc5bb98cde73791666e7efeb8002ba32dfa5",
+    "vendor/licenses/htmx-2.0.4.LICENSE.txt": "d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38",
+    "vendor/licenses/tailwindcss-3.4.17.LICENSE.txt": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+  },
+  "tailwind": {
+    "compiler_sha256": "7d24f7fa191d2193b78cd5f5a42a6093e14409521908529f42d80b11fde1f1d4",
+    "compiler_url": "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64",
+    "config_sha256": "dc30f4a0ef5ecf05622be3d336df0d725a8c37a05cc0ec2a1db27b2a5956cca5",
+    "input_sha256": "cc1a7ad0d019ddb1d32d0ecb588ba0ac26ce41d8625dd6c366348b25f83a28ec",
+    "templates_sha256": "ca26ae8171532ed42a41b1b83c120687df4d7deea2d8ff39eb55795ab4019042",
+    "version": "3.4.17"
+  }
+}
