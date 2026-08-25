@@ -1460,10 +1460,15 @@ auth</strong> when exposing Janus beyond localhost:</p>
 <p>When <code>host: 0.0.0.0</code>, clients connect to <code>http://&lt;host&gt;:20128/v1/...</code>. Require
 API keys and use TLS termination (reverse proxy) for anything beyond a trusted LAN.</p>
 <h3 id="dashboard-authentication">Dashboard authentication<a class="headerlink" href="#dashboard-authentication" title="Permanent link">&para;</a></h3>
-<p>Loopback clients (<code>127.0.0.1</code>, <code>localhost</code>) access the dashboard without auth.
-Remote clients are redirected to <code>/dashboard/login</code> and must authenticate with a
-valid Janus API key (sets an httponly cookie). See
+<p>Every client, including <code>127.0.0.1</code> and <code>localhost</code>, is redirected to
+<code>/dashboard/login</code> until it authenticates with a valid Janus API key. DB-managed
+keys must be active and have <strong>Allow dashboard login</strong> (<code>can_login=true</code>);
+configured static keys are also accepted. Username/password login and the
+loopback bypass are not supported. Legacy dashboard credential settings are
+purged during database initialization. See
 <a href="../dashboard/#authentication">Dashboard — Authentication</a>.</p>
+<p>The <code>require_api_key</code> setting controls API endpoint authentication only. It does
+not make the dashboard anonymous when disabled.</p>
 <h2 id="reverse-proxy">Reverse proxy<a class="headerlink" href="#reverse-proxy" title="Permanent link">&para;</a></h2>
 <p>Janus does not terminate TLS itself. Put nginx, Caddy, or Traefik in front:</p>
 <div class="highlight"><pre><span></span><code><span class="k">location</span><span class="w"> </span><span class="s">/</span><span class="w"> </span><span class="p">{</span>

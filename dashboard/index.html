@@ -1790,18 +1790,23 @@
 
 <h1 id="dashboard">Dashboard<a class="headerlink" href="#dashboard" title="Permanent link">&para;</a></h1>
 <p>Janus includes a built-in web UI at <code>/dashboard</code>. It's an HTMX-powered,
-dark-themed interface — no build step, no npm, no JavaScript framework. Tailwind,
-HTMX, and Chart.js are loaded via CDN.</p>
+dark-themed interface — no build step, no npm, no JavaScript framework. Pinned
+Tailwind, HTMX, Chart.js, D3, and d3-sankey assets are served locally, so the
+dashboard has no runtime CDN dependency.</p>
 <p>Open it in your browser:</p>
 <div class="highlight"><pre><span></span><code>http://localhost:20128/dashboard
 </code></pre></div>
 <p>The root URL <code>/</code> redirects here.</p>
 <h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
-<p><strong>Loopback clients</strong> (<code>127.0.0.1</code>, <code>localhost</code>) access the dashboard without auth.</p>
-<p><strong>Remote clients</strong> must authenticate with a valid Janus API key. Unauthenticated
-browser requests are redirected to <code>/dashboard/login</code>, which sets an httponly
-<code>janus_dashboard_key</code> cookie (30-day max-age). API-style requests without a cookie
-receive <code>401</code>.</p>
+<p>Every dashboard client must authenticate with a valid Janus API key, including
+clients on <code>127.0.0.1</code> and <code>localhost</code>. There is no loopback bypass and no
+username/password login. Unauthenticated browser requests are redirected to
+<code>/dashboard/login</code>, which sets an httponly <code>janus_dashboard_key</code> cookie (30-day
+max-age). API-style requests without a valid key or cookie receive <code>401</code>.</p>
+<p>DB-managed keys must be active and have <strong>Allow dashboard login</strong>
+(<code>can_login=true</code>). Static API keys configured in YAML are also accepted. Manage
+DB-key access from <strong>API Keys</strong>; the <strong>Require API key</strong> setting controls API
+endpoint authentication and never makes the dashboard anonymous.</p>
 <p>Accepted auth methods (same as the API):</p>
 <ul>
 <li><code>Authorization: Bearer &lt;key&gt;</code></li>
@@ -1809,10 +1814,9 @@ receive <code>401</code>.</p>
 <li><code>?key=&lt;key&gt;</code></li>
 </ul>
 <div class="admonition warning">
-<p class="admonition-title">Remote access</p>
-<p>When binding to <code>0.0.0.0</code> (Docker default), enable <code>require_api_key</code> and use
-the login page for dashboard access from other machines. See
-<a href="../deployment/">Deployment</a>.</p>
+<p class="admonition-title">Credential migration</p>
+<p>Legacy dashboard username/password settings are removed during database
+initialization. Use an authorized API key to sign in after upgrading.</p>
 </div>
 <h2 id="navigation">Navigation<a class="headerlink" href="#navigation" title="Permanent link">&para;</a></h2>
 <p>The sidebar groups 13 pages into four sections:</p>
@@ -1954,8 +1958,8 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <h3 id="api-keys-dashboardkeys">API Keys — <code>/dashboard/keys</code><a class="headerlink" href="#api-keys-dashboardkeys" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Key list</strong> — ID, prefix, name, login permission, model allowlist, status (active/revoked)</li>
-<li><strong>Create</strong> — HTMX form with optional dashboard login, allowed models (<code>exact</code> or <code>prefix/*</code>), and daily budget; full <code>sk-janus-...</code> key shown <strong>once</strong></li>
-<li><strong>Edit</strong> — update name, login, models, or daily budget</li>
+<li><strong>Create</strong> — HTMX form with <strong>Allow dashboard login</strong>, allowed models (<code>exact</code> or <code>prefix/*</code>), and daily budget; full <code>sk-janus-...</code> key shown <strong>once</strong></li>
+<li><strong>Edit</strong> — update name, dashboard access, models, or daily budget</li>
 <li><strong>Revoke</strong> — deactivate key</li>
 </ul>
 <h3 id="tool-setup-dashboardtools">Tool Setup — <code>/dashboard/tools</code><a class="headerlink" href="#tool-setup-dashboardtools" title="Permanent link">&para;</a></h3>
@@ -1993,6 +1997,10 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <li><strong>Export Config</strong> — download current DB state as YAML</li>
 <li><strong>Reset to Defaults</strong> — wipe DB tables and re-seed from <code>config.yaml</code> (danger zone)</li>
 </ul>
+<p>Settings does not contain a dashboard username or password. Dashboard identity
+and access are API-key based, and <strong>API Keys</strong> is the place to grant or revoke
+<strong>Allow dashboard login</strong>. Any legacy username/password settings are purged at
+database initialization.</p>
 <p>On <strong>Routing</strong>, use <strong>Clear all cooldowns</strong> to wipe active in-memory and SQLite
 cooldown timers without changing the enable toggle.</p>
 <hr />
@@ -2011,12 +2019,12 @@ cooldown timers without changing the enable toggle.</p>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/keys</code></td>
-<td>Create an API key (optional login/models/budget)</td>
+<td>Create an API key (dashboard access/models/budget)</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/keys/{id}</code></td>
-<td>Update key scopes / optional daily budget</td>
+<td>Update key scopes and optional daily budget</td>
 </tr>
 <tr>
 <td><code>DELETE</code></td>

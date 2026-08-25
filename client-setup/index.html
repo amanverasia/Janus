@@ -1492,6 +1492,10 @@ janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> 
 janus<span class="w"> </span>keys<span class="w"> </span>update<span class="w"> </span><span class="m">1</span><span class="w"> </span>--login<span class="w"> </span>--clear-models<span class="w">   </span><span class="c1"># restore full access later</span>
 </code></pre></div>
 <p>The full key is shown once. Use it in the <code>Authorization: Bearer &lt;key&gt;</code> header or as your <code>OPENAI_API_KEY</code> / <code>ANTHROPIC_API_KEY</code>. Empty model allowlist means all models; patterns may be exact IDs or <code>prefix/*</code>.</p>
+<p>Dashboard login is API-key-only for local and remote clients. A DB-managed key
+can sign in only while active and configured with <strong>Allow dashboard login</strong>
+(<code>can_login=true</code>); configured static keys are also accepted. Manage this
+permission from <strong>API Keys</strong>. Username/password login is not available.</p>
 <h2 id="gemini-cli-and-gemini-native-tools">Gemini CLI and Gemini-native tools<a class="headerlink" href="#gemini-cli-and-gemini-native-tools" title="Permanent link">&para;</a></h2>
 <p>Point Gemini SDKs, <strong>Gemini CLI</strong>, and other Gemini-native clients at Janus. The
 base URL is the host root (<code>http://localhost:20128</code>) — the Gemini surface is
@@ -1576,8 +1580,9 @@ normalization when talking to Anthropic-format upstreams.</p>
 <h2 id="remote-docker-setups">Remote / Docker setups<a class="headerlink" href="#remote-docker-setups" title="Permanent link">&para;</a></h2>
 <p>When Janus runs on another machine or in Docker with <code>host: 0.0.0.0</code>, replace
 <code>localhost</code> with the host's address. Enable <code>require_api_key</code> and use a
-dashboard-created key. The dashboard requires login from non-loopback clients —
-see <a href="../dashboard/#authentication">Dashboard — Authentication</a>.</p>
+dashboard-created key for API requests. The dashboard requires an authorized API
+key from every client, including loopback, regardless of <code>require_api_key</code> — see
+<a href="../dashboard/#authentication">Dashboard — Authentication</a>.</p>
 
 
 
