@@ -7,12 +7,13 @@ from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
 from janus.pricing.sync import LITELLM_URL, OPENROUTER_URL
 from janus.storage.usage import record_usage
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.fixture
 def app(tmp_path):
     cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
-    return create_app(config=cfg)
+    return with_dashboard_auth(create_app(config=cfg))
 
 
 def _litellm_payload():

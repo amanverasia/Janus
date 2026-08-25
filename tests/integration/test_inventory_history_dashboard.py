@@ -8,12 +8,15 @@ from janus.config.schema import JanusConfig, ServerSettings
 from janus.inventory.ingestion import KeyIngestEntry, ingest_upstream_key
 from janus.storage.database import init_db, seed_from_config
 from janus.storage.upstream_keys import record_upstream_key_history
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.mark.asyncio
 async def test_inventory_history_renders_unit_neutral_balance_snapshots(tmp_path, monkeypatch):
     monkeypatch.setenv("INVENTORY_SCHEDULER_ENABLED", "false")
-    app = create_app(config=JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path)))
+    app = with_dashboard_auth(
+        create_app(config=JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path)))
+    )
     await init_db(app.state.db_path)
     await seed_from_config(app.state.db_path, app.state.config)
     key = await ingest_upstream_key(

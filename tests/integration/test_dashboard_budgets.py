@@ -7,11 +7,14 @@ from janus.storage.api_keys import create_key
 from janus.storage.budgets import get_budgets
 from janus.storage.database import init_db
 from janus.storage.settings import get_setting
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.fixture
 async def budget_app(tmp_path):
-    app = create_app(config=JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path)))
+    app = with_dashboard_auth(
+        create_app(config=JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path)))
+    )
     await init_db(app.state.db_path)
     _, key = await create_key(app.state.db_path, "budget-key")
     return app, key

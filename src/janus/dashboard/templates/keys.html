@@ -89,6 +89,7 @@
             .then(function (r) { return r.text(); })
             .then(function (html) {
                 modal.innerHTML = html;
+                if (window.htmx) window.htmx.process(modal);
             })
             .catch(function () {
                 if (window.janusToast) janusToast('Failed to load key', 'error');

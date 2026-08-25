@@ -241,6 +241,12 @@ _API_KEY_NEW_COLUMNS = [
     ("allowed_models", "TEXT"),
 ]
 
+_LEGACY_DASHBOARD_SETTINGS = (
+    "dashboard_username",
+    "dashboard_password_hash",
+    "dashboard_session_secret",
+)
+
 
 async def _migrate_provider_columns(db: aiosqlite.Connection) -> None:
     cursor = await db.execute("PRAGMA table_info(providers)")
@@ -357,7 +363,14 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_request_log_columns(db)
         await _migrate_cooldowns_per_model(db)
         await _migrate_api_key_columns(db)
+        await db.execute(
+            "DELETE FROM settings WHERE key IN (?, ?, ?)",
+            _LEGACY_DASHBOARD_SETTINGS,
+        )
         await db.commit()
+    from janus.storage.settings import invalidate_settings_cache
+
+    invalidate_settings_cache(db_path)
     await seed_inventory_providers(db_path)
 
 

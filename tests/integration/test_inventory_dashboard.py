@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
+from tests.fixtures.dashboard_auth import DASHBOARD_TEST_ANONYMOUS_HEADERS, with_dashboard_auth
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +29,7 @@ def mock_public_dns(monkeypatch):
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv("INVENTORY_SCHEDULER_ENABLED", "false")
     cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
-    return create_app(config=cfg)
+    return with_dashboard_auth(create_app(config=cfg))
 
 
 @pytest.fixture
@@ -511,7 +512,10 @@ async def test_inventory_key_reveal_requires_dashboard_login(app):
     api_only_key, _ = await create_key(app.state.db_path, "api-only", can_login=False)
     transport = ASGITransport(app=app, client=("203.0.113.10", 43100))
     async with AsyncClient(transport=transport, base_url="http://test") as remote:
-        unauthenticated = await remote.post(f"/dashboard/api/inventory/keys/{key_id}/reveal")
+        unauthenticated = await remote.post(
+            f"/dashboard/api/inventory/keys/{key_id}/reveal",
+            headers=DASHBOARD_TEST_ANONYMOUS_HEADERS,
+        )
         api_only = await remote.post(
             f"/dashboard/api/inventory/keys/{key_id}/reveal",
             headers={"Authorization": f"Bearer {api_only_key}"},

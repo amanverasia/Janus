@@ -1,6 +1,7 @@
 import pytest
 
 from janus.storage.database import get_connection, init_db
+from janus.storage.settings import get_all_settings, set_setting
 
 
 @pytest.mark.asyncio
@@ -21,6 +22,24 @@ async def test_init_db_idempotent(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)
     await init_db(db_path)
+
+
+@pytest.mark.asyncio
+async def test_init_db_removes_legacy_dashboard_auth_settings(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    legacy_settings = {
+        "dashboard_username": "hett",
+        "dashboard_password_hash": "legacy-password-hash",
+        "dashboard_session_secret": "legacy-session-secret",
+    }
+    for key, value in legacy_settings.items():
+        await set_setting(db_path, key, value)
+
+    await init_db(db_path)
+
+    settings = await get_all_settings(db_path)
+    assert legacy_settings.keys().isdisjoint(settings)
 
 
 @pytest.mark.asyncio

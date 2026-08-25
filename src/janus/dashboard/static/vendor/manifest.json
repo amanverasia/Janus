@@ -16,7 +16,7 @@
     "compiler_url": "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64",
     "config_sha256": "dc30f4a0ef5ecf05622be3d336df0d725a8c37a05cc0ec2a1db27b2a5956cca5",
     "input_sha256": "cc1a7ad0d019ddb1d32d0ecb588ba0ac26ce41d8625dd6c366348b25f83a28ec",
-    "templates_sha256": "ca26ae8171532ed42a41b1b83c120687df4d7deea2d8ff39eb55795ab4019042",
+    "templates_sha256": "8490badb987819f29b23db7768dd2274cd9aaf829bc58594fc865a6668e46bf3",
     "version": "3.4.17"
   }
 }

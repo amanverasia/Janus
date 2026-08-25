@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
 from janus.storage.settings import set_setting
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 async def _seed_and_reload(app) -> None:
@@ -42,7 +43,7 @@ async def app(tmp_path):
     )
     app = create_app(config=cfg)
     await _seed_and_reload(app)
-    return app
+    return with_dashboard_auth(app)
 
 
 def _mock_upstream() -> respx.Route:

@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def app(tmp_path):
         ],
         combos=[ComboConfig(name="stk", models=["t/m1"])],
     )
-    return create_app(config=cfg)
+    return with_dashboard_auth(create_app(config=cfg))
 
 
 @pytest.mark.asyncio
@@ -123,7 +124,7 @@ async def test_combo_modal_hides_allowlist_blocked_models(tmp_path):
             )
         ],
     )
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/dashboard/combos")
         assert r.status_code == 200
@@ -163,6 +164,37 @@ async def test_dashboard_keys_create_with_scopes(app):
         assert "sk-janus-" in r.text
         assert "No" in r.text or "api" in r.text.lower()
         assert "test/*" in r.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_keys_edit_can_remove_login_access(app):
+    from janus.storage.api_keys import create_key, get_key_policy
+    from janus.storage.database import init_db
+
+    await init_db(app.state.db_path)
+    _, record = await create_key(app.state.db_path, "dashboard-user", can_login=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        page = await client.get("/dashboard/keys")
+        assert "window.htmx.process(modal)" in page.text
+
+        edit = await client.get(f"/dashboard/api/keys/{record['id']}/edit")
+        assert edit.status_code == 200
+        assert 'method="post"' in edit.text
+
+        response = await client.post(
+            f"/dashboard/api/keys/{record['id']}",
+            data={
+                "name": "dashboard-user",
+                "login_field": "1",
+                "models_field": "1",
+                "allowed_models": "",
+            },
+        )
+        assert response.status_code == 200
+
+    policy = await get_key_policy(app.state.db_path, int(record["id"]))
+    assert policy is not None
+    assert policy["can_login"] is False
 
 
 @pytest.mark.asyncio

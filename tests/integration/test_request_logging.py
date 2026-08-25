@@ -7,6 +7,7 @@ from janus.app import create_app
 from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
 from janus.storage.request_logs import get_request_log, list_request_logs, record_request_log
 from janus.storage.settings import set_setting
+from tests.fixtures.dashboard_auth import with_dashboard_auth
 
 
 async def _seed_and_reload(app) -> None:
@@ -41,7 +42,7 @@ async def app(tmp_path):
         server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
     )
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     await _seed_and_reload(app)
     return app
 
@@ -306,7 +307,7 @@ async def test_db_key_name_shown_on_dashboard(tmp_path):
         server=ServerSettings(port=0, require_api_key=True, data_dir=tmp_path),
         providers=[provider],
     )
-    app = create_app(config=cfg)
+    app = with_dashboard_auth(create_app(config=cfg))
     await _seed_and_reload(app)
     full_key, _ = await create_key(app.state.db_path, "alice-laptop")
     _mock_upstream()
