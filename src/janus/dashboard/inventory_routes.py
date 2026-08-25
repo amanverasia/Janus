@@ -18,7 +18,7 @@ from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
 from janus.inventory.key_checker import check_all_upstream_keys, validate_key
 from janus.inventory.key_encryption import CredentialEncryptionError, encryption_enabled
-from janus.inventory.migrate import import_dashboard_json, verify_inventory
+from janus.inventory.migrate import import_dashboard_json_with_ids, verify_inventory
 from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 from janus.inventory.reclassify import reclassify_upstream_keys
@@ -136,6 +136,66 @@ def _safe_json_field(value: Any) -> Any:
         except json.JSONDecodeError:
             return value
     return value
+
+
+def _wants_json(request: Request) -> bool:
+    for entry in request.headers.get("accept", "").split(","):
+        media_type = entry.split(";", maxsplit=1)[0].strip().lower()
+        if media_type == "application/json" or media_type.endswith("+json"):
+            return True
+    return False
+
+
+def _json_error(message: str, *, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        {"ok": False, "error": message},
+        status_code=status_code,
+        headers=_NO_STORE_HEADERS,
+    )
+
+
+def _safe_ingest_error(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    lowered = value.lower()
+    if "too short" in lowered:
+        return "Credential is too short."
+    if "too long" in lowered:
+        return "Credential is too long."
+    if "does not look like" in lowered:
+        return "Value does not look like a credential."
+    if "base_url" in lowered or "base url" in lowered:
+        return "Base URL must be a valid HTTP(S) URL."
+    if "unknown provider" in lowered:
+        return "Provider is not recognized."
+    if "access token" in lowered:
+        return "Credential is missing an access token."
+    if "json" in lowered:
+        return "Credential JSON is invalid."
+    if "expires" in lowered or "expiry" in lowered:
+        return "Credential expiry is invalid."
+    if "missing" in lowered:
+        return "Credential is missing."
+    return "Credential was rejected."
+
+
+def _safe_submit_result(item: dict[str, Any]) -> dict[str, Any]:
+    status = str(item.get("status") or "rejected")
+    key_masked = item.get("key_masked")
+    if status == "rejected" or not isinstance(key_masked, str):
+        key_masked = "****"
+    return {
+        "id": str(item["id"]) if item.get("id") is not None else None,
+        "key_masked": key_masked,
+        "provider_id": (str(item["provider_id"]) if item.get("provider_id") is not None else None),
+        "provider_display_name": (
+            str(item["provider_display_name"])
+            if item.get("provider_display_name") is not None
+            else None
+        ),
+        "status": status,
+        "error": _safe_ingest_error(item.get("error")),
+    }
 
 
 def _sort_toggle(current_sort: str, current_dir: str, column: str) -> str:
@@ -431,26 +491,33 @@ async def api_inventory_preview(
     )
 
 
-@router.post("/api/inventory/submit", response_class=HTMLResponse)
+@router.post("/api/inventory/submit", response_class=HTMLResponse, response_model=None)
 async def api_inventory_submit(
     request: Request,
     keys_text: str = Form(...),
     provider_id: str = Form("auto"),
     custom_base_url: str = Form(""),
     provision_routing: str = Form("false"),
-) -> HTMLResponse:
+) -> Response:
     db_path = await _ensure_db(request)
     entries = [KeyIngestEntry(key=entry["key"]) for entry in _parse_bulk_keys(keys_text)]
     batch_error = enforce_batch_size(len(entries))
     if batch_error:
+        if _wants_json(request):
+            return _json_error(batch_error, status_code=422)
         return _templates.TemplateResponse(
             request,
             "inventory_add_results.html",
             {"request": request, "results": [], "error": batch_error},
         )
+    if not entries and _wants_json(request):
+        return _json_error("No credentials found in input.", status_code=422)
 
     limiter = get_submit_rate_limiter()
     if entries and not limiter.allow(_client_id(request), len(entries)):
+        error = f"Rate limited. Max {limiter.limit} credentials per minute."
+        if _wants_json(request):
+            return _json_error(error, status_code=429)
         return _templates.TemplateResponse(
             request,
             "inventory_add_results.html",
@@ -502,6 +569,27 @@ async def api_inventory_submit(
         from janus.dashboard.reload import reload_providers
 
         await reload_providers(request.app)
+
+    if _wants_json(request):
+        safe_results = [_safe_submit_result(item) for item in results]
+        rejected_count = sum(item["status"] == "rejected" for item in safe_results)
+        accepted_count = len(safe_results) - rejected_count
+        queued_count = sum(item["status"] == "pending_validation" for item in safe_results)
+        payload: dict[str, Any] = {
+            "ok": rejected_count == 0,
+            "processed_count": len(safe_results),
+            "accepted_count": accepted_count,
+            "rejected_count": rejected_count,
+            "queued_count": queued_count,
+            "results": safe_results,
+            "provision_results": provision_results,
+            "has_pending": queued_count > 0,
+        }
+        return JSONResponse(
+            payload,
+            status_code=422 if rejected_count and accepted_count == 0 else 200,
+            headers=_NO_STORE_HEADERS,
+        )
 
     return _templates.TemplateResponse(
         request,
@@ -1026,48 +1114,117 @@ async def api_reclassify_clear() -> HTMLResponse:
     return HTMLResponse("")
 
 
-@router.post("/api/inventory/encrypt-keys", response_class=HTMLResponse)
-async def api_inventory_encrypt_keys(request: Request) -> HTMLResponse:
+@router.post("/api/inventory/encrypt-keys", response_class=HTMLResponse, response_model=None)
+async def api_inventory_encrypt_keys(request: Request) -> Response:
     db_path = await _ensure_db(request)
     error: str | None = None
+    json_error: str | None = None
     upstream_converted = 0
     provider_converted = 0
     if not encryption_enabled():
         error = "Set INVENTORY_ENCRYPTION_KEY in the environment before encrypting keys."
+        json_error = "Credential encryption is not configured on this Janus node."
     else:
         try:
             upstream_converted = await reencrypt_plaintext_upstream_keys(db_path)
             provider_converted = await reencrypt_plaintext_provider_keys(db_path)
         except RuntimeError as exc:
             error = str(exc)
+            json_error = "Stored credentials could not be encrypted. Verify the encryption key."
+    encryption_context = await _encryption_context(db_path)
+    if _wants_json(request):
+        payload: dict[str, Any] = {
+            "ok": json_error is None,
+            "upstream_converted": upstream_converted,
+            "provider_converted": provider_converted,
+            **encryption_context,
+        }
+        if json_error is not None:
+            payload["error"] = json_error
+        return JSONResponse(
+            payload,
+            status_code=409 if json_error is not None else 200,
+            headers=_NO_STORE_HEADERS,
+        )
     context = {
         "request": request,
         "error": error,
         "upstream_converted": upstream_converted,
         "provider_converted": provider_converted,
-        **await _encryption_context(db_path),
+        **encryption_context,
     }
     return _templates.TemplateResponse(request, "inventory_encryption_partial.html", context)
 
 
-@router.post("/api/inventory/import", response_class=HTMLResponse)
+@router.post("/api/inventory/import", response_class=HTMLResponse, response_model=None)
 async def api_inventory_import(
     request: Request,
     export_file: UploadFile = File(...),
     verify: str = Form(""),
-) -> HTMLResponse:
+) -> Response:
     db_path = await _ensure_db(request)
     data = await export_file.read()
     error: str | None = None
+    json_error: str | None = None
     imported = 0
+    imported_ids: list[str] = []
     try:
-        imported = await import_dashboard_json(db_path, data, dry_run=False)
-    except (ValueError, json.JSONDecodeError) as exc:
+        imported, imported_ids = await import_dashboard_json_with_ids(db_path, data, dry_run=False)
+    except json.JSONDecodeError as exc:
         error = str(exc)
+        json_error = "The selected file is not valid JSON."
+    except ValueError as exc:
+        error = str(exc)
+        if error == "Expected export JSON with a top-level 'keys' array or a bare array":
+            json_error = error
+        else:
+            json_error = "The import contains an invalid field value."
+    except (TypeError, OverflowError):
+        if not _wants_json(request):
+            raise
+        json_error = "The import contains an invalid field value."
+        error = json_error
+    except CredentialEncryptionError:
+        if not _wants_json(request):
+            raise
+        json_error = "Credential storage encryption is not configured correctly."
+        error = json_error
+
+    if error is None and imported_ids:
+        for key_id in imported_ids:
+            await update_upstream_key(
+                db_path,
+                key_id,
+                {
+                    "status": "pending_validation",
+                    "is_valid": 0,
+                    "is_usable": 0,
+                    "last_error": None,
+                },
+            )
+            _schedule_recheck(key_id, db_path)
+        from janus.dashboard.reload import reload_providers
+
+        await reload_providers(request.app)
 
     verification: dict[str, Any] | None = None
     if error is None and verify.lower() in {"true", "1", "on", "yes"}:
         verification = await verify_inventory(db_path)
+
+    if _wants_json(request):
+        if json_error is not None:
+            return _json_error(json_error, status_code=422)
+        if imported == 0:
+            return _json_error("No importable credentials were found.", status_code=422)
+        return JSONResponse(
+            {
+                "ok": True,
+                "imported_count": imported,
+                "recheck_count": len(imported_ids),
+                "verification": verification,
+            },
+            headers=_NO_STORE_HEADERS,
+        )
 
     return _templates.TemplateResponse(
         request,

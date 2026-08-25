@@ -8,3 +8,7 @@ docs/
 .ruff_cache/
 *.egg-info/
 janus-data/
+dashboard-ui/node_modules/
+dashboard-ui/.svelte-kit/
+dashboard-ui/build/
+.zcode/

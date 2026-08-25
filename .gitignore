@@ -78,6 +78,11 @@ logs/
 *.spec
 pip-log.txt
 pip-delete-this-directory.txt
+dashboard-ui/node_modules/
+dashboard-ui/.svelte-kit/
+dashboard-ui/build/
+!dashboard-ui/src/lib/
+!dashboard-ui/src/lib/**
 
 # MkDocs build output
 site/

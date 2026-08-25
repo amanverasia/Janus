@@ -83,6 +83,89 @@ async def test_inventory_submit_provisions_routing_provider(client, tmp_path):
     assert row["prefix"] == "openrouter"
 
 
+async def test_inventory_submit_json_returns_safe_summary(client, monkeypatch):
+    scheduled: list[str] = []
+
+    def fake_schedule(key_id, db_path):
+        del db_path
+        scheduled.append(key_id)
+
+    monkeypatch.setattr("janus.dashboard.inventory_routes._schedule_recheck", fake_schedule)
+    secret = "sk-proj-json-contract-secret-value"
+    response = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": secret, "provider_id": "openai"},
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["processed_count"] == 1
+    assert payload["accepted_count"] == 1
+    assert payload["rejected_count"] == 0
+    assert payload["queued_count"] == 1
+    assert payload["results"][0]["id"] == scheduled[0]
+    assert payload["results"][0]["key_masked"] != secret
+    assert secret not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+async def test_inventory_submit_json_rejects_invalid_input_without_echoing_it(client):
+    secret = "tinykey"
+    response = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": secret, "provider_id": "openai"},
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["accepted_count"] == 0
+    assert payload["rejected_count"] == 1
+    assert payload["results"][0]["key_masked"] == "****"
+    assert secret not in response.text
+
+
+async def test_inventory_submit_json_uses_error_statuses(client, monkeypatch):
+    empty = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": "   ", "provider_id": "auto"},
+        headers={"Accept": "application/json"},
+    )
+    assert empty.status_code == 422
+    assert empty.json() == {"ok": False, "error": "No credentials found in input."}
+
+    class DenyLimiter:
+        limit = 1
+
+        def allow(self, client_id, cost):
+            del client_id, cost
+            return False
+
+    monkeypatch.setattr(
+        "janus.dashboard.inventory_routes.get_submit_rate_limiter", lambda: DenyLimiter()
+    )
+    limited = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": "sk-proj-rate-limit-secret", "provider_id": "openai"},
+        headers={"Accept": "application/json"},
+    )
+    assert limited.status_code == 429
+    assert limited.json()["ok"] is False
+
+
+async def test_inventory_submit_without_json_accept_preserves_html_contract(client):
+    response = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": "   ", "provider_id": "auto"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+
+
 async def test_inventory_import_page(client):
     r = await client.get("/dashboard/inventory/import")
     assert r.status_code == 200
@@ -376,6 +459,58 @@ async def test_inventory_encrypt_action_covers_provider_credentials(client, tmp_
     assert row["api_key"].startswith("enc:v1:")
 
 
+async def test_inventory_encrypt_json_requires_configuration(client, monkeypatch):
+    monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY", raising=False)
+
+    response = await client.post(
+        "/dashboard/api/inventory/encrypt-keys",
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["ok"] is False
+    assert "not configured" in response.json()["error"]
+    assert response.headers["cache-control"] == "no-store"
+
+    legacy = await client.post("/dashboard/api/inventory/encrypt-keys")
+    assert legacy.status_code == 200
+    assert legacy.headers["content-type"].startswith("text/html")
+    assert "Set INVENTORY_ENCRYPTION_KEY" in legacy.text
+
+
+async def test_inventory_encrypt_json_returns_safe_counts(client, app, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from janus.storage.providers_db import create_provider
+
+    await client.get("/dashboard/inventory")
+    secret = "sk-provider-json-encryption-secret"
+    await create_provider(
+        app.state.db_path,
+        {
+            "id": "encrypt-json",
+            "prefix": "encrypt-json",
+            "api_type": "openai_compat",
+            "base_url": "https://encrypt.example/v1",
+            "api_key": secret,
+            "models": [],
+        },
+    )
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    response = await client.post(
+        "/dashboard/api/inventory/encrypt-keys",
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["provider_converted"] == 1
+    assert payload["upstream_converted"] == 0
+    assert secret not in response.text
+
+
 async def test_inventory_keys_has_reidentify_and_import_links(client):
     r = await client.get("/dashboard/inventory/keys")
     assert r.status_code == 200
@@ -397,6 +532,103 @@ async def test_inventory_import_upload(client):
     assert r.status_code == 200
     assert "Imported 1" in r.text
     assert "Verification Summary" in r.text
+
+
+async def test_inventory_import_json_schedules_rechecks_and_reloads_routing(
+    client, app, monkeypatch
+):
+    import json
+
+    await client.get("/dashboard/inventory")
+    scheduled: list[tuple[str, object]] = []
+    reloads: list[object] = []
+
+    def fake_schedule(key_id, db_path):
+        scheduled.append((key_id, db_path))
+
+    async def fake_reload(current_app):
+        reloads.append(current_app)
+
+    monkeypatch.setattr("janus.dashboard.inventory_routes._schedule_recheck", fake_schedule)
+    monkeypatch.setattr("janus.dashboard.reload.reload_providers", fake_reload)
+    secret = "sk-proj-import-json-secret-value"
+    payload = json.dumps(
+        [
+            {
+                "key_value": secret,
+                "provider_id": "openai",
+                "status": "active",
+                "is_valid": True,
+                "is_usable": True,
+            }
+        ]
+    )
+
+    response = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("export.json", payload, "application/json")},
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "imported_count": 1,
+        "recheck_count": 1,
+        "verification": None,
+    }
+    assert len(scheduled) == 1
+    assert scheduled[0][1] == app.state.db_path
+    assert reloads == [app]
+    assert secret not in response.text
+    assert response.headers["cache-control"] == "no-store"
+    from janus.storage.upstream_keys import get_upstream_key
+
+    imported = await get_upstream_key(app.state.db_path, scheduled[0][0])
+    assert imported is not None
+    assert imported["status"] == "pending_validation"
+    assert imported["is_valid"] == 0
+    assert imported["is_usable"] == 0
+
+
+async def test_inventory_import_json_errors_are_safe_and_actionable(client):
+    import json
+
+    credential = "sk-proj-import-error-secret-value"
+    invalid_field = "do-not-echo-this-field"
+    payload = json.dumps(
+        [
+            {
+                "key_value": credential,
+                "provider_id": "openai",
+                "priority": invalid_field,
+            }
+        ]
+    )
+    response = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("export.json", payload, "application/json")},
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "ok": False,
+        "error": "The import contains an invalid field value.",
+    }
+    assert credential not in response.text
+    assert invalid_field not in response.text
+
+
+async def test_inventory_import_without_json_accept_preserves_html_errors(client):
+    response = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("broken.json", "{", "application/json")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Expecting" in response.text
 
 
 async def test_inventory_reclassify_preview(client):
