@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-08-25
+
 ### Fixed
 
 - **API-key copying** — the dashboard now provides a working one-time full-key copy action after
