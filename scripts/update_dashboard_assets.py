@@ -160,6 +160,13 @@ def update(tailwind_cli: Path | None) -> None:
         for path in sorted(VENDOR.glob("**/*"))
         if path.is_file() and path.name not in {"manifest.json", "README.md"}
     }
+    files.update(
+        {
+            path.relative_to(STATIC).as_posix(): sha256(path)
+            for path in sorted((STATIC / "js").glob("**/*"))
+            if path.is_file()
+        }
+    )
     dashboard_css = STATIC / "css" / "dashboard.min.css"
     files[dashboard_css.relative_to(STATIC).as_posix()] = sha256(dashboard_css)
     manifest = {

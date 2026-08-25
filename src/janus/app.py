@@ -219,7 +219,7 @@ def create_app(
     registry: ProviderRegistry | None = None,
     config: JanusConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Janus", version="2.2.2", lifespan=lifespan)
+    app = FastAPI(title="Janus", version="3.0.0", lifespan=lifespan)
     if registry is None:
         registry = ProviderRegistry()
     if config is None:
@@ -266,13 +266,17 @@ def create_app(
     app.include_router(gemini_router)
     app.include_router(ollama_router)
 
+    from janus.dashboard.api_v2 import router as dashboard_api_v2_router
     from janus.dashboard.inventory_push_routes import router as inventory_push_router
     from janus.dashboard.inventory_routes import router as inventory_router
     from janus.dashboard.routes import router as dashboard_router
+    from janus.dashboard.ui_routes import router as dashboard_ui_router
 
     app.include_router(dashboard_router, prefix="/dashboard")
     app.include_router(inventory_router, prefix="/dashboard")
     app.include_router(inventory_push_router, prefix="/dashboard/api/inventory")
+    app.include_router(dashboard_api_v2_router, prefix="/dashboard")
+    app.include_router(dashboard_ui_router, prefix="/dashboard")
 
     dashboard_static = Path(__file__).parent / "dashboard" / "static"
     app.mount(

@@ -93,10 +93,21 @@ async def import_dashboard_rows(
     *,
     dry_run: bool,
 ) -> int:
+    imported, _ = await import_dashboard_rows_with_ids(db_path, rows, dry_run=dry_run)
+    return imported
+
+
+async def import_dashboard_rows_with_ids(
+    db_path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    dry_run: bool,
+) -> tuple[int, list[str]]:
     if not dry_run:
         await init_db(db_path)
 
     imported = 0
+    imported_ids: list[str] = []
     for row in rows:
         key_value = row.get("key_value") or row.get("key")
         if not key_value:
@@ -136,7 +147,8 @@ async def import_dashboard_rows(
             },
         )
         imported += 1
-    return imported
+        imported_ids.append(str(record["id"]))
+    return imported, imported_ids
 
 
 async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: bool) -> int:
@@ -145,6 +157,16 @@ async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: 
 
 
 async def import_dashboard_json(db_path: Path, data: bytes, *, dry_run: bool) -> int:
+    imported, _ = await import_dashboard_json_with_ids(db_path, data, dry_run=dry_run)
+    return imported
+
+
+async def import_dashboard_json_with_ids(
+    db_path: Path,
+    data: bytes,
+    *,
+    dry_run: bool,
+) -> tuple[int, list[str]]:
     payload = json.loads(data)
     rows = _parse_export_payload(payload)
-    return await import_dashboard_rows(db_path, rows, dry_run=dry_run)
+    return await import_dashboard_rows_with_ids(db_path, rows, dry_run=dry_run)

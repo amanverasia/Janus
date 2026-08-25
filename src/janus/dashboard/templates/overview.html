@@ -3,174 +3,239 @@
 {% block overview_active %}bg-gray-700 text-white{% endblock %}
 
 {% block content %}
-<h1 class="text-2xl font-bold text-white mb-6">Overview</h1>
+<section class="overview-hero">
+    <div>
+        <div class="overview-eyebrow">
+            <span class="overview-live-dot"></span>
+            Live gateway overview
+        </div>
+        <h1>Good to see you.</h1>
+        <p>Everything you need to understand traffic, spend, and routing health at a glance.</p>
+    </div>
+    <div class="overview-health {% if alert_summary == 'ok' %}is-healthy{% elif alert_summary == 'warning' %}is-warning{% else %}is-critical{% endif %}">
+        <span class="overview-health-icon">
+            {% if alert_summary == 'ok' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m7 12 3 3 7-7"/></svg>
+            {% elif alert_summary == 'warning' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v5m0 3h.01M4.5 19h15L12 5 4.5 19Z"/></svg>
+            {% else %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 8v5m0 3h.01"/></svg>
+            {% endif %}
+        </span>
+        <span>
+            <small>System health</small>
+            <strong>{% if alert_summary == 'ok' %}All systems clear{% elif alert_summary == 'warning' %}Attention needed{% else %}Action required{% endif %}</strong>
+        </span>
+    </div>
+</section>
 
-<!-- Status strip -->
-<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">System</p>
-        {% if alert_summary == 'ok' %}
-        <p class="text-green-400 font-semibold text-sm">All clear</p>
-        {% elif alert_summary == 'warning' %}
-        <p class="text-amber-400 font-semibold text-sm">Attention needed</p>
-        {% else %}
-        <p class="text-red-400 font-semibold text-sm">Action required</p>
-        {% endif %}
-    </div>
-    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">In flight</p>
-        <p class="text-white font-bold text-xl" id="overview-inflight">{{ live_inflight }}</p>
-    </div>
-    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Today's spend</p>
-        <p class="text-green-400 font-bold text-xl">${{ "%.4f"|format(today_cost) }}</p>
-    </div>
-    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Budget</p>
-        {% if global_budget %}
-        <p class="text-white font-semibold text-sm {% if global_budget.status == 'exceeded' %}text-red-400{% elif global_budget.status == 'warning' %}text-amber-400{% endif %}">
-            {{ "%.0f"|format(global_budget.pct_used) }}%
-        </p>
-        {% else %}
-        <p class="text-gray-500 text-sm">Not set</p>
-        {% endif %}
-    </div>
-    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Cooldowns</p>
-        <p class="text-white font-bold text-xl">{{ cooldown_count }}</p>
-    </div>
-    <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-        <p class="text-gray-500 text-xs uppercase tracking-wide mb-1">Providers</p>
-        <p class="text-white font-bold text-xl">{{ provider_count }}</p>
-    </div>
-</div>
+<section class="overview-metrics" aria-label="Gateway metrics">
+    <article class="metric-card metric-card-primary">
+        <div class="metric-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 19V9m7 10V5m7 14v-7"/></svg>
+        </div>
+        <div class="metric-copy">
+            <span>Total requests</span>
+            <strong>{{ stats.total_requests }}</strong>
+            <small>All recorded traffic</small>
+        </div>
+    </article>
+    <article class="metric-card">
+        <div class="metric-icon metric-icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v16m4-12.5c-.8-1-2.2-1.5-4-1.5-2.2 0-4 1.1-4 3s1.8 2.5 4 3 4 1.1 4 3-1.8 3-4 3c-1.8 0-3.2-.5-4-1.5"/></svg>
+        </div>
+        <div class="metric-copy">
+            <span>Today’s spend</span>
+            <strong>${{ "%.4f"|format(today_cost) }}</strong>
+            <small>{{ reporting_timezone if reporting_timezone is defined else 'Current reporting day' }}</small>
+        </div>
+    </article>
+    <article class="metric-card">
+        <div class="metric-icon metric-icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v5m0 8v5M5.6 5.6l3.5 3.5m5.8 5.8 3.5 3.5M3 12h5m8 0h5M5.6 18.4l3.5-3.5m5.8-5.8 3.5-3.5"/></svg>
+        </div>
+        <div class="metric-copy">
+            <span>In flight</span>
+            <strong id="overview-inflight">{{ live_inflight }}</strong>
+            <small>Active requests now</small>
+        </div>
+    </article>
+    <article class="metric-card">
+        <div class="metric-icon metric-icon-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16v5H4zM4 14h16v4H4zM8 8.5h.01M8 16h.01"/></svg>
+        </div>
+        <div class="metric-copy">
+            <span>Providers</span>
+            <strong>{{ provider_count }}</strong>
+            <small>{{ cooldown_count }} on cooldown</small>
+        </div>
+    </article>
+    <article class="metric-card">
+        <div class="metric-icon metric-icon-violet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 7h14M5 12h10M5 17h7"/></svg>
+        </div>
+        <div class="metric-copy">
+            <span>Input tokens</span>
+            <strong>{{ "{:,}".format(stats.total_input_tokens) }}</strong>
+            <small>Prompt volume</small>
+        </div>
+    </article>
+    <article class="metric-card">
+        <div class="metric-icon metric-icon-pink">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 7H5m14 5H9m10 5h-7"/></svg>
+        </div>
+        <div class="metric-copy">
+            <span>Output tokens</span>
+            <strong>{{ "{:,}".format(stats.total_output_tokens) }}</strong>
+            <small>Completion volume</small>
+        </div>
+    </article>
+</section>
 
 {% if global_alerts %}
 {% include "alerts_partial.html" %}
 {% endif %}
 
 {% if not setup_checklist.has_requests or not setup_checklist.has_providers %}
-<div class="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-8">
-    <h2 class="text-lg font-semibold text-white mb-4">Getting started</h2>
-    <ol class="space-y-2 text-sm">
-        <li class="flex items-center gap-2 {% if setup_checklist.has_providers %}text-green-400{% else %}text-gray-300{% endif %}">
-            <span>{% if setup_checklist.has_providers %}✓{% else %}1{% endif %}</span>
-            <a href="/dashboard/providers" class="hover:underline">Add and enable a provider</a>
+<section class="onboarding-panel">
+    <div class="section-heading">
+        <div>
+            <span class="section-kicker">First run</span>
+            <h2>Finish setting up Janus</h2>
+            <p>A few small steps and your gateway is ready for production traffic.</p>
+        </div>
+    </div>
+    <ol class="onboarding-steps">
+        <li class="{% if setup_checklist.has_providers %}is-complete{% endif %}">
+            <span class="step-number">{% if setup_checklist.has_providers %}✓{% else %}1{% endif %}</span>
+            <a href="/dashboard/providers"><strong>Add a provider</strong><small>Connect an upstream model API</small></a>
         </li>
-        <li class="flex items-center gap-2 {% if setup_checklist.has_keys %}text-green-400{% else %}text-gray-300{% endif %}">
-            <span>{% if setup_checklist.has_keys %}✓{% else %}2{% endif %}</span>
-            <a href="/dashboard/keys" class="hover:underline">Create a Janus API key</a>
+        <li class="{% if setup_checklist.has_keys %}is-complete{% endif %}">
+            <span class="step-number">{% if setup_checklist.has_keys %}✓{% else %}2{% endif %}</span>
+            <a href="/dashboard/keys"><strong>Create an API key</strong><small>Secure access to your gateway</small></a>
         </li>
-        <li class="flex items-center gap-2 text-gray-300">
-            <span>3</span>
-            <a href="/dashboard/tools" class="hover:underline">Copy tool configuration</a>
+        <li>
+            <span class="step-number">3</span>
+            <a href="/dashboard/tools"><strong>Configure a client</strong><small>Copy a ready-to-use setup</small></a>
         </li>
-        <li class="flex items-center gap-2 {% if setup_checklist.has_requests %}text-green-400{% else %}text-gray-300{% endif %}">
-            <span>{% if setup_checklist.has_requests %}✓{% else %}4{% endif %}</span>
-            Send your first request
+        <li class="{% if setup_checklist.has_requests %}is-complete{% endif %}">
+            <span class="step-number">{% if setup_checklist.has_requests %}✓{% else %}4{% endif %}</span>
+            <span><strong>Send a request</strong><small>Watch it appear here live</small></span>
         </li>
     </ol>
-</div>
+</section>
 {% endif %}
 
-<div class="bg-gray-800 rounded-xl p-5 border border-gray-700 mb-8">
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-        <div>
-            <h2 class="text-lg font-semibold text-white">Quick setup</h2>
-            <p class="text-gray-400 text-sm">Point OpenCode, Cursor, Claude Code, or any OpenAI-compatible client here.</p>
-        </div>
-        <a href="/dashboard/tools" class="text-sm text-blue-400 hover:text-blue-300 shrink-0">Full tool setup →</a>
-    </div>
-    <div class="bg-gray-900 rounded-lg border border-gray-700 flex items-center gap-3 p-3">
-        <code id="janus-base-url" class="flex-1 min-w-0 text-sm text-green-300 font-mono break-all">{{ base_url }}</code>
-        <button type="button" id="copy-base-url-btn"
-                class="shrink-0 px-3 py-1.5 text-xs font-medium border border-gray-600 rounded text-gray-300 hover:bg-gray-700 hover:text-white cursor-pointer">
-            Copy
-        </button>
-    </div>
-</div>
-
-<!-- Live activity -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-    <div class="lg:col-span-2 bg-gray-800 rounded-xl border border-gray-700 p-5">
-        <div class="flex items-center justify-between mb-2">
-            <h2 class="text-sm font-semibold text-white">Live activity <span class="text-gray-500 font-normal">(last 2 min)</span></h2>
-            <a href="/dashboard/usage" class="text-xs text-blue-400 hover:text-blue-300">Full usage →</a>
-        </div>
-        <canvas id="overviewLiveChart" height="60"></canvas>
-    </div>
-    <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden flex flex-col">
-        <div class="px-4 py-3 border-b border-gray-700">
-            <h2 class="text-sm font-semibold text-white">Recent requests</h2>
-        </div>
-        <ul id="overview-live-feed" class="divide-y divide-gray-700/60 overflow-y-auto text-xs flex-1" style="max-height: 160px;">
-            <li class="px-4 py-6 text-center text-gray-500">Polling…</li>
-        </ul>
-    </div>
-</div>
-
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
-        <p class="text-gray-400 text-sm font-medium mb-1">Total Requests</p>
-        <p class="text-3xl font-bold text-white">{{ stats.total_requests }}</p>
-    </div>
-    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
-        <p class="text-gray-400 text-sm font-medium mb-1">Input Tokens</p>
-        <p class="text-3xl font-bold text-white">{{ "{:,}".format(stats.total_input_tokens) }}</p>
-    </div>
-    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
-        <p class="text-gray-400 text-sm font-medium mb-1">Output Tokens</p>
-        <p class="text-3xl font-bold text-white">{{ "{:,}".format(stats.total_output_tokens) }}</p>
-    </div>
-    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700">
-        <p class="text-gray-400 text-sm font-medium mb-1">Enabled Providers</p>
-        <p class="text-3xl font-bold text-white">{{ provider_count }}</p>
-    </div>
-</div>
-
-<div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-8">
-    <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-semibold text-white">Today's Spend</h2>
-        <span class="text-2xl font-bold text-green-400">${{ "%.4f"|format(today_cost) }}</span>
-    </div>
-    {% if global_budget %}
-    <div class="flex items-center gap-3">
-        <div class="flex-1 bg-gray-700 rounded-full h-3">
-            <div class="h-3 rounded-full {% if global_budget.status == 'exceeded' %}bg-red-500{% elif global_budget.status == 'warning' %}bg-yellow-500{% else %}bg-green-500{% endif %}"
-                 style="width: {{ [global_budget.pct_used, 100] | min }}%"></div>
-        </div>
-        <span class="text-sm text-gray-400 whitespace-nowrap">
-            ${{ "%.2f"|format(global_budget.today_spend) }} / ${{ "%.2f"|format(global_budget.daily_limit) }} ({{ "%.0f"|format(global_budget.pct_used) }}%)
-        </span>
-    </div>
-    {% else %}
-    <p class="text-gray-500 text-sm">No global budget set. <a href="/dashboard/budgets" class="text-blue-400 hover:underline">Create one</a></p>
-    {% endif %}
-</div>
-
-<div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-    <h2 class="text-lg font-semibold text-white mb-4">Active Combos</h2>
-    {% if combos %}
-    <div class="space-y-3">
-        {% for name, models in combos.items() %}
-        <div class="bg-gray-900 rounded-lg p-4 border border-gray-700">
-            <div class="flex items-center justify-between mb-2">
-                <span class="text-white font-medium">{{ name }}</span>
-                <span class="text-gray-500 text-sm">{{ models|length }} models</span>
+<section class="overview-workspace-grid">
+    <article class="live-panel">
+        <div class="section-heading section-heading-inline">
+            <div>
+                <span class="section-kicker">Realtime</span>
+                <h2>Live activity</h2>
+                <p>Requests completed during the last two minutes.</p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
+            <a href="/dashboard/usage" class="section-link">View usage <span>→</span></a>
+        </div>
+        <div class="chart-frame">
+            <canvas id="overviewLiveChart" height="78"></canvas>
+        </div>
+    </article>
+    <article class="request-feed-panel">
+        <div class="section-heading section-heading-inline">
+            <div>
+                <span class="section-kicker">Latest</span>
+                <h2>Recent requests</h2>
+            </div>
+            <span class="feed-live-badge"><span></span>Live</span>
+        </div>
+        <ul id="overview-live-feed" class="request-feed">
+            <li class="request-feed-empty">Waiting for traffic…</li>
+        </ul>
+    </article>
+</section>
+
+<section class="overview-bottom-grid">
+    <article class="quick-setup-panel">
+        <div class="quick-setup-copy">
+            <span class="section-kicker">Quick setup</span>
+            <h2>Your Janus endpoint</h2>
+            <p>Use this base URL with OpenCode, Cursor, Claude Code, or any OpenAI-compatible client.</p>
+        </div>
+        <div class="endpoint-box">
+            <span class="endpoint-status" aria-hidden="true"></span>
+            <code id="janus-base-url">{{ base_url }}</code>
+            <button type="button" id="copy-base-url-btn" class="endpoint-copy-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="8" y="8" width="10" height="11" rx="2" stroke-width="1.8"/><path stroke-linecap="round" stroke-width="1.8" d="M15 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+                <span>Copy</span>
+            </button>
+        </div>
+        <a href="/dashboard/tools" class="section-link">Open full tool setup <span>→</span></a>
+    </article>
+
+    <article class="budget-panel">
+        <div class="section-heading section-heading-inline">
+            <div>
+                <span class="section-kicker">Cost control</span>
+                <h2>Daily budget</h2>
+            </div>
+            {% if global_budget %}
+            <strong class="budget-total">${{ "%.4f"|format(today_cost) }}</strong>
+            {% endif %}
+        </div>
+        {% if global_budget %}
+        <div class="budget-gauge-row">
+            <div class="budget-gauge" style="--budget-progress: {{ [global_budget.pct_used, 100] | min }}%;">
+                <div class="budget-gauge-fill {% if global_budget.status == 'exceeded' %}is-critical{% elif global_budget.status == 'warning' %}is-warning{% endif %}"></div>
+            </div>
+            <strong>{{ "%.0f"|format(global_budget.pct_used) }}%</strong>
+        </div>
+        <div class="budget-meta">
+            <span>${{ "%.2f"|format(global_budget.today_spend) }} used</span>
+            <span>${{ "%.2f"|format(global_budget.daily_limit) }} limit</span>
+        </div>
+        {% else %}
+        <div class="empty-inline-state">
+            <span>No daily spending limit is configured.</span>
+            <a href="/dashboard/budgets">Set a budget</a>
+        </div>
+        {% endif %}
+    </article>
+</section>
+
+<section class="combos-panel">
+    <div class="section-heading section-heading-inline">
+        <div>
+            <span class="section-kicker">Fallback chains</span>
+            <h2>Active combos</h2>
+            <p>Ordered model routes available to clients.</p>
+        </div>
+        <a href="/dashboard/combos" class="section-link">Manage combos <span>→</span></a>
+    </div>
+    {% if combos %}
+    <div class="combo-list">
+        {% for name, models in combos.items() %}
+        <article class="combo-row">
+            <div class="combo-name">
+                <span>{{ name[:1]|upper }}</span>
+                <strong>{{ name }}</strong>
+                <small>{{ models|length }} models</small>
+            </div>
+            <div class="combo-models">
                 {% for model in models %}
-                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-900 text-blue-200">{{ model }}</span>
-                {% if not loop.last %}<span class="text-gray-500 text-sm">→</span>{% endif %}
+                <span class="combo-model">{{ model }}</span>
+                {% if not loop.last %}<span class="combo-arrow">→</span>{% endif %}
                 {% endfor %}
             </div>
-        </div>
+        </article>
         {% endfor %}
     </div>
     {% else %}
-    <p class="text-gray-500 text-sm">No combos configured. <a href="/dashboard/combos" class="text-blue-400 hover:underline">Create one</a></p>
+    <div class="empty-inline-state">
+        <span>No combos configured yet.</span>
+        <a href="/dashboard/combos">Create your first combo</a>
+    </div>
     {% endif %}
-</div>
+</section>
 
 <script>
 function renderOverviewLiveFeed(feed, recent) {
@@ -178,14 +243,19 @@ function renderOverviewLiveFeed(feed, recent) {
     recent.slice().reverse().forEach(function(event) {
         var ev = event || {};
         var item = document.createElement('li');
-        item.className = 'px-4 py-2 text-gray-300';
+        item.className = 'request-feed-item';
+        var marker = document.createElement('span');
+        marker.className = 'request-feed-marker';
+        var copy = document.createElement('span');
+        copy.className = 'request-feed-copy';
         var model = document.createElement('span');
-        model.className = 'font-mono text-white';
+        model.className = 'request-feed-model';
         model.textContent = ev.model || '—';
         var status = document.createElement('span');
-        status.className = 'text-gray-500';
+        status.className = 'request-feed-status';
         status.textContent = ev.status || '';
-        item.append(model, document.createTextNode(' '), status);
+        copy.append(model, status);
+        item.append(marker, copy);
         fragment.appendChild(item);
     });
     feed.replaceChildren(fragment);
@@ -196,77 +266,114 @@ function renderOverviewLiveFeed(feed, recent) {
     var el = document.getElementById('janus-base-url');
     if (btn && el) {
         btn.addEventListener('click', function() {
-            var text = el.textContent.trim();
+            var value = el.textContent.trim();
             var done = function() {
-                var orig = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(function() { btn.textContent = orig; }, 1500);
+                var label = btn.querySelector('span');
+                if (label) label.textContent = 'Copied';
+                if (window.janusToast) janusToast('Endpoint copied to clipboard', 'success');
+                setTimeout(function() { if (label) label.textContent = 'Copy'; }, 1500);
+            };
+            var fallback = function() {
+                var textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+                done();
             };
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(done).catch(function() {
-                    var ta = document.createElement('textarea');
-                    ta.value = text;
-                    ta.style.position = 'fixed';
-                    ta.style.opacity = '0';
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(ta);
-                    done();
-                });
+                navigator.clipboard.writeText(value).then(done).catch(fallback);
             } else {
-                var ta = document.createElement('textarea');
-                ta.value = text;
-                ta.style.position = 'fixed';
-                ta.style.opacity = '0';
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                done();
+                fallback();
             }
         });
     }
 
-    var WINDOW_S = 120;
-    var buckets = new Array(WINDOW_S).fill(0);
-    var windowStart = Math.floor(Date.now() / 1000) - WINDOW_S + 1;
-    var chartEl = document.getElementById('overviewLiveChart');
-    if (chartEl && typeof Chart !== 'undefined') {
-        var chart = new Chart(chartEl.getContext('2d'), {
+    var windowSize = 120;
+    var buckets = new Array(windowSize).fill(0);
+    var windowStart = Math.floor(Date.now() / 1000) - windowSize + 1;
+    var seenEvents = new Map();
+    var chartElement = document.getElementById('overviewLiveChart');
+
+    function chartColors() {
+        var styles = getComputedStyle(document.documentElement);
+        return {
+            bar: styles.getPropertyValue('--janus-primary').trim() || '#7c83ff',
+            grid: styles.getPropertyValue('--janus-border').trim() || 'rgba(148,163,184,.13)',
+            label: styles.getPropertyValue('--janus-text-subtle').trim() || '#70798f'
+        };
+    }
+
+    function advanceWindow(now) {
+        var nextStart = Math.floor(now) - windowSize + 1;
+        var shift = Math.max(0, nextStart - windowStart);
+        if (shift >= windowSize) {
+            buckets.fill(0);
+        } else if (shift > 0) {
+            buckets.splice(0, shift);
+            while (buckets.length < windowSize) buckets.push(0);
+        }
+        windowStart = nextStart;
+        seenEvents.forEach(function(timestamp, key) {
+            if (timestamp < windowStart) seenEvents.delete(key);
+        });
+    }
+
+    if (chartElement && typeof Chart !== 'undefined') {
+        var colors = chartColors();
+        var chart = new Chart(chartElement.getContext('2d'), {
             type: 'bar',
             data: {
-                labels: new Array(WINDOW_S).fill(''),
-                datasets: [{ data: buckets, backgroundColor: 'rgba(59, 130, 246, 0.65)', borderWidth: 0 }]
+                labels: new Array(windowSize).fill(''),
+                datasets: [{ data: buckets, backgroundColor: colors.bar, borderRadius: 3, borderSkipped: false, barPercentage: 0.82, categoryPercentage: 1 }]
             },
             options: {
-                animation: false, responsive: true,
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                scales: { x: { display: false }, y: { beginAtZero: true, ticks: { color: '#6b7280', precision: 0, maxTicksLimit: 3 }, grid: { color: 'rgba(75,85,99,0.2)' } } }
+                scales: {
+                    x: { display: false },
+                    y: { beginAtZero: true, border: { display: false }, ticks: { color: colors.label, precision: 0, maxTicksLimit: 4, padding: 8 }, grid: { color: colors.grid, drawTicks: false } }
+                }
             }
         });
-        function bucketFor(tsSec) {
-            var idx = Math.floor(tsSec) - windowStart;
-            return (idx >= 0 && idx < WINDOW_S) ? idx : -1;
-        }
+
+        document.addEventListener('janus:theme', function() {
+            var nextColors = chartColors();
+            chart.data.datasets[0].backgroundColor = nextColors.bar;
+            chart.options.scales.y.ticks.color = nextColors.label;
+            chart.options.scales.y.grid.color = nextColors.grid;
+            chart.update('none');
+        });
+
         function poll() {
-            fetch('/dashboard/api/usage/snapshot').then(function(r) { return r.json(); }).then(function(data) {
+            advanceWindow(Date.now() / 1000);
+            fetch('/dashboard/api/usage/snapshot').then(function(response) {
+                return response.json();
+            }).then(function(data) {
                 var inflight = document.getElementById('overview-inflight');
                 if (inflight) inflight.textContent = data.inflight;
                 var feed = document.getElementById('overview-live-feed');
-                if (feed && data.recent && data.recent.length) {
-                    renderOverviewLiveFeed(feed, data.recent);
-                }
-                (data.recent || []).forEach(function(ev) {
-                    if (ev.ts) {
-                        var idx = bucketFor(ev.ts);
-                        if (idx >= 0) buckets[idx]++;
+                if (feed && data.recent && data.recent.length) renderOverviewLiveFeed(feed, data.recent);
+                (data.recent || []).forEach(function(event, index) {
+                    if (!event.ts) return;
+                    var eventTime = Math.floor(event.ts);
+                    var key = [event.ts, event.model, event.status, index].join('|');
+                    var bucketIndex = eventTime - windowStart;
+                    if (!seenEvents.has(key) && bucketIndex >= 0 && bucketIndex < windowSize) {
+                        buckets[bucketIndex] += 1;
+                        seenEvents.set(key, eventTime);
                     }
                 });
                 chart.data.datasets[0].data = buckets;
                 chart.update('none');
             }).catch(function() {});
         }
+
         poll();
         setInterval(poll, 5000);
     }

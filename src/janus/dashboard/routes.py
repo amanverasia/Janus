@@ -872,6 +872,37 @@ async def revoke_api_key(request: Request, key_id: int) -> HTMLResponse:
 # ---- Provider CRUD ----
 
 
+_SUPPORTED_PROVIDER_API_TYPES = frozenset(
+    {
+        "anthropic",
+        "antigravity",
+        "claude",
+        "claude_oauth",
+        "codex",
+        "cursor",
+        "gemini",
+        "gemini-cli",
+        "gemini_cli",
+        "github_copilot",
+        "kiro",
+        "mimo_free",
+        "openai_compat",
+        "opencode_free",
+    }
+)
+
+
+def _provider_api_type_error(api_type: str) -> HTMLResponse | None:
+    if not api_type:
+        return HTMLResponse(content="Missing required field: api_type", status_code=400)
+    if api_type not in _SUPPORTED_PROVIDER_API_TYPES:
+        return HTMLResponse(
+            content="Unsupported API type. Choose a supported Janus executor.",
+            status_code=422,
+        )
+    return None
+
+
 def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
     from janus.storage.quotas import QUOTA_WINDOWS
 
@@ -903,6 +934,10 @@ async def api_create_provider(request: Request) -> HTMLResponse:
 
     body = await request.body()
     params = parse_qs(body.decode())
+    api_type = params.get("api_type", [""])[0].strip()
+    api_type_error = _provider_api_type_error(api_type)
+    if api_type_error is not None:
+        return api_type_error
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
     allowed_models_str = params.get("allowed_models", [""])[0]
@@ -913,7 +948,7 @@ async def api_create_provider(request: Request) -> HTMLResponse:
             {
                 "id": params["id"][0],
                 "prefix": params["prefix"][0],
-                "api_type": params["api_type"][0],
+                "api_type": api_type,
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": params.get("api_key", [""])[0] or None,
                 "models": models,
@@ -949,6 +984,10 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
 
     body = await request.body()
     params = parse_qs(body.decode())
+    api_type = params.get("api_type", [""])[0].strip()
+    api_type_error = _provider_api_type_error(api_type)
+    if api_type_error is not None:
+        return api_type_error
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
     allowed_models_str = params.get("allowed_models", [""])[0]
@@ -965,7 +1004,7 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
             provider_id,
             {
                 "prefix": params["prefix"][0],
-                "api_type": params["api_type"][0],
+                "api_type": api_type,
                 "base_url": params.get("base_url", [""])[0],
                 "api_key": new_key,
                 "models": models,
@@ -1845,7 +1884,7 @@ async def api_create_pricing(request: Request) -> HTMLResponse:
     return await _pricing_partial(request, db_path)
 
 
-@router.delete("/api/pricing/{model}", response_class=HTMLResponse)
+@router.delete("/api/pricing/{model:path}", response_class=HTMLResponse)
 async def api_delete_pricing(request: Request, model: str) -> HTMLResponse:
     db_path = await _ensure_db(request)
     from janus.storage.pricing_db import delete_pricing_override
@@ -1988,7 +2027,13 @@ async def api_export_config(request: Request) -> Response:
     return Response(
         content=yaml_text,
         media_type="text/yaml",
-        headers={"Content-Disposition": 'attachment; filename="janus-config.yaml"'},
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'attachment; filename="janus-config.yaml"',
+            "Expires": "0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

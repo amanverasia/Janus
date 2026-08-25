@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6fafb" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Janus AI gateway control plane" />
+    <title>Janus</title>
+    <script>
+      try {
+        const theme = localStorage.getItem('janus-theme');
+        if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%2306b6b0' d='M12 10h17v17H12zm23 0h17v17H35zM12 33h17v17H12zm23 0h17v17H35z'/%3E%3C/svg%3E"
+    />
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

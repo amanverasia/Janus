@@ -36,6 +36,33 @@ async def test_provider_create(client):
     assert r.status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("api_type", "expected_status"),
+    (("", 400), ("openai", 422), ("ollama", 422)),
+)
+async def test_provider_create_rejects_unsupported_api_type_before_persist(
+    client, app, api_type, expected_status
+):
+    from janus.storage.providers_db import get_provider
+
+    r = await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "invalid-executor",
+            "prefix": "invalid-executor",
+            "api_type": api_type,
+            "base_url": "https://invalid.example/v1",
+            "api_key": "must-not-persist",
+            "models": "model-1",
+        },
+    )
+
+    assert r.status_code == expected_status
+    assert "text/html" in r.headers["content-type"]
+    assert "API type" in r.text or "api_type" in r.text
+    assert await get_provider(app.state.db_path, "invalid-executor") is None
+
+
 async def test_provider_toggle(client):
     await client.post(
         "/dashboard/api/providers",
@@ -135,6 +162,72 @@ async def test_provider_edit(client):
         },
     )
     assert r.status_code == 200
+
+
+async def test_provider_edit_rejects_unsupported_api_type_before_persist(client, app):
+    from janus.storage.providers_db import get_provider
+
+    await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "guarded-edit",
+            "prefix": "guarded-edit",
+            "api_type": "openai_compat",
+            "base_url": "https://original.example/v1",
+            "api_key": "original-secret",
+            "models": "model-1",
+        },
+    )
+    r = await client.put(
+        "/dashboard/api/providers/guarded-edit",
+        data={
+            "prefix": "changed-prefix",
+            "api_type": "unsupported-executor",
+            "base_url": "https://changed.example/v1",
+            "api_key": "replacement-secret",
+            "models": "model-2",
+        },
+    )
+
+    assert r.status_code == 422
+    provider = await get_provider(app.state.db_path, "guarded-edit")
+    assert provider is not None
+    assert provider["prefix"] == "guarded-edit"
+    assert provider["api_type"] == "openai_compat"
+    assert provider["base_url"] == "https://original.example/v1"
+    assert provider["api_key"] == "original-secret"
+
+
+async def test_provider_edit_blank_api_key_preserves_existing_secret(client, app):
+    from janus.storage.providers_db import get_provider
+
+    await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "preserve-secret",
+            "prefix": "preserve-secret",
+            "api_type": "openai_compat",
+            "base_url": "https://original.example/v1",
+            "api_key": "original-secret",
+            "models": "model-1",
+        },
+    )
+    r = await client.put(
+        "/dashboard/api/providers/preserve-secret",
+        data={
+            "prefix": "preserve-secret",
+            "api_type": "anthropic",
+            "base_url": "https://changed.example",
+            "api_key": "",
+            "models": "model-2",
+        },
+    )
+
+    assert r.status_code == 200
+    provider = await get_provider(app.state.db_path, "preserve-secret")
+    assert provider is not None
+    assert provider["api_type"] == "anthropic"
+    assert provider["api_key"] == "original-secret"
 
 
 async def test_combo_create(client):
@@ -283,8 +376,13 @@ async def test_export_yaml(client):
     assert r.status_code == 200
     assert "text/yaml" in r.headers["content-type"]
     assert "janus-config.yaml" in r.headers["content-disposition"]
+    assert r.headers["cache-control"] == "private, no-store"
+    assert r.headers["pragma"] == "no-cache"
+    assert r.headers["expires"] == "0"
+    assert r.headers["x-content-type-options"] == "nosniff"
     assert "openai" in r.text
     assert "gpt-4o" in r.text
+    assert "sk-test" in r.text
 
 
 async def test_export_yaml_includes_allowed_models(client):

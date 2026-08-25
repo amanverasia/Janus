@@ -16,6 +16,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard-ui/package-lock.json
+
+      - name: Dashboard bundle check
+        run: python scripts/build_dashboard_ui.py --check
+
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
