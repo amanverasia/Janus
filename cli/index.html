@@ -1806,7 +1806,7 @@ janus<span class="w"> </span>config-init<span class="w"> </span>--path<span clas
 <h2 id="keys">Keys<a class="headerlink" href="#keys" title="Permanent link">&para;</a></h2>
 <h3 id="janus-keys-create"><code>janus keys create</code><a class="headerlink" href="#janus-keys-create" title="Permanent link">&para;</a></h3>
 <p>Create a new API key. The full key is printed once — save it immediately.</p>
-<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">&quot;default&quot;</span>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">"default"</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code>API Key (save this — shown once): sk-janus-a1b2c3d4e5f67890a1b2c3d4e5f67890
 ID: 1  Name: default
@@ -2017,8 +2017,8 @@ updated in place.</p>
 janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">10</span>.00<span class="w"> </span>--key<span class="w"> </span>global
 <span class="c1"># Budget 1 set: global daily limit = $10.00, warn at 80%</span>
 
-<span class="c1"># Per-key budget for key named &quot;dev-key&quot;: $5/day, warn at 70%</span>
-janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">5</span>.00<span class="w"> </span>--key<span class="w"> </span><span class="s2">&quot;dev-key&quot;</span><span class="w"> </span>--warn<span class="w"> </span><span class="m">70</span>
+<span class="c1"># Per-key budget for key named "dev-key": $5/day, warn at 70%</span>
+janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">5</span>.00<span class="w"> </span>--key<span class="w"> </span><span class="s2">"dev-key"</span><span class="w"> </span>--warn<span class="w"> </span><span class="m">70</span>
 </code></pre></div>
 <table>
 <thead>
@@ -2175,7 +2175,7 @@ and dashboard workflows.</p>
 <h3 id="janus-inventory-encrypt-keys"><code>janus inventory encrypt-keys</code><a class="headerlink" href="#janus-inventory-encrypt-keys" title="Permanent link">&para;</a></h3>
 <p>Encrypt plaintext upstream keys and gateway provider API keys/OAuth credential blobs
 at rest in one pass. Requires <code>INVENTORY_ENCRYPTION_KEY</code> to be set in the environment.</p>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">&#39;gAAAAABl...&#39;</span>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">'gAAAAABl...'</span>
 janus<span class="w"> </span>inventory<span class="w"> </span>encrypt-keys
 </code></pre></div>
 <table>

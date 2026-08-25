@@ -1962,54 +1962,54 @@ returns standard OpenAI responses.</p>
 </table>
 <h3 id="non-streaming">Non-Streaming<a class="headerlink" href="#non-streaming" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;openai/gpt-4o&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],</span>
-<span class="s1">    &quot;max_tokens&quot;: 100</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "openai/gpt-4o",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}],</span>
+<span class="s1">    "max_tokens": 100</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Response — standard OpenAI <code>ChatCompletion</code> JSON:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chatcmpl-...&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-4o&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chatcmpl-..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chat.completion"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gpt-4o"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"choices"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello! How can I help you?&quot;</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello! How can I help you?"</span>
 <span class="w">      </span><span class="p">},</span>
-<span class="w">      </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">      </span><span class="nt">"finish_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stop"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;usage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;prompt_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;completion_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;total_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span>
+<span class="w">  </span><span class="nt">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"completion_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="streaming">Streaming<a class="headerlink" href="#streaming" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;openai/gpt-4o&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],</span>
-<span class="s1">    &quot;max_tokens&quot;: 100,</span>
-<span class="s1">    &quot;stream&quot;: true</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "openai/gpt-4o",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}],</span>
+<span class="s1">    "max_tokens": 100,</span>
+<span class="s1">    "stream": true</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Response — <code>text/event-stream</code> with <code>data: {json}\n\n</code> lines, terminated by
 <code>data: [DONE]</code>:</p>
-<div class="highlight"><pre><span></span><code>data: {&quot;id&quot;:&quot;chatcmpl-...&quot;,&quot;object&quot;:&quot;chat.completion.chunk&quot;,&quot;choices&quot;:[{&quot;index&quot;:0,&quot;delta&quot;:{&quot;role&quot;:&quot;assistant&quot;},&quot;finish_reason&quot;:null}]}
+<div class="highlight"><pre><span></span><code>data: {"id":"chatcmpl-...","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
-data: {&quot;id&quot;:&quot;chatcmpl-...&quot;,&quot;object&quot;:&quot;chat.completion.chunk&quot;,&quot;choices&quot;:[{&quot;index&quot;:0,&quot;delta&quot;:{&quot;content&quot;:&quot;Hello&quot;},&quot;finish_reason&quot;:null}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
-data: {&quot;id&quot;:&quot;chatcmpl-...&quot;,&quot;object&quot;:&quot;chat.completion.chunk&quot;,&quot;choices&quot;:[{&quot;index&quot;:0,&quot;delta&quot;:{},&quot;finish_reason&quot;:&quot;stop&quot;}]}
+data: {"id":"chatcmpl-...","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
 
 data: [DONE]
 </code></pre></div>
@@ -2080,12 +2080,12 @@ speaks.</p>
 <p><code>store</code> and <code>previous_response_id</code> are accepted but ignored — Janus is stateless.</p>
 <h3 id="non-streaming_1">Non-Streaming<a class="headerlink" href="#non-streaming_1" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/responses<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;openai/gpt-4o&quot;,</span>
-<span class="s1">    &quot;input&quot;: &quot;Hello!&quot;</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "openai/gpt-4o",</span>
+<span class="s1">    "input": "Hello!"</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Response — a <code>response</code> object with <code>output</code> items (<code>message</code>, <code>function_call</code>,
 <code>reasoning</code>) and <code>usage</code>.</p>
@@ -2142,31 +2142,31 @@ standard Anthropic responses.</p>
 </table>
 <h3 id="non-streaming_2">Non-Streaming<a class="headerlink" href="#non-streaming_2" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/messages<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;anthropic-version: 2023-06-01&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;anthropic/claude-sonnet-4-20250514&quot;,</span>
-<span class="s1">    &quot;max_tokens&quot;: 100,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"anthropic-version: 2023-06-01"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "anthropic/claude-sonnet-4-20250514",</span>
+<span class="s1">    "max_tokens": 100,</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}]</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Response — standard Anthropic <code>Message</code> JSON:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;msg_...&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;message&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-sonnet-4-20250514&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"msg_..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"message"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"claude-sonnet-4-20250514"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;text&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello! How can I help you?&quot;</span>
+<span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"text"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello! How can I help you?"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;stop_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;end_turn&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;usage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;input_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;output_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span>
+<span class="w">  </span><span class="nt">"stop_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"end_turn"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"input_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"output_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -2174,32 +2174,32 @@ standard Anthropic responses.</p>
 <p>Set <code>"stream": true</code>. The response is a <code>text/event-stream</code> with event-type-prefixed
 SSE events:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/messages<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;anthropic/claude-sonnet-4-20250514&quot;,</span>
-<span class="s1">    &quot;max_tokens&quot;: 100,</span>
-<span class="s1">    &quot;stream&quot;: true,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "anthropic/claude-sonnet-4-20250514",</span>
+<span class="s1">    "max_tokens": 100,</span>
+<span class="s1">    "stream": true,</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}]</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <div class="highlight"><pre><span></span><code>event: message_start
-data: {&quot;type&quot;:&quot;message_start&quot;,&quot;message&quot;:{&quot;id&quot;:&quot;msg_...&quot;,&quot;type&quot;:&quot;message&quot;,&quot;role&quot;:&quot;assistant&quot;,&quot;content&quot;:[],&quot;model&quot;:&quot;claude-sonnet-4-20250514&quot;,&quot;usage&quot;:{&quot;input_tokens&quot;:10,&quot;output_tokens&quot;:1}}}
+data: {"type":"message_start","message":{"id":"msg_...","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}
 
 event: content_block_start
-data: {&quot;type&quot;:&quot;content_block_start&quot;,&quot;index&quot;:0,&quot;content_block&quot;:{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;&quot;}}
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
 
 event: content_block_delta
-data: {&quot;type&quot;:&quot;content_block_delta&quot;,&quot;index&quot;:0,&quot;delta&quot;:{&quot;type&quot;:&quot;text_delta&quot;,&quot;text&quot;:&quot;Hello&quot;}}
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
 
 event: content_block_stop
-data: {&quot;type&quot;:&quot;content_block_stop&quot;,&quot;index&quot;:0}
+data: {"type":"content_block_stop","index":0}
 
 event: message_delta
-data: {&quot;type&quot;:&quot;message_delta&quot;,&quot;delta&quot;:{&quot;stop_reason&quot;:&quot;end_turn&quot;},&quot;usage&quot;:{&quot;output_tokens&quot;:8}}
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8}}
 
 event: message_stop
-data: {&quot;type&quot;:&quot;message_stop&quot;}
+data: {"type":"message_stop"}
 </code></pre></div>
 <hr />
 <h2 id="post-v1betamodelsmodelgeneratecontent">POST /v1beta/models/{model}:generateContent<a class="headerlink" href="#post-v1betamodelsmodelgeneratecontent" title="Permanent link">&para;</a></h2>
@@ -2213,37 +2213,37 @@ other endpoints. This is what Janus uses for routing; the actual upstream model
 name is the part after the slash.</p>
 </div>
 <h3 id="non-streaming_3">Non-Streaming<a class="headerlink" href="#non-streaming_3" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;http://localhost:20128/v1beta/models/openai/gpt-4o:generateContent&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;contents&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;parts&quot;: [{&quot;text&quot;: &quot;Hello!&quot;}]}]</span>
-<span class="s1">  }&#39;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"http://localhost:20128/v1beta/models/openai/gpt-4o:generateContent"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "contents": [{"role": "user", "parts": [{"text": "Hello!"}]}]</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Response — standard Gemini <code>GenerateContentResponse</code> JSON:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;candidates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"candidates"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;parts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello! How can I help?&quot;</span><span class="p">}]},</span>
-<span class="w">      </span><span class="nt">&quot;finishReason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;STOP&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span><span class="w"> </span><span class="nt">"parts"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello! How can I help?"</span><span class="p">}]},</span>
+<span class="w">      </span><span class="nt">"finishReason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STOP"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;usageMetadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;promptTokenCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;candidatesTokenCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;totalTokenCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span>
+<span class="w">  </span><span class="nt">"usageMetadata"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"promptTokenCount"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"candidatesTokenCount"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"totalTokenCount"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="streaming_3">Streaming<a class="headerlink" href="#streaming_3" title="Permanent link">&para;</a></h3>
 <p>Use <code>:streamGenerateContent</code> instead of <code>:generateContent</code>:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;http://localhost:20128/v1beta/models/openai/gpt-4o:streamGenerateContent&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;contents&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;parts&quot;: [{&quot;text&quot;: &quot;Hello!&quot;}]}]</span>
-<span class="s1">  }&#39;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"http://localhost:20128/v1beta/models/openai/gpt-4o:streamGenerateContent"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "contents": [{"role": "user", "parts": [{"text": "Hello!"}]}]</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>The response is a <code>text/event-stream</code> of JSON objects, one per chunk.</p>
 <div class="admonition tip">
@@ -2292,13 +2292,13 @@ tool's Ollama host at Janus (<code>http://localhost:20128</code>).</p>
 </tbody>
 </table>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/api/chat<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;openai/gpt-4o&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "openai/gpt-4o",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}],</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Streaming responses are <code>application/x-ndjson</code> — one JSON object per line,
 ending with a <code>"done": true</code> object carrying <code>done_reason</code>,
@@ -2340,13 +2340,13 @@ field instead of <code>message</code>).</p>
 </tbody>
 </table>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/api/generate<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;openai/gpt-4o&quot;,</span>
-<span class="s1">    &quot;prompt&quot;: &quot;Hello!&quot;,</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "openai/gpt-4o",</span>
+<span class="s1">    "prompt": "Hello!",</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Non-streaming responses include <code>"done": true</code> and <code>"response": "..."</code>. Streaming
 uses <code>application/x-ndjson</code> with per-chunk <code>response</code> text and a final <code>"done": true</code>
@@ -2357,9 +2357,9 @@ line.</p>
 stub metadata for routable models/combos; unknown or allowlist-blocked models return
 <code>404</code>.</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/api/show<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;name&quot;: &quot;openai/gpt-4o&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"name": "openai/gpt-4o"}'</span>
 </code></pre></div>
 <p>Response includes <code>details</code>, <code>capabilities</code> (<code>completion</code>), and a minimal <code>template</code>.
 <code>GET /api/tags</code> lists models in Ollama's tags shape; <code>GET /api/version</code> returns a
@@ -2369,29 +2369,29 @@ model allowlist when auth is enabled.</p>
 <h2 id="get-v1models">GET /v1/models<a class="headerlink" href="#get-v1models" title="Permanent link">&para;</a></h2>
 <p>Lists all registered provider models and combos.</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/models<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer sk-janus-yourkey&quot;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer sk-janus-yourkey"</span>
 </code></pre></div>
 <p>Response:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai/gpt-4o&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai&quot;</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai/gpt-4o"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai"</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-sonnet-4-20250514&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic&quot;</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"anthropic/claude-sonnet-4-20250514"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"anthropic"</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;best-effort&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;combo&quot;</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"best-effort"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"combo"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
@@ -2403,7 +2403,7 @@ set to <code>"combo"</code>.</p>
 <p>Health check. No authentication required.</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/health
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ok&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ok"</span><span class="p">}</span>
 </code></pre></div>
 <hr />
 <h2 id="error-responses">Error Responses<a class="headerlink" href="#error-responses" title="Permanent link">&para;</a></h2>
@@ -2446,7 +2446,7 @@ set to <code>"combo"</code>.</p>
 <h3 id="503-all-accounts-cooling-down">503 — All Accounts Cooling Down<a class="headerlink" href="#503-all-accounts-cooling-down" title="Permanent link">&para;</a></h3>
 <p>Returned before any attempt is made, when resolving targets for a model finds
 every candidate account already in cooldown:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;All accounts for &#39;openai/gpt-4o&#39; are cooling down; retry after 42s&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"All accounts for 'openai/gpt-4o' are cooling down; retry after 42s"</span><span class="p">}</span>
 </code></pre></div>
 <p>With header: <code>Retry-After: 42</code></p>
 <p>The value is computed from the soonest cooldown expiry among the model's
@@ -2461,21 +2461,21 @@ regardless of status code: the account is cooled down with rate-limit backoff
 (exponential, starting at 2s, capped at 300s) and the request falls back to
 the next account — the client never sees the disguised error.</p>
 <h3 id="401-invalid-api-key">401 — Invalid API Key<a class="headerlink" href="#401-invalid-api-key" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Invalid API key&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Invalid API key"</span><span class="p">}</span>
 </code></pre></div>
 <h3 id="429-budget-exceeded">429 — Budget Exceeded<a class="headerlink" href="#429-budget-exceeded" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Daily budget exceeded. Spent $5.23 of $5.00 limit. Resets at midnight.&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;budget_exceeded&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;today_spend&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.23</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;daily_limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.0</span>
+<span class="w">  </span><span class="nt">"error"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Daily budget exceeded. Spent $5.23 of $5.00 limit. Resets at midnight."</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"budget_exceeded"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"today_spend"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.23</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"daily_limit"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.0</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>With header: <code>Retry-After: 34567</code></p>
 <h3 id="503-all-providers-exhausted">503 — All Providers Exhausted<a class="headerlink" href="#503-all-providers-exhausted" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;detail&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;All providers exhausted: openai-personal: 429&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"All providers exhausted: openai-personal: 429"</span><span class="p">}</span>
 </code></pre></div>
 <hr />
 <h2 id="inventory">Inventory<a class="headerlink" href="#inventory" title="Permanent link">&para;</a></h2>

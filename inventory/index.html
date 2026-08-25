@@ -1661,7 +1661,7 @@ be used without the same Fernet key.</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>generate-encryption-key
 <span class="c1"># gAAAAABl...  (save this — shown once)</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">&#39;gAAAAABl...&#39;</span>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">INVENTORY_ENCRYPTION_KEY</span><span class="o">=</span><span class="s1">'gAAAAABl...'</span>
 </code></pre></div>
 <p>Encrypt existing plaintext upstream keys and provider credentials in one pass:</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>inventory<span class="w"> </span>encrypt-keys
@@ -1673,18 +1673,18 @@ accordingly. For encrypted backups, copy the SQLite database and retain the Fern
 <h2 id="push-api">Push API<a class="headerlink" href="#push-api" title="Permanent link">&para;</a></h2>
 <p>Programmatically ingest keys from scripts or other nodes:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:20128/dashboard/api/inventory/push<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$INVENTORY_PUSH_TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;keys&quot;: [</span>
-<span class="s1">      {&quot;key&quot;: &quot;sk-...&quot;, &quot;label&quot;: &quot;prod-1&quot;, &quot;provider&quot;: &quot;openai&quot;},</span>
-<span class="s1">      {&quot;key&quot;: &quot;sk-ant-...&quot;, &quot;provider&quot;: &quot;anthropic&quot;}</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$INVENTORY_PUSH_TOKEN</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "keys": [</span>
+<span class="s1">      {"key": "sk-...", "label": "prod-1", "provider": "openai"},</span>
+<span class="s1">      {"key": "sk-ant-...", "provider": "anthropic"}</span>
 <span class="s1">    ],</span>
-<span class="s1">    &quot;node_id&quot;: &quot;my-laptop&quot;</span>
-<span class="s1">  }&#39;</span>
+<span class="s1">    "node_id": "my-laptop"</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Single-key shorthand:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;key&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sk-...&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;backup&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"key"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sk-..."</span><span class="p">,</span><span class="w"> </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"backup"</span><span class="p">,</span><span class="w"> </span><span class="nt">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai"</span><span class="p">}</span>
 </code></pre></div>
 <p>Set <code>INVENTORY_PUSH_TOKEN</code> in the environment. Requests without a valid token
 receive <code>401</code>.</p>

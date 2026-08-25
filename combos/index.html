@@ -1501,12 +1501,12 @@ override.</p>
 <h2 id="using-combos-from-a-client">Using combos from a client<a class="headerlink" href="#using-combos-from-a-client" title="Permanent link">&para;</a></h2>
 <p>Send the combo name as the <code>model</code> field — exactly like a normal model name:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;best-effort&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],</span>
-<span class="s1">    &quot;max_tokens&quot;: 100</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "best-effort",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}],</span>
+<span class="s1">    "max_tokens": 100</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Janus resolves <code>best-effort</code> to its model chain and routes accordingly. Combo
 names also appear in the <code>GET /v1/models</code> list.</p>

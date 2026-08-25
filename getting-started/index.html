@@ -1363,7 +1363,7 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/amanverasia/Janus.git
 <span class="nb">cd</span><span class="w"> </span>Janus
 python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[dev]"</span>
 </code></pre></div>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <p>Generate a default config file:</p>
@@ -1408,33 +1408,33 @@ truth</strong>. Editing YAML and restarting will <strong>not</strong> re-apply c
 </code></pre></div>
 <p>Verify it's running:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/health
-<span class="c1"># {&quot;status&quot;: &quot;ok&quot;}</span>
+<span class="c1"># {"status": "ok"}</span>
 </code></pre></div>
 <p>The root URL <code>/</code> redirects to <code>/dashboard</code>.</p>
 <h2 id="your-first-request">Your First Request<a class="headerlink" href="#your-first-request" title="Permanent link">&para;</a></h2>
 <p>Send an OpenAI-format request to Janus:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;openai/gpt-4o&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],</span>
-<span class="s1">    &quot;max_tokens&quot;: 100</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "openai/gpt-4o",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}],</span>
+<span class="s1">    "max_tokens": 100</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Janus translates this to the provider's native format, routes it, and returns the response in OpenAI format.</p>
 <p>Use the Anthropic format too:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/messages<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;anthropic/claude-sonnet-4-20250514&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],</span>
-<span class="s1">    &quot;max_tokens&quot;: 100</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "anthropic/claude-sonnet-4-20250514",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "Hello!"}],</span>
+<span class="s1">    "max_tokens": 100</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>Gemini-native tools can use:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;http://localhost:20128/v1beta/models/openai/gpt-4o:generateContent&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;contents&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;parts&quot;: [{&quot;text&quot;: &quot;Hello!&quot;}]}]}&#39;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"http://localhost:20128/v1beta/models/openai/gpt-4o:generateContent"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"contents": [{"role": "user", "parts": [{"text": "Hello!"}]}]}'</span>
 </code></pre></div>
 <h2 id="list-available-models">List Available Models<a class="headerlink" href="#list-available-models" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/models

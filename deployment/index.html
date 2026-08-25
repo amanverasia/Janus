@@ -1429,7 +1429,7 @@ directory on each start (no manual <code>chown</code> needed).</p>
 <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>chown<span class="w"> </span>-R<span class="w"> </span><span class="m">1000</span>:1000<span class="w"> </span>janus-data
 </code></pre></div>
 <p>Or, without sudo, using a throwaway root container:</p>
-<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-u<span class="w"> </span><span class="m">0</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">/janus-data:/data&quot;</span><span class="w"> </span>alpine<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;chown -R 1000:1000 /data&#39;</span>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-u<span class="w"> </span><span class="m">0</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">/janus-data:/data"</span><span class="w"> </span>alpine<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">'chown -R 1000:1000 /data'</span>
 </code></pre></div>
 <p>Environment variables from your host <code>.env</code> file are passed through for
 <code>${ENV_VAR}</code> resolution in config:</p>
@@ -1484,7 +1484,7 @@ valid Janus API key (sets an httponly cookie). See
 inventory keys, and cooldown state.</p>
 <h2 id="health-check">Health check<a class="headerlink" href="#health-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/health
-<span class="c1"># {&quot;status&quot;: &quot;ok&quot;}</span>
+<span class="c1"># {"status": "ok"}</span>
 </code></pre></div>
 <p>The root URL <code>/</code> redirects to <code>/dashboard</code>.</p>
 
