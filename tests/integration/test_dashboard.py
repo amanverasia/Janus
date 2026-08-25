@@ -145,6 +145,26 @@ async def test_dashboard_keys_create(app):
         r = await client.post("/dashboard/api/keys", data={"name": "test-key"})
         assert r.status_code == 200
         assert "sk-janus-" in r.text
+        assert "Copy key" in r.text
+        assert 'data-copy-label="API key"' in r.text
+        assert "legacyCopy" in r.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_existing_key_copies_unmasked_prefix(app):
+    from janus.storage.api_keys import create_key
+    from janus.storage.database import init_db
+
+    await init_db(app.state.db_path)
+    _, record = await create_key(app.state.db_path, "prefix-copy")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/dashboard/keys")
+
+    prefix = record["prefix"]
+    assert response.status_code == 200
+    assert f'data-copy="{prefix}"' in response.text
+    assert f'data-copy="{prefix}…"' not in response.text
+    assert 'aria-label="Copy key prefix"' in response.text
 
 
 @pytest.mark.asyncio
