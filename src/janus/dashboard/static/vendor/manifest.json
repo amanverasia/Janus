@@ -1,6 +1,7 @@
 {
   "files": {
-    "css/dashboard.min.css": "60e54a76b4e75a21df21cff26d29d68fe93fa01ce4960b2376ff2da8c4ff845e",
+    "css/dashboard.min.css": "ae0e3afb448cad4edf3fc69e1c5feb74e9c1c980766b7a6f93a792c7d015a916",
+    "js/dashboard.js": "23dabb400cd2884e46112a83e9173111e360b2c7d9cbfedb1c38ceb34a3d6c7a",
     "vendor/chart.js-4.4.1.umd.min.js": "d2af8974e95271638772e9e9524db5b9a6f58d6ec2d5d781400447b4a31c681e",
     "vendor/d3-7.9.0.min.js": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539",
     "vendor/d3-sankey-0.12.3.min.js": "8286db5d6aa049cc6e8a546708943b79dfb4daaefb0ccf42af674ec0ee4c86be",
@@ -14,9 +15,9 @@
   "tailwind": {
     "compiler_sha256": "7d24f7fa191d2193b78cd5f5a42a6093e14409521908529f42d80b11fde1f1d4",
     "compiler_url": "https://github.com/tailwindlabs/tailwindcss/releases/download/v3.4.17/tailwindcss-linux-x64",
-    "config_sha256": "dc30f4a0ef5ecf05622be3d336df0d725a8c37a05cc0ec2a1db27b2a5956cca5",
-    "input_sha256": "cc1a7ad0d019ddb1d32d0ecb588ba0ac26ce41d8625dd6c366348b25f83a28ec",
-    "templates_sha256": "ca26ae8171532ed42a41b1b83c120687df4d7deea2d8ff39eb55795ab4019042",
+    "config_sha256": "6f2970461fa0f8519548e38bdcf1769b597047cfd0350d7ab82b38dd8b8d55ce",
+    "input_sha256": "8508b9d181c380c5218247facb7718683eb494c1e5d58683dd45aa9a89ab2ecf",
+    "templates_sha256": "115ca21b7e9f0d794950b5ea936bd17f573034f1f556761c00a5998598d18350",
     "version": "3.4.17"
   }
 }

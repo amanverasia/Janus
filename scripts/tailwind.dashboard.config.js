@@ -1,5 +1,8 @@
 module.exports = {
-  content: ["./src/janus/dashboard/templates/**/*.html"],
+  content: [
+    "./src/janus/dashboard/templates/**/*.html",
+    "./src/janus/dashboard/static/js/**/*.js",
+  ],
   safelist: [
     "bg-green-900",
     "text-green-200",
