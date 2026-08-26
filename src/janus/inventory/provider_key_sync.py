@@ -133,6 +133,8 @@ async def sync_provider_key(
                 "usability_status": "unknown",
                 "usability_note": None,
                 "last_error": None,
+                "consecutive_failures": 0,
+                "validation_paused_at": None,
             },
         )
         key_id = str(existing["id"])

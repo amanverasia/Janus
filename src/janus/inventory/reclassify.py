@@ -19,7 +19,7 @@ async def reclassify_upstream_keys(
     if scope == "all":
         candidates = [key for key in keys if key.get("status") != "revoked"]
     else:
-        candidates = [key for key in keys if key.get("status") == "invalid"]
+        candidates = [key for key in keys if key.get("status") in {"invalid", "validation_paused"}]
 
     moved: list[dict[str, str]] = []
     region_fixed: list[dict[str, str]] = []
@@ -44,7 +44,7 @@ async def reclassify_upstream_keys(
             # For tokenplan invalid keys, still re-check with region discovery
             if (
                 key.get("provider_id") == TOKENPLAN_PROVIDER_ID or key_value.startswith("tp-")
-            ) and key.get("status") == "invalid":
+            ) and key.get("status") in {"invalid", "validation_paused"}:
                 if not dry_run:
                     await update_upstream_key(
                         db_path,
@@ -55,6 +55,8 @@ async def reclassify_upstream_keys(
                             "metadata": meta,
                             "status": "pending_validation",
                             "last_error": None,
+                            "consecutive_failures": 0,
+                            "validation_paused_at": None,
                         },
                     )
                     await check_upstream_key(db_path, key["id"])
@@ -95,6 +97,8 @@ async def reclassify_upstream_keys(
                     "is_usable": 0,
                     "usability_status": "unknown",
                     "last_error": None,
+                    "consecutive_failures": 0,
+                    "validation_paused_at": None,
                 },
             )
             await check_upstream_key(db_path, key["id"])

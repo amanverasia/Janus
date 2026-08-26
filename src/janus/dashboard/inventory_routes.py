@@ -16,7 +16,7 @@ from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.routes import _ensure_db, _templates
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
-from janus.inventory.key_checker import check_all_upstream_keys, validate_key
+from janus.inventory.key_checker import check_all_upstream_keys, check_upstream_key
 from janus.inventory.key_encryption import CredentialEncryptionError, encryption_enabled
 from janus.inventory.migrate import import_dashboard_json_with_ids, verify_inventory
 from janus.inventory.rate_limit import get_submit_rate_limiter
@@ -88,7 +88,12 @@ async def _run_all_keys(db_path: Path) -> None:
             await update_upstream_key(
                 db_path,
                 key["id"],
-                {"status": "pending_validation", "last_error": None},
+                {
+                    "status": "pending_validation",
+                    "last_error": None,
+                    "consecutive_failures": 0,
+                    "validation_paused_at": None,
+                },
             )
         await check_all_upstream_keys(db_path)
     except Exception:
@@ -304,6 +309,7 @@ def _status_badge(status: str) -> str:
     mapping = {
         "active": "bg-green-900 text-green-200",
         "invalid": "bg-red-900 text-red-200",
+        "validation_paused": "bg-gray-700 text-gray-200",
         "pending_validation": "bg-yellow-900 text-yellow-200",
         "error": "bg-orange-900 text-orange-200",
         "daily_exhausted": "bg-purple-900 text-purple-200",
@@ -864,59 +870,40 @@ async def _resolve_bulk_ids(
     return key_ids
 
 
-async def _build_key_metadata(key: dict[str, Any]) -> dict[str, Any]:
-    metadata: dict[str, Any] = {}
-    raw_meta = key.get("metadata")
-    if raw_meta and isinstance(raw_meta, str):
-        try:
-            parsed = json.loads(raw_meta)
-            if isinstance(parsed, dict):
-                metadata.update(parsed)
-        except json.JSONDecodeError:
-            pass
-    if key.get("custom_base_url"):
-        metadata["custom_base_url"] = key["custom_base_url"]
-    return metadata
-
-
 @router.post("/api/inventory/keys/{key_id}/test")
 async def api_test_upstream_key(request: Request, key_id: str) -> JSONResponse:
     db_path = await _ensure_db(request)
     key = await get_upstream_key(db_path, key_id)
     if key is None:
         raise HTTPException(status_code=404, detail="Key not found")
-    metadata = await _build_key_metadata(key)
-    try:
-        result = await validate_key(
-            str(key["key_value"]),
-            key["provider_id"],
-            metadata,
-        )
-    except TimeoutError:
-        return JSONResponse(
-            {"ok": False, "usable": False, "message": "Request timed out"}, status_code=504
-        )
-    except Exception as exc:
-        logger.warning("Test for key %s failed: %s", key_id, exc)
-        return JSONResponse(
-            {"ok": False, "usable": False, "message": f"{type(exc).__name__}: {exc}"},
-            status_code=502,
-        )
+    await update_upstream_key(
+        db_path,
+        key_id,
+        {
+            "status": "pending_validation",
+            "last_error": None,
+            "consecutive_failures": 0,
+            "validation_paused_at": None,
+        },
+    )
+    await check_upstream_key(db_path, key_id)
+    result = await get_upstream_key(db_path, key_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Key not found")
     is_valid = bool(result.get("is_valid"))
     message = (
         result.get("usability_note")
-        or result.get("error")
+        or result.get("last_error")
         or ("Valid key" if is_valid else "Key is not valid")
     )
-    models = result.get("models")
+    models = await list_models_for_key(db_path, key_id)
     payload: dict[str, Any] = {
         "ok": is_valid,
         "usable": bool(result.get("is_usable")),
         "usability_status": result.get("usability_status", "unknown"),
         "message": message,
     }
-    if isinstance(models, list):
-        payload["models"] = len(models)
+    payload["models"] = len(models)
     if result.get("credits_remaining") is not None:
         payload["credits_remaining"] = result["credits_remaining"]
     return JSONResponse(payload)
@@ -1200,6 +1187,8 @@ async def api_inventory_import(
                     "is_valid": 0,
                     "is_usable": 0,
                     "last_error": None,
+                    "consecutive_failures": 0,
+                    "validation_paused_at": None,
                 },
             )
             _schedule_recheck(key_id, db_path)

@@ -29,7 +29,7 @@
     </select>
     <select name="status" class="bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm">
         <option value="">All statuses</option>
-        {% for s in ['active', 'invalid', 'pending_validation', 'error', 'daily_exhausted', 'archived'] %}
+        {% for s in ['active', 'invalid', 'validation_paused', 'pending_validation', 'error', 'daily_exhausted', 'archived'] %}
         <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
     </select>

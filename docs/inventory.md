@@ -176,6 +176,7 @@ janus inventory migrate export.json --verify
 | `INVENTORY_PUSH_TOKEN` | *(unset)* | Bearer token for the push API |
 | `INVENTORY_SCHEDULER_ENABLED` | `true` | Enable background recheck scheduler |
 | `INVENTORY_CHECK_INTERVAL_HOURS` | `12` | Hours between scheduled rechecks |
+| `VALIDATION_MAX_FAILURES` | `3` | Pause automatic validation after consecutive failures; manual recheck resumes it |
 | `INVENTORY_SUBMIT_RATE_LIMIT` | `300` | Max keys per rate window (push/add) |
 | `INVENTORY_SUBMIT_RATE_WINDOW_MS` | `60000` | Rate window in milliseconds |
 | `INVENTORY_MIN_KEY_LENGTH` | `16` | Minimum accepted key length |

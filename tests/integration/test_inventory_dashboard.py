@@ -187,7 +187,18 @@ async def _seed_upstream_key(app, provider_id: str, key_value: str) -> str:
 
 
 async def test_test_upstream_key_endpoint_reports_valid(client, app, monkeypatch):
+    from janus.storage.upstream_keys import get_upstream_key, update_upstream_key
+
     key_id = await _seed_upstream_key(app, "openai", "sk-valid-key-1234567890")
+    await update_upstream_key(
+        app.state.db_path,
+        key_id,
+        {
+            "status": "validation_paused",
+            "consecutive_failures": 3,
+            "validation_paused_at": "2026-08-25 00:00:00",
+        },
+    )
 
     async def fake_validate(key_value, provider_id, metadata, *, skip_probe=False):
         return {
@@ -199,7 +210,7 @@ async def test_test_upstream_key_endpoint_reports_valid(client, app, monkeypatch
             "credits_remaining": 5.0,
         }
 
-    monkeypatch.setattr("janus.dashboard.inventory_routes.validate_key", fake_validate)
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
     r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/test")
     assert r.status_code == 200
     data = r.json()
@@ -209,6 +220,11 @@ async def test_test_upstream_key_endpoint_reports_valid(client, app, monkeypatch
     assert data["models"] == 1
     assert data["credits_remaining"] == 5.0
     assert "Inference OK" in data["message"]
+    updated = await get_upstream_key(app.state.db_path, key_id)
+    assert updated is not None
+    assert updated["status"] == "active"
+    assert updated["consecutive_failures"] == 0
+    assert updated["validation_paused_at"] is None
 
 
 async def test_test_upstream_key_endpoint_reports_invalid(client, app, monkeypatch):
@@ -217,7 +233,7 @@ async def test_test_upstream_key_endpoint_reports_invalid(client, app, monkeypat
     async def fake_validate(key_value, provider_id, metadata, *, skip_probe=False):
         return {"is_valid": False, "error": "Auth failed (401)"}
 
-    monkeypatch.setattr("janus.dashboard.inventory_routes.validate_key", fake_validate)
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
     r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/test")
     assert r.status_code == 200
     data = r.json()

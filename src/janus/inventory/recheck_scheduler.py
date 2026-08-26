@@ -12,7 +12,12 @@ def schedule_upstream_recheck(key_id: str, db_path: str | Path) -> None:
         await update_upstream_key(
             db_path,
             key_id,
-            {"status": "pending_validation", "last_error": None},
+            {
+                "status": "pending_validation",
+                "last_error": None,
+                "consecutive_failures": 0,
+                "validation_paused_at": None,
+            },
         )
         await check_upstream_key(db_path, key_id)
 

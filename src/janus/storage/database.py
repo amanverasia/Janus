@@ -153,6 +153,8 @@ CREATE TABLE IF NOT EXISTS upstream_keys (
     source_node TEXT,
     last_checked_at TEXT,
     last_error TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    validation_paused_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -213,6 +215,8 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_ts ON request_logs(timestamp);
 _UPSTREAM_KEY_NEW_COLUMNS = [
     ("key_hash", "TEXT"),
     ("is_archived", "INTEGER NOT NULL DEFAULT 0"),
+    ("consecutive_failures", "INTEGER NOT NULL DEFAULT 0"),
+    ("validation_paused_at", "TEXT"),
 ]
 
 _NEW_USAGE_COLUMNS = [

@@ -22,7 +22,7 @@ Summary = Literal["ok", "warning", "critical"]
 _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 _ALERT_CAP = 8
 _LOW_CREDIT_USD = 1.0
-_BAD_INVENTORY_STATUSES = frozenset({"critical", "exhausted", "invalid"})
+_BAD_INVENTORY_STATUSES = frozenset({"critical", "exhausted", "invalid", "validation_paused"})
 
 
 @dataclass(frozen=True)
@@ -240,9 +240,7 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
                 id="inventory:unhealthy",
                 severity="critical",
                 title="Upstream keys need attention",
-                detail=(
-                    f"{bad_status_count} inventory {noun} in critical, exhausted, or invalid state."
-                ),
+                detail=(f"{bad_status_count} inventory {noun} need validation or are unhealthy."),
                 href="/dashboard/inventory/keys",
             )
         )

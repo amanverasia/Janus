@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-08-26
+
+### Fixed
+
+- **Inventory key validation** — automatic checks pause after three consecutive failures instead
+  of retrying indefinitely, while Test and Recheck actions resume validation with a fresh attempt
+  counter
+
 ## [3.0.0] - 2026-08-25
 
 ### Added

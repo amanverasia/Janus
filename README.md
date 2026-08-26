@@ -316,6 +316,7 @@ Built-in dashboard for upstream provider API keys: health checks, credit trackin
 | `INVENTORY_ENCRYPTION_KEY` | Fernet key for encrypting upstream keys at rest |
 | `INVENTORY_PUSH_TOKEN` | Auth token for `POST /dashboard/api/inventory/push` |
 | `INVENTORY_SCHEDULER_ENABLED` | Set to `false` to disable background rechecks (default: `true`) |
+| `VALIDATION_MAX_FAILURES` | Pause automatic validation after this many consecutive failures (default: `3`) |
 
 ```bash
 janus inventory generate-encryption-key          # create Fernet key

@@ -385,6 +385,8 @@ async def update_upstream_key(
         "source_node",
         "last_checked_at",
         "last_error",
+        "consecutive_failures",
+        "validation_paused_at",
     }
     updates: list[str] = []
     params: list[Any] = []

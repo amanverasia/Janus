@@ -56,6 +56,7 @@ RPM_WARNING_THRESHOLD = int(os.environ.get("RPM_WARNING_THRESHOLD", "5"))
 TPM_WARNING_THRESHOLD = int(os.environ.get("TPM_WARNING_THRESHOLD", "1000"))
 USABILITY_PROBE_ENABLED = os.environ.get("USABILITY_PROBE", "true").lower() != "false"
 CHECK_CONCURRENCY = int(os.environ.get("CHECK_CONCURRENCY", "8"))
+VALIDATION_MAX_FAILURES = max(1, int(os.environ.get("VALIDATION_MAX_FAILURES", "3")))
 FETCH_TIMEOUT = 15.0
 ANTIGRAVITY_LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
 ANTIGRAVITY_ONBOARD_URL = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser"
@@ -1476,6 +1477,8 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 {
                     "status": final_status,
                     "is_valid": 1,
+                    "consecutive_failures": 0,
+                    "validation_paused_at": None,
                     "last_checked_at": _now(),
                     "last_error": result.get("error"),
                 },
@@ -1504,6 +1507,8 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 "metadata": merged_meta if merged_meta else None,
                 "last_checked_at": _now(),
                 "last_error": None,
+                "consecutive_failures": 0,
+                "validation_paused_at": None,
             }
             if custom_base:
                 update_fields["custom_base_url"] = str(custom_base).rstrip("/")
@@ -1527,15 +1532,20 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 )
         else:
             error = result.get("error") or "Unknown error"
+            failure_count = int(key.get("consecutive_failures") or 0) + 1
+            paused = failure_count >= VALIDATION_MAX_FAILURES
+            final_status = "validation_paused" if paused else "invalid"
             await update_upstream_key(
                 db_path,
                 key_id,
                 {
-                    "status": "invalid",
+                    "status": final_status,
                     "is_valid": 0,
                     "is_usable": 0,
                     "usability_status": "auth_failed",
                     "usability_note": error,
+                    "consecutive_failures": failure_count,
+                    "validation_paused_at": _now() if paused else None,
                     "last_checked_at": _now(),
                     "last_error": error,
                 },
@@ -1557,6 +1567,9 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
             {
                 "status": "error",
                 "is_valid": 0,
+                "is_usable": 0,
+                "usability_status": "unknown",
+                "usability_note": str(exc),
                 "last_checked_at": _now(),
                 "last_error": str(exc),
             },
@@ -1574,7 +1587,8 @@ async def check_all_upstream_keys(db_path: str | Path) -> int:
     eligible = [
         key
         for key in keys
-        if key.get("status") != "revoked" and key.get("provider_id") != "unidentified"
+        if key.get("status") not in {"revoked", "validation_paused"}
+        and key.get("provider_id") != "unidentified"
     ]
     if not eligible:
         return 0

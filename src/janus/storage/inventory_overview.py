@@ -12,7 +12,9 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
             """SELECT
                  COUNT(*) as total,
                  SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
-                 SUM(CASE WHEN status = 'invalid' THEN 1 ELSE 0 END) as invalid,
+                 SUM(
+                   CASE WHEN status IN ('invalid', 'validation_paused') THEN 1 ELSE 0 END
+                 ) as invalid,
                  SUM(CASE WHEN is_usable = 1 AND status != 'revoked' THEN 1 ELSE 0 END) as usable,
                  SUM(CASE WHEN status = 'pending_validation' THEN 1 ELSE 0 END) as pending
                FROM upstream_keys
@@ -51,7 +53,9 @@ async def get_provider_cards(db_path: str | Path) -> list[dict[str, Any]]:
                  COUNT(k.id) as total_keys,
                  SUM(CASE WHEN k.status = 'active' THEN 1 ELSE 0 END) as active_keys,
                  SUM(CASE WHEN k.is_usable = 1 THEN 1 ELSE 0 END) as usable_keys,
-                 SUM(CASE WHEN k.status = 'invalid' THEN 1 ELSE 0 END) as invalid_keys,
+                 SUM(
+                   CASE WHEN k.status IN ('invalid', 'validation_paused') THEN 1 ELSE 0 END
+                 ) as invalid_keys,
                  ROUND(COALESCE(SUM(k.credits_remaining), 0), 2) as total_credits
                FROM inventory_providers p
                LEFT JOIN upstream_keys k

@@ -3,6 +3,7 @@ import respx
 from httpx import Response
 
 from janus.inventory.key_checker import (
+    check_all_upstream_keys,
     check_upstream_key,
     compute_health_status,
     validate_key,
@@ -311,6 +312,158 @@ async def test_check_upstream_key_marks_invalid(tmp_path):
     assert updated["status"] == "invalid"
     assert updated["is_valid"] == 0
     assert updated["last_error"] is not None
+
+
+@pytest.mark.asyncio
+async def test_check_upstream_key_pauses_after_third_consecutive_failure(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-repeatedly-invalid",
+    )
+
+    async def fake_validate(key_value, provider_id, metadata):
+        return {"is_valid": False, "error": "Auth failed (401)"}
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+
+    await check_upstream_key(db_path, record["id"])
+    first = await get_upstream_key(db_path, record["id"])
+    assert first is not None
+    assert first["status"] == "invalid"
+    assert first["consecutive_failures"] == 1
+    assert first["validation_paused_at"] is None
+
+    await check_upstream_key(db_path, record["id"])
+    second = await get_upstream_key(db_path, record["id"])
+    assert second is not None
+    assert second["status"] == "invalid"
+    assert second["consecutive_failures"] == 2
+    assert second["validation_paused_at"] is None
+
+    await check_upstream_key(db_path, record["id"])
+    third = await get_upstream_key(db_path, record["id"])
+    assert third is not None
+    assert third["status"] == "validation_paused"
+    assert third["consecutive_failures"] == 3
+    assert third["validation_paused_at"] is not None
+
+    history = await list_upstream_key_history(db_path, record["id"])
+    assert {(item["previous_status"], item["new_status"]) for item in history} == {
+        ("pending_validation", "invalid"),
+        ("invalid", "validation_paused"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_partial_success_resets_consecutive_failures(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-rate-limited",
+    )
+    await update_upstream_key(
+        db_path,
+        record["id"],
+        {
+            "status": "invalid",
+            "consecutive_failures": 2,
+        },
+    )
+
+    async def fake_validate(key_value, provider_id, metadata):
+        return {
+            "is_valid": True,
+            "partial_check": True,
+            "error": "Rate limited during check",
+        }
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+
+    await check_upstream_key(db_path, record["id"])
+
+    updated = await get_upstream_key(db_path, record["id"])
+    assert updated is not None
+    assert updated["status"] == "active"
+    assert updated["consecutive_failures"] == 0
+    assert updated["validation_paused_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_check_exception_clears_stale_usability(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-check-error",
+    )
+    await update_upstream_key(
+        db_path,
+        record["id"],
+        {
+            "status": "active",
+            "is_valid": 1,
+            "is_usable": 1,
+            "usability_status": "usable",
+            "usability_note": "Inference OK",
+        },
+    )
+
+    async def fake_validate(key_value, provider_id, metadata):
+        raise RuntimeError("validation crashed")
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+
+    await check_upstream_key(db_path, record["id"])
+
+    updated = await get_upstream_key(db_path, record["id"])
+    assert updated is not None
+    assert updated["status"] == "error"
+    assert updated["is_valid"] == 0
+    assert updated["is_usable"] == 0
+    assert updated["usability_status"] == "unknown"
+    assert updated["usability_note"] == "validation crashed"
+
+
+@pytest.mark.asyncio
+async def test_check_all_upstream_keys_skips_validation_paused_keys(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    active = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-active",
+    )
+    paused = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-paused",
+    )
+    await update_upstream_key(
+        db_path,
+        paused["id"],
+        {
+            "status": "validation_paused",
+            "consecutive_failures": 3,
+            "validation_paused_at": "2026-08-25T10:00:00+00:00",
+        },
+    )
+    checked_ids = []
+
+    async def fake_check(db_path_arg, key_id):
+        checked_ids.append(key_id)
+
+    monkeypatch.setattr("janus.inventory.key_checker.check_upstream_key", fake_check)
+
+    checked_count = await check_all_upstream_keys(db_path)
+
+    assert checked_count == 1
+    assert checked_ids == [active["id"]]
 
 
 @pytest.mark.asyncio

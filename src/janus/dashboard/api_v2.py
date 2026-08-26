@@ -108,6 +108,7 @@ _INVENTORY_STATUSES = frozenset(
     {
         "active",
         "invalid",
+        "validation_paused",
         "pending_validation",
         "error",
         "daily_exhausted",

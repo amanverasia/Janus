@@ -61,7 +61,7 @@
                 <td class="px-4 py-2 text-sm font-mono text-gray-300">{{ item.key_masked }}</td>
                 <td class="px-4 py-2 text-sm text-gray-400">{{ item.provider_display_name or item.provider_id }}</td>
                 <td class="px-4 py-2 text-sm text-gray-300">
-                    <span class="{% if item.status == 'pending_validation' %}text-yellow-300 animate-pulse{% elif item.status == 'active' %}text-green-300{% elif item.status == 'invalid' %}text-red-300{% endif %}">
+                    <span class="{% if item.status == 'pending_validation' %}text-yellow-300 animate-pulse{% elif item.status == 'active' %}text-green-300{% elif item.status == 'invalid' %}text-red-300{% elif item.status == 'validation_paused' %}text-gray-300{% endif %}">
                         {{ item.status }}{% if item.error %} — {{ item.error }}{% endif %}
                     </span>
                 </td>
