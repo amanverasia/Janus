@@ -15,5 +15,9 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 WORKDIR /app
 EXPOSE 20128
+# Uses the runtime Python (the slim image ships no curl/wget) to probe the
+# unauthenticated /v1/health endpoint. Non-2xx or a refused connection makes
+# the script exit non-zero, which Docker treats as unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:20128/v1/health', timeout=3).read()" || exit 1
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["janus", "serve", "--host", "0.0.0.0", "--port", "20128", "--config", "/home/janus/.janus/config.yaml"]
