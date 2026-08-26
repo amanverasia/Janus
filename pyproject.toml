@@ -72,3 +72,18 @@ ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/janus"]
+
+[tool.hatch.build.targets.sdist]
+# Keep internal workspace/planning artifacts out of the published sdist. The
+# prebuilt dashboard bundle ships under src/janus/ via the wheel target;
+# dashboard-ui/ is a build input, not a runtime dependency.
+skip-excluded-dirs = true
+exclude = [
+  "/dashboard-ui/",
+  "/docs/superpowers/",
+  "/docs/audits/",
+  "/AGENTS.md",
+  "/ISSUES.md",
+  "/STRIX-AUDIT.md",
+  "/todo.md",
+]
