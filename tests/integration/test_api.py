@@ -182,6 +182,60 @@ async def test_health(app):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        ["not", "an", "object"],
+        "bare string body",
+        42,
+    ],
+)
+async def test_malformed_json_object_returns_400(app, payload):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"]["type"] == "invalid_request_error"
+        assert "JSON object" in body["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_numeric_field_returns_400(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "model": "test/test-m1",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": "not-a-number",
+            "stream": False,
+        }
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_malformed_messages_field_returns_400(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = {
+            "model": "test/test-m1",
+            "messages": "not a list of messages",
+            "stream": False,
+        }
+        r = await client.post("/v1/chat/completions", json=payload)
+        assert r.status_code == 400
+        assert r.json()["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_malformed_anthropic_body_returns_400(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/v1/messages", json=["top-level", "array"])
+        assert r.status_code == 400
+        assert r.json()["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
 @respx.mock
 async def test_chat_completions_nonstream(app):
     respx.post("https://fake.local/v1/chat/completions").mock(
