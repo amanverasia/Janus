@@ -18,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.api.routes import FORMATS, _resolve_format
 from janus.app import _build_provider, create_app
-from janus.catalog import PROVIDERS
+from janus.catalog import PROVIDERS, gateway_entries
 from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
 from janus.providers.anthropic import AnthropicProvider
 from janus.providers.antigravity import AntigravityProvider
@@ -250,7 +250,7 @@ def test_every_gateway_entry_registers_and_resolves() -> None:
             loop.close()
         except Exception:
             pass
-    assert count == 40
+    assert count == len(gateway_entries())
 
 
 def test_alias_api_types_build() -> None:

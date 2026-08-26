@@ -1,24 +1,59 @@
 # Providers
 
-Janus routes requests to any of 40+ AI providers through a unified provider model.
-Providers are registered via the **dashboard** (recommended) or seeded from
-`config.yaml` on first startup. After seeding, the SQLite database is the source
-of truth.
+Janus routes requests to AI providers through a unified, multi-tenant provider
+model. The built-in catalog contains more than 60 gateway presets, including
+hosted APIs, local OpenAI-compatible servers, and subscription-backed providers.
+Providers are registered through the **dashboard** (recommended) or seeded from
+`config.yaml` on first startup. After seeding, SQLite is the source of truth.
 
 ## Provider Model
 
-Every provider entry has four key fields:
+Every provider instance combines a reusable catalog preset with operator-owned
+configuration:
 
 | Field | Description |
 |-------|-------------|
 | `api_type` | How Janus talks to the upstream — the wire protocol |
 | `prefix` | The URL namespace for routing. Clients send `prefix/model` |
 | `base_url` | The upstream API base URL |
-| `models` | List of model suffixes this account supports |
+| `models` | Configured model suffixes for this provider |
+| `live_models` | Whether successful upstream discovery contributes models |
+| `selected_models` | Models visible in Janus listings; empty means all known models |
+| `default_model` | Model used when this provider is selected without a model suffix |
+| `allowed_models` | Optional provider-wide routing restriction |
 
 The `prefix` is what makes Janus flexible. A client sends `"model": "openai/gpt-4o"`
-and Janus looks up any provider registered with `prefix: openai`. If multiple
-accounts share that prefix, Janus tries them in order with automatic fallback.
+and Janus looks up every eligible account registered with `prefix: openai`. If
+multiple accounts share that prefix, Janus tries them in order with automatic
+fallback, cooldowns, and quota-aware prioritization.
+
+## Provider and model layers
+
+Janus keeps four concerns separate:
+
+1. **Provider presets** define stable defaults such as the API type, base URL,
+   authentication shape, and model-discovery behavior.
+2. **Provider instances** hold operator configuration and encrypted credentials.
+3. **The model catalog** combines configured models, models discovered for each
+   upstream account, and operator-created custom models.
+4. **Client API-key policy** filters the visible catalog and enforces what each
+   person may call through the shared endpoint.
+
+This is deliberately different from a single-user local router. Provider model
+visibility is an operational dashboard preference; it does not grant a client
+access. A Janus API key's `allowed_models` policy remains authoritative and a
+disallowed request returns `403 model_not_allowed`.
+
+Dashboard access is operator access. Any key with `can_login=true` can manage
+the gateway-wide provider and model catalog; its `allowed_models` scope still
+limits requests sent through the client APIs, but does not create a partial
+administrative view. Issue login-capable keys only to trusted operators.
+
+Discovered models are stored per upstream account because two credentials for
+the same provider can have different entitlements. A discovery failure keeps the
+last successful catalog instead of turning a temporary upstream outage into an
+empty model list. A successful empty discovery result is different: it is stored
+as authoritative for that credential and removes stale entitlements.
 
 ## Provider Types
 
@@ -35,15 +70,28 @@ endpoint, that's the one to use.
 
 ## Dashboard catalog
 
-The dashboard **Providers** page includes a catalog of 15 known providers with
-pre-filled defaults, logos (via Simple Icons), and one-click setup:
+The dashboard **Providers** page presents built-in presets with pre-filled
+defaults and one-click setup. It covers direct APIs such as OpenAI, Anthropic,
+Gemini, Groq, Together, DeepSeek, OpenRouter, Mistral, Fireworks, Perplexity,
+xAI, and Qwen; local servers such as Ollama, vLLM, LM Studio, and LiteLLM; and
+subscription/OAuth integrations such as GitHub Copilot and Codex.
 
-OpenAI, Anthropic, Google Gemini, Groq, Together AI, DeepSeek, OpenRouter,
-Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, GitHub Copilot,
-OpenCode Zen (Free), and Custom.
+The separate **Models** workspace combines configured, discovered, and custom
+models. Operators can change listing visibility without rewriting provider
+configuration, and custom entries can carry display names, context/output
+limits, modalities, capabilities, and reasoning-effort metadata.
 
-Each entry supports **Fetch Models** (auto-populate from upstream) and **Test
-Connection** (1-token probe with latency).
+The effective catalog is rebuilt on provider/model mutations and cached with the
+routing snapshot. OpenAI `/v1/models` and Ollama `/api/tags` therefore expose the
+same view without querying every credential on each client poll.
+
+Each provider supports **Fetch Models** and **Test Connection** where its driver
+allows those operations. Provider secrets and inventory account identifiers are
+never returned by the model catalog APIs.
+
+Configuration export includes provider preset/default/live/selection metadata
+and first-class custom model records, so reset/import workflows retain the model
+workspace rather than silently flattening it.
 
 ## OAuth providers: GitHub Copilot
 
@@ -75,7 +123,7 @@ Codex uses ChatGPT subscription OAuth (Responses API). Paste a credential blob
 or bare access token on the **Providers** page (API type `codex`), or add one or
 more accounts via **Key Inventory** (select **Codex (ChatGPT)**) for multi-account
 fallback. Inventory accepts Janus JSON, 9router Codex connection objects, and
-`providerConnections` arrays — see [Key Inventory](inventory.md#codex--chatgpt-oauth).
+`providerConnections` arrays — see [Key Inventory](inventory.md#codex-chatgpt-oauth).
 
 ## Subscription quotas
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,14 +48,34 @@ CREATE TABLE IF NOT EXISTS budgets (
 
 CREATE TABLE IF NOT EXISTS providers (
     id TEXT PRIMARY KEY,
+    catalog_id TEXT,
     prefix TEXT NOT NULL,
     api_type TEXT NOT NULL,
     base_url TEXT NOT NULL,
     api_key TEXT,
     models TEXT NOT NULL DEFAULT '[]',
+    default_model TEXT,
+    live_models INTEGER NOT NULL DEFAULT 1,
+    selected_models TEXT NOT NULL DEFAULT '[]',
     is_enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS custom_models (
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+    model_id TEXT NOT NULL,
+    display_name TEXT,
+    context_window INTEGER,
+    max_output_tokens INTEGER,
+    input_modalities TEXT NOT NULL DEFAULT '[]',
+    reasoning_efforts TEXT NOT NULL DEFAULT '[]',
+    capabilities TEXT NOT NULL DEFAULT '{}',
+    is_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(provider_id, model_id)
 );
 
 CREATE TABLE IF NOT EXISTS combos (
@@ -100,6 +121,27 @@ CREATE TABLE IF NOT EXISTS cooldowns (
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
+CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id);
+
+CREATE TRIGGER IF NOT EXISTS custom_models_provider_insert
+BEFORE INSERT ON custom_models
+WHEN NOT EXISTS (SELECT 1 FROM providers WHERE id = NEW.provider_id)
+BEGIN
+    SELECT RAISE(ABORT, 'unknown custom model provider');
+END;
+
+CREATE TRIGGER IF NOT EXISTS custom_models_provider_update
+BEFORE UPDATE OF provider_id ON custom_models
+WHEN NOT EXISTS (SELECT 1 FROM providers WHERE id = NEW.provider_id)
+BEGIN
+    SELECT RAISE(ABORT, 'unknown custom model provider');
+END;
+
+CREATE TRIGGER IF NOT EXISTS custom_models_provider_delete
+AFTER DELETE ON providers
+BEGIN
+    DELETE FROM custom_models WHERE provider_id = OLD.id;
+END;
 
 CREATE TABLE IF NOT EXISTS inventory_providers (
     id TEXT PRIMARY KEY,
@@ -152,6 +194,7 @@ CREATE TABLE IF NOT EXISTS upstream_keys (
     metadata TEXT,
     source_node TEXT,
     last_checked_at TEXT,
+    models_discovered_at TEXT,
     last_error TEXT,
     consecutive_failures INTEGER NOT NULL DEFAULT 0,
     validation_paused_at TEXT,
@@ -217,6 +260,7 @@ _UPSTREAM_KEY_NEW_COLUMNS = [
     ("is_archived", "INTEGER NOT NULL DEFAULT 0"),
     ("consecutive_failures", "INTEGER NOT NULL DEFAULT 0"),
     ("validation_paused_at", "TEXT"),
+    ("models_discovered_at", "TEXT"),
 ]
 
 _NEW_USAGE_COLUMNS = [
@@ -228,6 +272,10 @@ _NEW_USAGE_COLUMNS = [
 ]
 
 _NEW_PROVIDER_COLUMNS = [
+    ("catalog_id", "TEXT"),
+    ("default_model", "TEXT"),
+    ("live_models", "INTEGER NOT NULL DEFAULT 1"),
+    ("selected_models", "TEXT NOT NULL DEFAULT '[]'"),
     ("quota_window", "TEXT"),
     ("quota_limit", "INTEGER"),
     ("quota_metric", "TEXT DEFAULT 'requests'"),
@@ -397,18 +445,26 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
             for pc in config.providers:
                 await db.execute(
                     """INSERT INTO providers
-                       (id, prefix, api_type, base_url, api_key, models, transports,
-                        allowed_models)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (id, catalog_id, prefix, api_type, base_url, api_key, models,
+                        default_model, live_models, selected_models, transports, allowed_models,
+                        quota_window, quota_limit, quota_metric)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         pc.id,
+                        pc.catalog_id,
                         pc.prefix,
                         pc.api_type,
                         pc.base_url,
                         encrypt_key_value(pc.api_key) if pc.api_key else pc.api_key,
                         json.dumps(pc.models),
+                        pc.default_model,
+                        1 if pc.live_models else 0,
+                        json.dumps(pc.selected_models),
                         json.dumps(pc.transports) if pc.transports else None,
                         json.dumps(pc.allowed_models),
+                        pc.quota_window,
+                        pc.quota_limit,
+                        pc.quota_metric,
                     ),
                 )
 
@@ -417,6 +473,44 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                 await db.execute(
                     "INSERT INTO combos (name, models) VALUES (?, ?)",
                     (combo.name, json.dumps(combo.models)),
+                )
+
+        if await _table_is_empty(db, "custom_models"):
+            custom_models = list(config.custom_models)
+            configured = {(model.provider_id, model.model_id) for model in custom_models}
+            from janus.config.schema import CustomModelConfig
+
+            for provider in config.providers:
+                for model_id in provider.custom_models:
+                    if (provider.id, model_id) not in configured:
+                        custom_models.append(
+                            CustomModelConfig(provider_id=provider.id, model_id=model_id)
+                        )
+            for custom_model in custom_models:
+                model_uuid = custom_model.id or str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"janus:{custom_model.provider_id}:{custom_model.model_id}",
+                    )
+                )
+                await db.execute(
+                    """INSERT INTO custom_models
+                       (id, provider_id, model_id, display_name, context_window,
+                        max_output_tokens, input_modalities, reasoning_efforts,
+                        capabilities, is_enabled)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        model_uuid,
+                        custom_model.provider_id,
+                        custom_model.model_id,
+                        custom_model.display_name,
+                        custom_model.context_window,
+                        custom_model.max_output_tokens,
+                        json.dumps(custom_model.input_modalities),
+                        json.dumps(custom_model.reasoning_efforts),
+                        json.dumps(custom_model.capabilities),
+                        1 if custom_model.is_enabled else 0,
+                    ),
                 )
 
         if await _table_is_empty(db, "settings"):

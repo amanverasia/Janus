@@ -37,13 +37,22 @@ GATEWAY_FIELDS = {
     "default_models",
     "transports",
     "default_headers",
+    "auth_kind",
+    "key_optional",
+    "allow_private_network",
+    "live_models",
+    "default_model",
+    "featured",
+    "group",
+    "capabilities",
+    "model_discovery",
 }
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 51
+    assert len(PROVIDERS) == 77
     assert len(inventory_entries()) == 43
-    assert len(gateway_entries()) == 40
+    assert len(gateway_entries()) == 69
 
 
 def test_groq_default_model_is_valid() -> None:
@@ -85,9 +94,13 @@ def test_new_9router_providers_present() -> None:
 
 
 def test_inventory_view_derives_from_unified() -> None:
-    assert INVENTORY_PROVIDERS == inventory_entries()
+    from janus.catalog import inventory_catalog_entries
+
+    assert INVENTORY_PROVIDERS == inventory_catalog_entries()
     for provider_id, entry in INVENTORY_PROVIDERS.items():
-        assert set(entry) == INVENTORY_FIELDS
+        optional = {"model_format", "allow_private_network"}
+        assert set(entry) - optional == INVENTORY_FIELDS
+        assert set(entry) <= INVENTORY_FIELDS | optional
         assert entry["id"] == provider_id
 
 
@@ -95,8 +108,39 @@ def test_gateway_view_derives_from_unified() -> None:
     assert CATALOG == gateway_entries()
     assert list(CATALOG) == GATEWAY_ORDER
     for entry in CATALOG.values():
-        assert GATEWAY_FIELDS - {"transports", "default_headers"} <= set(entry) | {"id"}
+        optional = {"transports", "default_headers", "allow_private_network", "model_discovery"}
+        assert GATEWAY_FIELDS - optional <= set(entry) | {"id"}
         assert set(entry) | {"id"} <= GATEWAY_FIELDS
+
+
+def test_opencodex_style_presets_share_reusable_executor() -> None:
+    catalog = gateway_entries()
+    for provider_id in (
+        "baseten",
+        "deepinfra",
+        "digitalocean",
+        "featherless",
+        "huggingface",
+        "lm-studio",
+        "nscale",
+        "nvidia",
+        "ollama-local",
+        "sambanova",
+        "scaleway",
+        "siliconflow",
+        "vllm",
+        "vultr",
+    ):
+        assert catalog[provider_id]["api_type"] == "openai_compat"
+        assert catalog[provider_id]["live_models"] is True
+
+
+def test_local_presets_are_key_optional_and_private_network_aware() -> None:
+    catalog = gateway_entries()
+    for provider_id in ("litellm", "lm-studio", "ollama-local", "vllm"):
+        assert catalog[provider_id]["auth_kind"] == "local"
+        assert catalog[provider_id]["key_optional"] is True
+        assert catalog[provider_id]["allow_private_network"] is True
 
 
 def test_id_bridges_are_derived() -> None:
@@ -107,6 +151,9 @@ def test_id_bridges_are_derived() -> None:
         "ark": "volcengine-ark",
         "vercel": "vercel-ai-gateway",
         "xmtp": "xiaomi_tokenplan",
+        "minimax-io": "minimax_io",
+        "kimi": "kimi_coding",
+        "glm": "glm_coding",
     }
 
 

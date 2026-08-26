@@ -1,9 +1,4 @@
-"""503 responses must carry the full per-account attempt trail.
-
-Before this, only the *last* failed account was surfaced in the
-"All providers exhausted" detail/log, so multi-account routing was
-unobservable (you couldn't tell whether fallback tried every account).
-"""
+"""503 responses redact account identities while operator logs retain them."""
 
 import httpx
 import pytest
@@ -38,7 +33,7 @@ async def _seed_and_reload(app) -> None:
 async def app(tmp_path):
     accounts = [
         ProviderConfig(
-            id=f"acct{i}",
+            id=f"acct{i}::uk_secret{i}",
             prefix="test",
             api_type="openai_compat",
             base_url="https://fake.local/v1",
@@ -57,7 +52,7 @@ async def app(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_exhausted_detail_lists_every_attempted_account(app):
+async def test_exhausted_detail_redacts_accounts_but_operator_log_keeps_them(app):
     await set_setting(app.state.db_path, "server_request_logging", "true")
     with respx.mock:
         respx.post("https://fake.local/v1/chat/completions").mock(
@@ -70,11 +65,14 @@ async def test_exhausted_detail_lists_every_attempted_account(app):
     assert r.status_code == 503
     detail = r.json()["detail"]
     assert "All providers exhausted (2 attempt(s))" in detail
-    assert "acct1: 429" in detail
-    assert "acct2: 429" in detail
+    assert "attempt 1: 429" in detail
+    assert "attempt 2: 429" in detail
+    assert "acct1" not in detail
+    assert "acct2" not in detail
+    assert "::uk_" not in detail
 
     logs = await list_request_logs(app.state.db_path)
     assert len(logs) == 1
     assert logs[0]["status"] == 503
-    assert "acct1: 429" in logs[0]["error"]
-    assert "acct2: 429" in logs[0]["error"]
+    assert "acct1::uk_secret1: 429" in logs[0]["error"]
+    assert "acct2::uk_secret2: 429" in logs[0]["error"]

@@ -15,6 +15,7 @@ async def test_init_db_creates_tables(tmp_path):
     assert "usage" in tables
     assert "inventory_providers" in tables
     assert "upstream_keys" in tables
+    assert "custom_models" in tables
 
 
 @pytest.mark.asyncio
@@ -58,6 +59,17 @@ async def test_providers_table_has_allowed_models_column(tmp_path):
         rows = await cursor.fetchall()
     columns = {row[1]: row for row in rows}
     assert "allowed_models" in columns
+
+
+@pytest.mark.asyncio
+async def test_providers_table_has_model_catalog_columns(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA table_info(providers)")
+        rows = await cursor.fetchall()
+    columns = {row[1] for row in rows}
+    assert {"catalog_id", "default_model", "live_models", "selected_models"} <= columns
 
 
 @pytest.mark.asyncio

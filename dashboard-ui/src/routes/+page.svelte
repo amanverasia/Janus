@@ -14,6 +14,7 @@
   import InventoryOverviewPage from '$lib/pages/InventoryOverviewPage.svelte';
   import KeysPage from '$lib/pages/KeysPage.svelte';
   import LeaderboardPage from '$lib/pages/LeaderboardPage.svelte';
+  import ModelsPage from '$lib/pages/ModelsPage.svelte';
   import OverviewPage from '$lib/pages/OverviewPage.svelte';
   import PricingPage from '$lib/pages/PricingPage.svelte';
   import ProvidersPage from '$lib/pages/ProvidersPage.svelte';
@@ -200,6 +201,8 @@
       <InventoryOverviewPage {data} {action} {navigate} />
     {:else if active.section === 'providers'}
       <ProvidersPage {data} {action} />
+    {:else if active.section === 'models'}
+      <ModelsPage {data} {action} />
     {:else if active.section === 'combos'}
       <CombosPage {data} {action} />
     {:else if active.section === 'routing'}

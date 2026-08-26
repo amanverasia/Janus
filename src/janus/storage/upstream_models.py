@@ -62,3 +62,47 @@ async def list_models_for_key(db_path: str | Path, upstream_key_id: str) -> list
         ) as cur:
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def list_model_ids_for_keys(
+    db_path: str | Path,
+    upstream_key_ids: list[str],
+) -> dict[str, list[str]]:
+    if not upstream_key_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in upstream_key_ids)
+    key_query = f"""SELECT id FROM upstream_keys
+                    WHERE id IN ({placeholders}) AND models_discovered_at IS NOT NULL"""
+    model_query = f"""SELECT upstream_key_id, model_id
+                      FROM upstream_models
+                      WHERE upstream_key_id IN ({placeholders}) AND is_available = 1
+                      ORDER BY upstream_key_id, model_id"""
+    async with get_connection(db_path) as db:
+        async with db.execute(key_query, upstream_key_ids) as cur:
+            discovered_keys = await cur.fetchall()
+        async with db.execute(model_query, upstream_key_ids) as cur:
+            rows = await cur.fetchall()
+    result: dict[str, list[str]] = {str(row["id"]): [] for row in discovered_keys}
+    for row in rows:
+        key_id = str(row["upstream_key_id"])
+        model_id = str(row["model_id"])
+        models = result.setdefault(key_id, [])
+        if model_id not in models:
+            models.append(model_id)
+    return result
+
+
+async def list_live_model_ids_for_provider(
+    db_path: str | Path,
+    inventory_provider_id: str,
+) -> list[str]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT DISTINCT model_id
+               FROM upstream_models
+               WHERE provider_id = ? AND is_available = 1
+               ORDER BY model_id""",
+            (inventory_provider_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+    return [str(row["model_id"]) for row in rows]

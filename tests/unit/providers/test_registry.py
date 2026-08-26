@@ -167,3 +167,187 @@ def test_lookup_multi_account_different_allowlists():
     assert targets is not None
     assert len(targets) == 1
     assert targets[0].account_id == "an-1"
+
+
+def test_direct_lookup_ignores_catalog_selection_but_filters_discovered_accounts():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openai::uk_one",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            models=["gpt-4o"],
+            selected_models=["gpt-4o"],
+            discovered_models=["gpt-4.1"],
+            upstream_key_id="one",
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="openai::uk_two",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            models=["gpt-4o"],
+            selected_models=["gpt-4o"],
+            discovered_models=None,
+            upstream_key_id="two",
+        )
+    )
+
+    targets = registry.lookup("openai/unlisted-direct-model")
+
+    assert targets is not None
+    assert [target.account_id for target in targets] == ["two"]
+
+
+def test_empty_discovery_is_authoritative():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openai",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            discovered_models=[],
+        )
+    )
+    assert registry.lookup("openai/any-model") is None
+
+
+def test_custom_models_survive_nonempty_discovery():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openai",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            models=["configured"],
+            custom_models=["custom"],
+            discovered_models=["live"],
+        )
+    )
+    assert registry.lookup("openai/configured") is None
+    assert registry.lookup("openai/custom") is not None
+    assert registry.lookup("openai/live") is not None
+    assert registry.lookup("openai/unknown") is None
+
+
+def test_bare_lookup_prefers_exact_default_model():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="default",
+            prefix="first",
+            api_type="anthropic",
+            base_url="https://first.example",
+            default_model="shared-model",
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="known",
+            prefix="second",
+            api_type="openai_compat",
+            base_url="https://second.example/v1",
+            models=["shared-model"],
+        )
+    )
+
+    targets = registry.lookup("shared-model")
+
+    assert targets is not None
+    assert [target.provider_config.id for target in targets] == ["default"]
+    assert targets[0].prefix == "first"
+    assert targets[0].native_format == "anthropic"
+
+
+def test_bare_provider_prefix_resolves_its_default_model():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openai",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            default_model="openai/gpt-4.1",
+            discovered_models=["gpt-4.1"],
+        )
+    )
+
+    targets = registry.lookup("openai")
+
+    assert targets is not None
+    assert targets[0].prefix == "openai"
+    assert targets[0].model == "gpt-4.1"
+
+
+def test_bare_lookup_falls_back_to_static_custom_and_discovered_known_models():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="configured",
+            prefix="provider",
+            api_type="openai_compat",
+            base_url="https://provider.example/v1",
+            models=["static"],
+            custom_models=["custom"],
+            selected_models=["static"],
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="discovered",
+            prefix="provider",
+            api_type="openai_compat",
+            base_url="https://provider.example/v1",
+            discovered_models=["live"],
+        )
+    )
+
+    assert registry.lookup("static") is not None
+    assert registry.lookup("live") is not None
+    assert registry.lookup("custom") is not None
+    assert registry.lookup("unknown") is None
+
+
+def test_bare_native_model_with_slash_falls_back_to_known_scan():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openrouter",
+            prefix="openrouter",
+            api_type="openai_compat",
+            base_url="https://openrouter.ai/api/v1",
+            models=["openai/gpt-4o"],
+        )
+    )
+
+    targets = registry.lookup("openai/gpt-4o")
+
+    assert targets is not None
+    assert targets[0].prefix == "openrouter"
+    assert targets[0].model == "openai/gpt-4o"
+
+
+def test_bare_lookup_respects_account_discovery_entitlement():
+    registry = ProviderRegistry()
+    for account, discovered in (("one", ["other"]), ("two", ["known"])):
+        registry.register(
+            ProviderConfig(
+                id=f"provider::{account}",
+                prefix="provider",
+                api_type="openai_compat",
+                base_url="https://provider.example/v1",
+                models=["known"],
+                discovered_models=discovered,
+                upstream_key_id=account,
+            )
+        )
+
+    targets = registry.lookup("known")
+
+    assert targets is not None
+    assert [target.account_id for target in targets] == ["two"]

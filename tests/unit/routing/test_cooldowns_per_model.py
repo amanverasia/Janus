@@ -123,6 +123,29 @@ def test_stale_account_cooldown_does_not_shrink_retry_after() -> None:
     assert 290 < exc_info.value.retry_after <= 300
 
 
+def test_bare_provider_default_checks_cooldown_for_resolved_model() -> None:
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="acct-a",
+            prefix="provider",
+            api_type="openai_compat",
+            base_url="https://example.test/v1",
+            models=["m1"],
+            default_model="m1",
+        )
+    )
+    h = FallbackHandler(registry, db_path=None)
+    h.mark_cooldown("acct-a", "rate_limit", model="m1", duration=300)
+
+    with pytest.raises(AllAccountsCooledDown):
+        h.resolve_attempts("provider")
+
+    h.mark_success("acct-a", "m1")
+    h.mark_cooldown("acct-a", "rate_limit", model="m2", duration=300)
+    assert h.resolve_attempts("provider")[0].model == "m1"
+
+
 async def test_cooldown_save_failure_is_logged_and_keeps_memory_state(
     tmp_path, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -4,8 +4,9 @@ import datetime
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, NoReturn
 
 import httpx
@@ -29,11 +30,9 @@ from janus.providers.base import (
     parse_retry_after,
 )
 from janus.providers.registry import (
+    PREFIX_ALIASES,
     ProviderRegistry,
     ResolvedTarget,
-)
-from janus.providers.registry import (
-    model_allowed as provider_model_allowed,
 )
 from janus.routing.capabilities import (
     detect_required_capabilities,
@@ -56,6 +55,11 @@ from janus.routing.fusion import FusionDeps, run_fusion
 from janus.routing.modality import strip_unsupported_modalities
 from janus.routing.model_aliases import resolve_model_alias
 from janus.routing.prefetch import prefetch_remote_images
+from janus.routing.provider_snapshots import (
+    ProviderSnapshot,
+    acquire_provider_snapshot,
+    release_provider_snapshot,
+)
 from janus.routing.reasoning_inject import inject_reasoning_content
 from janus.routing.thinking import (
     apply_thinking_to_payload,
@@ -254,15 +258,15 @@ async def _passthrough_call(
     stream: bool,
     request: Request,
     target: ResolvedTarget,
+    providers: dict[str, Provider],
+    handler: FallbackHandler,
     *,
     prep: ClaudeUpstreamPrep | None = None,
     client_tool: str | None = None,
 ) -> RawResult | None:
-    providers: dict[str, Provider] = request.app.state.providers
     provider = providers.get(target.provider_config.id)
     if provider is None:
         return None
-    handler: FallbackHandler = request.app.state.fallback_handler
     handler.record_attempt(target)
     url = _passthrough_url(base_url, fmt)
     client = getattr(provider, "_client", None)
@@ -431,7 +435,36 @@ async def _handle(
     body: dict[str, Any],
     request: Request,
 ) -> Response:
-    handler: FallbackHandler = request.app.state.fallback_handler
+    snapshot = acquire_provider_snapshot(request.app)
+    try:
+        response = await _handle_with_snapshot(client_format, body, request, snapshot)
+    except BaseException:
+        await release_provider_snapshot(request.app, snapshot)
+        raise
+    if isinstance(response, StreamingResponse):
+        body_iterator = response.body_iterator
+
+        async def _leased_body() -> AsyncIterator[Any]:
+            try:
+                async for chunk in body_iterator:
+                    yield chunk
+            finally:
+                await release_provider_snapshot(request.app, snapshot)
+
+        response.body_iterator = _leased_body()
+        return response
+    await release_provider_snapshot(request.app, snapshot)
+    return response
+
+
+async def _handle_with_snapshot(
+    client_format: str,
+    body: dict[str, Any],
+    request: Request,
+    snapshot: ProviderSnapshot,
+) -> Response:
+    handler = snapshot.handler
+    providers = snapshot.providers
     db_path = request.app.state.db_path
     pricing_registry = request.app.state.pricing_registry
 
@@ -495,27 +528,45 @@ async def _handle(
     canonical_req, thinking_intent = resolve_thinking_intent(canonical_req)
 
     allowed = key_allowed_models(request)
-    if not key_model_allowed(canonical_req.model, allowed):
+    requested_model = canonical_req.model
+    grants_combo = handler.registry.lookup_combo(requested_model) is not None
+    requested_prefix, separator, _ = requested_model.partition("/")
+    registered_prefix = PREFIX_ALIASES.get(requested_prefix, requested_prefix)
+    explicit_namespace = bool(
+        not grants_combo and separator and registered_prefix in handler.registry.providers
+    )
+    explicit_targets = handler.registry.lookup(requested_model) if explicit_namespace else None
+
+    async def _model_not_allowed(model: str) -> JSONResponse:
         await _maybe_log_client_error(
             log_requests=log_requests,
             db_path=db_path,
             client_format=client_format,
-            model=canonical_req.model,
+            model=model,
             status=403,
             request_body=logged_request_body,
-            error=f"Model '{canonical_req.model}' is not allowed for this API key",
+            error=f"Model '{model}' is not allowed for this API key",
             max_rows=retention,
         )
         return JSONResponse(
             content={
                 "error": {
-                    "message": f"Model '{canonical_req.model}' is not allowed for this API key",
+                    "message": f"Model '{model}' is not allowed for this API key",
                     "type": "model_not_allowed",
-                    "model": canonical_req.model,
+                    "model": model,
                 }
             },
             status_code=403,
         )
+
+    canonical_target_allowed = any(
+        key_model_allowed(f"{target.prefix}/{target.model}", allowed)
+        for target in explicit_targets or []
+    )
+    if (explicit_namespace or grants_combo) and not (
+        key_model_allowed(requested_model, allowed) or canonical_target_allowed
+    ):
+        return await _model_not_allowed(requested_model)
 
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
     canonical_req = await saver_pipeline.apply_async(canonical_req)
@@ -570,7 +621,7 @@ async def _handle(
                 judge_model=judge_model,
                 deps=FusionDeps(
                     handler=handler,
-                    providers=request.app.state.providers,
+                    providers=providers,
                     resolve_format=_resolve_format,
                     db_path=db_path,
                     pricing_registry=pricing_registry,
@@ -618,10 +669,21 @@ async def _handle(
         )
         raise HTTPException(status_code=400, detail=str(e))
 
+    if not explicit_namespace and not grants_combo:
+        attempts = [
+            target
+            for target in attempts
+            if key_model_allowed(f"{target.prefix}/{target.model}", allowed)
+        ]
+        if not attempts:
+            return await _model_not_allowed(requested_model)
+
     attempt_errors: list[str] = []
+    public_attempt_errors: list[str] = []
 
     def _note_attempt_failure(failed: ResolvedTarget, detail: str) -> None:
         attempt_errors.append(f"{failed.account_id}: {detail}")
+        public_attempt_errors.append(f"attempt {len(public_attempt_errors) + 1}: {detail}")
         logger.warning(
             "Fallback: account %s failed for %s (%s); trying next account",
             failed.account_id,
@@ -652,8 +714,7 @@ async def _handle(
                 "https://openrouter.ai/api/v1"
             )
         if transport_base:
-            providers_t: dict[str, Provider] = request.app.state.providers
-            if target.provider_config.id in providers_t:
+            if target.provider_config.id in providers:
                 pt_body = client_adapter.build_upstream_request(attempt_req, upstream_model)
                 apply_thinking_to_payload(
                     pt_body,
@@ -682,6 +743,8 @@ async def _handle(
                         pt_stream,
                         request,
                         target,
+                        providers,
+                        handler,
                         prep=pt_prep,
                         client_tool=client_tool,
                     )
@@ -850,8 +913,7 @@ async def _handle(
         # CanonicalRequest (so RTK/Caveman/Ponytail still apply), then either
         # stream with full usage/log lifecycle or return JSON with usage.
         if client_format == target.native_format:
-            providers_p: dict[str, Provider] = request.app.state.providers
-            provider_p = providers_p.get(target.provider_config.id)
+            provider_p = providers.get(target.provider_config.id)
             if provider_p is not None:
                 handler.record_attempt(target)
                 native_body = client_adapter.build_upstream_request(attempt_req, upstream_model)
@@ -1084,7 +1146,6 @@ async def _handle(
             wire_format=target.native_format,
             oauth_upstream=_oauth_upstream(target),
         )
-        providers: dict[str, Provider] = request.app.state.providers
         provider = providers[target.provider_config.id]
         handler.record_attempt(target)
         provider_kwargs = _claude_provider_kwargs(
@@ -1287,11 +1348,19 @@ async def _handle(
             _note_attempt_failure(target, type(e).__name__)
             continue
 
-    attempts_trail = "; ".join(attempt_errors) if attempt_errors else "no attempts made"
+    public_attempts_trail = (
+        "; ".join(public_attempt_errors) if public_attempt_errors else "no attempts made"
+    )
     exhausted_detail = (
-        f"All providers exhausted ({len(attempt_errors)} attempt(s)): {attempts_trail}"
+        f"All providers exhausted ({len(attempt_errors)} attempt(s)): {public_attempts_trail}"
     )
     if log_requests:
+        internal_attempts_trail = (
+            "; ".join(attempt_errors) if attempt_errors else "no attempts made"
+        )
+        internal_exhausted_detail = (
+            f"All providers exhausted ({len(attempt_errors)} attempt(s)): {internal_attempts_trail}"
+        )
         await record_request_log(
             db_path,
             client_format=client_format,
@@ -1299,7 +1368,7 @@ async def _handle(
             status=503,
             duration_ms=_elapsed_ms(),
             request_body=logged_request_body,
-            error=exhausted_detail,
+            error=internal_exhausted_detail,
             client_key_id=client_key_id,
             client_key_label=client_key_label,
             max_rows=retention,
@@ -1309,36 +1378,39 @@ async def _handle(
 
 @router.get("/models", dependencies=[Depends(require_gateway_rate_limit)])
 async def list_models(request: Request) -> dict[str, Any]:
-    registry: ProviderRegistry = request.app.state.registry
+    snapshot: ProviderSnapshot = request.app.state.provider_snapshot
+    registry = snapshot.registry
     allowed = key_allowed_models(request)
+    catalog = [row for row in snapshot.model_catalog if not row["disabled"]]
+    visible = [
+        row
+        for row in catalog
+        if registry.lookup(row["namespaced"]) is not None
+        and key_model_allowed(row["namespaced"], allowed)
+    ]
     client_tool = detect_client_tool(client_header_map(request.headers))
     if client_tool == "claude":
+        models_by_prefix: dict[str, list[str]] = {}
+        for row in visible:
+            models_by_prefix.setdefault(row["prefix"], []).append(row["id"])
+        claude_providers: dict[str, list[Any]] = {
+            prefix: [SimpleNamespace(models=models, allowed_models=[])]
+            for prefix, models in models_by_prefix.items()
+        }
         return build_claude_code_models_response(
-            registry_providers=registry.providers,
+            registry_providers=claude_providers,
             combos=registry.combos,
             allowed_models=allowed,
         )
-    data: list[dict[str, Any]] = []
-    for prefix, configs in registry.providers.items():
-        models_seen: set[str] = set()
-        for config in configs:
-            for model in config.models:
-                if model in models_seen:
-                    continue
-                if not provider_model_allowed(model, config.allowed_models):
-                    continue
-                model_id = f"{prefix}/{model}"
-                if not key_model_allowed(model_id, allowed):
-                    continue
-                models_seen.add(model)
-                data.append(
-                    {
-                        "id": model_id,
-                        "object": "model",
-                        "created": 0,
-                        "owned_by": config.id,
-                    }
-                )
+    data: list[dict[str, Any]] = [
+        {
+            "id": row["namespaced"],
+            "object": "model",
+            "created": 0,
+            "owned_by": row["provider_id"],
+        }
+        for row in visible
+    ]
     for combo_name in registry.combos:
         if not key_model_allowed(combo_name, allowed):
             continue
@@ -1414,34 +1486,31 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
 ollama_router = APIRouter()
 
 
-def _ollama_model_entries(
+async def _ollama_model_entries(
+    catalog: Sequence[Mapping[str, Any]],
     registry: ProviderRegistry,
     allowed_models: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     models: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for prefix, configs in registry.providers.items():
-        for config in configs:
-            for model in config.models:
-                name = f"{prefix}/{model}"
-                if name in seen:
-                    continue
-                if not provider_model_allowed(model, config.allowed_models):
-                    continue
-                if not key_model_allowed(name, allowed_models):
-                    continue
-                seen.add(name)
-                models.append(
-                    {
-                        "name": name,
-                        "model": name,
-                        "modified_at": now,
-                        "size": 0,
-                        "digest": "",
-                        "details": {"family": "janus", "format": "gateway"},
-                    }
-                )
+    for row in catalog:
+        if row["disabled"]:
+            continue
+        name = row["namespaced"]
+        if registry.lookup(name) is None:
+            continue
+        if not key_model_allowed(name, allowed_models):
+            continue
+        models.append(
+            {
+                "name": name,
+                "model": name,
+                "modified_at": now,
+                "size": 0,
+                "digest": "",
+                "details": {"family": "janus", "format": "gateway"},
+            }
+        )
     for combo_name in registry.combos:
         if not key_model_allowed(combo_name, allowed_models):
             continue
@@ -1544,8 +1613,12 @@ async def ollama_generate(request: Request) -> Response:
 
 @ollama_router.get("/api/tags", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_tags(request: Request) -> dict[str, Any]:
-    registry: ProviderRegistry = request.app.state.registry
-    return {"models": _ollama_model_entries(registry, key_allowed_models(request))}
+    snapshot: ProviderSnapshot = request.app.state.provider_snapshot
+    return {
+        "models": await _ollama_model_entries(
+            snapshot.model_catalog, snapshot.registry, key_allowed_models(request)
+        )
+    }
 
 
 @ollama_router.post("/api/show", dependencies=[Depends(require_gateway_rate_limit)])
@@ -1554,8 +1627,10 @@ async def ollama_show(request: Request) -> Response:
     name = (body.get("name") or body.get("model") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="model name required")
-    registry: ProviderRegistry = request.app.state.registry
-    entries = _ollama_model_entries(registry, key_allowed_models(request))
+    snapshot: ProviderSnapshot = request.app.state.provider_snapshot
+    entries = await _ollama_model_entries(
+        snapshot.model_catalog, snapshot.registry, key_allowed_models(request)
+    )
     match = next((e for e in entries if e["name"] == name), None)
     if match is None:
         return JSONResponse(

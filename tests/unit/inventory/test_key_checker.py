@@ -2,12 +2,14 @@ import pytest
 import respx
 from httpx import Response
 
+from janus.config.schema import ProviderConfig
 from janus.inventory.key_checker import (
     check_all_upstream_keys,
     check_upstream_key,
     compute_health_status,
     validate_key,
 )
+from janus.providers.registry import ProviderRegistry
 from janus.storage.database import init_db
 from janus.storage.upstream_keys import (
     create_upstream_key,
@@ -15,7 +17,7 @@ from janus.storage.upstream_keys import (
     list_upstream_key_history,
     update_upstream_key,
 )
-from janus.storage.upstream_models import list_models_for_key
+from janus.storage.upstream_models import list_model_ids_for_keys, list_models_for_key
 
 
 @pytest.mark.asyncio
@@ -47,6 +49,35 @@ async def test_validate_key_auth_failure():
     result = await validate_key("sk-proj-bad", "openai", skip_probe=True)
     assert result["is_valid"] is False
     assert "Auth failed" in result["error"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_validate_gateway_only_preset_discovers_models():
+    respx.get("https://api.deepinfra.com/v1/openai/models").mock(
+        return_value=Response(200, json={"data": [{"id": "meta-llama/Llama-3.3-70B"}]})
+    )
+
+    result = await validate_key("deepinfra-test-key", "deepinfra", skip_probe=True)
+
+    assert result["is_valid"] is True
+    assert [model["model_id"] for model in result["models"]] == ["meta-llama/Llama-3.3-70B"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_validate_local_preset_allows_private_endpoint_without_global_override(
+    monkeypatch,
+):
+    monkeypatch.delenv("ALLOW_PRIVATE_BASE_URLS", raising=False)
+    respx.get("http://localhost:11434/v1/models").mock(
+        return_value=Response(200, json={"data": [{"id": "local-model"}]})
+    )
+
+    result = await validate_key("local-auth-key", "ollama-local", skip_probe=True)
+
+    assert result["is_valid"] is True
+    assert [model["model_id"] for model in result["models"]] == ["local-model"]
 
 
 @pytest.mark.asyncio
@@ -391,6 +422,41 @@ async def test_partial_success_resets_consecutive_failures(tmp_path, monkeypatch
     assert updated["status"] == "active"
     assert updated["consecutive_failures"] == 0
     assert updated["validation_paused_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_successful_empty_model_discovery_clears_stale_models(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="sk-proj-empty-model-list",
+    )
+
+    async def fake_validate(key_value, provider_id, metadata):
+        return {"is_valid": True, "is_usable": True, "models": []}
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+    await check_upstream_key(db_path, record["id"])
+
+    updated = await get_upstream_key(db_path, record["id"])
+    assert updated is not None
+    assert updated["models_discovered_at"] is not None
+    assert await list_models_for_key(db_path, record["id"]) == []
+    discoveries = await list_model_ids_for_keys(db_path, [record["id"]])
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="openai::test",
+            prefix="openai",
+            api_type="openai_compat",
+            base_url="https://api.openai.com/v1",
+            models=["stale-static-model"],
+            discovered_models=discoveries[record["id"]],
+        )
+    )
+    assert registry.lookup("openai/stale-static-model") is None
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 import httpx
 import pytest
 import respx
+import yaml
 from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
@@ -34,6 +35,56 @@ async def test_provider_create(client):
         },
     )
     assert r.status_code == 200
+
+
+async def test_edit_migrated_provider_infers_builtin_catalog(client, app):
+    from janus.storage.database import init_db
+    from janus.storage.providers_db import create_provider, get_provider
+
+    await init_db(app.state.db_path)
+    await create_provider(
+        app.state.db_path,
+        {
+            "id": "openai",
+            "catalog_id": None,
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "models": ["gpt-4o"],
+        },
+    )
+
+    response = await client.put(
+        "/dashboard/api/providers/openai",
+        data={
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "models": "gpt-4o",
+        },
+    )
+
+    assert response.status_code == 200
+    provider = await get_provider(app.state.db_path, "openai")
+    assert provider is not None
+    assert provider["catalog_id"] == "openai"
+
+
+async def test_provider_create_from_keyless_preset(client, app):
+    from janus.storage.providers_db import get_provider
+
+    response = await client.post(
+        "/dashboard/api/providers",
+        data={"id": "zen-free", "catalog_id": "opencode_free"},
+    )
+
+    assert response.status_code == 200
+    provider = await get_provider(app.state.db_path, "zen-free")
+    assert provider is not None
+    assert provider["catalog_id"] == "opencode_free"
+    assert provider["api_type"] == "opencode_free"
+    assert provider["base_url"] == ""
+    assert provider["live_models"] == 0
 
 
 @pytest.mark.parametrize(
@@ -360,7 +411,44 @@ async def test_provider_test_connection_not_found(client):
     assert r.status_code == 404
 
 
-async def test_export_yaml(client):
+@respx.mock
+async def test_local_provider_preset_allows_loopback_model_fetch_and_test(client):
+    await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "local-ollama",
+            "catalog_id": "ollama-local",
+            "prefix": "ollama-local",
+            "api_type": "openai_compat",
+            "base_url": "http://localhost:11434/v1",
+            "models": "local-model",
+        },
+    )
+    respx.get("http://localhost:11434/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "local-model"}]})
+    )
+    respx.post("http://localhost:11434/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"id": "local-response", "choices": []})
+    )
+
+    fetched = await client.post(
+        "/dashboard/api/providers/fetch-models",
+        data={
+            "provider_id": "local-ollama",
+            "catalog_id": "ollama-local",
+            "api_type": "openai_compat",
+            "base_url": "http://localhost:11434/v1",
+        },
+    )
+    tested = await client.post("/dashboard/api/providers/local-ollama/test")
+
+    assert fetched.status_code == 200
+    assert fetched.json()["models"] == ["local-model"]
+    assert tested.status_code == 200
+    assert tested.json()["ok"] is True
+
+
+async def test_export_yaml_round_trips_provider_and_custom_model_state(client, app, tmp_path):
     await client.post(
         "/dashboard/api/providers",
         data={
@@ -370,8 +458,32 @@ async def test_export_yaml(client):
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-test",
             "models": "gpt-4o",
+            "default_model": "gpt-4o",
+            "live_models": "true",
+            "selected_models": "gpt-4o",
+            "allowed_models": "gpt-*",
+            "quota_window": "weekly",
+            "quota_limit": "99",
+            "quota_metric": "tokens",
         },
     )
+    from janus.storage.providers_db import update_provider
+
+    await update_provider(
+        app.state.db_path,
+        "openai",
+        {"transports": {"anthropic": "https://api.openai.com/anthropic"}},
+    )
+    custom = await client.post(
+        "/dashboard/api/v2/custom-models",
+        json={
+            "provider_id": "openai",
+            "model_id": "custom-gpt",
+            "context_window": 128000,
+            "capabilities": {"tools": True},
+        },
+    )
+    assert custom.status_code == 201
     r = await client.get("/dashboard/api/export")
     assert r.status_code == 200
     assert "text/yaml" in r.headers["content-type"]
@@ -383,6 +495,41 @@ async def test_export_yaml(client):
     assert "openai" in r.text
     assert "gpt-4o" in r.text
     assert "sk-test" in r.text
+    exported = yaml.safe_load(r.text)
+    provider = exported["providers"][0]
+    assert {
+        "catalog_id",
+        "default_model",
+        "live_models",
+        "selected_models",
+        "transports",
+    } <= provider.keys()
+    assert exported["custom_models"][0]["model_id"] == "custom-gpt"
+    assert exported["custom_models"][0]["capabilities"] == {"tools": True}
+
+    from janus.config.schema import JanusConfig
+    from janus.storage.custom_models import list_custom_models
+    from janus.storage.database import init_db, seed_from_config
+    from janus.storage.providers_db import get_provider
+
+    imported = JanusConfig.model_validate(exported)
+    restored_db = tmp_path / "restored.db"
+    await init_db(restored_db)
+    await seed_from_config(restored_db, imported)
+    restored = await get_provider(restored_db, "openai")
+    assert restored is not None
+    assert restored["catalog_id"] == "openai"
+    assert restored["default_model"] == "gpt-4o"
+    assert restored["live_models"] == 1
+    assert restored["selected_models"] == '["gpt-4o"]'
+    assert restored["allowed_models"] == '["gpt-*"]'
+    assert restored["quota_window"] == "weekly"
+    assert restored["quota_limit"] == 99
+    assert restored["quota_metric"] == "tokens"
+    assert yaml.safe_load(restored["transports"])["anthropic"].endswith("/anthropic")
+    restored_custom = await list_custom_models(restored_db)
+    assert restored_custom[0]["model_id"] == "custom-gpt"
+    assert restored_custom[0]["capabilities"] == {"tools": True}
 
 
 async def test_export_yaml_includes_allowed_models(client):

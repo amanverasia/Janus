@@ -38,13 +38,21 @@ async def test_create_and_list_provider(db):
             "base_url": "https://api.openai.com/v1",
             "api_key": "sk-xxx",
             "models": ["gpt-4o", "gpt-4o-mini"],
+            "catalog_id": "openai",
+            "default_model": "gpt-4o",
+            "live_models": False,
+            "selected_models": ["gpt-4o", "gpt-4.1"],
         },
     )
     providers = await list_providers(db)
     assert len(providers) == 1
     assert providers[0]["id"] == "openai"
     assert providers[0]["is_enabled"] == 1
+    assert providers[0]["catalog_id"] == "openai"
+    assert providers[0]["default_model"] == "gpt-4o"
     assert json.loads(providers[0]["models"]) == ["gpt-4o", "gpt-4o-mini"]
+    assert providers[0]["live_models"] == 0
+    assert json.loads(providers[0]["selected_models"]) == ["gpt-4o", "gpt-4.1"]
 
 
 async def test_get_provider(db):
@@ -94,6 +102,38 @@ async def test_update_provider(db):
     p = await get_provider(db, "test")
     assert p["base_url"] == "https://new.local"
     assert json.loads(p["models"]) == ["m1", "m2"]
+
+
+async def test_partial_update_preserves_provider_model_catalog_and_secret(db, monkeypatch):
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    await create_provider(
+        db,
+        {
+            "id": "test",
+            "catalog_id": "openai",
+            "prefix": "test",
+            "api_type": "openai_compat",
+            "base_url": "https://old.local",
+            "api_key": "secret",
+            "models": ["m1"],
+            "default_model": "m1",
+            "live_models": False,
+            "selected_models": ["m1"],
+        },
+    )
+    raw_before = await _raw_api_key(db, "test")
+
+    await update_provider(db, "test", {"selected_models": ["m2"]})
+
+    provider = await get_provider(db, "test")
+    assert provider["catalog_id"] == "openai"
+    assert provider["base_url"] == "https://old.local"
+    assert provider["api_key"] == "secret"
+    assert provider["default_model"] == "m1"
+    assert json.loads(provider["models"]) == ["m1"]
+    assert provider["live_models"] == 0
+    assert json.loads(provider["selected_models"]) == ["m2"]
+    assert await _raw_api_key(db, "test") == raw_before
 
 
 async def test_toggle_provider(db):

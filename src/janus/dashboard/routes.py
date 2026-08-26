@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
@@ -25,8 +26,9 @@ from fastapi.templating import Jinja2Templates
 
 from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
-from janus.dashboard.catalog import get_provider_logo_map, provider_logo_url
+from janus.dashboard.catalog import get_catalog, get_provider_logo_map, provider_logo_url
 from janus.dashboard.context import dashboard_context
+from janus.providers.drivers import supported_api_types
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
@@ -72,7 +74,9 @@ def _api_v1_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/v1"
 
 
-def _reject_unsafe_url(base_url: str) -> JSONResponse | None:
+def _reject_unsafe_url(
+    base_url: str, *, allow_private_network: bool = False
+) -> JSONResponse | None:
     """Return a 400 JSONResponse if base_url is not a public http(s) address, else None.
 
     Guards dashboard endpoints that send the user's API key to an arbitrary URL
@@ -89,7 +93,7 @@ def _reject_unsafe_url(base_url: str) -> JSONResponse | None:
         return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
     try:
         hostname = parsed.host
-        if hostname:
+        if hostname and not allow_private_network:
             for _family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
                 ip = ipaddress.ip_address(sockaddr[0])
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
@@ -872,24 +876,7 @@ async def revoke_api_key(request: Request, key_id: int) -> HTMLResponse:
 # ---- Provider CRUD ----
 
 
-_SUPPORTED_PROVIDER_API_TYPES = frozenset(
-    {
-        "anthropic",
-        "antigravity",
-        "claude",
-        "claude_oauth",
-        "codex",
-        "cursor",
-        "gemini",
-        "gemini-cli",
-        "gemini_cli",
-        "github_copilot",
-        "kiro",
-        "mimo_free",
-        "openai_compat",
-        "opencode_free",
-    }
-)
+_SUPPORTED_PROVIDER_API_TYPES = supported_api_types()
 
 
 def _provider_api_type_error(api_type: str) -> HTMLResponse | None:
@@ -919,6 +906,108 @@ def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
     }
 
 
+_PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+
+
+def _parse_provider_models(value: str) -> list[str]:
+    models: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[,\n]", value):
+        model = raw.strip()
+        if not model or model in seen:
+            continue
+        if len(model) > 300 or any(ord(char) < 32 for char in model):
+            raise ValueError("Model IDs must be 300 characters or fewer")
+        seen.add(model)
+        models.append(model)
+    return models
+
+
+def _form_bool(params: dict[str, list[str]], name: str, default: bool) -> bool:
+    if name not in params:
+        return default
+    return params[name][0].strip().lower() in {"1", "on", "true", "yes"}
+
+
+def _provider_form_data(
+    params: dict[str, list[str]],
+    *,
+    provider_id: str,
+    existing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    catalog = get_catalog()
+    requested_catalog_id = params.get("catalog_id", [""])[0].strip()
+    catalog_id = requested_catalog_id or str((existing or {}).get("catalog_id") or "")
+    if not catalog_id and provider_id in catalog:
+        catalog_id = provider_id
+    preset = catalog.get(catalog_id) if catalog_id else None
+    if requested_catalog_id and preset is None:
+        raise ValueError("Unknown provider preset")
+
+    prefix = params.get("prefix", [str((preset or {}).get("prefix") or "")])[0].strip()
+    api_type = params.get("api_type", [str((preset or {}).get("api_type") or "")])[0].strip()
+    base_url = params.get("base_url", [str((preset or {}).get("base_url") or "")])[0].strip()
+    if not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
+        raise ValueError("Provider ID must use letters, numbers, dots, dashes, or underscores")
+    if not _PROVIDER_ID_PATTERN.fullmatch(prefix):
+        raise ValueError("Prefix must use letters, numbers, dots, dashes, or underscores")
+    url_optional = api_type in {"mimo_free", "opencode_free"}
+    if not base_url and not url_optional:
+        raise ValueError("Base URL is required")
+    if base_url:
+        try:
+            parsed_url = httpx.URL(base_url)
+        except Exception as exc:
+            raise ValueError("Base URL must be a valid HTTP(S) URL") from exc
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.host:
+            raise ValueError("Base URL must be a valid HTTP(S) URL")
+        if parsed_url.username or parsed_url.password or parsed_url.query or parsed_url.fragment:
+            raise ValueError("Base URL must not include credentials, a query, or a fragment")
+    api_type_error = _provider_api_type_error(api_type)
+    if api_type_error is not None:
+        raise ValueError("Unsupported API type")
+
+    models_default = ",".join((preset or {}).get("default_models") or [])
+    selected_default = ""
+    if existing and existing.get("selected_models"):
+        selected_default = ",".join(json.loads(existing["selected_models"]))
+    allowed_default = ""
+    if existing and existing.get("allowed_models"):
+        allowed_default = ",".join(json.loads(existing["allowed_models"]))
+    models = _parse_provider_models(params.get("models", [models_default])[0])
+    selected_models = _parse_provider_models(params.get("selected_models", [selected_default])[0])
+    allowed_models = _parse_provider_models(params.get("allowed_models", [allowed_default])[0])
+    default_model = params.get("default_model", [str((preset or {}).get("default_model") or "")])[
+        0
+    ].strip()
+    if default_model and default_model not in models:
+        models.append(default_model)
+    live_default = bool((preset or {}).get("live_models", True))
+    if existing is not None:
+        live_default = bool(existing.get("live_models", live_default))
+    transports = (preset or {}).get("transports")
+    if transports is None and existing:
+        transports = existing.get("transports")
+        if isinstance(transports, str) and transports:
+            try:
+                transports = json.loads(transports)
+            except json.JSONDecodeError:
+                transports = None
+    return {
+        "catalog_id": catalog_id or None,
+        "prefix": prefix,
+        "api_type": api_type,
+        "base_url": base_url.rstrip("/"),
+        "models": models,
+        "selected_models": selected_models,
+        "allowed_models": allowed_models,
+        "default_model": default_model or None,
+        "live_models": _form_bool(params, "live_models", live_default),
+        "transports": transports,
+        **_parse_quota_params(params),
+    }
+
+
 @router.get("/api/providers/partial", response_class=HTMLResponse)
 async def api_providers_partial(request: Request) -> HTMLResponse:
     db_path = await _ensure_db(request)
@@ -934,30 +1023,24 @@ async def api_create_provider(request: Request) -> HTMLResponse:
 
     body = await request.body()
     params = parse_qs(body.decode())
-    api_type = params.get("api_type", [""])[0].strip()
-    api_type_error = _provider_api_type_error(api_type)
-    if api_type_error is not None:
-        return api_type_error
-    models_str = params.get("models", [""])[0]
-    models = [m.strip() for m in models_str.split(",") if m.strip()]
-    allowed_models_str = params.get("allowed_models", [""])[0]
-    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
+    if (
+        not params.get("api_type", [""])[0].strip()
+        and not params.get("catalog_id", [""])[0].strip()
+    ):
+        return HTMLResponse(content="Missing required field: api_type", status_code=400)
     try:
+        provider_id = params["id"][0].strip()
+        data = _provider_form_data(params, provider_id=provider_id)
+        data["id"] = provider_id
+        data["api_key"] = params.get("api_key", [""])[0] or None
         await create_provider(
             db_path,
-            {
-                "id": params["id"][0],
-                "prefix": params["prefix"][0],
-                "api_type": api_type,
-                "base_url": params.get("base_url", [""])[0],
-                "api_key": params.get("api_key", [""])[0] or None,
-                "models": models,
-                "allowed_models": allowed_models,
-                **_parse_quota_params(params),
-            },
+            data,
         )
     except KeyError:
         return HTMLResponse(content="Missing required field", status_code=400)
+    except ValueError as exc:
+        return HTMLResponse(content=str(exc), status_code=422)
     except Exception as e:
         return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
@@ -965,10 +1048,10 @@ async def api_create_provider(request: Request) -> HTMLResponse:
     await _sync_provider_key_safe(
         db_path,
         {
-            "id": params["id"][0],
-            "prefix": params["prefix"][0],
-            "base_url": params.get("base_url", [""])[0],
-            "api_key": params.get("api_key", [""])[0] or None,
+            "id": provider_id,
+            "prefix": data["prefix"],
+            "base_url": data["base_url"],
+            "api_key": data["api_key"],
         },
     )
     await reload_providers(request.app)
@@ -984,36 +1067,28 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
 
     body = await request.body()
     params = parse_qs(body.decode())
-    api_type = params.get("api_type", [""])[0].strip()
-    api_type_error = _provider_api_type_error(api_type)
-    if api_type_error is not None:
-        return api_type_error
-    models_str = params.get("models", [""])[0]
-    models = [m.strip() for m in models_str.split(",") if m.strip()]
-    allowed_models_str = params.get("allowed_models", [""])[0]
-    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
+    from janus.storage.providers_db import get_provider
+
+    existing = await get_provider(db_path, provider_id)
+    if existing is None:
+        return HTMLResponse(content="Provider not found", status_code=404)
+    if not params.get("api_type", [""])[0].strip() and not existing.get("api_type"):
+        return HTMLResponse(content="Missing required field: api_type", status_code=400)
     new_key = params.get("api_key", [""])[0] or None
     if not new_key:
-        from janus.storage.providers_db import get_provider
-
-        existing = await get_provider(db_path, provider_id)
-        new_key = existing["api_key"] if existing else None
+        new_key = existing["api_key"]
     try:
+        data = _provider_form_data(params, provider_id=provider_id, existing=existing)
+        data["api_key"] = new_key
         await update_provider(
             db_path,
             provider_id,
-            {
-                "prefix": params["prefix"][0],
-                "api_type": api_type,
-                "base_url": params.get("base_url", [""])[0],
-                "api_key": new_key,
-                "models": models,
-                "allowed_models": allowed_models,
-                **_parse_quota_params(params),
-            },
+            data,
         )
     except KeyError:
         return HTMLResponse(content="Missing required field", status_code=400)
+    except ValueError as exc:
+        return HTMLResponse(content=str(exc), status_code=422)
     except Exception as e:
         return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
@@ -1022,8 +1097,8 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
         db_path,
         {
             "id": provider_id,
-            "prefix": params["prefix"][0],
-            "base_url": params.get("base_url", [""])[0],
+            "prefix": data["prefix"],
+            "base_url": data["base_url"],
             "api_key": new_key,
         },
     )
@@ -1167,14 +1242,20 @@ async def api_fetch_models(request: Request) -> JSONResponse:
     base_url = params.get("base_url", [""])[0].rstrip("/")
     api_key = params.get("api_key", [""])[0]
     provider_id = params.get("provider_id", [""])[0]
+    catalog_id = params.get("catalog_id", [""])[0]
     if not api_key and provider_id:
         from janus.storage.providers_db import get_provider
 
         provider = await get_provider(db_path, provider_id)
         if provider:
             api_key = await _resolve_provider_api_key(db_path, provider)
+            catalog_id = str(provider.get("catalog_id") or catalog_id)
 
-    unsafe = _reject_unsafe_url(base_url)
+    preset = get_catalog().get(catalog_id)
+    unsafe = _reject_unsafe_url(
+        base_url,
+        allow_private_network=bool(preset and preset.get("allow_private_network")),
+    )
     if unsafe is not None:
         return unsafe
 
@@ -1409,7 +1490,11 @@ async def api_test_connection(request: Request, provider_id: str) -> JSONRespons
     base_url = provider["base_url"].rstrip("/")
     api_key = await _resolve_provider_api_key(db_path, provider)
 
-    unsafe = _reject_unsafe_url(base_url)
+    preset = get_catalog().get(str(provider.get("catalog_id") or ""))
+    unsafe = _reject_unsafe_url(
+        base_url,
+        allow_private_network=bool(preset and preset.get("allow_private_network")),
+    )
     if unsafe is not None:
         return unsafe
 
@@ -1980,6 +2065,7 @@ async def settings_page(request: Request) -> HTMLResponse:
 async def api_export_config(request: Request) -> Response:
     db_path = await _ensure_db(request)
     from janus.storage.combos_db import list_combos
+    from janus.storage.custom_models import list_custom_models
     from janus.storage.pricing_db import list_pricing_overrides
     from janus.storage.providers_db import list_providers
 
@@ -1987,12 +2073,20 @@ async def api_export_config(request: Request) -> Response:
     providers_yaml = [
         {
             "id": p["id"],
+            "catalog_id": p.get("catalog_id"),
             "prefix": p["prefix"],
             "api_type": p["api_type"],
             "base_url": p["base_url"],
             "api_key": p["api_key"],
             "models": json.loads(p["models"]) if p["models"] else [],
+            "default_model": p.get("default_model"),
+            "live_models": bool(p.get("live_models", 1)),
+            "selected_models": json.loads(p["selected_models"]) if p.get("selected_models") else [],
+            "transports": json.loads(p["transports"]) if p.get("transports") else None,
             "allowed_models": json.loads(p["allowed_models"]) if p.get("allowed_models") else [],
+            "quota_window": p.get("quota_window"),
+            "quota_limit": p.get("quota_limit"),
+            "quota_metric": p.get("quota_metric") or "requests",
         }
         for p in providers_raw
     ]
@@ -2018,6 +2112,23 @@ async def api_export_config(request: Request) -> Response:
         "server": {"port": request.app.state.config.server.port},
         "providers": providers_yaml,
     }
+    custom_models = await list_custom_models(db_path)
+    if custom_models:
+        config_data["custom_models"] = [
+            {
+                "id": model["id"],
+                "provider_id": model["provider_id"],
+                "model_id": model["model_id"],
+                "display_name": model["display_name"],
+                "context_window": model["context_window"],
+                "max_output_tokens": model["max_output_tokens"],
+                "input_modalities": model["input_modalities"],
+                "reasoning_efforts": model["reasoning_efforts"],
+                "capabilities": model["capabilities"],
+                "is_enabled": model["is_enabled"],
+            }
+            for model in custom_models
+        ]
     if combos_yaml:
         config_data["combos"] = combos_yaml
     if pricing_yaml:
@@ -2043,6 +2154,7 @@ async def api_reset_to_defaults(request: Request) -> HTMLResponse:
     from janus.storage.database import get_connection, seed_from_config
 
     async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM custom_models")
         await db.execute("DELETE FROM providers")
         await db.execute("DELETE FROM combos")
         await db.execute("DELETE FROM pricing_overrides")

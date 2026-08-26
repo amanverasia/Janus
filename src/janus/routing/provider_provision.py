@@ -234,11 +234,15 @@ async def ensure_routing_providers(
             db_path,
             {
                 "id": provider_id,
+                "catalog_id": catalog_id,
                 "prefix": prefix,
                 "api_type": catalog["api_type"],
                 "base_url": base_url,
                 "api_key": None,
                 "models": list(catalog.get("default_models") or []),
+                "default_model": catalog.get("default_model"),
+                "live_models": bool(catalog.get("live_models")),
+                "selected_models": [],
                 "transports": catalog.get("transports"),
             },
         )

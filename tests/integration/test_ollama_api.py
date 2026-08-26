@@ -3,8 +3,32 @@ import pytest
 import respx
 from httpx import ASGITransport, AsyncClient
 
+from janus.api.routes import _ollama_model_entries
 from janus.app import create_app
 from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
+from janus.providers.registry import ProviderRegistry
+
+
+async def test_ollama_catalog_filters_models_outside_account_entitlements():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="provider::account",
+            prefix="provider",
+            api_type="openai_compat",
+            base_url="https://provider.example/v1",
+            models=["configured"],
+            discovered_models=["entitled"],
+        )
+    )
+    catalog = [
+        {"namespaced": "provider/configured", "disabled": False},
+        {"namespaced": "provider/entitled", "disabled": False},
+    ]
+
+    entries = await _ollama_model_entries(catalog, registry)
+
+    assert [entry["name"] for entry in entries] == ["provider/entitled"]
 
 
 async def _seed_and_reload(app) -> None:

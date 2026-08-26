@@ -4,29 +4,11 @@ import fnmatch
 from dataclasses import dataclass
 
 from janus.config.schema import ComboConfig, ProviderConfig
-
-_API_TYPE_TO_NATIVE: dict[str, str] = {
-    "openai_compat": "openai",
-    "anthropic": "anthropic",
-    "gemini": "gemini",
-    "opencode_free": "openai",
-    "mimo_free": "openai",
-    "github_copilot": "openai",
-    "codex": "openai_responses",
-    "kiro": "openai",
-    "cursor": "openai",
-    "antigravity": "gemini",
-    "gemini_cli": "gemini",
-    "gemini-cli": "gemini",
-    "claude_oauth": "anthropic",
-    "claude": "anthropic",
-}
+from janus.providers.drivers import native_format_for
 
 
 def _native_format(api_type: str) -> str:
-    if api_type in _API_TYPE_TO_NATIVE:
-        return _API_TYPE_TO_NATIVE[api_type]
-    return api_type.replace("_compat", "")
+    return native_format_for(api_type)
 
 
 @dataclass
@@ -56,6 +38,30 @@ def model_allowed(model: str, allowed: list[str]) -> bool:
     return any(model == pattern or fnmatch.fnmatchcase(model, pattern) for pattern in allowed)
 
 
+def _model_id_matches(model: str, prefix: str, candidate: str) -> bool:
+    return candidate == model or candidate == f"{prefix}/{model}"
+
+
+def _account_supports(config: ProviderConfig, model: str) -> bool:
+    if not model_allowed(model, config.allowed_models):
+        return False
+    if any(
+        _model_id_matches(model, config.prefix, candidate) for candidate in config.custom_models
+    ):
+        return True
+    discovered = config.discovered_models
+    if discovered is None:
+        return True
+    return any(_model_id_matches(model, config.prefix, candidate) for candidate in discovered)
+
+
+def _model_name(prefix: str, model_id: str) -> str:
+    namespaced_prefix = f"{prefix}/"
+    if model_id.startswith(namespaced_prefix):
+        return model_id[len(namespaced_prefix) :]
+    return model_id
+
+
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, list[ProviderConfig]] = {}
@@ -73,22 +79,40 @@ class ProviderRegistry:
         self._combos = {}
 
     def lookup(self, model_str: str) -> list[ResolvedTarget] | None:
-        if "/" not in model_str:
-            return None
-        prefix, rest = model_str.split("/", 1)
-        prefix = PREFIX_ALIASES.get(prefix, prefix)
-        configs = self._providers.get(prefix)
-        if not configs:
+        if "/" in model_str:
+            requested_prefix, model = model_str.split("/", 1)
+            prefix = PREFIX_ALIASES.get(requested_prefix, requested_prefix)
+            configs = self._providers.get(prefix)
+            if configs:
+                candidates = [(config, model) for config in configs]
+            else:
+                candidates = [(config, model_str) for config in self._bare_model_configs(model_str)]
+        else:
+            model = model_str
+            prefix = PREFIX_ALIASES.get(model, model)
+            prefix_defaults = [
+                config
+                for config in self._providers.get(prefix, [])
+                if config.default_model is not None
+            ]
+            if prefix_defaults:
+                candidates = [
+                    (config, _model_name(config.prefix, config.default_model or ""))
+                    for config in prefix_defaults
+                ]
+            else:
+                candidates = [(config, model) for config in self._bare_model_configs(model)]
+        if not candidates:
             return None
         results: list[ResolvedTarget] = []
-        for config in configs:
-            if not model_allowed(rest, config.allowed_models):
+        for config, resolved_model in candidates:
+            if not _account_supports(config, resolved_model):
                 continue
             native = _native_format(config.api_type)
             results.append(
                 ResolvedTarget(
-                    prefix=prefix,
-                    model=rest,
+                    prefix=config.prefix,
+                    model=resolved_model,
                     provider_config=config,
                     native_format=native,
                     account_id=config.upstream_key_id or config.id,
@@ -97,6 +121,25 @@ class ProviderRegistry:
         if not results:
             return None
         return results
+
+    def _bare_model_configs(self, model: str) -> list[ProviderConfig]:
+        configs = [config for providers in self._providers.values() for config in providers]
+        default_matches = [
+            config
+            for config in configs
+            if config.default_model is not None
+            and _model_id_matches(model, config.prefix, config.default_model)
+        ]
+        if default_matches:
+            return default_matches
+        return [
+            config
+            for config in configs
+            if any(
+                _model_id_matches(model, config.prefix, candidate)
+                for candidate in config.known_models
+            )
+        ]
 
     def lookup_combo(self, name: str) -> list[str] | None:
         return self._combos.get(name)
