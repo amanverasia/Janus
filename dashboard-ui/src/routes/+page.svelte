@@ -136,6 +136,8 @@
         caught instanceof Error ? caught.message : 'The action could not be completed.',
         'error'
       );
+      // Revert one-way-bound controls to server values on a failed mutation.
+      if (options.refresh !== false) await load().catch(() => undefined);
       throw caught;
     } finally {
       loading = false;
