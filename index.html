@@ -1489,9 +1489,13 @@ janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w">
 <h3 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h3>
 <p>Cost tracking, spend trends, success rates, and breakdowns by model, provider, account, or client key. Visualized in the dashboard with Chart.js.</p>
 <h3 id="dashboard">Dashboard<a class="headerlink" href="#dashboard" title="Permanent link">&para;</a></h3>
-<p>HTMX-powered dark-themed UI at <code>/dashboard</code>. Thirteen pages across four groups — Monitor (Overview, Usage, Analytics, Key Inventory), Manage (Providers, Combos, Token Savers, Budgets), Access (API Keys, Tool Setup), and System (Pricing, Settings). Full CRUD for providers, combos, savers, and pricing with hot-reload — no server restart needed.</p>
+<p>Cloudline is the single dashboard UI: a responsive Svelte control plane at
+<code>/dashboard/ui</code> with light/dark/system themes, deep links, and a command palette.
+It provides monitoring, provider and model routing, key inventory, budgets, API
+keys, pricing, and settings. Changes hot-reload without a server restart.
+<code>/dashboard</code> and former page URLs are compatibility redirects to Cloudline.</p>
 <h2 id="tech-stack">Tech Stack<a class="headerlink" href="#tech-stack" title="Permanent link">&para;</a></h2>
-<p>Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / Jinja2 / HTMX / Chart.js</p>
+<p>Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / SvelteKit 2 / Svelte 5 / TypeScript</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
 <p>Janus is licensed under the <a href="https://github.com/amanverasia/Janus/blob/main/LICENSE">GPL-3.0</a> license.</p>
 

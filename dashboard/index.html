@@ -1806,19 +1806,18 @@ command palette.</p>
 <p>FastAPI serves the committed production bundle from
 <code>src/janus/dashboard/static/app/</code>. Node.js and npm are development/build-time
 dependencies only; a running Janus server does not need them. All Cloudline and
-legacy dashboard assets are served locally, so neither interface has a runtime
-CDN dependency.</p>
+dashboard assets are served locally, so the interface has no runtime CDN dependency.</p>
 <p>Open it in your browser:</p>
 <div class="highlight"><pre><span></span><code>http://localhost:20128/dashboard/ui
 </code></pre></div>
-<p>The original server-rendered HTMX dashboard is retained at <code>/dashboard</code> for
-compatibility and operational fallback. The root URL <code>/</code> continues to redirect
-to that legacy route.</p>
+<p>Cloudline is the only dashboard UI. The root URL <code>/</code>, <code>/dashboard</code>, and former
+page URLs are compatibility redirects to their matching Cloudline routes.
+Dashboard management APIs remain under <code>/dashboard/api</code>.</p>
 <h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
 <p>Every dashboard client must authenticate with a valid Janus API key, including
 clients on <code>127.0.0.1</code> and <code>localhost</code>. There is no loopback bypass and no
-username/password login. Unauthenticated browser requests to either interface
-are redirected to <code>/dashboard/login</code>, which sets an httponly
+username/password login. Unauthenticated browser requests are redirected to
+<code>/dashboard/login</code>, which sets an httponly
 <code>janus_dashboard_key</code> cookie (30-day max-age) and returns to the originally
 requested page. API-style requests without a valid key or cookie receive <code>401</code>.</p>
 <p>DB-managed keys must be active and have <strong>Allow dashboard login</strong>
@@ -1906,7 +1905,7 @@ Logging</strong> under Settings, or set <code>server_request_logging=true</code>
   <code>500</code>, clamped between 50 and 5000) on the Settings page — oldest rows
   beyond the limit are pruned automatically</li>
 </ul>
-<p>The legacy table also has a <strong>User</strong> column. It shows the DB-issued key name,
+<p>The table also has a <strong>User</strong> column. It shows the DB-issued key name,
 the configured static-key label (<code>client_key_label</code>), or <code>—</code> when an API request
 was allowed without a client key.</p>
 <p>If the page is empty, logging is almost always still disabled — check the banner
@@ -1929,8 +1928,12 @@ See <a href="../inventory/">Key Inventory</a> for full documentation.</p>
 <li><strong>Enable / Disable</strong> — toggle without deleting</li>
 <li><strong>Delete</strong> — remove provider (closes its HTTP client)</li>
 </ul>
-<p>The legacy <code>/dashboard/providers</code> screen retains the provider catalog gallery
-and <strong>Fetch Models</strong> helper.</p>
+<p>The provider workspace separates a logical provider prefix from its connections and
+inventory accounts. Multiple enabled connections can share one prefix; Janus pools
+their upstream accounts for fallback, cooldown, quota, and rate-limit-aware routing.
+Custom models belong to that logical prefix, so deleting or disabling one connection
+does not silently remove models that another same-prefix connection can serve.</p>
+<p>Provider setup includes the catalog gallery and live <strong>Fetch Models</strong> helper.</p>
 <p>When editing, leave the API key field <strong>blank</strong> to preserve the existing key.</p>
 <p>Changes hot-reload — no server restart needed.</p>
 <h3 id="combos-dashboarduicombos">Combos — <code>/dashboard/ui/combos</code><a class="headerlink" href="#combos-dashboarduicombos" title="Permanent link">&para;</a></h3>
@@ -1999,12 +2002,11 @@ and <strong>Fetch Models</strong> helper.</p>
 <li><strong>Export secrets</strong> — download current DB state as YAML after an explicit
   plaintext-credential warning</li>
 </ul>
-<p>The legacy <code>/dashboard/settings</code> page additionally exposes the advanced combo
-routing controls (<code>combo_strategy</code>, sticky limit, and Fusion tuning), server
-information, and <strong>Reset to Defaults</strong>. See <a href="../combos/#combo-strategies">Combos &amp;
-Fallback</a> for the routing fields. Values are
-validated server-side, and reset wipes the relevant DB state before re-seeding
-from <code>config.yaml</code>.</p>
+<p>Settings also exposes advanced combo routing controls (<code>combo_strategy</code>, sticky
+limit, and Fusion tuning), server information, and <strong>Reset to Defaults</strong>. See
+<a href="../combos/#combo-strategies">Combos &amp; Fallback</a> for the routing fields. Values
+are validated server-side, and reset wipes the relevant DB state before
+re-seeding from <code>config.yaml</code>.</p>
 <p>Settings does not contain a dashboard username or password. Dashboard identity
 and access are API-key based, and <strong>API Keys</strong> is the place to grant or revoke
 <strong>Allow dashboard login</strong>. Any legacy username/password settings are purged at
@@ -2014,9 +2016,10 @@ cooldown timers without changing the enable toggle.</p>
 <hr />
 <h2 id="management-api">Management API<a class="headerlink" href="#management-api" title="Permanent link">&para;</a></h2>
 <p>Cloudline reads authenticated, non-cacheable JSON state from the v2 API and
-uses the existing dashboard endpoints for mutations. The v2 responses include
-<code>section</code>, <code>alerts</code>, <code>data</code>, and <code>meta</code>; credentials and other sensitive fields
-are removed before serialization.</p>
+uses the dashboard management API for mutations. Responses are structured data,
+not server-rendered or HTMX fragments. The v2 state responses include <code>section</code>,
+<code>alerts</code>, <code>data</code>, and <code>meta</code>; credentials and other sensitive fields are removed
+before serialization.</p>
 <table>
 <thead>
 <tr>
@@ -2043,9 +2046,8 @@ are removed before serialization.</p>
 <code>savers</code>, <code>budgets</code>, <code>keys</code>, <code>tools</code>, <code>pricing</code>, and <code>settings</code>. Every request
 requires dashboard access; state and one-time credential responses use
 <code>Cache-Control: private, no-store</code>.</p>
-<p>The legacy management endpoints below default to HTML/HTMX responses. Endpoints
-marked as JSON, and several endpoints used by Cloudline, also support JSON
-responses. For scripting, prefer the <a href="../cli/">CLI</a>.</p>
+<p>The management endpoints below return structured responses. For scripting,
+prefer the <a href="../cli/">CLI</a>.</p>
 <h3 id="api-keys">API Keys<a class="headerlink" href="#api-keys" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2058,8 +2060,8 @@ responses. For scripting, prefer the <a href="../cli/">CLI</a>.</p>
 <tbody>
 <tr>
 <td><code>POST</code></td>
-<td><code>/dashboard/api/keys</code></td>
-<td>Create an API key (dashboard access/models/budget)</td>
+<td><code>/dashboard/api/v2/keys</code></td>
+<td>Create an API key and return its plaintext value once</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
@@ -2123,12 +2125,12 @@ responses. For scripting, prefer the <a href="../cli/">CLI</a>.</p>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/providers/fetch-models</code></td>
-<td>Fetch models from upstream (JSON)</td>
+<td>Fetch models from upstream</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/providers/{id}/test</code></td>
-<td>Test connection (JSON)</td>
+<td>Test connection</td>
 </tr>
 </tbody>
 </table>
@@ -2177,7 +2179,7 @@ responses. For scripting, prefer the <a href="../cli/">CLI</a>.</p>
 <tr>
 <td><code>GET</code></td>
 <td><code>/dashboard/api/export</code></td>
-<td>Export DB config as YAML (JSON download)</td>
+<td>Export DB config as a YAML download</td>
 </tr>
 <tr>
 <td><code>POST</code></td>
@@ -2225,8 +2227,8 @@ responses. For scripting, prefer the <a href="../cli/">CLI</a>.</p>
 </table>
 <h3 id="inventory">Inventory<a class="headerlink" href="#inventory" title="Permanent link">&para;</a></h3>
 <p>See <a href="../inventory/#push-api">Key Inventory — Push API</a> for <code>POST /dashboard/api/inventory/push</code>.</p>
-<p>Legacy page routes remain under <code>/dashboard</code>; Cloudline page routes use the same
-screen names under <code>/dashboard/ui</code>.</p>
+<p>Former page routes under <code>/dashboard</code> are compatibility redirects to matching
+screen names under <code>/dashboard/ui</code>; API routes remain under <code>/dashboard/api</code>.</p>
 
 
 

@@ -654,6 +654,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#provider-and-model-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider and model layers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#provider-types" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1407,6 +1418,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#provider-and-model-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider and model layers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#provider-types" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1697,12 +1719,14 @@
 
 
 <h1 id="providers">Providers<a class="headerlink" href="#providers" title="Permanent link">&para;</a></h1>
-<p>Janus routes requests to any of 40+ AI providers through a unified provider model.
-Providers are registered via the <strong>dashboard</strong> (recommended) or seeded from
-<code>config.yaml</code> on first startup. After seeding, the SQLite database is the source
-of truth.</p>
+<p>Janus routes requests to AI providers through a unified, multi-tenant provider
+model. The built-in catalog contains more than 60 gateway presets, including
+hosted APIs, local OpenAI-compatible servers, and subscription-backed providers.
+Providers are registered through the <strong>dashboard</strong> (recommended) or seeded from
+<code>config.yaml</code> on first startup. After seeding, SQLite is the source of truth.</p>
 <h2 id="provider-model">Provider Model<a class="headerlink" href="#provider-model" title="Permanent link">&para;</a></h2>
-<p>Every provider entry has four key fields:</p>
+<p>Every provider instance combines a reusable catalog preset with operator-owned
+configuration:</p>
 <table>
 <thead>
 <tr>
@@ -1725,13 +1749,54 @@ of truth.</p>
 </tr>
 <tr>
 <td><code>models</code></td>
-<td>List of model suffixes this account supports</td>
+<td>Configured model suffixes for this provider</td>
+</tr>
+<tr>
+<td><code>live_models</code></td>
+<td>Whether successful upstream discovery contributes models</td>
+</tr>
+<tr>
+<td><code>selected_models</code></td>
+<td>Models visible in Janus listings; empty means all known models</td>
+</tr>
+<tr>
+<td><code>default_model</code></td>
+<td>Model used when this provider is selected without a model suffix</td>
+</tr>
+<tr>
+<td><code>allowed_models</code></td>
+<td>Optional provider-wide routing restriction</td>
 </tr>
 </tbody>
 </table>
 <p>The <code>prefix</code> is what makes Janus flexible. A client sends <code>"model": "openai/gpt-4o"</code>
-and Janus looks up any provider registered with <code>prefix: openai</code>. If multiple
-accounts share that prefix, Janus tries them in order with automatic fallback.</p>
+and Janus looks up every eligible account registered with <code>prefix: openai</code>. If
+multiple accounts share that prefix, Janus tries them in order with automatic
+fallback, cooldowns, and quota-aware prioritization.</p>
+<h2 id="provider-and-model-layers">Provider and model layers<a class="headerlink" href="#provider-and-model-layers" title="Permanent link">&para;</a></h2>
+<p>Janus keeps four concerns separate:</p>
+<ol>
+<li><strong>Provider presets</strong> define stable defaults such as the API type, base URL,
+   authentication shape, and model-discovery behavior.</li>
+<li><strong>Provider instances</strong> hold operator configuration and encrypted credentials.</li>
+<li><strong>The model catalog</strong> combines configured models, models discovered for each
+   upstream account, and operator-created custom models.</li>
+<li><strong>Client API-key policy</strong> filters the visible catalog and enforces what each
+   person may call through the shared endpoint.</li>
+</ol>
+<p>This is deliberately different from a single-user local router. Provider model
+visibility is an operational dashboard preference; it does not grant a client
+access. A Janus API key's <code>allowed_models</code> policy remains authoritative and a
+disallowed request returns <code>403 model_not_allowed</code>.</p>
+<p>Dashboard access is operator access. Any key with <code>can_login=true</code> can manage
+the gateway-wide provider and model catalog; its <code>allowed_models</code> scope still
+limits requests sent through the client APIs, but does not create a partial
+administrative view. Issue login-capable keys only to trusted operators.</p>
+<p>Discovered models are stored per upstream account because two credentials for
+the same provider can have different entitlements. A discovery failure keeps the
+last successful catalog instead of turning a temporary upstream outage into an
+empty model list. A successful empty discovery result is different: it is stored
+as authoritative for that credential and removes stale entitlements.</p>
 <h2 id="provider-types">Provider Types<a class="headerlink" href="#provider-types" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1766,13 +1831,24 @@ accounts share that prefix, Janus tries them in order with automatic fallback.</
 <p>Most providers use <code>openai_compat</code> — if a provider offers an "OpenAI-compatible"
 endpoint, that's the one to use.</p>
 <h2 id="dashboard-catalog">Dashboard catalog<a class="headerlink" href="#dashboard-catalog" title="Permanent link">&para;</a></h2>
-<p>The dashboard <strong>Providers</strong> page includes a catalog of 15 known providers with
-pre-filled defaults, logos (via Simple Icons), and one-click setup:</p>
-<p>OpenAI, Anthropic, Google Gemini, Groq, Together AI, DeepSeek, OpenRouter,
-Mistral, Fireworks, Perplexity, xAI, Qwen/DashScope, GitHub Copilot,
-OpenCode Zen (Free), and Custom.</p>
-<p>Each entry supports <strong>Fetch Models</strong> (auto-populate from upstream) and <strong>Test
-Connection</strong> (1-token probe with latency).</p>
+<p>The dashboard <strong>Providers</strong> page presents built-in presets with pre-filled
+defaults and one-click setup. It covers direct APIs such as OpenAI, Anthropic,
+Gemini, Groq, Together, DeepSeek, OpenRouter, Mistral, Fireworks, Perplexity,
+xAI, and Qwen; local servers such as Ollama, vLLM, LM Studio, and LiteLLM; and
+subscription/OAuth integrations such as GitHub Copilot and Codex.</p>
+<p>The separate <strong>Models</strong> workspace combines configured, discovered, and custom
+models. Operators can change listing visibility without rewriting provider
+configuration, and custom entries can carry display names, context/output
+limits, modalities, capabilities, and reasoning-effort metadata.</p>
+<p>The effective catalog is rebuilt on provider/model mutations and cached with the
+routing snapshot. OpenAI <code>/v1/models</code> and Ollama <code>/api/tags</code> therefore expose the
+same view without querying every credential on each client poll.</p>
+<p>Each provider supports <strong>Fetch Models</strong> and <strong>Test Connection</strong> where its driver
+allows those operations. Provider secrets and inventory account identifiers are
+never returned by the model catalog APIs.</p>
+<p>Configuration export includes provider preset/default/live/selection metadata
+and first-class custom model records, so reset/import workflows retain the model
+workspace rather than silently flattening it.</p>
 <h2 id="oauth-providers-github-copilot">OAuth providers: GitHub Copilot<a class="headerlink" href="#oauth-providers-github-copilot" title="Permanent link">&para;</a></h2>
 <p>Copilot is Janus's first OAuth (subscription) provider — it authenticates with
 your GitHub account instead of an API key:</p>
@@ -1801,7 +1877,7 @@ terms of service. Use with your own account at your own discretion.</p>
 or bare access token on the <strong>Providers</strong> page (API type <code>codex</code>), or add one or
 more accounts via <strong>Key Inventory</strong> (select <strong>Codex (ChatGPT)</strong>) for multi-account
 fallback. Inventory accepts Janus JSON, 9router Codex connection objects, and
-<code>providerConnections</code> arrays — see <a href="../inventory/#codex--chatgpt-oauth">Key Inventory</a>.</p>
+<code>providerConnections</code> arrays — see <a href="../inventory/#codex-chatgpt-oauth">Key Inventory</a>.</p>
 <h2 id="subscription-quotas">Subscription quotas<a class="headerlink" href="#subscription-quotas" title="Permanent link">&para;</a></h2>
 <p>Any provider can be given a <strong>quota window</strong> — useful for subscription plans
 (Copilot, Claude Pro-style 5-hour windows, monthly token allowances):</p>
