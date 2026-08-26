@@ -51,7 +51,9 @@ export const percent = (value: unknown): string =>
 export const dateTime = (value: unknown): string => {
   const raw = text(value, '');
   if (!raw) return 'Never';
-  const date = new Date(raw);
+  const hasTime = /[T ]\d{1,2}:\d{2}/.test(raw);
+  const hasOffset = /[zZ]|[+-]\d{2}:?\d{2}$/.test(raw);
+  const date = new Date(hasTime && !hasOffset ? raw + 'Z' : raw);
   return Number.isNaN(date.getTime())
     ? raw
     : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
