@@ -40,21 +40,24 @@ async def client(app):
 
 
 async def test_inventory_overview_page(client):
-    r = await client.get("/dashboard/inventory")
+    r = await client.get("/dashboard/api/v2/state/inventory")
     assert r.status_code == 200
-    assert "Key Inventory" in r.text
+    assert r.json()["section"] == "inventory"
+    assert "summary" in r.json()["data"]
 
 
 async def test_inventory_keys_page(client):
-    r = await client.get("/dashboard/inventory/keys")
+    r = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert r.status_code == 200
-    assert "Upstream Keys" in r.text
+    assert "keys" in r.json()["data"]
+    assert "filters" in r.json()["data"]
 
 
 async def test_inventory_add_page(client):
-    r = await client.get("/dashboard/inventory/add")
+    r = await client.get("/dashboard/api/inventory/providers")
     assert r.status_code == 200
-    assert "Preview &amp; Add Keys" in r.text or "Preview & Add Keys" in r.text
+    assert "providers" in r.json()
+    assert "catalog" in r.json()
 
 
 async def test_inventory_preview_openrouter(client):
@@ -168,9 +171,10 @@ async def test_inventory_submit_without_json_accept_preserves_html_contract(clie
 
 
 async def test_inventory_import_page(client):
-    r = await client.get("/dashboard/inventory/import")
+    r = await client.get("/dashboard/api/inventory/export")
     assert r.status_code == 200
-    assert "Expected JSON format" in r.text
+    assert "keys" in r.json()
+    assert "count" in r.json()
 
 
 async def _seed_upstream_key(app, provider_id: str, key_value: str) -> str:
@@ -356,18 +360,19 @@ async def test_bulk_recheck_schedules(client, app, monkeypatch):
 
 
 async def test_routing_page(client):
-    r = await client.get("/dashboard/routing")
+    r = await client.get("/dashboard/api/v2/state/routing")
     assert r.status_code == 200
-    assert "Routing" in r.text
-    assert "Combo fallback chains" in r.text
+    assert "overview" in r.json()["data"]
+    assert "live" in r.json()["data"]
 
 
 async def test_inventory_overview_encryption_panel(client):
-    r = await client.get("/dashboard/inventory")
+    r = await client.get("/dashboard/api/v2/state/inventory")
     assert r.status_code == 200
-    assert "Encryption at Rest" in r.text
-    assert "Upstream keys:" in r.text
-    assert "Provider credentials:" in r.text
+    data = r.json()["data"]
+    assert "encryption" in data
+    assert "provider_encryption" in data
+    assert "encryption_enabled" in data
 
 
 async def test_missing_encryption_key_returns_actionable_503_for_upstream_keys(
@@ -420,7 +425,7 @@ async def test_wrong_encryption_key_returns_actionable_503_for_providers(
     )
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-    response = await client.get("/dashboard/providers")
+    response = await client.get("/dashboard/api/v2/state/providers")
 
     assert response.status_code == 503
     error = response.json()["error"]
@@ -500,7 +505,7 @@ async def test_inventory_encrypt_json_returns_safe_counts(client, app, monkeypat
 
     from janus.storage.providers_db import create_provider
 
-    await client.get("/dashboard/inventory")
+    await client.get("/dashboard/api/v2/state/inventory")
     secret = "sk-provider-json-encryption-secret"
     await create_provider(
         app.state.db_path,
@@ -529,10 +534,11 @@ async def test_inventory_encrypt_json_returns_safe_counts(client, app, monkeypat
 
 
 async def test_inventory_keys_has_reidentify_and_import_links(client):
-    r = await client.get("/dashboard/inventory/keys")
+    r = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert r.status_code == 200
-    assert "Re-identify" in r.text
-    assert "/dashboard/inventory/import" in r.text
+    assert "filters" in r.json()["data"]
+    import_endpoint = await client.get("/dashboard/api/inventory/export")
+    assert import_endpoint.status_code == 200
 
 
 async def test_inventory_import_upload(client):
@@ -556,7 +562,7 @@ async def test_inventory_import_json_schedules_rechecks_and_reloads_routing(
 ):
     import json
 
-    await client.get("/dashboard/inventory")
+    await client.get("/dashboard/api/v2/state/inventory")
     scheduled: list[tuple[str, object]] = []
     reloads: list[object] = []
 
@@ -738,7 +744,7 @@ async def test_inventory_overview_and_best_keys_partial_do_not_embed_secret(clie
         },
     )
 
-    overview = await client.get("/dashboard/inventory")
+    overview = await client.get("/dashboard/api/v2/state/inventory")
     partial = await client.get("/dashboard/api/inventory/best-keys/partial")
     best_keys = await client.get("/dashboard/api/inventory/best-keys")
 
@@ -789,7 +795,7 @@ async def test_inventory_key_reveal_error_is_non_cacheable_and_does_not_leak(
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", encryption_key)
     secret = "sk-proj-encrypted-reveal-secret"
     key_id = await _seed_upstream_key(app, "openai", secret)
-    await client.get("/dashboard/inventory")
+    await client.get("/dashboard/api/v2/state/inventory")
     monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
 
     response = await client.post(f"/dashboard/api/inventory/keys/{key_id}/reveal")
@@ -877,7 +883,7 @@ async def test_inventory_delete_key(client):
     )
     assert create.status_code == 200
 
-    keys_page = await client.get("/dashboard/inventory/keys")
+    keys_page = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert keys_page.status_code == 200
 
     export_before = await client.get("/dashboard/api/inventory/export")

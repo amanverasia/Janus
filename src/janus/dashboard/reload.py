@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from janus.app import _build_provider
 from janus.config.schema import ComboConfig, ProviderConfig
+from janus.inventory.key_encryption import hash_upstream_key
 from janus.models.catalog import list_catalog_models
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
@@ -56,6 +57,69 @@ def _provider_execution_key(config: ProviderConfig) -> tuple[Any, ...]:
     )
 
 
+def _normalized_base_url(value: Any) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _credential_identity(key: dict[str, Any]) -> str:
+    stored_hash = str(key.get("key_hash") or "").strip().lower()
+    if len(stored_hash) == 64 and all(char in "0123456789abcdef" for char in stored_hash):
+        return stored_hash
+    value = key.get("key_value")
+    if isinstance(value, str):
+        return hash_upstream_key(value)
+    return f"key-id:{key.get('id')}"
+
+
+def _static_credential_identity(row: dict[str, Any]) -> str | None:
+    value = row.get("api_key")
+    if not isinstance(value, str) or not value:
+        return None
+    return hash_upstream_key(value)
+
+
+def _assign_inventory_keys(
+    rows: list[dict[str, Any]],
+    keys: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], set[str]]:
+    ordered_rows = sorted(rows, key=lambda row: str(row["id"]))
+    assignments: dict[str, list[dict[str, Any]]] = {str(row["id"]): [] for row in ordered_rows}
+    if not ordered_rows:
+        return assignments, set()
+    rows_by_id = {str(row["id"]): row for row in ordered_rows}
+    rows_by_base_url: dict[str, list[str]] = {}
+    for row in ordered_rows:
+        base_url = _normalized_base_url(row.get("base_url"))
+        if base_url:
+            rows_by_base_url.setdefault(base_url, []).append(str(row["id"]))
+    primary_id = str(ordered_rows[0]["id"])
+    selected: dict[str, tuple[int, int, str, dict[str, Any]]] = {}
+    for index, key in enumerate(keys):
+        source_node = str(key.get("source_node") or "")
+        binding_rank = 0
+        if source_node.startswith("gateway:"):
+            provider_id = source_node.removeprefix("gateway:")
+            if provider_id not in rows_by_id:
+                continue
+            target_id = provider_id
+            binding_rank = 2
+        else:
+            custom_base_url = _normalized_base_url(key.get("custom_base_url"))
+            base_matches = rows_by_base_url.get(custom_base_url, []) if custom_base_url else []
+            if len(base_matches) == 1:
+                target_id = base_matches[0]
+                binding_rank = 1
+            else:
+                target_id = primary_id
+        identity = _credential_identity(key)
+        current = selected.get(identity)
+        if current is None or binding_rank > current[0]:
+            selected[identity] = (binding_rank, index, target_id, key)
+    for _rank, _index, target_id, key in sorted(selected.values(), key=lambda item: item[1]):
+        assignments[target_id].append(key)
+    return assignments, set(selected)
+
+
 async def reload_providers(app: FastAPI) -> None:
     lock: asyncio.Lock | None = getattr(app.state, "provider_reload_lock", None)
     if lock is None:
@@ -80,26 +144,44 @@ async def _reload_providers_locked(app: FastAPI) -> None:
     built_providers: list[Provider] = []
     reused_provider_ids: set[str] = set()
     old_handler: FallbackHandler | None = getattr(app.state, "fallback_handler", None)
-    keys_by_inventory: dict[str, list[dict[str, Any]]] = {}
-    all_key_ids: list[str] = []
+    rows_by_inventory: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         inventory_id = inventory_provider_id_for_prefix(row["prefix"])
-        if inventory_id not in keys_by_inventory:
-            keys = await list_routable_upstream_keys(db_path, inventory_id)
-            keys_by_inventory[inventory_id] = keys
-            all_key_ids.extend(str(key["id"]) for key in keys)
+        rows_by_inventory.setdefault(inventory_id, []).append(row)
+    keys_by_provider: dict[str, list[dict[str, Any]]] = {}
+    routed_identities_by_inventory: dict[str, set[str]] = {}
+    all_key_ids: list[str] = []
+    for inventory_id, inventory_rows in rows_by_inventory.items():
+        keys = await list_routable_upstream_keys(db_path, inventory_id)
+        assignments, routed_identities = _assign_inventory_keys(inventory_rows, keys)
+        keys_by_provider.update(assignments)
+        routed_identities_by_inventory[inventory_id] = routed_identities
+        all_key_ids.extend(str(key["id"]) for assigned in assignments.values() for key in assigned)
     discoveries = await list_model_ids_for_keys(db_path, all_key_ids)
-    custom_by_provider: dict[str, list[str]] = {}
+    provider_prefixes = {str(row["id"]): str(row["prefix"]) for row in rows}
+    custom_by_prefix: dict[str, list[str]] = {}
     for model in await list_custom_models(db_path, enabled_only=True):
-        custom_by_provider.setdefault(str(model["provider_id"]), []).append(str(model["model_id"]))
+        prefix = str(
+            model.get("provider_prefix") or provider_prefixes.get(str(model["provider_id"])) or ""
+        )
+        if prefix:
+            custom_by_prefix.setdefault(prefix, []).append(str(model["model_id"]))
 
     try:
         for row in rows:
             inventory_id = inventory_provider_id_for_prefix(row["prefix"])
+            assigned_keys = keys_by_provider.get(str(row["id"]), [])
+            static_identity = _static_credential_identity(row)
+            if (
+                not assigned_keys
+                and static_identity is not None
+                and static_identity in routed_identities_by_inventory.get(inventory_id, set())
+            ):
+                continue
             for pc in expand_gateway_provider(
                 row,
-                keys_by_inventory[inventory_id],
-                custom_models=custom_by_provider.get(str(row["id"]), []),
+                assigned_keys,
+                custom_models=custom_by_prefix.get(str(row["prefix"]), []),
                 discovered_models_by_key=discoveries,
             ):
                 registry.register(pc)

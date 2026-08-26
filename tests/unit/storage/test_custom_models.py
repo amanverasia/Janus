@@ -78,6 +78,36 @@ async def test_list_custom_models_filters_provider(db):
     assert await list_custom_models(db, provider_id="other") == []
 
 
+async def test_list_custom_models_prefers_exact_id_over_prefix_collision(db):
+    await create_provider(
+        db,
+        {
+            "id": "provider",
+            "prefix": "other-prefix",
+            "api_type": "openai_compat",
+            "base_url": "https://other.example/v1",
+            "models": [],
+        },
+    )
+    prefix_model = await create_custom_model(
+        db,
+        {"provider_id": "provider-row", "model_id": "prefix-model"},
+    )
+    exact_id_model = await create_custom_model(
+        db,
+        {"provider_id": "provider", "model_id": "exact-id-model"},
+    )
+
+    exact_rows = await list_custom_models(db, provider_id="provider")
+    assert [row["id"] for row in exact_rows] == [exact_id_model["id"]]
+    assert exact_rows[0]["provider_prefix"] == "other-prefix"
+
+    literal_prefix_rows = await list_custom_models(db, provider_id="other-prefix")
+    assert [row["id"] for row in literal_prefix_rows] == [exact_id_model["id"]]
+    original_rows = await list_custom_models(db, provider_id="provider-row")
+    assert [row["id"] for row in original_rows] == [prefix_model["id"]]
+
+
 async def test_deleting_provider_removes_custom_models(db):
     created = await create_custom_model(
         db,
@@ -85,6 +115,56 @@ async def test_deleting_provider_removes_custom_models(db):
     )
     await delete_provider(db, "provider-row")
     assert await get_custom_model(db, created["id"]) is None
+
+
+async def test_custom_model_is_shared_by_prefix_and_survives_account_deletion(db):
+    await create_provider(
+        db,
+        {
+            "id": "provider-row-2",
+            "prefix": "provider",
+            "api_type": "openai_compat",
+            "base_url": "https://provider.example/v1",
+            "models": [],
+        },
+    )
+    created = await create_custom_model(
+        db,
+        {"provider_id": "provider-row", "model_id": "model-alpha"},
+    )
+
+    shared = await list_custom_models(db, provider_id="provider-row-2")
+    assert [model["id"] for model in shared] == [created["id"]]
+    assert shared[0]["provider_prefix"] == "provider"
+
+    await delete_provider(db, "provider-row")
+    retained = await get_custom_model(db, created["id"])
+    assert retained is not None
+    assert retained["provider_id"] == "provider-row-2"
+    assert retained["provider_prefix"] == "provider"
+
+
+async def test_custom_model_is_unique_per_provider_prefix(db):
+    await create_provider(
+        db,
+        {
+            "id": "provider-row-2",
+            "prefix": "provider",
+            "api_type": "openai_compat",
+            "base_url": "https://provider.example/v1",
+            "models": [],
+        },
+    )
+    await create_custom_model(
+        db,
+        {"provider_id": "provider-row", "model_id": "model-alpha"},
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        await create_custom_model(
+            db,
+            {"provider_id": "provider-row-2", "model_id": "model-alpha"},
+        )
 
 
 async def test_custom_model_rejects_unknown_provider(db):

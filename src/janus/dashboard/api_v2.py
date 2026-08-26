@@ -419,13 +419,66 @@ def _without_provider_secrets(provider: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-async def _providers_data(db_path: Path) -> dict[str, Any]:
+def _matching_catalog_id(
+    provider: dict[str, Any],
+    catalog: dict[str, dict[str, Any]],
+) -> str | None:
+    configured = provider.get("catalog_id")
+    if isinstance(configured, str) and configured in catalog:
+        return configured
+    provider_id = str(provider.get("id") or "")
+    prefix = str(provider.get("prefix") or "")
+    api_type = str(provider.get("api_type") or "")
+    id_preset = catalog.get(provider_id)
+    if (
+        id_preset is not None
+        and str(id_preset.get("prefix") or "") == prefix
+        and str(id_preset.get("api_type") or "") == api_type
+    ):
+        return provider_id
+    candidates = [
+        catalog_id
+        for catalog_id, preset in catalog.items()
+        if str(preset.get("prefix") or "") == prefix
+        and str(preset.get("api_type") or "") == api_type
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
     from janus.dashboard.catalog import get_catalog, get_provider_logo_map
 
     catalog = get_catalog()
-    providers = [
-        _without_provider_secrets(provider) for provider in await _enrich_providers(db_path)
-    ]
+    catalog_rows = list(request.app.state.provider_snapshot.model_catalog)
+    total_models: dict[str, int] = {}
+    visible_models: dict[str, int] = {}
+    for model in catalog_rows:
+        prefix = str(model.get("prefix") or "")
+        total_models[prefix] = total_models.get(prefix, 0) + 1
+        if not model.get("disabled"):
+            visible_models[prefix] = visible_models.get(prefix, 0) + 1
+    enriched = await _enrich_providers(db_path)
+    gateway_account_counts: dict[str, int] = {}
+    for provider in enriched:
+        prefix = str(provider.get("prefix") or "")
+        gateway_account_counts[prefix] = gateway_account_counts.get(prefix, 0) + 1
+    providers: list[dict[str, Any]] = []
+    for provider in enriched:
+        safe = _without_provider_secrets(provider)
+        prefix = str(provider.get("prefix") or "")
+        catalog_id = _matching_catalog_id(provider, catalog)
+        safe["catalog_id_inferred"] = not provider.get("catalog_id") and catalog_id is not None
+        if catalog_id is not None:
+            safe["catalog_id"] = catalog_id
+            safe["catalog_name"] = catalog[catalog_id].get("name")
+        safe["catalog_model_count"] = total_models.get(prefix, 0)
+        safe["visible_model_count"] = visible_models.get(prefix, 0)
+        inventory_keys = safe.get("inventory_keys")
+        key_summary = inventory_keys if isinstance(inventory_keys, dict) else {}
+        safe["account_count"] = int(key_summary.get("total") or 0)
+        safe["routable_account_count"] = int(key_summary.get("routable") or 0)
+        safe["gateway_account_count"] = gateway_account_counts.get(prefix, 1)
+        providers.append(safe)
     quota_warnings = [
         provider
         for provider in providers
@@ -443,20 +496,26 @@ async def _providers_data(db_path: Path) -> dict[str, Any]:
 
 
 async def _models_data(request: Request, db_path: Path) -> dict[str, Any]:
+    from janus.dashboard.catalog import get_catalog
     from janus.storage.providers_db import list_providers
 
     rows = list(request.app.state.provider_snapshot.model_catalog)
-    return {
-        "models": rows,
-        "providers": [
+    catalog = get_catalog()
+    providers: list[dict[str, Any]] = []
+    for provider in await list_providers(db_path):
+        catalog_id = _matching_catalog_id(provider, catalog)
+        providers.append(
             {
                 "id": str(provider["id"]),
-                "catalog_id": provider.get("catalog_id"),
+                "catalog_id": catalog_id,
+                "name": catalog.get(catalog_id, {}).get("name") if catalog_id else None,
                 "prefix": str(provider["prefix"]),
                 "is_enabled": bool(provider.get("is_enabled", 1)),
             }
-            for provider in await list_providers(db_path)
-        ],
+        )
+    return {
+        "models": rows,
+        "providers": providers,
     }
 
 
@@ -953,7 +1012,7 @@ async def get_dashboard_state(
     if section == "models":
         return await _response(request, db_path, section, await _models_data(request, db_path))
     if section == "providers":
-        return await _response(request, db_path, section, await _providers_data(db_path))
+        return await _response(request, db_path, section, await _providers_data(request, db_path))
     if section == "combos":
         return await _response(request, db_path, section, await _combos_data(request, db_path))
     if section == "routing":

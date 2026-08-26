@@ -5,7 +5,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS providers (
 CREATE TABLE IF NOT EXISTS custom_models (
     id TEXT PRIMARY KEY,
     provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+    provider_prefix TEXT NOT NULL,
     model_id TEXT NOT NULL,
     display_name TEXT,
     context_window INTEGER,
@@ -75,7 +76,7 @@ CREATE TABLE IF NOT EXISTS custom_models (
     is_enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(provider_id, model_id)
+    UNIQUE(provider_prefix, model_id)
 );
 
 CREATE TABLE IF NOT EXISTS combos (
@@ -122,26 +123,6 @@ CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
 CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id);
-
-CREATE TRIGGER IF NOT EXISTS custom_models_provider_insert
-BEFORE INSERT ON custom_models
-WHEN NOT EXISTS (SELECT 1 FROM providers WHERE id = NEW.provider_id)
-BEGIN
-    SELECT RAISE(ABORT, 'unknown custom model provider');
-END;
-
-CREATE TRIGGER IF NOT EXISTS custom_models_provider_update
-BEFORE UPDATE OF provider_id ON custom_models
-WHEN NOT EXISTS (SELECT 1 FROM providers WHERE id = NEW.provider_id)
-BEGIN
-    SELECT RAISE(ABORT, 'unknown custom model provider');
-END;
-
-CREATE TRIGGER IF NOT EXISTS custom_models_provider_delete
-AFTER DELETE ON providers
-BEGIN
-    DELETE FROM custom_models WHERE provider_id = OLD.id;
-END;
 
 CREATE TABLE IF NOT EXISTS inventory_providers (
     id TEXT PRIMARY KEY,
@@ -309,6 +290,192 @@ async def _migrate_provider_columns(db: aiosqlite.Connection) -> None:
             await db.execute(f"ALTER TABLE providers ADD COLUMN {col} {col_type}")
 
 
+_CUSTOM_MODEL_MIGRATION_COLUMNS = (
+    "id",
+    "provider_id",
+    "provider_prefix",
+    "model_id",
+    "display_name",
+    "context_window",
+    "max_output_tokens",
+    "input_modalities",
+    "reasoning_efforts",
+    "capabilities",
+    "is_enabled",
+    "created_at",
+    "updated_at",
+)
+
+
+def _custom_model_json_list(value: Any) -> list[Any]:
+    try:
+        decoded = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return []
+    return list(decoded) if isinstance(decoded, list) else []
+
+
+def _custom_model_json_dict(value: Any) -> dict[str, Any]:
+    try:
+        decoded = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    return {str(key): item for key, item in decoded.items()}
+
+
+def _custom_model_richness(row: dict[str, Any]) -> int:
+    scalar_fields = ("display_name", "context_window", "max_output_tokens")
+    scalar_score = sum(row.get(field) not in (None, "") for field in scalar_fields)
+    return (
+        scalar_score
+        + len(_custom_model_json_list(row.get("input_modalities")))
+        + len(_custom_model_json_list(row.get("reasoning_efforts")))
+        + len(_custom_model_json_dict(row.get("capabilities")))
+    )
+
+
+def _custom_model_preference(row: dict[str, Any]) -> tuple[int, int, str, str]:
+    return (
+        int(bool(row.get("is_enabled"))),
+        _custom_model_richness(row),
+        str(row.get("updated_at") or ""),
+        str(row.get("created_at") or ""),
+    )
+
+
+def _merge_custom_model_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = sorted(rows, key=lambda row: str(row["id"]))
+    ordered.sort(key=_custom_model_preference, reverse=True)
+    merged = dict(ordered[0])
+    for field in ("display_name", "context_window", "max_output_tokens"):
+        if merged.get(field) in (None, ""):
+            merged[field] = next(
+                (row[field] for row in ordered[1:] if row.get(field) not in (None, "")),
+                merged.get(field),
+            )
+    for field in ("input_modalities", "reasoning_efforts"):
+        values: list[Any] = []
+        for row in ordered:
+            for value in _custom_model_json_list(row.get(field)):
+                if value not in values:
+                    values.append(value)
+        merged[field] = json.dumps(values)
+    capabilities: dict[str, Any] = {}
+    for row in reversed(ordered):
+        capabilities.update(_custom_model_json_dict(row.get("capabilities")))
+    capabilities.update(_custom_model_json_dict(ordered[0].get("capabilities")))
+    merged["capabilities"] = json.dumps(capabilities)
+    merged["is_enabled"] = int(any(bool(row.get("is_enabled")) for row in ordered))
+    merged["created_at"] = min(str(row.get("created_at") or "") for row in ordered)
+    merged["updated_at"] = max(str(row.get("updated_at") or "") for row in ordered)
+    return merged
+
+
+async def _consolidate_custom_model_rows(db: aiosqlite.Connection) -> None:
+    columns = ", ".join(_CUSTOM_MODEL_MIGRATION_COLUMNS)
+    async with db.execute(
+        f"SELECT {columns} FROM custom_models ORDER BY provider_prefix, model_id, id"
+    ) as cursor:
+        raw_rows = await cursor.fetchall()
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for raw_row in raw_rows:
+        row = dict(zip(_CUSTOM_MODEL_MIGRATION_COLUMNS, raw_row, strict=True))
+        key = (str(row["provider_prefix"]), str(row["model_id"]))
+        groups.setdefault(key, []).append(row)
+    for rows in groups.values():
+        if len(rows) < 2:
+            continue
+        merged = _merge_custom_model_rows(rows)
+        winner_id = str(merged["id"])
+        loser_ids = [str(row["id"]) for row in rows if str(row["id"]) != winner_id]
+        placeholders = ", ".join("?" for _ in loser_ids)
+        await db.execute(f"DELETE FROM custom_models WHERE id IN ({placeholders})", loser_ids)
+        await db.execute(
+            """UPDATE custom_models SET
+                 display_name = ?, context_window = ?, max_output_tokens = ?,
+                 input_modalities = ?, reasoning_efforts = ?, capabilities = ?,
+                 is_enabled = ?, created_at = ?, updated_at = ?
+               WHERE id = ?""",
+            (
+                merged.get("display_name"),
+                merged.get("context_window"),
+                merged.get("max_output_tokens"),
+                merged["input_modalities"],
+                merged["reasoning_efforts"],
+                merged["capabilities"],
+                merged["is_enabled"],
+                merged["created_at"],
+                merged["updated_at"],
+                winner_id,
+            ),
+        )
+
+
+async def _migrate_custom_model_columns(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(custom_models)")
+    rows = await cursor.fetchall()
+    existing = {row[1] for row in rows}
+    if "provider_prefix" not in existing:
+        await db.execute("ALTER TABLE custom_models ADD COLUMN provider_prefix TEXT")
+    await db.execute(
+        """UPDATE custom_models
+           SET provider_prefix = (
+               SELECT prefix FROM providers WHERE providers.id = custom_models.provider_id
+           )
+           WHERE provider_prefix IS NULL OR provider_prefix = ''"""
+    )
+    await db.execute(
+        """DELETE FROM custom_models
+           WHERE provider_prefix IS NULL
+              OR provider_id NOT IN (SELECT id FROM providers)"""
+    )
+    await _consolidate_custom_model_rows(db)
+    await db.execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_models_prefix_model
+           ON custom_models(provider_prefix, model_id)"""
+    )
+    await db.execute("DROP TRIGGER IF EXISTS custom_models_provider_insert")
+    await db.execute("DROP TRIGGER IF EXISTS custom_models_provider_update")
+    await db.execute("DROP TRIGGER IF EXISTS custom_models_provider_delete")
+    await db.executescript(
+        """
+        CREATE TRIGGER custom_models_provider_insert
+        BEFORE INSERT ON custom_models
+        WHEN NOT EXISTS (
+            SELECT 1 FROM providers
+            WHERE id = NEW.provider_id AND prefix = NEW.provider_prefix
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'unknown custom model provider');
+        END;
+
+        CREATE TRIGGER custom_models_provider_update
+        BEFORE UPDATE OF provider_id, provider_prefix ON custom_models
+        WHEN NOT EXISTS (
+            SELECT 1 FROM providers
+            WHERE id = NEW.provider_id AND prefix = NEW.provider_prefix
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'unknown custom model provider');
+        END;
+
+        CREATE TRIGGER custom_models_provider_delete
+        AFTER DELETE ON providers
+        BEGIN
+            UPDATE custom_models
+            SET provider_id = (
+                SELECT id FROM providers WHERE prefix = OLD.prefix ORDER BY id LIMIT 1
+            )
+            WHERE provider_id = OLD.id
+              AND EXISTS (SELECT 1 FROM providers WHERE prefix = OLD.prefix);
+            DELETE FROM custom_models WHERE provider_id = OLD.id;
+        END;
+        """
+    )
+
+
 async def _migrate_upstream_key_columns(db: aiosqlite.Connection) -> None:
     from janus.inventory.key_encryption import (
         decrypt_key_value,
@@ -411,6 +578,7 @@ async def init_db(db_path: str | Path) -> None:
         await db.executescript(_SCHEMA)
         await _migrate_usage_columns(db)
         await _migrate_provider_columns(db)
+        await _migrate_custom_model_columns(db)
         await _migrate_upstream_key_columns(db)
         await _migrate_request_log_columns(db)
         await _migrate_cooldowns_per_model(db)
@@ -486,7 +654,14 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                         custom_models.append(
                             CustomModelConfig(provider_id=provider.id, model_id=model_id)
                         )
+            provider_prefixes = {provider.id: provider.prefix for provider in config.providers}
+            logical_custom_models: dict[tuple[str, str], CustomModelConfig] = {}
             for custom_model in custom_models:
+                prefix = provider_prefixes.get(
+                    custom_model.provider_id, f"__provider__:{custom_model.provider_id}"
+                )
+                logical_custom_models.setdefault((prefix, custom_model.model_id), custom_model)
+            for custom_model in logical_custom_models.values():
                 model_uuid = custom_model.id or str(
                     uuid.uuid5(
                         uuid.NAMESPACE_URL,
@@ -495,12 +670,14 @@ async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
                 )
                 await db.execute(
                     """INSERT INTO custom_models
-                       (id, provider_id, model_id, display_name, context_window,
+                       (id, provider_id, provider_prefix, model_id, display_name, context_window,
                         max_output_tokens, input_modalities, reasoning_efforts,
                         capabilities, is_enabled)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, (SELECT prefix FROM providers WHERE id = ?),
+                               ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         model_uuid,
+                        custom_model.provider_id,
                         custom_model.provider_id,
                         custom_model.model_id,
                         custom_model.display_name,

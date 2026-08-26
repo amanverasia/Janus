@@ -3,15 +3,14 @@
 > The two-faced gateway for AI coding tools. Janus sits at the threshold of every
 > AI call — facing the developer on one side and every provider on the other.
 
-Janus is a local-first, single-user AI routing gateway. It exposes
+Janus is a self-hosted, multi-tenant AI routing gateway. It exposes
 OpenAI/Anthropic/Gemini-compatible HTTP endpoints that your coding tools (Claude Code,
 Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
 any of 29 built-in AI providers — or any OpenAI-compatible endpoint — without
 either side needing to know the other exists.
 
 Janus 3 includes **Cloudline**, a responsive Svelte dashboard for monitoring and
-operating the gateway. The original server-rendered dashboard remains available
-as a legacy fallback.
+operating the gateway.
 
 ## First-time setup
 
@@ -89,9 +88,8 @@ curl http://localhost:20128/v1/health
 
 Open Cloudline at
 [http://localhost:20128/dashboard/ui](http://localhost:20128/dashboard/ui).
-The legacy dashboard remains at `/dashboard`, and the root URL `/` redirects to
-that legacy route. Both interfaces always require a Janus API key, including
-from localhost.
+`/` and the former `/dashboard` page route both redirect there. Dashboard access
+always requires a Janus API key, including from localhost.
 
 ### 5. Configure via dashboard
 

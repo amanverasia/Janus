@@ -129,4 +129,4 @@ async def test_gateway_limit_exempts_health_version_and_dashboard(app) -> None:
         for _ in range(3):
             assert (await client.get("/v1/health")).status_code == 200
             assert (await client.get("/api/version")).status_code == 200
-            assert (await client.get("/dashboard")).status_code == 200
+            assert (await client.get("/dashboard/ui")).status_code == 200

@@ -9,7 +9,8 @@
         <Icon name="warning" size={17} />
         <div>
           {#if alert.title}<strong>{alert.title}</strong>{/if}
-          <span>{alert.message ?? 'Attention required'}</span>
+          <span>{alert.message ?? alert.detail ?? 'Attention required'}</span>
         </div>
+        {#if alert.href}<a class="alert-link" href={alert.href}>View</a>{/if}
       </div>{/each}
   </div>{/if}

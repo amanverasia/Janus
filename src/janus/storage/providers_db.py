@@ -116,6 +116,8 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
         def field(name: str) -> Any:
             return data[name] if name in data else current.get(name)
 
+        previous_prefix = str(current["prefix"])
+        next_prefix = str(field("prefix"))
         await db.execute(
             """UPDATE providers SET catalog_id = ?, prefix = ?, api_type = ?, base_url = ?,
                api_key = ?, models = ?, default_model = ?, live_models = ?,
@@ -141,6 +143,22 @@ async def update_provider(db_path: str | Path, provider_id: str, data: dict[str,
                 provider_id,
             ),
         )
+        if next_prefix != previous_prefix:
+            async with db.execute(
+                "SELECT id FROM providers WHERE prefix = ? AND id != ? ORDER BY id LIMIT 1",
+                (previous_prefix, provider_id),
+            ) as cursor:
+                replacement = await cursor.fetchone()
+            if replacement is not None:
+                await db.execute(
+                    "UPDATE custom_models SET provider_id = ? WHERE provider_id = ?",
+                    (replacement["id"], provider_id),
+                )
+            else:
+                await db.execute(
+                    "UPDATE custom_models SET provider_prefix = ? WHERE provider_id = ?",
+                    (next_prefix, provider_id),
+                )
         await db.commit()
 
 
@@ -195,6 +213,21 @@ async def toggle_provider(db_path: str | Path, provider_id: str) -> None:
 
 async def delete_provider(db_path: str | Path, provider_id: str) -> None:
     async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM custom_models WHERE provider_id = ?", (provider_id,))
+        async with db.execute(
+            "SELECT prefix FROM providers WHERE id = ?", (provider_id,)
+        ) as cursor:
+            provider = await cursor.fetchone()
+        if provider is None:
+            return
+        async with db.execute(
+            "SELECT id FROM providers WHERE prefix = ? AND id != ? ORDER BY id LIMIT 1",
+            (provider["prefix"], provider_id),
+        ) as cursor:
+            replacement = await cursor.fetchone()
+        if replacement is not None:
+            await db.execute(
+                "UPDATE custom_models SET provider_id = ? WHERE provider_id = ?",
+                (replacement["id"], provider_id),
+            )
         await db.execute("DELETE FROM providers WHERE id = ?", (provider_id,))
         await db.commit()

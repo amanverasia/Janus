@@ -41,9 +41,9 @@ def _openrouter_payload():
 @pytest.mark.asyncio
 async def test_pricing_page_shows_never_synced_notice(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/pricing")
+        r = await client.get("/dashboard/api/v2/state/pricing")
         assert r.status_code == 200
-        assert "never been synced" in r.text
+        assert r.json()["data"]["sync_status"]["last_sync_at"] is None
 
 
 @pytest.mark.asyncio
@@ -62,10 +62,9 @@ async def test_pricing_page_lists_unpriced_models(app):
         cost=0.0,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/pricing")
+        r = await client.get("/dashboard/api/v2/state/pricing")
         assert r.status_code == 200
-        assert "Unpriced models seen recently" in r.text
-        assert "totally-unknown-model" in r.text
+        assert any(row["model"] == "totally-unknown-model" for row in r.json()["data"]["unpriced"])
 
 
 @pytest.mark.asyncio
@@ -86,9 +85,9 @@ async def test_pricing_page_excludes_priced_models_from_unpriced_table(app):
         cost=0.0,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/pricing")
+        r = await client.get("/dashboard/api/v2/state/pricing")
         assert r.status_code == 200
-        assert "Unpriced models seen recently" not in r.text
+        assert all(row["model"] != "gpt-4o" for row in r.json()["data"]["unpriced"])
 
 
 @pytest.mark.asyncio
@@ -104,10 +103,10 @@ async def test_sync_endpoint_success_updates_catalog_and_page(app):
         assert data["count"] == 3
         assert data["synced_at"] is not None
 
-        page = await client.get("/dashboard/pricing")
+        page = await client.get("/dashboard/api/v2/state/pricing")
         assert page.status_code == 200
-        assert "litellm-model" in page.text
-        assert "3 models" in page.text
+        assert any(row["model"] == "litellm-model" for row in page.json()["data"]["catalog"])
+        assert page.json()["data"]["catalog_count"] == 3
 
 
 @pytest.mark.asyncio
@@ -121,7 +120,7 @@ async def test_sync_endpoint_failure_returns_502_and_page_still_renders(app):
         assert r.status_code == 502
         assert "error" in r.json()
 
-        page = await client.get("/dashboard/pricing")
+        page = await client.get("/dashboard/api/v2/state/pricing")
         assert page.status_code == 200
 
 
@@ -145,8 +144,9 @@ async def test_sync_then_override_shows_source_badges(app):
         )
         assert override_resp.status_code == 200
 
-        page = await client.get("/dashboard/pricing")
+        page = await client.get("/dashboard/api/v2/state/pricing")
         assert page.status_code == 200
-        assert "override" in page.text
-        assert "catalog" in page.text
-        assert "builtin" in page.text
+        data = page.json()["data"]
+        assert any(row["model"] == "litellm-model" for row in data["overrides"])
+        assert any(row["model"] == "litellm-model" for row in data["catalog"])
+        assert data["builtin"]

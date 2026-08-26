@@ -109,11 +109,14 @@ async def test_providers_page_shows_quota(app):
         payload = {"model": "sub/m1", "messages": [{"role": "user", "content": "hi"}]}
         await client.post("/v1/chat/completions", json=payload)
 
-        r = await client.get("/dashboard/providers")
+        r = await client.get("/dashboard/api/v2/state/providers")
         assert r.status_code == 200
-        assert "Quota (daily)" in r.text
-        assert "1 / 10 requests" in r.text
-        assert "resets in" in r.text
+        provider = next(row for row in r.json()["data"]["providers"] if row["id"] == "sub")
+        assert provider["quota"]["window"] == "daily"
+        assert provider["quota"]["used"] == 1
+        assert provider["quota"]["limit"] == 10
+        assert provider["quota"]["resets_at"]
+        assert provider["quota"]["resets_in"]
 
 
 @pytest.mark.asyncio
@@ -176,9 +179,10 @@ async def test_quota_warning_banner_at_eighty_percent(app):
         assert "8 / 10 requests" in r.text
         assert "warning" in r.text
 
-        r = await client.get("/dashboard/providers")
+        r = await client.get("/dashboard/api/v2/state/providers")
         assert r.status_code == 200
-        assert "Subscription quota near or at limit" in r.text
+        warnings = r.json()["data"]["quota_warnings"]
+        assert any(row["id"] == "sub" and row["quota"]["status"] == "warning" for row in warnings)
 
 
 @pytest.mark.asyncio

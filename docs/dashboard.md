@@ -8,8 +8,7 @@ command palette.
 FastAPI serves the committed production bundle from
 `src/janus/dashboard/static/app/`. Node.js and npm are development/build-time
 dependencies only; a running Janus server does not need them. All Cloudline and
-legacy dashboard assets are served locally, so neither interface has a runtime
-CDN dependency.
+dashboard assets are served locally, so the interface has no runtime CDN dependency.
 
 Open it in your browser:
 
@@ -17,9 +16,8 @@ Open it in your browser:
 http://localhost:20128/dashboard/ui
 ```
 
-The original server-rendered HTMX dashboard is retained at `/dashboard` for
-compatibility and operational fallback. The root URL `/` continues to redirect
-to that legacy route.
+The root URL `/`, `/dashboard`, and former server-rendered page URLs redirect to
+their matching Cloudline routes. Dashboard APIs remain under `/dashboard/api`.
 
 ## Authentication
 
@@ -134,8 +132,13 @@ Full CRUD for gateway providers:
 - **Enable / Disable** — toggle without deleting
 - **Delete** — remove provider (closes its HTTP client)
 
-The legacy `/dashboard/providers` screen retains the provider catalog gallery
-and **Fetch Models** helper.
+The provider workspace separates a logical provider prefix from its connections and
+inventory accounts. Multiple enabled connections can share one prefix; Janus pools
+their upstream accounts for fallback, cooldown, quota, and rate-limit-aware routing.
+Custom models belong to that logical prefix, so deleting or disabling one connection
+does not silently remove models that another same-prefix connection can serve.
+
+Provider setup includes the catalog gallery and live **Fetch Models** helper.
 
 When editing, leave the API key field **blank** to preserve the existing key.
 
@@ -307,5 +310,5 @@ responses. For scripting, prefer the [CLI](cli.md).
 
 See [Key Inventory — Push API](inventory.md#push-api) for `POST /dashboard/api/inventory/push`.
 
-Legacy page routes remain under `/dashboard`; Cloudline page routes use the same
-screen names under `/dashboard/ui`.
+Former server-rendered page routes under `/dashboard` redirect to the matching
+screen names under `/dashboard/ui`; API routes are unchanged.

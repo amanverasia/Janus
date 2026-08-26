@@ -216,9 +216,11 @@ def create_app(
     from janus.dashboard.api_v2 import router as dashboard_api_v2_router
     from janus.dashboard.inventory_push_routes import router as inventory_push_router
     from janus.dashboard.inventory_routes import router as inventory_router
+    from janus.dashboard.routes import legacy_page_redirect_router
     from janus.dashboard.routes import router as dashboard_router
     from janus.dashboard.ui_routes import router as dashboard_ui_router
 
+    app.include_router(legacy_page_redirect_router, prefix="/dashboard")
     app.include_router(dashboard_router, prefix="/dashboard")
     app.include_router(inventory_router, prefix="/dashboard")
     app.include_router(inventory_push_router, prefix="/dashboard/api/inventory")
@@ -234,6 +236,6 @@ def create_app(
 
     @app.get("/")
     async def root_redirect() -> RedirectResponse:
-        return RedirectResponse(url="/dashboard")
+        return RedirectResponse(url="/dashboard/ui", status_code=308)
 
     return app

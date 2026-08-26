@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import re
+import sqlite3
 import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
@@ -55,8 +56,63 @@ from janus.storage.settings import (
 )
 from janus.storage.usage import get_unpriced_models, get_usage_stats
 
-router = APIRouter(dependencies=[Depends(require_dashboard_access)])
+router = APIRouter(
+    dependencies=[Depends(require_dashboard_access)],
+    include_in_schema=False,
+)
+legacy_page_redirect_router = APIRouter(
+    dependencies=[Depends(require_dashboard_access)],
+    include_in_schema=False,
+)
 logger = logging.getLogger(__name__)
+
+_DASHBOARD_UI_ROOT = "/dashboard/ui"
+_LEGACY_DASHBOARD_PAGE_TARGETS = {
+    "/dashboard": _DASHBOARD_UI_ROOT,
+    "/dashboard/analytics": f"{_DASHBOARD_UI_ROOT}/analytics",
+    "/dashboard/budgets": f"{_DASHBOARD_UI_ROOT}/budgets",
+    "/dashboard/combos": f"{_DASHBOARD_UI_ROOT}/combos",
+    "/dashboard/inventory": f"{_DASHBOARD_UI_ROOT}/inventory",
+    "/dashboard/inventory/add": f"{_DASHBOARD_UI_ROOT}/inventory/add",
+    "/dashboard/inventory/import": f"{_DASHBOARD_UI_ROOT}/inventory/import",
+    "/dashboard/inventory/keys": f"{_DASHBOARD_UI_ROOT}/inventory/keys",
+    "/dashboard/keys": f"{_DASHBOARD_UI_ROOT}/keys",
+    "/dashboard/leaderboard": f"{_DASHBOARD_UI_ROOT}/leaderboard",
+    "/dashboard/pricing": f"{_DASHBOARD_UI_ROOT}/pricing",
+    "/dashboard/providers": f"{_DASHBOARD_UI_ROOT}/providers",
+    "/dashboard/request-logs": f"{_DASHBOARD_UI_ROOT}/request-logs",
+    "/dashboard/routing": f"{_DASHBOARD_UI_ROOT}/routing",
+    "/dashboard/savers": f"{_DASHBOARD_UI_ROOT}/savers",
+    "/dashboard/settings": f"{_DASHBOARD_UI_ROOT}/settings",
+    "/dashboard/tools": f"{_DASHBOARD_UI_ROOT}/tools",
+    "/dashboard/usage": f"{_DASHBOARD_UI_ROOT}/usage",
+}
+
+
+def _canonical_dashboard_next(value: str) -> str:
+    path, separator, query = value.partition("?")
+    if path != "/dashboard" and not path.startswith("/dashboard/"):
+        return _DASHBOARD_UI_ROOT
+    normalized_path = path.rstrip("/") or "/"
+    target = _LEGACY_DASHBOARD_PAGE_TARGETS.get(normalized_path, path)
+    return f"{target}{separator}{query}" if separator else target
+
+
+def _legacy_dashboard_page_redirect(request: Request) -> RedirectResponse:
+    target = _LEGACY_DASHBOARD_PAGE_TARGETS[request.url.path.rstrip("/")]
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=308)
+
+
+for _legacy_path in _LEGACY_DASHBOARD_PAGE_TARGETS:
+    _router_path = _legacy_path.removeprefix("/dashboard")
+    for _route_variant in (_router_path, f"{_router_path}/"):
+        legacy_page_redirect_router.add_api_route(
+            _route_variant,
+            _legacy_dashboard_page_redirect,
+            methods=["GET"],
+        )
 
 _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 _templates.env.filters["urlencode"] = lambda value: quote(str(value))
@@ -153,9 +209,8 @@ async def _render_page(
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse:
-    if not next.startswith("/dashboard"):
-        next = "/dashboard"
+async def login_page(request: Request, next: str = _DASHBOARD_UI_ROOT) -> HTMLResponse:
+    next = _canonical_dashboard_next(next)
     await _ensure_db(request)
     context: dict[str, Any] = {
         "request": request,
@@ -169,10 +224,9 @@ async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse
 async def login_submit(
     request: Request,
     api_key: str = Form(""),
-    next: str = Form("/dashboard"),
+    next: str = Form(_DASHBOARD_UI_ROOT),
 ) -> Response:
-    if not next.startswith("/dashboard"):
-        next = "/dashboard"
+    next = _canonical_dashboard_next(next)
     await _ensure_db(request)
 
     if not api_key.strip():
@@ -1022,7 +1076,7 @@ async def api_create_provider(request: Request) -> HTMLResponse:
     from janus.storage.providers_db import create_provider
 
     body = await request.body()
-    params = parse_qs(body.decode())
+    params = parse_qs(body.decode(), keep_blank_values=True)
     if (
         not params.get("api_type", [""])[0].strip()
         and not params.get("catalog_id", [""])[0].strip()
@@ -1066,7 +1120,7 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
     from janus.storage.providers_db import update_provider
 
     body = await request.body()
-    params = parse_qs(body.decode())
+    params = parse_qs(body.decode(), keep_blank_values=True)
     from janus.storage.providers_db import get_provider
 
     existing = await get_provider(db_path, provider_id)
@@ -1089,6 +1143,13 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
         return HTMLResponse(content="Missing required field", status_code=400)
     except ValueError as exc:
         return HTMLResponse(content=str(exc), status_code=422)
+    except sqlite3.IntegrityError as exc:
+        if "custom_models.provider_prefix, custom_models.model_id" in str(exc):
+            return HTMLResponse(
+                content="The destination prefix already has a custom model with the same ID",
+                status_code=409,
+            )
+        return HTMLResponse(content="Provider update violates a data constraint", status_code=409)
     except Exception as e:
         return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
@@ -1237,7 +1298,7 @@ async def api_fetch_models(request: Request) -> JSONResponse:
 
     db_path = await _ensure_db(request)
     body = await request.body()
-    params = parse_qs(body.decode())
+    params = parse_qs(body.decode(), keep_blank_values=True)
     api_type = params.get("api_type", [""])[0]
     base_url = params.get("base_url", [""])[0].rstrip("/")
     api_key = params.get("api_key", [""])[0]
@@ -1787,7 +1848,7 @@ async def api_update_setting(request: Request) -> HTMLResponse:
     from janus.storage.settings import set_setting
 
     body = await request.body()
-    params = parse_qs(body.decode())
+    params = parse_qs(body.decode(), keep_blank_values=True)
     try:
         key = params["key"][0]
         value = params["value"][0]

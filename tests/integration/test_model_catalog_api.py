@@ -78,6 +78,7 @@ async def test_management_catalog_is_safe_and_custom_models_have_first_class_cru
         {
             "id": "test-provider",
             "catalog_id": "custom",
+            "name": "Custom Provider",
             "prefix": "test",
             "is_enabled": True,
         }
@@ -95,6 +96,8 @@ async def test_management_catalog_is_safe_and_custom_models_have_first_class_cru
     assert custom_row["namespaced"] == "test/custom/model"
     assert custom_row["custom_id"] == custom_id
     assert custom_row["provider_id"] == "test-provider"
+    assert custom_row["provider_enabled"] is True
+    assert custom_row["custom_enabled"] is True
     assert custom_list.json()["custom_models"][0]["id"] == custom_id
     assert "test/custom/model" in {model["name"] for model in ollama_tags.json()["models"]}
     assert deleted.json() == {"deleted": True, "id": custom_id}

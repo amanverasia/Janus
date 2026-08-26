@@ -23,6 +23,8 @@ class ModelCatalogRow(TypedDict):
     id: str
     namespaced: str
     source: str
+    provider_enabled: bool
+    custom_enabled: bool
     disabled: bool
     selected: bool
     default: bool
@@ -143,6 +145,8 @@ def _merge_row(
         "id": model,
         "namespaced": namespaced,
         "source": source,
+        "provider_enabled": provider_enabled,
+        "custom_enabled": custom_enabled,
         "disabled": not provider_enabled or not selected,
         "selected": selected,
         "default": model == default_model or namespaced == default_model,
@@ -174,6 +178,7 @@ def _merge_row(
             row["prefix"] = existing["prefix"]
             if row["source"] == existing["source"] == "custom":
                 row["custom_id"] = existing["custom_id"]
+                row["custom_enabled"] = existing["custom_enabled"]
                 row["display_name"] = existing["display_name"]
                 row["context_window"] = existing["context_window"]
                 row["max_output_tokens"] = existing["max_output_tokens"]
@@ -189,10 +194,12 @@ def _merge_row(
         if _SOURCE_PRIORITY[row["source"]] < _SOURCE_PRIORITY[existing["source"]]:
             row["source"] = existing["source"]
             row["custom_id"] = existing["custom_id"]
+            row["custom_enabled"] = existing["custom_enabled"]
         merged_caps = dict(existing["capabilities"])
         merged_caps.update(row["capabilities"])
         row["capabilities"] = merged_caps
         row["default"] = row["default"] or existing["default"]
+        row["provider_enabled"] = row["provider_enabled"] or existing["provider_enabled"]
         row["selected"] = row["selected"] or existing["selected"]
         row["disabled"] = row["disabled"] and existing["disabled"]
     rows[namespaced] = row
@@ -291,40 +298,45 @@ async def list_catalog_models(
             async with db.execute("SELECT * FROM custom_models ORDER BY created_at, id") as cursor:
                 custom_rows = [dict(row) for row in await cursor.fetchall()]
         for custom in custom_rows:
-            provider_id = str(custom["provider_id"])
-            custom_provider = providers_by_id.get(provider_id)
-            if custom_provider is None:
+            anchor_id = str(custom["provider_id"])
+            anchor_provider = providers_by_id.get(anchor_id)
+            prefix = str(
+                custom.get("provider_prefix") or (anchor_provider or {}).get("prefix") or ""
+            )
+            custom_providers = providers_by_prefix.get(prefix, [])
+            if not custom_providers:
                 continue
             model_id = str(custom.get("model_id") or "")
-            if not provider_model_allowed(
-                model_id, _string_list(custom_provider.get("allowed_models"))
-            ):
-                continue
             custom_enabled = _boolean(custom.get("is_enabled"), default=True)
-            namespaced = f"{custom_provider['prefix']}/{model_id}"
-            if not custom_enabled and namespaced in rows:
-                continue
-            selected_models = _string_list(custom_provider.get("selected_models"))
-            default_model = custom_provider.get("default_model")
-            _merge_row(
-                rows,
-                provider=str(custom_provider.get("catalog_id") or provider_id),
-                provider_id=provider_id,
-                prefix=str(custom_provider["prefix"]),
-                model=model_id,
-                source="custom",
-                provider_enabled=_boolean(custom_provider.get("is_enabled"), default=True),
-                selected_models=selected_models,
-                default_model=str(default_model) if default_model else None,
-                display_name=str(custom["display_name"]) if custom.get("display_name") else None,
-                context_window=custom.get("context_window"),
-                max_output_tokens=custom.get("max_output_tokens"),
-                input_modalities=custom.get("input_modalities"),
-                reasoning_efforts=custom.get("reasoning_efforts"),
-                capabilities=custom.get("capabilities"),
-                custom_id=str(custom["id"]),
-                custom_enabled=custom_enabled,
-            )
+            for custom_provider in custom_providers:
+                if not provider_model_allowed(
+                    model_id, _string_list(custom_provider.get("allowed_models"))
+                ):
+                    continue
+                provider_id = str(custom_provider["id"])
+                selected_models = _string_list(custom_provider.get("selected_models"))
+                default_model = custom_provider.get("default_model")
+                _merge_row(
+                    rows,
+                    provider=str(custom_provider.get("catalog_id") or provider_id),
+                    provider_id=provider_id,
+                    prefix=prefix,
+                    model=model_id,
+                    source="custom",
+                    provider_enabled=_boolean(custom_provider.get("is_enabled"), default=True),
+                    selected_models=selected_models,
+                    default_model=str(default_model) if default_model else None,
+                    display_name=str(custom["display_name"])
+                    if custom.get("display_name")
+                    else None,
+                    context_window=custom.get("context_window"),
+                    max_output_tokens=custom.get("max_output_tokens"),
+                    input_modalities=custom.get("input_modalities"),
+                    reasoning_efforts=custom.get("reasoning_efforts"),
+                    capabilities=custom.get("capabilities"),
+                    custom_id=str(custom["id"]),
+                    custom_enabled=custom_enabled,
+                )
 
     catalog = sorted(rows.values(), key=lambda row: (row["prefix"], row["id"]))
     if include_disabled:
@@ -390,15 +402,13 @@ async def resolve_provider_models(
                     known.update(str(row["model_id"]) for row in await cursor.fetchall())
 
     if await _table_exists(db_path, "custom_models"):
-        placeholders = ",".join("?" for _ in provider_ids)
-        if placeholders:
-            async with get_connection(db_path) as db:
-                async with db.execute(
-                    f"""SELECT model_id FROM custom_models
-                        WHERE provider_id IN ({placeholders}) AND is_enabled = 1""",
-                    provider_ids,
-                ) as cursor:
-                    known.update(str(row["model_id"]) for row in await cursor.fetchall())
+        async with get_connection(db_path) as db:
+            async with db.execute(
+                """SELECT model_id FROM custom_models
+                   WHERE provider_prefix = ? AND is_enabled = 1""",
+                (prefix,),
+            ) as cursor:
+                known.update(str(row["model_id"]) for row in await cursor.fetchall())
     return provider_ids, prefix, sorted(known)
 
 

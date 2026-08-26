@@ -39,6 +39,23 @@ def _decode_row(row: Any) -> dict[str, Any]:
     return item
 
 
+async def _resolve_provider_target(
+    db: Any,
+    provider: str,
+) -> tuple[str, str]:
+    async with db.execute(
+        """SELECT id, prefix FROM providers
+           WHERE id = ? OR prefix = ?
+           ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, id
+           LIMIT 1""",
+        (provider, provider, provider),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if row is None:
+        return provider, ""
+    return str(row["id"]), str(row["prefix"])
+
+
 async def list_custom_models(
     db_path: str | Path,
     *,
@@ -48,14 +65,16 @@ async def list_custom_models(
     clauses: list[str] = []
     params: list[Any] = []
     if provider_id is not None:
-        clauses.append("provider_id = ?")
-        params.append(provider_id)
+        async with get_connection(db_path) as db:
+            _, resolved_prefix = await _resolve_provider_target(db, provider_id)
+        clauses.append("provider_prefix = ?")
+        params.append(resolved_prefix or provider_id)
     if enabled_only:
         clauses.append("is_enabled = 1")
     query = "SELECT * FROM custom_models"
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
-    query += " ORDER BY provider_id, model_id"
+    query += " ORDER BY provider_prefix, model_id"
     async with get_connection(db_path) as db:
         async with db.execute(query, params) as cur:
             rows = await cur.fetchall()
@@ -81,15 +100,17 @@ async def create_custom_model(
 ) -> dict[str, Any]:
     custom_model_id = str(data.get("id") or uuid.uuid4())
     async with get_connection(db_path) as db:
+        provider_id, provider_prefix = await _resolve_provider_target(db, str(data["provider_id"]))
         await db.execute(
             """INSERT INTO custom_models
-               (id, provider_id, model_id, display_name, context_window,
+               (id, provider_id, provider_prefix, model_id, display_name, context_window,
                 max_output_tokens, input_modalities, reasoning_efforts,
                 capabilities, is_enabled)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 custom_model_id,
-                data["provider_id"],
+                provider_id,
+                provider_prefix,
                 data["model_id"],
                 data.get("display_name"),
                 data.get("context_window"),
@@ -120,14 +141,17 @@ async def update_custom_model(
         return data[name] if name in data else current.get(name)
 
     async with get_connection(db_path) as db:
+        provider_id, provider_prefix = await _resolve_provider_target(db, str(field("provider_id")))
         await db.execute(
             """UPDATE custom_models SET
-                 provider_id = ?, model_id = ?, display_name = ?, context_window = ?,
+                 provider_id = ?, provider_prefix = ?, model_id = ?,
+                 display_name = ?, context_window = ?,
                  max_output_tokens = ?, input_modalities = ?, reasoning_efforts = ?,
                  capabilities = ?, is_enabled = ?, updated_at = datetime('now')
                WHERE id = ?""",
             (
-                field("provider_id"),
+                provider_id,
+                provider_prefix,
                 field("model_id"),
                 field("display_name"),
                 field("context_window"),

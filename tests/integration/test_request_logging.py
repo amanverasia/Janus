@@ -181,9 +181,9 @@ async def test_dashboard_page_and_clear(app):
         payload = {"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]}
         await client.post("/v1/chat/completions", json=payload)
 
-        r = await client.get("/dashboard/request-logs")
+        r = await client.get("/dashboard/api/v2/state/request-logs")
         assert r.status_code == 200
-        assert "test/test-m1" in r.text
+        assert r.json()["data"]["logs"][0]["model"] == "test/test-m1"
 
         r = await client.get("/dashboard/api/request-logs/export")
         assert r.status_code == 200
@@ -213,9 +213,9 @@ async def test_request_logs_partial_pagination(app):
 @pytest.mark.asyncio
 async def test_dashboard_page_shows_disabled_banner(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/request-logs")
+        r = await client.get("/dashboard/api/v2/state/request-logs")
         assert r.status_code == 200
-        assert "disabled" in r.text
+        assert r.json()["data"]["logging_enabled"] is False
 
 
 @pytest.mark.asyncio
@@ -321,10 +321,9 @@ async def test_db_key_name_shown_on_dashboard(tmp_path):
         )
         assert r.status_code == 200
 
-        page = await client.get("/dashboard/request-logs")
+        page = await client.get("/dashboard/api/v2/state/request-logs")
         assert page.status_code == 200
-        assert "alice-laptop" in page.text
-        assert "key #" not in page.text
+        assert page.json()["data"]["logs"][0]["client_key_name"] == "alice-laptop"
 
 
 @pytest.mark.asyncio
@@ -363,9 +362,9 @@ async def test_anonymous_access_records_null_client_key(app):
         assert logs[0]["client_key_id"] is None
         assert logs[0]["client_key_label"] is None
 
-        page = await client.get("/dashboard/request-logs")
+        page = await client.get("/dashboard/api/v2/state/request-logs")
         assert page.status_code == 200
-        assert "—" in page.text
+        assert page.json()["data"]["logs"][0]["client_key_label"] is None
 
 
 @pytest.mark.asyncio

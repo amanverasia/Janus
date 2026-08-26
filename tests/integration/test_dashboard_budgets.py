@@ -104,15 +104,14 @@ async def test_invalid_budget_form_is_htmx_friendly_and_does_not_mutate(
     assert await get_budgets(app.state.db_path) == []
 
 
-async def test_budget_page_wires_validation_errors_to_toast(budget_app) -> None:
+async def test_budget_state_exposes_reporting_day_boundary(budget_app) -> None:
     app, _key = budget_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/dashboard/budgets")
+        response = await client.get("/dashboard/api/v2/state/budgets")
 
     assert response.status_code == 200
-    assert "htmx:response-error" in response.text
-    assert "xhr.responseText" in response.text
-    assert "Daily periods reset at midnight in" in response.text
+    assert response.json()["data"]["reporting_timezone"] == "UTC"
+    assert response.json()["data"]["keys"][0]["name"] == "budget-key"
 
 
 async def test_reporting_timezone_setting_validates_iana_name(budget_app) -> None:

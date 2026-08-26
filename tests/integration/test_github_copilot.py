@@ -198,11 +198,11 @@ async def test_fetch_models_github_copilot(app):
 @pytest.mark.asyncio
 async def test_providers_page_lists_copilot_catalog(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/providers")
+        r = await client.get("/dashboard/api/v2/state/providers")
         assert r.status_code == 200
-        assert "GitHub Copilot" in r.text
-        assert "github_copilot" in r.text
-        assert "startCopilotAuth" in r.text
+        catalog = r.json()["data"]["catalog"]
+        assert catalog["github_copilot"]["name"] == "GitHub Copilot"
+        assert catalog["github_copilot"]["api_type"] == "github_copilot"
 
 
 @pytest.mark.asyncio

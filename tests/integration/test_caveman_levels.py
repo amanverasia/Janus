@@ -154,7 +154,6 @@ async def test_ponytail_invalid_db_level_falls_back_to_full(app):
 @pytest.mark.asyncio
 async def test_savers_page_shows_caveman_levels(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/savers")
+        r = await client.get("/dashboard/api/v2/state/savers")
         assert r.status_code == 200
-        assert "saver_caveman_level" in r.text
-        assert "Ultra" in r.text
+        assert "saver_caveman_level" in r.json()["data"]["settings"]

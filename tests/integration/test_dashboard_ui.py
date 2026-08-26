@@ -55,6 +55,75 @@ async def test_dashboard_ui_shell_and_deep_links_serve_the_current_app_shell(app
     assert b"<title>Janus" in shell.content
 
 
+@pytest.mark.parametrize(
+    ("legacy_path", "ui_path"),
+    [
+        ("/dashboard", "/dashboard/ui"),
+        ("/dashboard/analytics", "/dashboard/ui/analytics"),
+        ("/dashboard/budgets", "/dashboard/ui/budgets"),
+        ("/dashboard/combos", "/dashboard/ui/combos"),
+        ("/dashboard/inventory", "/dashboard/ui/inventory"),
+        ("/dashboard/inventory/add", "/dashboard/ui/inventory/add"),
+        ("/dashboard/inventory/import", "/dashboard/ui/inventory/import"),
+        ("/dashboard/inventory/keys", "/dashboard/ui/inventory/keys"),
+        ("/dashboard/keys", "/dashboard/ui/keys"),
+        ("/dashboard/leaderboard", "/dashboard/ui/leaderboard"),
+        ("/dashboard/pricing", "/dashboard/ui/pricing"),
+        ("/dashboard/providers", "/dashboard/ui/providers"),
+        ("/dashboard/request-logs", "/dashboard/ui/request-logs"),
+        ("/dashboard/routing", "/dashboard/ui/routing"),
+        ("/dashboard/savers", "/dashboard/ui/savers"),
+        ("/dashboard/settings", "/dashboard/ui/settings"),
+        ("/dashboard/tools", "/dashboard/ui/tools"),
+        ("/dashboard/usage", "/dashboard/ui/usage"),
+    ],
+)
+async def test_legacy_dashboard_pages_redirect_to_canonical_ui_route(
+    app, legacy_path: str, ui_path: str
+) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        response = await client.get(
+            f"{legacy_path}?sample=value",
+            headers=AUTH_HEADERS,
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 308
+    assert response.headers["location"] == f"{ui_path}?sample=value"
+
+
+async def test_root_redirects_directly_to_canonical_dashboard_ui(app) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        response = await client.get("/", follow_redirects=False)
+
+    assert response.status_code == 308
+    assert response.headers["location"] == "/dashboard/ui"
+
+
+async def test_legacy_dashboard_pages_are_not_advertised_in_openapi(app) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        response = await client.get("/openapi.json")
+
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    assert "/dashboard" not in paths
+    assert "/dashboard/providers" not in paths
+    assert "/dashboard/settings" not in paths
+    assert "/dashboard/api/v2/state/{section}" in paths
+
+
+async def test_legacy_dashboard_trailing_slash_redirects_in_one_hop(app) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        response = await client.get(
+            "/dashboard/providers/?sample=value",
+            headers=AUTH_HEADERS,
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 308
+    assert response.headers["location"] == "/dashboard/ui/providers?sample=value"
+
+
 async def test_svelte_assets_are_served_from_dashboard_static_app(app) -> None:
     async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
         index = await client.get(f"{APP_URL_PREFIX}index.html")
@@ -83,3 +152,15 @@ async def test_dashboard_api_v2_is_not_captured_by_the_ui_fallback(app) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert response.json()["section"] == "overview"
+
+
+async def test_inventory_api_is_not_captured_by_legacy_page_redirects(app) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        response = await client.get(
+            "/dashboard/api/inventory/providers",
+            headers={**AUTH_HEADERS, "Accept": "application/json"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert isinstance(response.json()["providers"], list)
