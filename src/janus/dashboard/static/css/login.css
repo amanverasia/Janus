@@ -1,0 +1,132 @@
+:root {
+    color-scheme: dark;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #080b10;
+    color: #f6f7f9;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at 50% -20%, rgba(103, 135, 255, 0.2), transparent 45%),
+        #080b10;
+}
+
+.login-card {
+    width: min(100%, 420px);
+    padding: 32px;
+    border: 1px solid #252a33;
+    border-radius: 16px;
+    background: rgba(18, 22, 29, 0.96);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.brand-mark {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid #5865f2;
+    border-radius: 12px;
+    background: #151a2f;
+    color: #aeb6ff;
+    font-size: 21px;
+    font-weight: 750;
+}
+
+.eyebrow {
+    color: #8e96a6;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+h1 {
+    margin: 3px 0 0;
+    font-size: 25px;
+    letter-spacing: -0.025em;
+}
+
+.intro {
+    margin: 24px 0;
+    color: #a7aebb;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.error {
+    margin: 0 0 18px;
+    padding: 11px 13px;
+    border: 1px solid #713b45;
+    border-radius: 9px;
+    background: #2b171c;
+    color: #ffb8c2;
+    font-size: 13px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    color: #c6cbd4;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.field {
+    margin-bottom: 14px;
+}
+
+input,
+button {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 9px;
+    font: inherit;
+}
+
+input {
+    border: 1px solid #343a46;
+    padding: 0 13px;
+    outline: none;
+    background: #0d1117;
+    color: #f6f7f9;
+}
+
+input:focus {
+    border-color: #7782ff;
+    box-shadow: 0 0 0 3px rgba(119, 130, 255, 0.18);
+}
+
+button {
+    border: 0;
+    padding: 0 16px;
+    background: #f4f5f7;
+    color: #101319;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+button:hover {
+    background: #dfe2e7;
+}
+
+button:focus-visible {
+    outline: 3px solid rgba(119, 130, 255, 0.7);
+    outline-offset: 2px;
+}

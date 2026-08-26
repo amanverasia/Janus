@@ -11,14 +11,21 @@
 
   let exporting = false;
   let exportError = '';
+  let resetting = false;
 
-  $: settings = object(data.settings);
+  $: values = object(data.values ?? data.settings);
+  $: status = object(data.status);
+  $: comboStrategy = text(values.combo_strategy ?? status.combo_strategy, 'fallback');
 
   const toggles = [
-    ['server_require_api_key', 'Require API key'],
-    ['server_cooldowns_enabled', 'Enable account cooldowns'],
-    ['server_sticky_client_key_routing', 'Sticky client routing'],
-    ['server_request_logging', 'Record request metadata']
+    ['server_require_api_key', 'require_api_key_enabled', 'Require API key'],
+    ['server_cooldowns_enabled', 'cooldowns_enabled', 'Enable account cooldowns'],
+    [
+      'server_sticky_client_key_routing',
+      'sticky_client_key_routing_enabled',
+      'Sticky client routing'
+    ],
+    ['server_request_logging', 'request_logging_enabled', 'Record request metadata']
   ];
 
   async function save(key: string, value: string) {
@@ -65,6 +72,21 @@
       exporting = false;
     }
   }
+
+  async function resetConfiguration() {
+    const confirmed = window.confirm(
+      'Reset providers, custom models, combos, pricing overrides, and runtime settings to the startup configuration? This cannot be undone.'
+    );
+    if (!confirmed) return;
+    resetting = true;
+    try {
+      await action('/dashboard/api/reset', {
+        success: 'Configuration reset to startup defaults'
+      });
+    } finally {
+      resetting = false;
+    }
+  }
 </script>
 
 <PageHeader
@@ -88,7 +110,7 @@
   </div>
 </section>
 
-<div class="panel-grid">
+<div class="panel-grid settings-grid">
   <section class="panel">
     <div class="panel-header">
       <div>
@@ -98,17 +120,14 @@
     </div>
     <div class="panel-body metric-list">
       {#each toggles as setting}
-        <label
-          class="item-card"
-          style="display:flex;align-items:center;justify-content:space-between;gap:16px"
-        >
+        <label class="item-card setting-toggle">
           <span>
-            <strong>{setting[1]}</strong>
+            <strong>{setting[2]}</strong>
             <small class="muted" style="display:block;margin-top:4px">{setting[0]}</small>
           </span>
           <input
             type="checkbox"
-            checked={bool(settings[setting[0]] ?? data[setting[0]])}
+            checked={bool(values[setting[0]] ?? status[setting[1]])}
             on:change={(event) =>
               save(
                 setting[0],
@@ -120,7 +139,7 @@
       <label class="field">
         <span>Reporting timezone</span>
         <input
-          value={text(settings.server_reporting_timezone ?? data.reporting_timezone, 'UTC')}
+          value={text(values.server_reporting_timezone ?? status.reporting_timezone, 'UTC')}
           on:change={(event) =>
             save('server_reporting_timezone', (event.currentTarget as HTMLInputElement).value)}
         />
@@ -131,7 +150,7 @@
           type="number"
           min="50"
           max="5000"
-          value={text(settings.server_request_log_retention ?? data.request_log_retention, '500')}
+          value={text(values.server_request_log_retention ?? status.request_log_retention, '500')}
           on:change={(event) =>
             save('server_request_log_retention', (event.currentTarget as HTMLInputElement).value)}
         />
@@ -139,7 +158,7 @@
       <label class="field">
         <span>Account strategy</span>
         <select
-          value={text(settings.server_account_strategy ?? data.account_strategy, 'fill_first')}
+          value={text(values.server_account_strategy ?? status.account_strategy, 'round_robin')}
           on:change={(event) =>
             save('server_account_strategy', (event.currentTarget as HTMLSelectElement).value)}
         >
@@ -148,6 +167,121 @@
           <option value="sticky_rr">Sticky round robin</option>
         </select>
       </label>
+      <div class="field-grid">
+        <label class="field">
+          <span>Sticky account limit</span>
+          <input
+            type="number"
+            min="1"
+            value={text(values.server_sticky_limit ?? status.sticky_limit, '3')}
+            on:change={(event) =>
+              save('server_sticky_limit', (event.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+        <label class="field">
+          <span>Gateway requests/minute</span>
+          <input
+            type="number"
+            min="0"
+            max="100000"
+            value={text(values.server_gateway_rate_limit_rpm ?? status.gateway_rate_limit_rpm, '0')}
+            on:change={(event) =>
+              save(
+                'server_gateway_rate_limit_rpm',
+                (event.currentTarget as HTMLInputElement).value
+              )}
+          />
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Combo routing</h2>
+        <p>Choose how a model combo selects or combines upstream responses</p>
+      </div>
+    </div>
+    <div class="panel-body metric-list">
+      <label class="field">
+        <span>Combo strategy</span>
+        <select
+          value={comboStrategy}
+          on:change={(event) =>
+            save('combo_strategy', (event.currentTarget as HTMLSelectElement).value)}
+        >
+          <option value="fallback">Ordered fallback</option>
+          <option value="round_robin">Round robin</option>
+          <option value="fusion">Fusion panel</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Sticky combo limit</span>
+        <input
+          type="number"
+          min="1"
+          value={text(values.combo_sticky_limit ?? status.combo_sticky_limit, '1')}
+          on:change={(event) =>
+            save('combo_sticky_limit', (event.currentTarget as HTMLInputElement).value)}
+        />
+      </label>
+      {#if comboStrategy === 'fusion'}
+        <label class="field">
+          <span>Judge model</span>
+          <input
+            placeholder="Leave blank to use the first response"
+            value={text(values.combo_fusion_judge ?? status.combo_fusion_judge, '')}
+            on:change={(event) =>
+              save('combo_fusion_judge', (event.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+        <div class="field-grid">
+          <label class="field">
+            <span>Minimum panel</span>
+            <input
+              type="number"
+              min="1"
+              value={text(values.combo_fusion_min_panel ?? status.combo_fusion_min_panel, '2')}
+              on:change={(event) =>
+                save('combo_fusion_min_panel', (event.currentTarget as HTMLInputElement).value)}
+            />
+          </label>
+          <label class="field">
+            <span>Straggler grace (seconds)</span>
+            <input
+              type="number"
+              min="0"
+              max="3600"
+              step="0.1"
+              value={text(
+                values.combo_fusion_straggler_grace_s ?? status.combo_fusion_straggler_grace_s,
+                '8'
+              )}
+              on:change={(event) =>
+                save(
+                  'combo_fusion_straggler_grace_s',
+                  (event.currentTarget as HTMLInputElement).value
+                )}
+            />
+          </label>
+        </div>
+        <label class="field">
+          <span>Hard timeout (seconds)</span>
+          <input
+            type="number"
+            min="0.1"
+            max="3600"
+            step="0.1"
+            value={text(
+              values.combo_fusion_hard_timeout_s ?? status.combo_fusion_hard_timeout_s,
+              '90'
+            )}
+            on:change={(event) =>
+              save('combo_fusion_hard_timeout_s', (event.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+      {/if}
     </div>
   </section>
 
@@ -182,6 +316,25 @@
       </div>
     </div>
   </section>
+
+  <section class="panel danger-panel">
+    <div class="panel-header">
+      <div>
+        <h2>Reset configuration</h2>
+        <p>Restore the DB-backed configuration from the startup config</p>
+      </div>
+    </div>
+    <div class="panel-body">
+      <p class="muted reset-copy">
+        Removes current providers, custom models, combos, pricing overrides, and runtime settings,
+        then reseeds them from the configured YAML file. Inventory credentials and usage history are
+        not removed.
+      </p>
+      <button class="button danger" disabled={resetting} on:click={resetConfiguration}>
+        <Icon name="refresh" size={15} />{resetting ? 'Resetting…' : 'Reset to startup config'}
+      </button>
+    </div>
+  </section>
 </div>
 
 <style>
@@ -211,5 +364,21 @@
   .secret-export-warning .export-error {
     color: var(--danger);
     font-weight: 650;
+  }
+  .settings-grid {
+    align-items: start;
+  }
+  .setting-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .danger-panel {
+    border-color: color-mix(in srgb, var(--danger) 24%, var(--line));
+  }
+  .reset-copy {
+    margin: 0 0 14px;
+    line-height: 1.6;
   }
 </style>

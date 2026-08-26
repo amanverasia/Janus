@@ -4,12 +4,13 @@ import asyncio
 import json
 import logging
 import math
+import re
+import sqlite3
 import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
-from urllib.parse import quote
+from typing import Any
 
 import httpx
 import yaml
@@ -25,18 +26,9 @@ from fastapi.templating import Jinja2Templates
 
 from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
-from janus.dashboard.catalog import get_provider_logo_map, provider_logo_url
-from janus.dashboard.context import dashboard_context
-from janus.storage.analytics import (
-    Dimension,
-    get_breakdown,
-    get_calendar_day_spend_summary,
-    get_flow,
-    get_leaderboard,
-    get_spend_summary,
-    get_success_rate,
-)
-from janus.storage.api_keys import create_key, list_keys, revoke_key, update_key
+from janus.dashboard.catalog import get_catalog
+from janus.providers.drivers import supported_api_types
+from janus.storage.api_keys import list_keys, revoke_key, update_key
 from janus.storage.budgets import (
     create_or_update_budget,
     delete_budget,
@@ -47,32 +39,79 @@ from janus.storage.database import init_db
 from janus.storage.key_access import parse_models_input
 from janus.storage.settings import (
     VALID_COMBO_STRATEGIES,
-    get_reporting_timezone,
     get_setting,
     validate_reporting_timezone,
 )
 from janus.storage.usage import get_unpriced_models, get_usage_stats
 
-router = APIRouter(dependencies=[Depends(require_dashboard_access)])
+router = APIRouter(
+    dependencies=[Depends(require_dashboard_access)],
+    include_in_schema=False,
+)
+dashboard_page_redirect_router = APIRouter(
+    dependencies=[Depends(require_dashboard_access)],
+    include_in_schema=False,
+)
 logger = logging.getLogger(__name__)
 
+_DASHBOARD_UI_ROOT = "/dashboard/ui"
+_DASHBOARD_PAGE_TARGETS = {
+    "/dashboard": _DASHBOARD_UI_ROOT,
+    "/dashboard/analytics": f"{_DASHBOARD_UI_ROOT}/analytics",
+    "/dashboard/budgets": f"{_DASHBOARD_UI_ROOT}/budgets",
+    "/dashboard/combos": f"{_DASHBOARD_UI_ROOT}/combos",
+    "/dashboard/inventory": f"{_DASHBOARD_UI_ROOT}/inventory",
+    "/dashboard/inventory/add": f"{_DASHBOARD_UI_ROOT}/inventory/add",
+    "/dashboard/inventory/import": f"{_DASHBOARD_UI_ROOT}/inventory/import",
+    "/dashboard/inventory/keys": f"{_DASHBOARD_UI_ROOT}/inventory/keys",
+    "/dashboard/keys": f"{_DASHBOARD_UI_ROOT}/keys",
+    "/dashboard/leaderboard": f"{_DASHBOARD_UI_ROOT}/leaderboard",
+    "/dashboard/pricing": f"{_DASHBOARD_UI_ROOT}/pricing",
+    "/dashboard/providers": f"{_DASHBOARD_UI_ROOT}/providers",
+    "/dashboard/request-logs": f"{_DASHBOARD_UI_ROOT}/request-logs",
+    "/dashboard/routing": f"{_DASHBOARD_UI_ROOT}/routing",
+    "/dashboard/savers": f"{_DASHBOARD_UI_ROOT}/savers",
+    "/dashboard/settings": f"{_DASHBOARD_UI_ROOT}/settings",
+    "/dashboard/tools": f"{_DASHBOARD_UI_ROOT}/tools",
+    "/dashboard/usage": f"{_DASHBOARD_UI_ROOT}/usage",
+}
+
+
+def _canonical_dashboard_next(value: str) -> str:
+    path, separator, query = value.partition("?")
+    if path != "/dashboard" and not path.startswith("/dashboard/"):
+        return _DASHBOARD_UI_ROOT
+    normalized_path = path.rstrip("/") or "/"
+    target = _DASHBOARD_PAGE_TARGETS.get(normalized_path, path)
+    return f"{target}{separator}{query}" if separator else target
+
+
+def _dashboard_page_redirect(request: Request) -> RedirectResponse:
+    target = _DASHBOARD_PAGE_TARGETS[request.url.path.rstrip("/")]
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=308)
+
+
+for _dashboard_path in _DASHBOARD_PAGE_TARGETS:
+    _router_path = _dashboard_path.removeprefix("/dashboard")
+    for _route_variant in (_router_path, f"{_router_path}/"):
+        dashboard_page_redirect_router.add_api_route(
+            _route_variant,
+            _dashboard_page_redirect,
+            methods=["GET"],
+        )
+
 _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-_templates.env.filters["urlencode"] = lambda value: quote(str(value))
-_templates.env.globals["provider_logo_url"] = provider_logo_url
-
-try:
-    from importlib.metadata import version as _pkg_version
-
-    _templates.env.globals["janus_version"] = _pkg_version("janus-ai")
-except Exception:
-    _templates.env.globals["janus_version"] = "0.0.0"
 
 
 def _api_v1_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/v1"
 
 
-def _reject_unsafe_url(base_url: str) -> JSONResponse | None:
+def _reject_unsafe_url(
+    base_url: str, *, allow_private_network: bool = False
+) -> JSONResponse | None:
     """Return a 400 JSONResponse if base_url is not a public http(s) address, else None.
 
     Guards dashboard endpoints that send the user's API key to an arbitrary URL
@@ -89,7 +128,7 @@ def _reject_unsafe_url(base_url: str) -> JSONResponse | None:
         return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
     try:
         hostname = parsed.host
-        if hostname:
+        if hostname and not allow_private_network:
             for _family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
                 ip = ipaddress.ip_address(sockaddr[0])
                 if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
@@ -141,17 +180,9 @@ async def _get_usage_stats_safe(db_path: Path) -> dict[str, Any]:
         }
 
 
-async def _render_page(
-    request: Request, template: str, db_path: Path, **extra: Any
-) -> HTMLResponse:
-    context = await dashboard_context(request, db_path, **extra)
-    return _templates.TemplateResponse(request, template, context)
-
-
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse:
-    if not next.startswith("/dashboard"):
-        next = "/dashboard"
+async def login_page(request: Request, next: str = _DASHBOARD_UI_ROOT) -> HTMLResponse:
+    next = _canonical_dashboard_next(next)
     await _ensure_db(request)
     context: dict[str, Any] = {
         "request": request,
@@ -165,10 +196,9 @@ async def login_page(request: Request, next: str = "/dashboard") -> HTMLResponse
 async def login_submit(
     request: Request,
     api_key: str = Form(""),
-    next: str = Form("/dashboard"),
+    next: str = Form(_DASHBOARD_UI_ROOT),
 ) -> Response:
-    if not next.startswith("/dashboard"):
-        next = "/dashboard"
+    next = _canonical_dashboard_next(next)
     await _ensure_db(request)
 
     if not api_key.strip():
@@ -214,102 +244,6 @@ async def logout(request: Request) -> RedirectResponse:
     return response
 
 
-@router.get("", response_class=HTMLResponse)
-async def overview(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    stats = await _get_usage_stats_safe(db_path)
-    from janus.dashboard.live import get_bus
-    from janus.storage.providers_db import list_providers
-
-    provider_count = len(await list_providers(db_path, enabled_only=True))
-    keys = await list_keys(db_path)
-    registry = request.app.state.registry
-    today_cost = 0.0
-    global_budget = None
-    try:
-        reporting_now = datetime.now(UTC)
-        summary = await get_calendar_day_spend_summary(db_path, now=reporting_now)
-        today_cost = summary["total_cost"]
-        global_budget = await get_budget_status(db_path, key_id=None, now=reporting_now)
-    except Exception:
-        pass
-    live = get_bus().snapshot()
-    from janus.storage.cooldowns import get_active_cooldowns
-
-    now = time.time()
-    cooldown_count = len(
-        {
-            combined.rpartition("::")[0]
-            for combined, (expires_at, _level) in (await get_active_cooldowns(db_path)).items()
-            if expires_at > now
-        }
-    )
-    return await _render_page(
-        request,
-        "overview.html",
-        db_path,
-        stats=stats,
-        provider_count=provider_count,
-        combos=registry.combos,
-        today_cost=today_cost,
-        global_budget=global_budget,
-        base_url=_api_v1_base_url(request),
-        live_inflight=live["inflight"],
-        cooldown_count=cooldown_count,
-        setup_checklist={
-            "has_providers": provider_count > 0,
-            "has_keys": any(k.get("is_active") for k in keys),
-            "has_requests": stats["total_requests"] > 0,
-        },
-    )
-
-
-@router.get("/providers", response_class=HTMLResponse)
-async def providers_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.dashboard.catalog import get_catalog
-
-    providers = await _enrich_providers(db_path)
-    quota_warnings = [
-        p
-        for p in providers
-        if (
-            p.get("is_enabled")
-            and p.get("quota")
-            and p["quota"]["status"] in ("warning", "exhausted")
-        )
-    ]
-    return await _render_page(
-        request,
-        "providers.html",
-        db_path,
-        providers=providers,
-        catalog=get_catalog(),
-        logo_map=get_provider_logo_map(),
-        quota_warnings=quota_warnings,
-    )
-
-
-@router.get("/combos", response_class=HTMLResponse)
-async def combos_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.storage.combos_db import list_combos
-
-    combos_raw = await list_combos(db_path)
-    combos = []
-    for c in combos_raw:
-        parsed = dict(c)
-        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
-        combos.append(parsed)
-    return await _render_page(
-        request,
-        "combos.html",
-        db_path,
-        combos=combos,
-        wired_providers=_wired_providers(request),
-    )
-
-
 def _wired_providers(request: Request) -> list[dict[str, Any]]:
     """Prefixes with credentialed provider configs, and the models they expose.
 
@@ -336,117 +270,12 @@ def _wired_providers(request: Request) -> list[dict[str, Any]]:
     return wired
 
 
-@router.get("/routing", response_class=HTMLResponse)
-async def routing_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.storage.routing_overview import get_routing_overview
-    from janus.storage.settings import cooldowns_enabled, get_all_settings
-
-    overview = await get_routing_overview(db_path)
-    routing_live = request.app.state.fallback_handler.routing_snapshot()
-    settings = await get_all_settings(db_path)
-    return await _render_page(
-        request,
-        "routing.html",
-        db_path,
-        overview=overview,
-        routing_live=routing_live,
-        cooldowns_enabled=cooldowns_enabled(settings),
-    )
-
-
-@router.get("/api/routing/partial", response_class=HTMLResponse)
-async def api_routing_partial(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.storage.routing_overview import get_routing_overview
-
-    overview = await get_routing_overview(db_path)
-    routing_live = request.app.state.fallback_handler.routing_snapshot()
-    context = await dashboard_context(
-        request, db_path, overview=overview, routing_live=routing_live
-    )
-    return _templates.TemplateResponse(request, "routing_partial.html", context)
-
-
-@router.post("/api/routing/cooldowns/clear", response_class=HTMLResponse)
-async def api_clear_cooldowns(request: Request) -> HTMLResponse:
+@router.post("/api/routing/cooldowns/clear")
+async def api_clear_cooldowns(request: Request) -> JSONResponse:
     await _ensure_db(request)
     handler = request.app.state.fallback_handler
     n = await handler.clear_all_cooldowns()
-    return HTMLResponse(
-        f'<span class="text-green-400 text-sm">Cleared {n} cooldown(s)</span>',
-        status_code=200,
-    )
-
-
-@router.get("/keys", response_class=HTMLResponse)
-async def keys_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    all_keys = await list_keys(db_path)
-    active = [k for k in all_keys if k["is_active"]]
-    revoked = [k for k in all_keys if not k["is_active"]]
-    return await _render_page(
-        request,
-        "keys.html",
-        db_path,
-        keys=active,
-        active_count=len(active),
-        revoked_count=len(revoked),
-        new_key=None,
-    )
-
-
-@router.get("/api/keys/partial", response_class=HTMLResponse)
-async def keys_partial(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    status = request.query_params.get("status", "active").lower()
-    new_key = request.query_params.get("new_key")
-    all_keys = await list_keys(db_path)
-    active = [k for k in all_keys if k["is_active"]]
-    revoked = [k for k in all_keys if not k["is_active"]]
-    if status == "revoked":
-        shown = revoked
-    elif status == "all":
-        shown = all_keys
-    else:
-        shown = active
-        status = "active"
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": shown,
-        "status": status,
-        "active_count": len(active),
-        "revoked_count": len(revoked),
-        "new_key": new_key if new_key else None,
-    }
-    return _templates.TemplateResponse(request, "keys_partial.html", context)
-
-
-@router.get("/api/keys/{key_id}/edit", response_class=HTMLResponse)
-async def keys_edit_form(request: Request, key_id: int) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    all_keys = await list_keys(db_path)
-    key = next((k for k in all_keys if k["id"] == key_id), None)
-    if key is None:
-        return HTMLResponse("Key not found", status_code=404)
-    budget = await get_budget_status(db_path, key_id=key_id)
-    daily_budget = f"{budget['daily_limit']:.2f}" if budget else ""
-    allowed_models = key.get("allowed_models")
-    models_text = ", ".join(allowed_models) if allowed_models else ""
-    context: dict[str, Any] = {
-        "request": request,
-        "key": key,
-        "daily_budget": daily_budget,
-        "models_text": models_text,
-    }
-    return _templates.TemplateResponse(request, "keys_edit_modal.html", context)
-
-
-@router.get("/usage", response_class=HTMLResponse)
-async def usage_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    stats = await _get_usage_stats_safe(db_path)
-    return await _render_page(request, "usage.html", db_path, stats=stats)
+    return JSONResponse({"ok": True, "cleared": n})
 
 
 @router.get("/api/usage/snapshot")
@@ -522,38 +351,6 @@ async def _request_logs_context(
     }
 
 
-@router.get("/request-logs", response_class=HTMLResponse)
-async def request_logs_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.storage.settings import get_all_settings, request_logging_enabled
-
-    settings = await get_all_settings(db_path)
-    log_ctx = await _request_logs_context(db_path)
-    return await _render_page(
-        request,
-        "request_logs.html",
-        db_path,
-        logging_enabled=request_logging_enabled(settings),
-        **log_ctx,
-    )
-
-
-@router.get("/api/request-logs/partial", response_class=HTMLResponse)
-async def api_request_logs_partial(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    try:
-        limit = int(request.query_params.get("limit", "100"))
-    except ValueError:
-        limit = 100
-    try:
-        offset = int(request.query_params.get("offset", "0"))
-    except ValueError:
-        offset = 0
-    ctx = await _request_logs_context(db_path, limit=limit, offset=offset)
-    ctx["request"] = request
-    return _templates.TemplateResponse(request, "request_logs_partial.html", ctx)
-
-
 @router.get("/api/request-logs/export")
 async def api_export_request_logs(request: Request) -> JSONResponse:
     db_path = await _ensure_db(request)
@@ -577,113 +374,22 @@ async def api_get_request_log(request: Request, log_id: int) -> JSONResponse:
     return JSONResponse(content=log)
 
 
-@router.delete("/api/request-logs", response_class=HTMLResponse)
-async def api_clear_request_logs(request: Request) -> HTMLResponse:
+@router.delete("/api/request-logs")
+async def api_clear_request_logs(request: Request) -> JSONResponse:
     db_path = await _ensure_db(request)
     from janus.storage.request_logs import clear_request_logs
 
     await clear_request_logs(db_path)
-    ctx = await _request_logs_context(db_path)
-    ctx["request"] = request
-    return _templates.TemplateResponse(request, "request_logs_partial.html", ctx)
+    return JSONResponse({"ok": True})
 
 
-@router.get("/analytics", response_class=HTMLResponse)
-async def analytics_page(
-    request: Request,
-    days: int = 30,
-    dimension: str = "model",
-) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    valid_dims = ("model", "provider", "account", "client_key")
-    if dimension not in valid_dims:
-        dimension = "model"
-    days = max(1, min(days, 365))
-    try:
-        summary = await get_spend_summary(db_path, days=days)
-        breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
-        success = await get_success_rate(db_path, days=days)
-        flow = await get_flow(db_path, days=days)
-    except Exception:
-        summary = {
-            "total_cost": 0,
-            "total_requests": 0,
-            "daily": [],
-            "total_input_tokens": 0,
-            "total_output_tokens": 0,
-        }
-        breakdown = []
-        success = {"success_2xx": 0, "client_4xx": 0, "server_5xx": 0, "total": 0}
-        flow = {"nodes": [], "links": []}
-    raw_unpriced = await get_unpriced_models(db_path, days=days)
-    registry = request.app.state.pricing_registry
-    unpriced_models = [m for m in raw_unpriced if registry.get(m["model"]) is None]
-    unpriced_model_ids = {m["model"] for m in unpriced_models}
-    return await _render_page(
-        request,
-        "analytics.html",
-        db_path,
-        summary=summary,
-        breakdown=breakdown,
-        success=success,
-        flow=flow,
-        days=days,
-        dimension=dimension,
-        unpriced_models=unpriced_models,
-        unpriced_model_ids=unpriced_model_ids,
-    )
-
-
-@router.get("/leaderboard", response_class=HTMLResponse)
-async def leaderboard_page(
-    request: Request,
-    days: int = 30,
-    sort: str = "tokens",
-) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    valid_sorts = ("tokens", "cost", "requests")
-    if sort not in valid_sorts:
-        sort = "tokens"
-    try:
-        board = await get_leaderboard(db_path, days=days, sort_by=sort)
-    except Exception:
-        board = []
-    return await _render_page(
-        request,
-        "leaderboard.html",
-        db_path,
-        leaderboard=board,
-        days=days,
-        sort=sort,
-    )
-
-
-@router.get("/budgets", response_class=HTMLResponse)
-async def budgets_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    reporting_timezone = await get_reporting_timezone(db_path)
-    try:
-        budget_statuses, keys = await _build_budget_statuses(db_path)
-    except Exception:
-        budget_statuses = []
-        keys = []
-    return await _render_page(
-        request,
-        "budgets.html",
-        db_path,
-        budgets=budget_statuses,
-        keys=keys,
-        reporting_timezone=reporting_timezone,
-    )
-
-
-@router.post("/api/budgets", response_class=HTMLResponse)
+@router.post("/api/budgets")
 async def create_budget(
     request: Request,
     key_select: str = Form(""),
     daily_limit: str = Form(""),
     warn_pct: str = Form("80"),
-) -> HTMLResponse:
+) -> Response:
     db_path = await _ensure_db(request)
     selected = key_select.strip()
     key_id: int | None = None
@@ -712,18 +418,18 @@ async def create_budget(
         daily_limit=parsed_daily_limit,
         warn_pct=parsed_warn_pct,
     )
-    return await _budgets_partial(request, db_path)
+    return JSONResponse({"ok": True})
 
 
 def _budget_validation_error(message: str) -> HTMLResponse:
     return HTMLResponse(content=message, status_code=422)
 
 
-@router.delete("/api/budgets/{budget_id}", response_class=HTMLResponse)
-async def delete_budget_endpoint(request: Request, budget_id: int) -> HTMLResponse:
+@router.delete("/api/budgets/{budget_id}")
+async def delete_budget_endpoint(request: Request, budget_id: int) -> JSONResponse:
     db_path = await _ensure_db(request)
     await delete_budget(db_path, budget_id)
-    return await _budgets_partial(request, db_path)
+    return JSONResponse({"ok": True})
 
 
 async def _build_budget_statuses(
@@ -747,84 +453,7 @@ async def _build_budget_statuses(
     return budget_statuses, keys
 
 
-async def _budgets_partial(request: Request, db_path: Path) -> HTMLResponse:
-    try:
-        budget_statuses, keys = await _build_budget_statuses(db_path)
-    except Exception:
-        budget_statuses = []
-        keys = []
-    context: dict[str, Any] = {
-        "request": request,
-        "budgets": budget_statuses,
-        "keys": keys,
-        "reporting_timezone": await get_reporting_timezone(db_path),
-    }
-    return _templates.TemplateResponse(request, "budgets_partial.html", context)
-
-
-async def _keys_partial_response(
-    request: Request,
-    db_path: Path,
-    *,
-    status: str = "active",
-    new_key: str | None = None,
-) -> HTMLResponse:
-    all_keys = await list_keys(db_path)
-    active = [k for k in all_keys if k["is_active"]]
-    revoked = [k for k in all_keys if not k["is_active"]]
-    if status == "revoked":
-        shown = revoked
-    elif status == "all":
-        shown = all_keys
-    else:
-        shown = active
-        status = "active"
-    context: dict[str, Any] = {
-        "request": request,
-        "keys": shown,
-        "status": status,
-        "active_count": len(active),
-        "revoked_count": len(revoked),
-        "new_key": new_key,
-    }
-    return _templates.TemplateResponse(request, "keys_partial.html", context)
-
-
-@router.post("/api/keys", response_class=HTMLResponse)
-async def create_api_key(
-    request: Request,
-    name: str = Form(...),
-    can_login: str = Form(""),
-    login_field: str = Form(""),
-    allowed_models: str = Form(""),
-    daily_budget: str = Form(""),
-) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    models = parse_models_input(allowed_models)
-    if login_field:
-        login_ok = can_login.lower() in {"on", "1", "true", "yes"}
-    else:
-        login_ok = True
-    new_key, record = await create_key(
-        db_path,
-        name,
-        can_login=login_ok,
-        allowed_models=models,
-    )
-    budget_text = daily_budget.strip()
-    if budget_text:
-        try:
-            limit = float(budget_text)
-        except ValueError:
-            limit = None
-        if limit is not None and limit > 0:
-            from janus.storage.budgets import create_or_update_budget
-
-            await create_or_update_budget(db_path, key_id=int(record["id"]), daily_limit=limit)
-    return await _keys_partial_response(request, db_path, new_key=new_key, status="active")
-
-
-@router.post("/api/keys/{key_id}", response_class=HTMLResponse)
+@router.post("/api/keys/{key_id}")
 async def update_api_key(
     request: Request,
     key_id: int,
@@ -835,7 +464,7 @@ async def update_api_key(
     models_field: str = Form(""),
     clear_models: str = Form(""),
     daily_budget: str = Form(""),
-) -> HTMLResponse:
+) -> JSONResponse:
     db_path = await _ensure_db(request)
     kwargs: dict[str, Any] = {}
     if name.strip():
@@ -858,38 +487,20 @@ async def update_api_key(
             from janus.storage.budgets import create_or_update_budget
 
             await create_or_update_budget(db_path, key_id=key_id, daily_limit=limit)
-    status = request.query_params.get("status", "active").lower()
-    return await _keys_partial_response(request, db_path, status=status)
+    return JSONResponse({"ok": True})
 
 
-@router.delete("/api/keys/{key_id}", response_class=HTMLResponse)
-async def revoke_api_key(request: Request, key_id: int) -> HTMLResponse:
+@router.delete("/api/keys/{key_id}")
+async def revoke_api_key(request: Request, key_id: int) -> JSONResponse:
     db_path = await _ensure_db(request)
     await revoke_key(db_path, key_id)
-    return await _keys_partial_response(request, db_path, status="active")
+    return JSONResponse({"ok": True})
 
 
 # ---- Provider CRUD ----
 
 
-_SUPPORTED_PROVIDER_API_TYPES = frozenset(
-    {
-        "anthropic",
-        "antigravity",
-        "claude",
-        "claude_oauth",
-        "codex",
-        "cursor",
-        "gemini",
-        "gemini-cli",
-        "gemini_cli",
-        "github_copilot",
-        "kiro",
-        "mimo_free",
-        "openai_compat",
-        "opencode_free",
-    }
-)
+_SUPPORTED_PROVIDER_API_TYPES = supported_api_types()
 
 
 def _provider_api_type_error(api_type: str) -> HTMLResponse | None:
@@ -919,101 +530,135 @@ def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
     }
 
 
-@router.get("/api/providers/partial", response_class=HTMLResponse)
-async def api_providers_partial(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    return await _providers_partial(request, db_path)
+_PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
 
-@router.post("/api/providers", response_class=HTMLResponse)
-async def api_create_provider(request: Request) -> HTMLResponse:
+def _parse_provider_models(value: str) -> list[str]:
+    models: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"[,\n]", value):
+        model = raw.strip()
+        if not model or model in seen:
+            continue
+        if len(model) > 300 or any(ord(char) < 32 for char in model):
+            raise ValueError("Model IDs must be 300 characters or fewer")
+        seen.add(model)
+        models.append(model)
+    return models
+
+
+def _form_bool(params: dict[str, list[str]], name: str, default: bool) -> bool:
+    if name not in params:
+        return default
+    return params[name][0].strip().lower() in {"1", "on", "true", "yes"}
+
+
+def _provider_form_data(
+    params: dict[str, list[str]],
+    *,
+    provider_id: str,
+    existing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    catalog = get_catalog()
+    requested_catalog_id = params.get("catalog_id", [""])[0].strip()
+    catalog_id = requested_catalog_id or str((existing or {}).get("catalog_id") or "")
+    if not catalog_id and provider_id in catalog:
+        catalog_id = provider_id
+    preset = catalog.get(catalog_id) if catalog_id else None
+    if requested_catalog_id and preset is None:
+        raise ValueError("Unknown provider preset")
+
+    prefix = params.get("prefix", [str((preset or {}).get("prefix") or "")])[0].strip()
+    api_type = params.get("api_type", [str((preset or {}).get("api_type") or "")])[0].strip()
+    base_url = params.get("base_url", [str((preset or {}).get("base_url") or "")])[0].strip()
+    if not _PROVIDER_ID_PATTERN.fullmatch(provider_id):
+        raise ValueError("Provider ID must use letters, numbers, dots, dashes, or underscores")
+    if not _PROVIDER_ID_PATTERN.fullmatch(prefix):
+        raise ValueError("Prefix must use letters, numbers, dots, dashes, or underscores")
+    url_optional = api_type in {"mimo_free", "opencode_free"}
+    if not base_url and not url_optional:
+        raise ValueError("Base URL is required")
+    if base_url:
+        try:
+            parsed_url = httpx.URL(base_url)
+        except Exception as exc:
+            raise ValueError("Base URL must be a valid HTTP(S) URL") from exc
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.host:
+            raise ValueError("Base URL must be a valid HTTP(S) URL")
+        if parsed_url.username or parsed_url.password or parsed_url.query or parsed_url.fragment:
+            raise ValueError("Base URL must not include credentials, a query, or a fragment")
+    api_type_error = _provider_api_type_error(api_type)
+    if api_type_error is not None:
+        raise ValueError("Unsupported API type")
+
+    models_default = ",".join((preset or {}).get("default_models") or [])
+    selected_default = ""
+    if existing and existing.get("selected_models"):
+        selected_default = ",".join(json.loads(existing["selected_models"]))
+    allowed_default = ""
+    if existing and existing.get("allowed_models"):
+        allowed_default = ",".join(json.loads(existing["allowed_models"]))
+    models = _parse_provider_models(params.get("models", [models_default])[0])
+    selected_models = _parse_provider_models(params.get("selected_models", [selected_default])[0])
+    allowed_models = _parse_provider_models(params.get("allowed_models", [allowed_default])[0])
+    default_model = params.get("default_model", [str((preset or {}).get("default_model") or "")])[
+        0
+    ].strip()
+    if default_model and default_model not in models:
+        models.append(default_model)
+    live_default = bool((preset or {}).get("live_models", True))
+    if existing is not None:
+        live_default = bool(existing.get("live_models", live_default))
+    transports = (preset or {}).get("transports")
+    if transports is None and existing:
+        transports = existing.get("transports")
+        if isinstance(transports, str) and transports:
+            try:
+                transports = json.loads(transports)
+            except json.JSONDecodeError:
+                transports = None
+    return {
+        "catalog_id": catalog_id or None,
+        "prefix": prefix,
+        "api_type": api_type,
+        "base_url": base_url.rstrip("/"),
+        "models": models,
+        "selected_models": selected_models,
+        "allowed_models": allowed_models,
+        "default_model": default_model or None,
+        "live_models": _form_bool(params, "live_models", live_default),
+        "transports": transports,
+        **_parse_quota_params(params),
+    }
+
+
+@router.post("/api/providers")
+async def api_create_provider(request: Request) -> Response:
     db_path = await _ensure_db(request)
     from urllib.parse import parse_qs
 
     from janus.storage.providers_db import create_provider
 
     body = await request.body()
-    params = parse_qs(body.decode())
-    api_type = params.get("api_type", [""])[0].strip()
-    api_type_error = _provider_api_type_error(api_type)
-    if api_type_error is not None:
-        return api_type_error
-    models_str = params.get("models", [""])[0]
-    models = [m.strip() for m in models_str.split(",") if m.strip()]
-    allowed_models_str = params.get("allowed_models", [""])[0]
-    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
+    params = parse_qs(body.decode(), keep_blank_values=True)
+    if (
+        not params.get("api_type", [""])[0].strip()
+        and not params.get("catalog_id", [""])[0].strip()
+    ):
+        return HTMLResponse(content="Missing required field: api_type", status_code=400)
     try:
+        provider_id = params["id"][0].strip()
+        data = _provider_form_data(params, provider_id=provider_id)
+        data["id"] = provider_id
+        data["api_key"] = params.get("api_key", [""])[0] or None
         await create_provider(
             db_path,
-            {
-                "id": params["id"][0],
-                "prefix": params["prefix"][0],
-                "api_type": api_type,
-                "base_url": params.get("base_url", [""])[0],
-                "api_key": params.get("api_key", [""])[0] or None,
-                "models": models,
-                "allowed_models": allowed_models,
-                **_parse_quota_params(params),
-            },
+            data,
         )
     except KeyError:
         return HTMLResponse(content="Missing required field", status_code=400)
-    except Exception as e:
-        return HTMLResponse(content=str(type(e).__name__), status_code=400)
-    from janus.dashboard.reload import reload_providers
-
-    await _sync_provider_key_safe(
-        db_path,
-        {
-            "id": params["id"][0],
-            "prefix": params["prefix"][0],
-            "base_url": params.get("base_url", [""])[0],
-            "api_key": params.get("api_key", [""])[0] or None,
-        },
-    )
-    await reload_providers(request.app)
-    return await _providers_partial(request, db_path)
-
-
-@router.put("/api/providers/{provider_id}", response_class=HTMLResponse)
-async def api_update_provider(request: Request, provider_id: str) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
-    from janus.storage.providers_db import update_provider
-
-    body = await request.body()
-    params = parse_qs(body.decode())
-    api_type = params.get("api_type", [""])[0].strip()
-    api_type_error = _provider_api_type_error(api_type)
-    if api_type_error is not None:
-        return api_type_error
-    models_str = params.get("models", [""])[0]
-    models = [m.strip() for m in models_str.split(",") if m.strip()]
-    allowed_models_str = params.get("allowed_models", [""])[0]
-    allowed_models = [m.strip() for m in allowed_models_str.split(",") if m.strip()]
-    new_key = params.get("api_key", [""])[0] or None
-    if not new_key:
-        from janus.storage.providers_db import get_provider
-
-        existing = await get_provider(db_path, provider_id)
-        new_key = existing["api_key"] if existing else None
-    try:
-        await update_provider(
-            db_path,
-            provider_id,
-            {
-                "prefix": params["prefix"][0],
-                "api_type": api_type,
-                "base_url": params.get("base_url", [""])[0],
-                "api_key": new_key,
-                "models": models,
-                "allowed_models": allowed_models,
-                **_parse_quota_params(params),
-            },
-        )
-    except KeyError:
-        return HTMLResponse(content="Missing required field", status_code=400)
+    except ValueError as exc:
+        return HTMLResponse(content=str(exc), status_code=422)
     except Exception as e:
         return HTMLResponse(content=str(type(e).__name__), status_code=400)
     from janus.dashboard.reload import reload_providers
@@ -1022,17 +667,72 @@ async def api_update_provider(request: Request, provider_id: str) -> HTMLRespons
         db_path,
         {
             "id": provider_id,
-            "prefix": params["prefix"][0],
-            "base_url": params.get("base_url", [""])[0],
+            "prefix": data["prefix"],
+            "base_url": data["base_url"],
+            "api_key": data["api_key"],
+        },
+    )
+    await reload_providers(request.app)
+    return JSONResponse({"ok": True, "id": provider_id})
+
+
+@router.put("/api/providers/{provider_id}")
+async def api_update_provider(request: Request, provider_id: str) -> Response:
+    db_path = await _ensure_db(request)
+    from urllib.parse import parse_qs
+
+    from janus.storage.providers_db import update_provider
+
+    body = await request.body()
+    params = parse_qs(body.decode(), keep_blank_values=True)
+    from janus.storage.providers_db import get_provider
+
+    existing = await get_provider(db_path, provider_id)
+    if existing is None:
+        return HTMLResponse(content="Provider not found", status_code=404)
+    if not params.get("api_type", [""])[0].strip() and not existing.get("api_type"):
+        return HTMLResponse(content="Missing required field: api_type", status_code=400)
+    new_key = params.get("api_key", [""])[0] or None
+    if not new_key:
+        new_key = existing["api_key"]
+    try:
+        data = _provider_form_data(params, provider_id=provider_id, existing=existing)
+        data["api_key"] = new_key
+        await update_provider(
+            db_path,
+            provider_id,
+            data,
+        )
+    except KeyError:
+        return HTMLResponse(content="Missing required field", status_code=400)
+    except ValueError as exc:
+        return HTMLResponse(content=str(exc), status_code=422)
+    except sqlite3.IntegrityError as exc:
+        if "custom_models.provider_prefix, custom_models.model_id" in str(exc):
+            return HTMLResponse(
+                content="The destination prefix already has a custom model with the same ID",
+                status_code=409,
+            )
+        return HTMLResponse(content="Provider update violates a data constraint", status_code=409)
+    except Exception as e:
+        return HTMLResponse(content=str(type(e).__name__), status_code=400)
+    from janus.dashboard.reload import reload_providers
+
+    await _sync_provider_key_safe(
+        db_path,
+        {
+            "id": provider_id,
+            "prefix": data["prefix"],
+            "base_url": data["base_url"],
             "api_key": new_key,
         },
     )
     await reload_providers(request.app)
-    return await _providers_partial(request, db_path)
+    return JSONResponse({"ok": True, "id": provider_id})
 
 
-@router.patch("/api/providers/{provider_id}/toggle", response_class=HTMLResponse)
-async def api_toggle_provider(request: Request, provider_id: str) -> HTMLResponse:
+@router.patch("/api/providers/{provider_id}/toggle")
+async def api_toggle_provider(request: Request, provider_id: str) -> JSONResponse:
     db_path = await _ensure_db(request)
     from janus.storage.providers_db import toggle_provider
 
@@ -1040,11 +740,11 @@ async def api_toggle_provider(request: Request, provider_id: str) -> HTMLRespons
     from janus.dashboard.reload import reload_providers
 
     await reload_providers(request.app)
-    return await _providers_partial(request, db_path)
+    return JSONResponse({"ok": True, "id": provider_id})
 
 
-@router.delete("/api/providers/{provider_id}", response_class=HTMLResponse)
-async def api_delete_provider(request: Request, provider_id: str) -> HTMLResponse:
+@router.delete("/api/providers/{provider_id}")
+async def api_delete_provider(request: Request, provider_id: str) -> JSONResponse:
     db_path = await _ensure_db(request)
     from janus.storage.providers_db import delete_provider
 
@@ -1053,7 +753,7 @@ async def api_delete_provider(request: Request, provider_id: str) -> HTMLRespons
     from janus.dashboard.reload import reload_providers
 
     await reload_providers(request.app)
-    return await _providers_partial(request, db_path)
+    return JSONResponse({"ok": True, "id": provider_id})
 
 
 async def _sync_provider_key_safe(db_path: Path, provider: dict[str, Any]) -> None:
@@ -1132,26 +832,6 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
     return providers
 
 
-async def _providers_partial(request: Request, db_path: Path) -> HTMLResponse:
-    providers = await _enrich_providers(db_path)
-    quota_warnings = [
-        p
-        for p in providers
-        if (
-            p.get("is_enabled")
-            and p.get("quota")
-            and p["quota"]["status"] in ("warning", "exhausted")
-        )
-    ]
-    context: dict[str, Any] = {
-        "request": request,
-        "providers": providers,
-        "logo_map": get_provider_logo_map(),
-        "quota_warnings": quota_warnings,
-    }
-    return _templates.TemplateResponse(request, "providers_partial.html", context)
-
-
 @router.post("/api/providers/fetch-models")
 async def api_fetch_models(request: Request) -> JSONResponse:
     from urllib.parse import parse_qs
@@ -1162,19 +842,25 @@ async def api_fetch_models(request: Request) -> JSONResponse:
 
     db_path = await _ensure_db(request)
     body = await request.body()
-    params = parse_qs(body.decode())
+    params = parse_qs(body.decode(), keep_blank_values=True)
     api_type = params.get("api_type", [""])[0]
     base_url = params.get("base_url", [""])[0].rstrip("/")
     api_key = params.get("api_key", [""])[0]
     provider_id = params.get("provider_id", [""])[0]
+    catalog_id = params.get("catalog_id", [""])[0]
     if not api_key and provider_id:
         from janus.storage.providers_db import get_provider
 
         provider = await get_provider(db_path, provider_id)
         if provider:
             api_key = await _resolve_provider_api_key(db_path, provider)
+            catalog_id = str(provider.get("catalog_id") or catalog_id)
 
-    unsafe = _reject_unsafe_url(base_url)
+    preset = get_catalog().get(catalog_id)
+    unsafe = _reject_unsafe_url(
+        base_url,
+        allow_private_network=bool(preset and preset.get("allow_private_network")),
+    )
     if unsafe is not None:
         return unsafe
 
@@ -1409,7 +1095,11 @@ async def api_test_connection(request: Request, provider_id: str) -> JSONRespons
     base_url = provider["base_url"].rstrip("/")
     api_key = await _resolve_provider_api_key(db_path, provider)
 
-    unsafe = _reject_unsafe_url(base_url)
+    preset = get_catalog().get(str(provider.get("catalog_id") or ""))
+    unsafe = _reject_unsafe_url(
+        base_url,
+        allow_private_network=bool(preset and preset.get("allow_private_network")),
+    )
     if unsafe is not None:
         return unsafe
 
@@ -1500,8 +1190,8 @@ async def api_test_connection(request: Request, provider_id: str) -> JSONRespons
 # ---- Combo CRUD ----
 
 
-@router.post("/api/combos", response_class=HTMLResponse)
-async def api_create_combo(request: Request) -> HTMLResponse:
+@router.post("/api/combos")
+async def api_create_combo(request: Request) -> Response:
     db_path = await _ensure_db(request)
     from urllib.parse import parse_qs
 
@@ -1520,11 +1210,11 @@ async def api_create_combo(request: Request) -> HTMLResponse:
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
-    return await _combos_partial(request, db_path)
+    return JSONResponse({"ok": True})
 
 
-@router.put("/api/combos/{combo_id}", response_class=HTMLResponse)
-async def api_update_combo(request: Request, combo_id: int) -> HTMLResponse:
+@router.put("/api/combos/{combo_id}")
+async def api_update_combo(request: Request, combo_id: int) -> Response:
     db_path = await _ensure_db(request)
     from urllib.parse import parse_qs
 
@@ -1543,11 +1233,11 @@ async def api_update_combo(request: Request, combo_id: int) -> HTMLResponse:
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
-    return await _combos_partial(request, db_path)
+    return JSONResponse({"ok": True, "id": combo_id})
 
 
-@router.delete("/api/combos/{combo_id}", response_class=HTMLResponse)
-async def api_delete_combo(request: Request, combo_id: int) -> HTMLResponse:
+@router.delete("/api/combos/{combo_id}")
+async def api_delete_combo(request: Request, combo_id: int) -> JSONResponse:
     db_path = await _ensure_db(request)
     from janus.storage.combos_db import delete_combo
 
@@ -1555,23 +1245,7 @@ async def api_delete_combo(request: Request, combo_id: int) -> HTMLResponse:
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
-    return await _combos_partial(request, db_path)
-
-
-async def _combos_partial(request: Request, db_path: Path) -> HTMLResponse:
-    from janus.storage.combos_db import list_combos
-
-    combos_raw = await list_combos(db_path)
-    combos = []
-    for c in combos_raw:
-        parsed = dict(c)
-        parsed["models_list"] = json.loads(parsed["models"]) if parsed["models"] else []
-        combos.append(parsed)
-    context: dict[str, Any] = {
-        "request": request,
-        "combos": combos,
-    }
-    return _templates.TemplateResponse(request, "combos_partial.html", context)
+    return JSONResponse({"ok": True, "id": combo_id})
 
 
 # ---- Token Savers ----
@@ -1614,22 +1288,6 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
     raw_stats = getattr(saver_pipeline, "stats", {}) if saver_pipeline is not None else {}
     saver_stats = _saver_display_stats(raw_stats)
     return {"request": request, "settings": settings, "saver_stats": saver_stats}
-
-
-@router.get("/savers", response_class=HTMLResponse)
-async def savers_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    saver_ctx = await _savers_context(request, db_path)
-    saver_ctx.pop("request", None)
-    return await _render_page(request, "savers.html", db_path, **saver_ctx)
-
-
-@router.get("/api/savers/partial", response_class=HTMLResponse)
-async def savers_partial(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    return _templates.TemplateResponse(
-        request, "savers_list.html", await _savers_context(request, db_path)
-    )
 
 
 VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})
@@ -1694,15 +1352,15 @@ def _require_float(
         raise ValueError(f"must be <= {max_value}")
 
 
-@router.post("/api/settings", response_class=HTMLResponse)
-async def api_update_setting(request: Request) -> HTMLResponse:
+@router.post("/api/settings")
+async def api_update_setting(request: Request) -> Response:
     db_path = await _ensure_db(request)
     from urllib.parse import parse_qs
 
     from janus.storage.settings import set_setting
 
     body = await request.body()
-    params = parse_qs(body.decode())
+    params = parse_qs(body.decode(), keep_blank_values=True)
     try:
         key = params["key"][0]
         value = params["value"][0]
@@ -1727,25 +1385,7 @@ async def api_update_setting(request: Request) -> HTMLResponse:
         handler = getattr(request.app.state, "fallback_handler", None)
         if handler is not None:
             handler.cooldowns_enabled = cooldowns_flag({key: value})
-    return HTMLResponse(content="", status_code=200)
-
-
-# ---- Tool Setup ----
-
-
-@router.get("/tools", response_class=HTMLResponse)
-async def tools_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.api.auth import is_require_api_key_enabled
-
-    require_key = await is_require_api_key_enabled(request)
-    return await _render_page(
-        request,
-        "tools.html",
-        db_path,
-        base_url=_api_v1_base_url(request),
-        require_key=require_key,
-    )
+    return JSONResponse({"ok": True, "key": key})
 
 
 # ---- Pricing ----
@@ -1848,16 +1488,8 @@ async def _pricing_page_context(request: Request, db_path: Path) -> dict[str, An
     return context
 
 
-@router.get("/pricing", response_class=HTMLResponse)
-async def pricing_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    pricing_ctx = await _pricing_page_context(request, db_path)
-    pricing_ctx.pop("request", None)
-    return await _render_page(request, "pricing.html", db_path, **pricing_ctx)
-
-
-@router.post("/api/pricing", response_class=HTMLResponse)
-async def api_create_pricing(request: Request) -> HTMLResponse:
+@router.post("/api/pricing")
+async def api_create_pricing(request: Request) -> Response:
     db_path = await _ensure_db(request)
     from urllib.parse import parse_qs
 
@@ -1881,11 +1513,11 @@ async def api_create_pricing(request: Request) -> HTMLResponse:
     from janus.dashboard.reload import reload_pricing
 
     await reload_pricing(request.app)
-    return await _pricing_partial(request, db_path)
+    return JSONResponse({"ok": True})
 
 
-@router.delete("/api/pricing/{model:path}", response_class=HTMLResponse)
-async def api_delete_pricing(request: Request, model: str) -> HTMLResponse:
+@router.delete("/api/pricing/{model:path}")
+async def api_delete_pricing(request: Request, model: str) -> JSONResponse:
     db_path = await _ensure_db(request)
     from janus.storage.pricing_db import delete_pricing_override
 
@@ -1893,7 +1525,7 @@ async def api_delete_pricing(request: Request, model: str) -> HTMLResponse:
     from janus.dashboard.reload import reload_pricing
 
     await reload_pricing(request.app)
-    return await _pricing_partial(request, db_path)
+    return JSONResponse({"ok": True, "model": model})
 
 
 @router.post("/api/pricing/sync")
@@ -1911,75 +1543,11 @@ async def api_sync_pricing(request: Request) -> JSONResponse:
     return JSONResponse({"count": count, "synced_at": synced_at})
 
 
-async def _pricing_partial(request: Request, db_path: Path) -> HTMLResponse:
-    context = await _pricing_page_context(request, db_path)
-    return _templates.TemplateResponse(request, "pricing_partial.html", context)
-
-
-# ---- Settings ----
-
-
-@router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request) -> HTMLResponse:
-    db_path = await _ensure_db(request)
-    from janus.storage.settings import (
-        cooldowns_enabled,
-        ensure_server_defaults,
-        get_all_settings,
-        request_logging_enabled,
-        require_api_key_enabled,
-        resolve_account_strategy,
-        resolve_combo_fusion_hard_timeout_s,
-        resolve_combo_fusion_judge,
-        resolve_combo_fusion_min_panel,
-        resolve_combo_fusion_straggler_grace_s,
-        resolve_combo_sticky_limit,
-        resolve_combo_strategy,
-        resolve_gateway_rate_limit_rpm,
-        resolve_reporting_timezone,
-        resolve_request_log_retention,
-        resolve_sticky_limit,
-        sticky_client_key_routing_enabled,
-    )
-
-    await ensure_server_defaults(db_path)
-    settings = await get_all_settings(db_path)
-    legacy_dashboard_settings = {
-        "dashboard_username",
-        "dashboard_password_hash",
-        "dashboard_session_secret",
-    }
-    display_settings = {
-        key: value for key, value in settings.items() if key not in legacy_dashboard_settings
-    }
-    return await _render_page(
-        request,
-        "settings.html",
-        db_path,
-        settings=display_settings,
-        config=request.app.state.config,
-        require_api_key_enabled=require_api_key_enabled(settings),
-        cooldowns_enabled=cooldowns_enabled(settings),
-        sticky_client_key_routing_enabled=sticky_client_key_routing_enabled(settings),
-        request_logging_enabled=request_logging_enabled(settings),
-        request_log_retention=resolve_request_log_retention(settings),
-        account_strategy=resolve_account_strategy(settings),
-        sticky_limit=resolve_sticky_limit(settings),
-        gateway_rate_limit_rpm=resolve_gateway_rate_limit_rpm(settings),
-        reporting_timezone=resolve_reporting_timezone(settings),
-        combo_strategy=resolve_combo_strategy(settings),
-        combo_sticky_limit=resolve_combo_sticky_limit(settings),
-        combo_fusion_judge=resolve_combo_fusion_judge(settings),
-        combo_fusion_min_panel=resolve_combo_fusion_min_panel(settings),
-        combo_fusion_straggler_grace_s=resolve_combo_fusion_straggler_grace_s(settings),
-        combo_fusion_hard_timeout_s=resolve_combo_fusion_hard_timeout_s(settings),
-    )
-
-
 @router.get("/api/export")
 async def api_export_config(request: Request) -> Response:
     db_path = await _ensure_db(request)
     from janus.storage.combos_db import list_combos
+    from janus.storage.custom_models import list_custom_models
     from janus.storage.pricing_db import list_pricing_overrides
     from janus.storage.providers_db import list_providers
 
@@ -1987,12 +1555,20 @@ async def api_export_config(request: Request) -> Response:
     providers_yaml = [
         {
             "id": p["id"],
+            "catalog_id": p.get("catalog_id"),
             "prefix": p["prefix"],
             "api_type": p["api_type"],
             "base_url": p["base_url"],
             "api_key": p["api_key"],
             "models": json.loads(p["models"]) if p["models"] else [],
+            "default_model": p.get("default_model"),
+            "live_models": bool(p.get("live_models", 1)),
+            "selected_models": json.loads(p["selected_models"]) if p.get("selected_models") else [],
+            "transports": json.loads(p["transports"]) if p.get("transports") else None,
             "allowed_models": json.loads(p["allowed_models"]) if p.get("allowed_models") else [],
+            "quota_window": p.get("quota_window"),
+            "quota_limit": p.get("quota_limit"),
+            "quota_metric": p.get("quota_metric") or "requests",
         }
         for p in providers_raw
     ]
@@ -2018,6 +1594,23 @@ async def api_export_config(request: Request) -> Response:
         "server": {"port": request.app.state.config.server.port},
         "providers": providers_yaml,
     }
+    custom_models = await list_custom_models(db_path)
+    if custom_models:
+        config_data["custom_models"] = [
+            {
+                "id": model["id"],
+                "provider_id": model["provider_id"],
+                "model_id": model["model_id"],
+                "display_name": model["display_name"],
+                "context_window": model["context_window"],
+                "max_output_tokens": model["max_output_tokens"],
+                "input_modalities": model["input_modalities"],
+                "reasoning_efforts": model["reasoning_efforts"],
+                "capabilities": model["capabilities"],
+                "is_enabled": model["is_enabled"],
+            }
+            for model in custom_models
+        ]
     if combos_yaml:
         config_data["combos"] = combos_yaml
     if pricing_yaml:
@@ -2037,12 +1630,13 @@ async def api_export_config(request: Request) -> Response:
     )
 
 
-@router.post("/api/reset", response_class=HTMLResponse)
-async def api_reset_to_defaults(request: Request) -> HTMLResponse:
+@router.post("/api/reset")
+async def api_reset_to_defaults(request: Request) -> JSONResponse:
     db_path = await _ensure_db(request)
     from janus.storage.database import get_connection, seed_from_config
 
     async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM custom_models")
         await db.execute("DELETE FROM providers")
         await db.execute("DELETE FROM combos")
         await db.execute("DELETE FROM pricing_overrides")
@@ -2066,4 +1660,4 @@ async def api_reset_to_defaults(request: Request) -> HTMLResponse:
     await reload_combos(request.app)
     await reload_savers(request.app)
     await reload_pricing(request.app)
-    return HTMLResponse(content="", status_code=200)
+    return JSONResponse({"ok": True})

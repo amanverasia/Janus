@@ -137,4 +137,4 @@ curl http://localhost:20128/v1/health
 # {"status": "ok"}
 ```
 
-The root URL `/` redirects to `/dashboard`.
+The root URL `/` redirects to the Cloudline dashboard at `/dashboard/ui`.

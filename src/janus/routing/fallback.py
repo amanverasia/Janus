@@ -389,18 +389,24 @@ class FallbackHandler:
             all_candidate_ids: list[str] = []
             earliest_expiry: float | None = None
             for m in combo_models:
-                _, _, specific = m.partition("/")
                 targets = self.registry.lookup(m)
                 if targets:
                     all_candidate_ids.extend(t.account_id for t in targets)
-                    m_expiry = self.earliest_cooldown_expiry(
-                        [t.account_id for t in targets], specific
-                    )
+                    target_expiries = [
+                        self.earliest_cooldown_expiry([target.account_id], target.model)
+                        for target in targets
+                    ]
+                    active_expiries = [expiry for expiry in target_expiries if expiry is not None]
+                    m_expiry = min(active_expiries) if active_expiries else None
                     if m_expiry is not None and (
                         earliest_expiry is None or m_expiry < earliest_expiry
                     ):
                         earliest_expiry = m_expiry
-                    available = [t for t in targets if self.is_available(t.account_id, specific)]
+                    available = [
+                        target
+                        for target in targets
+                        if self.is_available(target.account_id, target.model)
+                    ]
                     all_attempts.extend(
                         self._deprioritize_rate_limited(
                             self._resolve_order(
@@ -427,10 +433,16 @@ class FallbackHandler:
         targets = self.registry.lookup(model_str)
         if targets is None:
             raise ValueError(f"Unknown model: {model_str}")
-        _, _, specific_model = model_str.partition("/")
-        available = [t for t in targets if self.is_available(t.account_id, specific_model)]
+        available = [
+            target for target in targets if self.is_available(target.account_id, target.model)
+        ]
         if not available:
-            expiry = self.earliest_cooldown_expiry([t.account_id for t in targets], specific_model)
+            target_expiries = [
+                self.earliest_cooldown_expiry([target.account_id], target.model)
+                for target in targets
+            ]
+            active_expiries = [expiry for expiry in target_expiries if expiry is not None]
+            expiry = min(active_expiries) if active_expiries else None
             retry_after = (
                 max(expiry - time.time(), MIN_RETRY_AFTER_S)
                 if expiry is not None

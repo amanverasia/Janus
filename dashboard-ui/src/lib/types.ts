@@ -7,6 +7,8 @@ export interface AlertItem {
   severity?: string;
   title?: string;
   message?: string;
+  detail?: string;
+  href?: string;
 }
 
 export interface StateEnvelope {

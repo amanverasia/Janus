@@ -34,10 +34,12 @@ async def app(tmp_path):
         base_url="https://fake.local/v1",
         api_key="sk-test",
         models=["test-m1"],
+        default_model="test-m1",
     )
     cfg = JanusConfig(
         server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
         providers=[provider],
+        combos=[ComboConfig(name="test-combo", models=["test/test-m1"])],
     )
     app = create_app(config=cfg)
     await _seed_and_reload(app)
@@ -64,6 +66,44 @@ async def allowlisted_app(tmp_path):
         api_key="sk-test",
         models=["m-allowed", "m-blocked"],
         allowed_models=["m-allowed"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    return app
+
+
+@pytest.fixture
+async def slash_model_app(tmp_path):
+    provider = ProviderConfig(
+        id="openrouter",
+        prefix="openrouter",
+        api_type="openai_compat",
+        base_url="https://openrouter.test/v1",
+        api_key="sk-openrouter",
+        models=["openai/gpt-4o"],
+    )
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[provider],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    return app
+
+
+@pytest.fixture
+async def alias_model_app(tmp_path):
+    provider = ProviderConfig(
+        id="xiaomi",
+        prefix="xiaomi",
+        api_type="openai_compat",
+        base_url="https://xiaomi.test/v1",
+        api_key="sk-xiaomi",
+        models=["mimo-v2.5"],
     )
     cfg = JanusConfig(
         server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
@@ -881,3 +921,212 @@ async def test_chat_allows_wildcard_model(app):
             headers={"Authorization": f"Bearer {full_key}"},
         )
         assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("model", ["test", "test-m1"])
+async def test_bare_model_authorizes_resolved_namespaced_target(app, model):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        app.state.db_path,
+        f"bare-resolved-{model}",
+        allowed_models=["test/test-m1"],
+    )
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": model, "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bare_provider_name_does_not_bypass_resolved_model_allowlist(app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        app.state.db_path,
+        "bare-alias-only",
+        allowed_models=["test"],
+    )
+    upstream = respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(500)
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+    assert r.status_code == 403
+    assert r.json()["error"]["type"] == "model_not_allowed"
+    assert upstream.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_combo_allowlist_entry_grants_its_curated_members(app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        app.state.db_path,
+        "combo-only",
+        allowed_models=["test-combo"],
+    )
+    respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "test-m1",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test-combo", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_slash_native_bare_model_authorizes_resolved_provider_target(slash_model_app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        slash_model_app.state.db_path,
+        "slash-native-resolved",
+        allowed_models=["openrouter/openai/gpt-4o"],
+    )
+    respx.post("https://openrouter.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "openai/gpt-4o",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=slash_model_app), base_url="http://test"
+    ) as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_slash_native_bare_id_cannot_bypass_resolved_target_allowlist(slash_model_app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        slash_model_app.state.db_path,
+        "slash-native-only",
+        allowed_models=["openai/gpt-4o"],
+    )
+    upstream = respx.post("https://openrouter.test/v1/chat/completions").mock(
+        return_value=httpx.Response(500)
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=slash_model_app), base_url="http://test"
+    ) as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+    assert r.status_code == 403
+    assert r.json()["error"]["type"] == "model_not_allowed"
+    assert upstream.call_count == 0
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_explicit_alias_accepts_canonical_provider_allowlist(alias_model_app):
+    from janus.storage.api_keys import create_key
+
+    full_key, _ = await create_key(
+        alias_model_app.state.db_path,
+        "canonical-alias-grant",
+        allowed_models=["xiaomi/*"],
+    )
+    respx.post("https://xiaomi.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "r1",
+                "object": "chat.completion",
+                "model": "mimo-v2.5",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=alias_model_app), base_url="http://test"
+    ) as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "mimo/mimo-v2.5", "messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": f"Bearer {full_key}"},
+        )
+
+    assert r.status_code == 200

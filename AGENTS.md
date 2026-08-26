@@ -97,7 +97,7 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 - Treat request models, provider/upstream error text, labels, and other database/client values as untrusted in browser JavaScript. Use `textContent` and DOM construction rather than interpolating dynamic data into `innerHTML`.
 - A history row must represent a meaningful event. Do not record status history when `previous_status == new_status`; credit-only history needs an explicit event type rather than an `active → active` entry.
 - All UI and enforcement code labeled “today” must share the same configured timezone and calendar-day boundaries. A rolling 24-hour metric must be labeled “Last 24 hours.”
-- Dashboard form routes validate values and referenced row IDs server-side and return HTMX-friendly 400/422 responses; browser dropdown constraints are not sufficient validation.
+- Dashboard API routes validate values and referenced row IDs server-side and return structured 400/422 responses; browser dropdown constraints are not sufficient validation.
 - Dashboard runtime assets should be served locally and included in wheels, sdists, and Docker images. Core dashboard rendering must not require public CDN access.
 
 ## Active dashboard audit handoff

@@ -1,19 +1,29 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 
 from janus.app import _build_provider
-from janus.config.schema import ComboConfig
+from janus.config.schema import ComboConfig, ProviderConfig
+from janus.inventory.key_encryption import hash_upstream_key
+from janus.models.catalog import list_catalog_models
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
+from janus.routing.provider_snapshots import (
+    ProviderSnapshot,
+    ensure_provider_snapshot,
+    install_provider_snapshot,
+)
 from janus.routing.upstream_expand import expand_gateway_provider
 from janus.storage.combos_db import list_combos
+from janus.storage.custom_models import list_custom_models
 from janus.storage.pricing_catalog import get_catalog
 from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
@@ -24,6 +34,7 @@ from janus.storage.settings import (
     resolve_saver_settings,
 )
 from janus.storage.upstream_keys import list_routable_upstream_keys
+from janus.storage.upstream_models import list_model_ids_for_keys
 from janus.tokensavers.base import AsyncTokenSaver, TokenSaver
 from janus.tokensavers.caveman import PROMPTS as CAVEMAN_PROMPTS
 from janus.tokensavers.caveman import CavemanSaver
@@ -34,53 +45,225 @@ from janus.tokensavers.ponytail import PonytailSaver
 from janus.tokensavers.rtk import RTKSaver
 
 
+def _provider_execution_key(config: ProviderConfig) -> tuple[Any, ...]:
+    return (
+        config.id,
+        config.catalog_id,
+        config.prefix,
+        config.api_type,
+        config.base_url,
+        config.api_key,
+        config.credential_expires_at,
+    )
+
+
+def _normalized_base_url(value: Any) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _credential_identity(key: dict[str, Any]) -> str:
+    stored_hash = str(key.get("key_hash") or "").strip().lower()
+    if len(stored_hash) == 64 and all(char in "0123456789abcdef" for char in stored_hash):
+        return stored_hash
+    value = key.get("key_value")
+    if isinstance(value, str):
+        return hash_upstream_key(value)
+    return f"key-id:{key.get('id')}"
+
+
+def _static_credential_identity(row: dict[str, Any]) -> str | None:
+    value = row.get("api_key")
+    if not isinstance(value, str) or not value:
+        return None
+    return hash_upstream_key(value)
+
+
+def _assign_inventory_keys(
+    rows: list[dict[str, Any]],
+    keys: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], set[str]]:
+    ordered_rows = sorted(rows, key=lambda row: str(row["id"]))
+    assignments: dict[str, list[dict[str, Any]]] = {str(row["id"]): [] for row in ordered_rows}
+    if not ordered_rows:
+        return assignments, set()
+    rows_by_id = {str(row["id"]): row for row in ordered_rows}
+    rows_by_base_url: dict[str, list[str]] = {}
+    for row in ordered_rows:
+        base_url = _normalized_base_url(row.get("base_url"))
+        if base_url:
+            rows_by_base_url.setdefault(base_url, []).append(str(row["id"]))
+    primary_id = str(ordered_rows[0]["id"])
+    selected: dict[str, tuple[int, int, str, dict[str, Any]]] = {}
+    for index, key in enumerate(keys):
+        source_node = str(key.get("source_node") or "")
+        binding_rank = 0
+        if source_node.startswith("gateway:"):
+            provider_id = source_node.removeprefix("gateway:")
+            if provider_id not in rows_by_id:
+                continue
+            target_id = provider_id
+            binding_rank = 2
+        else:
+            custom_base_url = _normalized_base_url(key.get("custom_base_url"))
+            base_matches = rows_by_base_url.get(custom_base_url, []) if custom_base_url else []
+            if len(base_matches) == 1:
+                target_id = base_matches[0]
+                binding_rank = 1
+            else:
+                target_id = primary_id
+        identity = _credential_identity(key)
+        current = selected.get(identity)
+        if current is None or binding_rank > current[0]:
+            selected[identity] = (binding_rank, index, target_id, key)
+    for _rank, _index, target_id, key in sorted(selected.values(), key=lambda item: item[1]):
+        assignments[target_id].append(key)
+    return assignments, set(selected)
+
+
 async def reload_providers(app: FastAPI) -> None:
+    lock: asyncio.Lock | None = getattr(app.state, "provider_reload_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        app.state.provider_reload_lock = lock
+    async with lock:
+        await _reload_providers_locked(app)
+
+
+async def _reload_providers_locked(app: FastAPI) -> None:
     db_path: Path = app.state.db_path
     rows = await list_providers(db_path, enabled_only=True)
-
     old_providers: dict[str, Provider] = getattr(app.state, "providers", {})
-
+    old_registry: ProviderRegistry | None = getattr(app.state, "registry", None)
+    old_configs = (
+        {config.id: config for configs in old_registry.providers.values() for config in configs}
+        if isinstance(old_registry, ProviderRegistry)
+        else {}
+    )
     registry = ProviderRegistry()
     new_providers: dict[str, Provider] = {}
-
+    built_providers: list[Provider] = []
+    reused_provider_ids: set[str] = set()
+    old_handler: FallbackHandler | None = getattr(app.state, "fallback_handler", None)
+    rows_by_inventory: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         inventory_id = inventory_provider_id_for_prefix(row["prefix"])
-        upstream_keys = await list_routable_upstream_keys(db_path, inventory_id)
-        for pc in expand_gateway_provider(row, upstream_keys):
-            registry.register(pc)
-            new_providers[pc.id] = _build_provider(pc)
+        rows_by_inventory.setdefault(inventory_id, []).append(row)
+    keys_by_provider: dict[str, list[dict[str, Any]]] = {}
+    routed_identities_by_inventory: dict[str, set[str]] = {}
+    all_key_ids: list[str] = []
+    for inventory_id, inventory_rows in rows_by_inventory.items():
+        keys = await list_routable_upstream_keys(db_path, inventory_id)
+        assignments, routed_identities = _assign_inventory_keys(inventory_rows, keys)
+        keys_by_provider.update(assignments)
+        routed_identities_by_inventory[inventory_id] = routed_identities
+        all_key_ids.extend(str(key["id"]) for assigned in assignments.values() for key in assigned)
+    discoveries = await list_model_ids_for_keys(db_path, all_key_ids)
+    provider_prefixes = {str(row["id"]): str(row["prefix"]) for row in rows}
+    custom_by_prefix: dict[str, list[str]] = {}
+    for model in await list_custom_models(db_path, enabled_only=True):
+        prefix = str(
+            model.get("provider_prefix") or provider_prefixes.get(str(model["provider_id"])) or ""
+        )
+        if prefix:
+            custom_by_prefix.setdefault(prefix, []).append(str(model["model_id"]))
 
-    combo_rows = await list_combos(db_path)
-    for row in combo_rows:
-        models = json.loads(row["models"]) if row["models"] else []
-        registry.register_combo(ComboConfig(name=row["name"], models=models))
+    try:
+        for row in rows:
+            inventory_id = inventory_provider_id_for_prefix(row["prefix"])
+            assigned_keys = keys_by_provider.get(str(row["id"]), [])
+            static_identity = _static_credential_identity(row)
+            if (
+                not assigned_keys
+                and static_identity is not None
+                and static_identity in routed_identities_by_inventory.get(inventory_id, set())
+            ):
+                continue
+            for pc in expand_gateway_provider(
+                row,
+                assigned_keys,
+                custom_models=custom_by_prefix.get(str(row["prefix"]), []),
+                discovered_models_by_key=discoveries,
+            ):
+                registry.register(pc)
+                old_config = old_configs.get(pc.id)
+                old_provider = old_providers.get(pc.id)
+                if (
+                    old_provider is not None
+                    and old_config is not None
+                    and _provider_execution_key(old_config) == _provider_execution_key(pc)
+                ):
+                    new_providers[pc.id] = old_provider
+                    reused_provider_ids.add(pc.id)
+                else:
+                    provider = _build_provider(pc)
+                    new_providers[pc.id] = provider
+                    built_providers.append(provider)
 
-    for old_id, old_provider in old_providers.items():
-        if old_id not in new_providers:
-            await old_provider.close()
+        combo_rows = await list_combos(db_path)
+        for row in combo_rows:
+            models = json.loads(row["models"]) if row["models"] else []
+            registry.register_combo(ComboConfig(name=row["name"], models=models))
 
-    app.state.providers = new_providers
-    app.state.registry = registry
-    old_handler: FallbackHandler | None = getattr(app.state, "fallback_handler", None)
-    handler = FallbackHandler(registry, db_path=db_path)
-    if isinstance(old_handler, FallbackHandler):
-        handler.adopt_runtime_state(old_handler)
-    settings = await get_all_settings(db_path)
-    handler.cooldowns_enabled = cooldowns_enabled(settings)
-    app.state.fallback_handler = handler
-    await app.state.fallback_handler.load_cooldowns()
-    await app.state.fallback_handler.load_request_counts()
-    await app.state.fallback_handler.load_quota_usage()
+        handler = FallbackHandler(registry, db_path=db_path)
+        if isinstance(old_handler, FallbackHandler):
+            handler.adopt_runtime_state(old_handler)
+        settings = await get_all_settings(db_path)
+        handler.cooldowns_enabled = cooldowns_enabled(settings)
+        await handler.load_cooldowns()
+        await handler.load_request_counts()
+        await handler.load_quota_usage()
+        model_catalog = await list_catalog_models(db_path, include_disabled=True)
+    except Exception:
+        await asyncio.gather(
+            *(provider.close() for provider in built_providers),
+            return_exceptions=True,
+        )
+        raise
+
+    providers_to_close = [
+        provider
+        for provider_id, provider in old_providers.items()
+        if provider_id not in reused_provider_ids
+    ]
+    await install_provider_snapshot(
+        app,
+        ProviderSnapshot(
+            providers=new_providers,
+            registry=registry,
+            handler=handler,
+            model_catalog=model_catalog,
+        ),
+        providers_to_close=providers_to_close,
+    )
 
 
 async def reload_combos(app: FastAPI) -> None:
-    db_path: Path = app.state.db_path
-    rows = await list_combos(db_path)
-    registry: ProviderRegistry = app.state.registry
-    registry.clear_combos()
-    for row in rows:
-        models = json.loads(row["models"]) if row["models"] else []
-        registry.register_combo(ComboConfig(name=row["name"], models=models))
+    lock: asyncio.Lock | None = getattr(app.state, "provider_reload_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        app.state.provider_reload_lock = lock
+    async with lock:
+        current = ensure_provider_snapshot(app)
+        registry = ProviderRegistry()
+        for configs in current.registry.providers.values():
+            for config in configs:
+                registry.register(config)
+        for row in await list_combos(app.state.db_path):
+            models = json.loads(row["models"]) if row["models"] else []
+            registry.register_combo(ComboConfig(name=row["name"], models=models))
+        handler = FallbackHandler(registry, db_path=app.state.db_path)
+        handler.adopt_runtime_state(current.handler)
+        handler.cooldowns_enabled = current.handler.cooldowns_enabled
+        await install_provider_snapshot(
+            app,
+            ProviderSnapshot(
+                providers=current.providers,
+                registry=registry,
+                handler=handler,
+                model_catalog=current.model_catalog,
+            ),
+            providers_to_close=[],
+        )
 
 
 async def reload_savers(app: FastAPI) -> None:

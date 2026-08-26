@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -22,6 +23,10 @@ from janus.dashboard.routes import (
     _request_logs_context,
     _savers_context,
     _wired_providers,
+)
+from janus.models.catalog import (
+    resolve_provider_models,
+    set_model_visibility,
 )
 from janus.storage.analytics import (
     Dimension,
@@ -90,6 +95,7 @@ _SECTIONS = frozenset(
         "request-logs",
         "inventory",
         "inventory-keys",
+        "models",
         "providers",
         "combos",
         "routing",
@@ -160,6 +166,19 @@ def _safe_json_value(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
+
+
+def _no_store_json(content: Any, *, status_code: int = 200) -> JSONResponse:
+    return JSONResponse(
+        _safe_json_value(jsonable_encoder(content)),
+        status_code=status_code,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Expires": "0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 async def _response(
@@ -400,12 +419,66 @@ def _without_provider_secrets(provider: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-async def _providers_data(db_path: Path) -> dict[str, Any]:
+def _matching_catalog_id(
+    provider: dict[str, Any],
+    catalog: dict[str, dict[str, Any]],
+) -> str | None:
+    configured = provider.get("catalog_id")
+    if isinstance(configured, str) and configured in catalog:
+        return configured
+    provider_id = str(provider.get("id") or "")
+    prefix = str(provider.get("prefix") or "")
+    api_type = str(provider.get("api_type") or "")
+    id_preset = catalog.get(provider_id)
+    if (
+        id_preset is not None
+        and str(id_preset.get("prefix") or "") == prefix
+        and str(id_preset.get("api_type") or "") == api_type
+    ):
+        return provider_id
+    candidates = [
+        catalog_id
+        for catalog_id, preset in catalog.items()
+        if str(preset.get("prefix") or "") == prefix
+        and str(preset.get("api_type") or "") == api_type
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
     from janus.dashboard.catalog import get_catalog, get_provider_logo_map
 
-    providers = [
-        _without_provider_secrets(provider) for provider in await _enrich_providers(db_path)
-    ]
+    catalog = get_catalog()
+    catalog_rows = list(request.app.state.provider_snapshot.model_catalog)
+    total_models: dict[str, int] = {}
+    visible_models: dict[str, int] = {}
+    for model in catalog_rows:
+        prefix = str(model.get("prefix") or "")
+        total_models[prefix] = total_models.get(prefix, 0) + 1
+        if not model.get("disabled"):
+            visible_models[prefix] = visible_models.get(prefix, 0) + 1
+    enriched = await _enrich_providers(db_path)
+    gateway_account_counts: dict[str, int] = {}
+    for provider in enriched:
+        prefix = str(provider.get("prefix") or "")
+        gateway_account_counts[prefix] = gateway_account_counts.get(prefix, 0) + 1
+    providers: list[dict[str, Any]] = []
+    for provider in enriched:
+        safe = _without_provider_secrets(provider)
+        prefix = str(provider.get("prefix") or "")
+        catalog_id = _matching_catalog_id(provider, catalog)
+        safe["catalog_id_inferred"] = not provider.get("catalog_id") and catalog_id is not None
+        if catalog_id is not None:
+            safe["catalog_id"] = catalog_id
+            safe["catalog_name"] = catalog[catalog_id].get("name")
+        safe["catalog_model_count"] = total_models.get(prefix, 0)
+        safe["visible_model_count"] = visible_models.get(prefix, 0)
+        inventory_keys = safe.get("inventory_keys")
+        key_summary = inventory_keys if isinstance(inventory_keys, dict) else {}
+        safe["account_count"] = int(key_summary.get("total") or 0)
+        safe["routable_account_count"] = int(key_summary.get("routable") or 0)
+        safe["gateway_account_count"] = gateway_account_counts.get(prefix, 1)
+        providers.append(safe)
     quota_warnings = [
         provider
         for provider in providers
@@ -415,9 +488,34 @@ async def _providers_data(db_path: Path) -> dict[str, Any]:
     ]
     return {
         "providers": providers,
-        "catalog": get_catalog(),
+        "catalog": catalog,
+        "catalog_presets": catalog,
         "logo_map": get_provider_logo_map(),
         "quota_warnings": quota_warnings,
+    }
+
+
+async def _models_data(request: Request, db_path: Path) -> dict[str, Any]:
+    from janus.dashboard.catalog import get_catalog
+    from janus.storage.providers_db import list_providers
+
+    rows = list(request.app.state.provider_snapshot.model_catalog)
+    catalog = get_catalog()
+    providers: list[dict[str, Any]] = []
+    for provider in await list_providers(db_path):
+        catalog_id = _matching_catalog_id(provider, catalog)
+        providers.append(
+            {
+                "id": str(provider["id"]),
+                "catalog_id": catalog_id,
+                "name": catalog.get(catalog_id, {}).get("name") if catalog_id else None,
+                "prefix": str(provider["prefix"]),
+                "is_enabled": bool(provider.get("is_enabled", 1)),
+            }
+        )
+    return {
+        "models": rows,
+        "providers": providers,
     }
 
 
@@ -508,6 +606,279 @@ async def _settings_data(db_path: Path) -> dict[str, Any]:
             "contains_credentials": True,
         },
     }
+
+
+async def _json_object(request: Request) -> dict[str, Any]:
+    try:
+        value = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON") from exc
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=422, detail="Request body must be a JSON object")
+    return {str(key): item for key, item in value.items()}
+
+
+def _positive_integer(value: Any, field: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise HTTPException(status_code=422, detail=f"{field} must be a positive integer or null")
+    return value
+
+
+def _string_array(value: Any, field: str) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise HTTPException(status_code=422, detail=f"{field} must be an array of strings")
+    result = [item.strip() for item in value if item.strip()]
+    if len(result) > 100 or any(len(item) > 100 for item in result):
+        raise HTTPException(status_code=422, detail=f"{field} is too large")
+    return result
+
+
+def _has_control_characters(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
+
+
+def _json_depth(value: Any) -> int:
+    if isinstance(value, dict):
+        return 1 + max((_json_depth(item) for item in value.values()), default=0)
+    if isinstance(value, list):
+        return 1 + max((_json_depth(item) for item in value), default=0)
+    return 0
+
+
+def _custom_model_payload(payload: dict[str, Any], *, partial: bool) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    provider_value = payload.get("provider_id", payload.get("provider"))
+    if provider_value is not None:
+        if not isinstance(provider_value, str) or not provider_value.strip():
+            raise HTTPException(status_code=422, detail="provider_id is required")
+        if len(provider_value.strip()) > 100:
+            raise HTTPException(status_code=422, detail="provider_id is too long")
+        if _has_control_characters(provider_value):
+            raise HTTPException(status_code=422, detail="provider_id contains control characters")
+        result["provider_id"] = provider_value.strip()
+    elif not partial:
+        raise HTTPException(status_code=422, detail="provider_id is required")
+
+    if "model_id" in payload:
+        model_value = payload["model_id"]
+        if not isinstance(model_value, str) or not model_value.strip():
+            raise HTTPException(status_code=422, detail="model_id is required")
+        if len(model_value.strip()) > 500:
+            raise HTTPException(status_code=422, detail="model_id is too long")
+        if _has_control_characters(model_value):
+            raise HTTPException(status_code=422, detail="model_id contains control characters")
+        result["model_id"] = model_value.strip()
+    elif not partial:
+        raise HTTPException(status_code=422, detail="model_id is required")
+
+    if "display_name" in payload:
+        display_name = payload["display_name"]
+        if display_name is not None and not isinstance(display_name, str):
+            raise HTTPException(status_code=422, detail="display_name must be a string or null")
+        if isinstance(display_name, str) and len(display_name.strip()) > 300:
+            raise HTTPException(status_code=422, detail="display_name is too long")
+        if isinstance(display_name, str) and _has_control_characters(display_name):
+            raise HTTPException(status_code=422, detail="display_name contains control characters")
+        result["display_name"] = display_name.strip() if isinstance(display_name, str) else None
+    for field in ("context_window", "max_output_tokens"):
+        if field in payload:
+            result[field] = _positive_integer(payload[field], field)
+    for field in ("input_modalities", "reasoning_efforts"):
+        if field in payload:
+            result[field] = _string_array(payload[field], field)
+    if "capabilities" in payload:
+        capabilities = payload["capabilities"]
+        if not isinstance(capabilities, dict):
+            raise HTTPException(status_code=422, detail="capabilities must be a JSON object")
+        if (
+            len(json.dumps(capabilities, ensure_ascii=False)) > 32_000
+            or _json_depth(capabilities) > 8
+        ):
+            raise HTTPException(
+                status_code=422, detail="capabilities is too large or deeply nested"
+            )
+        result["capabilities"] = {str(key): item for key, item in capabilities.items()}
+    if "is_enabled" in payload:
+        if not isinstance(payload["is_enabled"], bool):
+            raise HTTPException(status_code=422, detail="is_enabled must be a boolean")
+        result["is_enabled"] = payload["is_enabled"]
+    return result
+
+
+async def _authorized_custom_target(
+    request: Request,
+    db_path: Path,
+    *,
+    provider_id: str,
+    model_id: str,
+) -> dict[str, Any]:
+    del request, model_id
+    from janus.storage.providers_db import get_provider
+
+    provider = await get_provider(db_path, provider_id)
+    if provider is None:
+        raise HTTPException(status_code=422, detail="Unknown provider_id")
+    return provider
+
+
+@router.get("/api/v2/models")
+async def get_models(request: Request) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    return _no_store_json(await _models_data(request, db_path))
+
+
+@router.put("/api/v2/model-visibility")
+async def put_model_visibility(request: Request) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    payload = await _json_object(request)
+    scope = payload.get("scope")
+    provider = payload.get("provider")
+    provider_kind = payload.get("provider_kind", "auto")
+    enabled = payload.get("enabled")
+    raw_targets = payload.get("targets")
+    if scope not in {"provider", "models"}:
+        raise HTTPException(status_code=422, detail="scope must be provider or models")
+    if not isinstance(provider, str) or not provider:
+        raise HTTPException(status_code=422, detail="provider is required")
+    if provider_kind not in {"auto", "catalog", "prefix"}:
+        raise HTTPException(status_code=422, detail="provider_kind is invalid")
+    if not isinstance(enabled, bool):
+        raise HTTPException(status_code=422, detail="enabled must be a boolean")
+    if not isinstance(raw_targets, list):
+        raise HTTPException(status_code=422, detail="targets must be an array")
+    targets: list[str] = []
+    for target in raw_targets:
+        if not isinstance(target, dict) or not isinstance(target.get("id"), str):
+            raise HTTPException(status_code=422, detail="Every target must contain a string id")
+        targets.append(str(target["id"]))
+    if scope == "models" and not targets:
+        raise HTTPException(status_code=422, detail="At least one model target is required")
+
+    try:
+        _provider_id, prefix, known_models = await resolve_provider_models(
+            db_path,
+            provider,
+            match=cast(Literal["auto", "catalog", "prefix"], provider_kind),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    normalized_targets = {
+        target[len(prefix) + 1 :] if target.startswith(f"{prefix}/") else target
+        for target in targets
+    }
+    if scope == "models" and not normalized_targets.issubset(set(known_models)):
+        raise HTTPException(status_code=422, detail="One or more model targets are unknown")
+    try:
+        rows = await set_model_visibility(
+            db_path,
+            scope=cast(Literal["provider", "models"], scope),
+            provider=provider,
+            provider_match=cast(Literal["auto", "catalog", "prefix"], provider_kind),
+            targets=sorted(normalized_targets),
+            enabled=enabled,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from janus.dashboard.reload import reload_providers
+
+    await reload_providers(request.app)
+    return _no_store_json({"models": rows})
+
+
+@router.get("/api/v2/custom-models")
+async def get_custom_models(request: Request) -> JSONResponse:
+    from janus.storage.custom_models import list_custom_models
+
+    db_path = await _ensure_db(request)
+    return _no_store_json({"custom_models": await list_custom_models(db_path)})
+
+
+@router.post("/api/v2/custom-models")
+async def post_custom_model(request: Request) -> JSONResponse:
+    from janus.dashboard.reload import reload_providers
+    from janus.storage.custom_models import create_custom_model
+
+    db_path = await _ensure_db(request)
+    data = _custom_model_payload(await _json_object(request), partial=False)
+    await _authorized_custom_target(
+        request,
+        db_path,
+        provider_id=str(data["provider_id"]),
+        model_id=str(data["model_id"]),
+    )
+    try:
+        model = await create_custom_model(db_path, data)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Custom model already exists") from exc
+    await reload_providers(request.app)
+    return _no_store_json({"custom_model": model}, status_code=201)
+
+
+@router.put("/api/v2/custom-models/{custom_model_id}")
+async def put_custom_model(request: Request, custom_model_id: str) -> JSONResponse:
+    from janus.dashboard.reload import reload_providers
+    from janus.storage.custom_models import get_custom_model, update_custom_model
+
+    db_path = await _ensure_db(request)
+    current = await get_custom_model(db_path, custom_model_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Custom model not found")
+    data = _custom_model_payload(await _json_object(request), partial=True)
+    await _authorized_custom_target(
+        request,
+        db_path,
+        provider_id=str(current["provider_id"]),
+        model_id=str(current["model_id"]),
+    )
+    provider_id = str(data.get("provider_id", current["provider_id"]))
+    model_id = str(data.get("model_id", current["model_id"]))
+    if (provider_id, model_id) != (str(current["provider_id"]), str(current["model_id"])):
+        await _authorized_custom_target(
+            request, db_path, provider_id=provider_id, model_id=model_id
+        )
+    try:
+        model = await update_custom_model(db_path, custom_model_id, data)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Custom model already exists") from exc
+    if model is None:
+        raise HTTPException(status_code=404, detail="Custom model not found")
+    await reload_providers(request.app)
+    return _no_store_json({"custom_model": model})
+
+
+@router.delete("/api/v2/custom-models/{custom_model_id}")
+async def delete_custom_model_api(request: Request, custom_model_id: str) -> JSONResponse:
+    from janus.dashboard.reload import reload_providers
+    from janus.storage.custom_models import delete_custom_model, get_custom_model
+
+    db_path = await _ensure_db(request)
+    current = await get_custom_model(db_path, custom_model_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Custom model not found")
+    await _authorized_custom_target(
+        request,
+        db_path,
+        provider_id=str(current["provider_id"]),
+        model_id=str(current["model_id"]),
+    )
+    if not await delete_custom_model(db_path, custom_model_id):
+        raise HTTPException(status_code=404, detail="Custom model not found")
+    await reload_providers(request.app)
+    return _no_store_json({"deleted": True, "id": custom_model_id})
+
+
+@router.get("/api/v2/provider-presets")
+async def get_provider_presets(request: Request) -> JSONResponse:
+    from janus.dashboard.catalog import get_catalog
+
+    await _ensure_db(request)
+    catalog = get_catalog()
+    presets = [{"id": provider_id, **entry} for provider_id, entry in catalog.items()]
+    return _no_store_json({"presets": presets, "catalog": catalog})
 
 
 @router.post("/api/v2/keys")
@@ -638,8 +1009,10 @@ async def get_dashboard_state(
             offset=offset,
         )
         return await _response(request, db_path, section, data, meta=meta)
+    if section == "models":
+        return await _response(request, db_path, section, await _models_data(request, db_path))
     if section == "providers":
-        return await _response(request, db_path, section, await _providers_data(db_path))
+        return await _response(request, db_path, section, await _providers_data(request, db_path))
     if section == "combos":
         return await _response(request, db_path, section, await _combos_data(request, db_path))
     if section == "routing":

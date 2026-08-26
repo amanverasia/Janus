@@ -15,78 +15,19 @@ from janus.api.routes import gemini_router, ollama_router, router
 from janus.config.schema import JanusConfig, ProviderConfig
 from janus.inventory.key_encryption import CredentialEncryptionError
 from janus.pricing.registry import PricingRegistry
-from janus.providers.anthropic import AnthropicProvider
-from janus.providers.antigravity import AntigravityProvider
 from janus.providers.base import Provider
-from janus.providers.claude_oauth import ClaudeOAuthProvider
-from janus.providers.codex import CodexProvider
-from janus.providers.cursor import CursorProvider
-from janus.providers.gemini import GeminiProvider
-from janus.providers.github_copilot import GitHubCopilotProvider
-from janus.providers.kiro import KiroProvider
-from janus.providers.mimo_free import MimoFreeProvider
-from janus.providers.openai_compat import OpenAICompatProvider
-from janus.providers.opencode_free import OpenCodeFreeProvider
+from janus.providers.drivers import build_provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
+from janus.routing.provider_snapshots import ProviderSnapshot, close_provider_snapshots
 from janus.storage.database import init_db, seed_from_config
 from janus.tokensavers.pipeline import SaverPipeline
 
 logger = logging.getLogger(__name__)
 
 
-def _default_headers_for(config: ProviderConfig) -> dict[str, str] | None:
-    from janus.catalog import PROVIDERS
-
-    for entry in PROVIDERS.values():
-        gateway = entry.get("gateway")
-        if not isinstance(gateway, dict):
-            continue
-        if gateway.get("prefix") != config.prefix and gateway.get("id") != config.row_id:
-            continue
-        headers = gateway.get("default_headers")
-        if isinstance(headers, dict):
-            return {str(k): str(v) for k, v in headers.items()}
-    return None
-
-
 def _build_provider(config: ProviderConfig) -> Provider:
-    if config.api_type == "opencode_free":
-        return OpenCodeFreeProvider()
-    if config.api_type == "mimo_free":
-        return MimoFreeProvider()
-    if config.api_type == "openai_compat":
-        return OpenAICompatProvider(
-            base_url=config.base_url,
-            api_key=config.api_key,
-            default_headers=_default_headers_for(config),
-        )
-    if config.api_type == "anthropic":
-        return AnthropicProvider(api_key=config.api_key or "", base_url=config.base_url)
-    if config.api_type == "gemini":
-        return GeminiProvider(api_key=config.api_key or "", base_url=config.base_url)
-    if config.api_type == "github_copilot":
-        return GitHubCopilotProvider(
-            oauth_token=config.api_key or "",
-            base_url=config.base_url,
-        )
-    if config.api_type == "codex":
-        return CodexProvider(api_key=config.api_key or "", base_url=config.base_url)
-    if config.api_type == "kiro":
-        return KiroProvider(api_key=config.api_key or "", base_url=config.base_url)
-    if config.api_type == "cursor":
-        return CursorProvider(api_key=config.api_key or "", base_url=config.base_url)
-    if config.api_type in ("antigravity", "gemini_cli", "gemini-cli"):
-        variant = "gemini_cli" if "gemini" in config.api_type else "antigravity"
-        return AntigravityProvider(
-            api_key=config.api_key or "",
-            base_url=config.base_url,
-            credential_expires_at=config.credential_expires_at,
-            variant=variant,
-        )
-    if config.api_type in ("claude_oauth", "claude"):
-        return ClaudeOAuthProvider(api_key=config.api_key or "", base_url=config.base_url)
-    raise ValueError(f"Unknown api_type: {config.api_type}")
+    return build_provider(config)
 
 
 async def _initial_pricing_sync(app: FastAPI) -> None:
@@ -211,15 +152,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
 
-    for provider in app.state.providers.values():
-        await provider.close()
+    await close_provider_snapshots(app)
 
 
 def create_app(
     registry: ProviderRegistry | None = None,
     config: JanusConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Janus", version="3.0.1", lifespan=lifespan)
+    app = FastAPI(title="Janus", version="3.1.0", lifespan=lifespan)
     if registry is None:
         registry = ProviderRegistry()
     if config is None:
@@ -231,6 +171,13 @@ def create_app(
     app.state.saver_pipeline = SaverPipeline([])
     app.state.pricing_registry = PricingRegistry(config.pricing)
     app.state.providers = {}
+    app.state.model_catalog = []
+    app.state.provider_snapshot = ProviderSnapshot(
+        providers=app.state.providers,
+        registry=app.state.registry,
+        handler=app.state.fallback_handler,
+    )
+    app.state.retired_provider_snapshots = []
     from janus.api.rate_limit import GatewayRateLimiter
 
     app.state.gateway_rate_limiter = GatewayRateLimiter()
@@ -269,9 +216,11 @@ def create_app(
     from janus.dashboard.api_v2 import router as dashboard_api_v2_router
     from janus.dashboard.inventory_push_routes import router as inventory_push_router
     from janus.dashboard.inventory_routes import router as inventory_router
+    from janus.dashboard.routes import dashboard_page_redirect_router
     from janus.dashboard.routes import router as dashboard_router
     from janus.dashboard.ui_routes import router as dashboard_ui_router
 
+    app.include_router(dashboard_page_redirect_router, prefix="/dashboard")
     app.include_router(dashboard_router, prefix="/dashboard")
     app.include_router(inventory_router, prefix="/dashboard")
     app.include_router(inventory_push_router, prefix="/dashboard/api/inventory")
@@ -287,6 +236,6 @@ def create_app(
 
     @app.get("/")
     async def root_redirect() -> RedirectResponse:
-        return RedirectResponse(url="/dashboard")
+        return RedirectResponse(url="/dashboard/ui", status_code=308)
 
     return app

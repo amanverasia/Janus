@@ -82,12 +82,40 @@ async def test_dashboard_api_key_login_sets_cookie_and_authenticates(app, tmp_pa
             follow_redirects=False,
         )
         assert login_response.status_code == 303
-        assert login_response.headers["location"] == "/dashboard/keys"
+        assert login_response.headers["location"] == "/dashboard/ui/keys"
         assert login_response.cookies["janus_dashboard_key"] == key
         assert "HttpOnly" in login_response.headers["set-cookie"]
 
-        dashboard_response = await client.get("/dashboard/keys")
+        dashboard_response = await client.get("/dashboard/ui/keys")
         assert dashboard_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_dashboard_login_defaults_and_invalid_next_use_canonical_ui(app, tmp_path):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="http://janus.test",
+    ) as client:
+        page_response = await client.get("/dashboard/login")
+        default_response = await client.post(
+            "/dashboard/login",
+            data={"api_key": key},
+            follow_redirects=False,
+        )
+        invalid_response = await client.post(
+            "/dashboard/login",
+            data={"api_key": key, "next": "https://example.test/steal"},
+            follow_redirects=False,
+        )
+
+    assert 'name="next" value="/dashboard/ui"' in page_response.text
+    assert default_response.headers["location"] == "/dashboard/ui"
+    assert invalid_response.headers["location"] == "/dashboard/ui"
 
 
 @pytest.mark.asyncio
@@ -200,12 +228,10 @@ async def test_login_and_settings_ui_expose_only_api_key_login(app, tmp_path):
         assert 'name="password"' not in login_response.text
         assert "Username &amp; Password" not in login_response.text
 
-        settings_response = await client.get("/dashboard/settings")
+        settings_response = await client.get("/dashboard/api/v2/state/settings")
         assert settings_response.status_code == 200
-        assert "/dashboard/api/settings/credentials" not in settings_response.text
-        assert 'name="username"' not in settings_response.text
-        assert 'name="password"' not in settings_response.text
-        assert "Save Credentials" not in settings_response.text
+        assert "dashboard_username" not in settings_response.json()["data"]["values"]
+        assert "dashboard_password_hash" not in settings_response.json()["data"]["values"]
         assert "hett" not in settings_response.text
 
 
@@ -221,8 +247,8 @@ async def test_tools_page_uses_request_base_url(app, tmp_path):
         base_url="http://myhost:9999",
     ) as client:
         response = await client.get(
-            "/dashboard/tools",
+            "/dashboard/api/v2/state/tools",
             headers={"Authorization": f"Bearer {key}"},
         )
         assert response.status_code == 200
-        assert "http://myhost:9999/v1" in response.text
+        assert response.json()["data"]["base_url"] == "http://myhost:9999/v1"

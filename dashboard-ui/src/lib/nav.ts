@@ -68,6 +68,13 @@ export const navGroups: NavGroup[] = [
       },
       { label: 'Providers', href: '/dashboard/ui/providers', icon: 'plug', section: 'providers' },
       {
+        label: 'Models',
+        href: '/dashboard/ui/models',
+        icon: 'layers',
+        section: 'models',
+        keywords: 'catalog visibility discovery custom'
+      },
+      {
         label: 'Combos',
         href: '/dashboard/ui/combos',
         icon: 'layers',

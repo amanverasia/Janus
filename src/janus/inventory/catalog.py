@@ -3,11 +3,11 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal
 
-from janus.catalog import inventory_entries
+from janus.catalog import inventory_catalog_entries
 
 BillingModel = Literal["prepaid", "postpaid", "free_tier", "unknown"]
 
-INVENTORY_PROVIDERS: dict[str, dict[str, Any]] = inventory_entries()
+INVENTORY_PROVIDERS: dict[str, dict[str, Any]] = inventory_catalog_entries()
 
 
 def get_inventory_providers() -> dict[str, dict[str, Any]]:

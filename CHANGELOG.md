@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-26
+
+### Added
+
+- **Unified provider control plane** — provider setup, credential inventory, live model discovery,
+  custom model registration, visibility controls, and routing state now share one catalog-backed
+  workflow inspired by OpenCodeX while retaining Janus's multi-user gateway architecture
+- **Model catalog management** — the Cloudline dashboard provides a dedicated Models workspace for
+  searching 1,000+ discovered models, enabling or hiding catalog entries, and adding custom models
+  without restarting the gateway
+- **Provider runtime drivers** — provider-specific authentication, headers, endpoint behavior, model
+  normalization, and capability metadata are resolved through reusable drivers and durable routing
+  snapshots
+
+### Changed
+
+- **Cloudline is the sole dashboard** — `/dashboard` and former page URLs redirect to
+  `/dashboard/ui`; the legacy server-rendered HTMX interface, partial endpoints, templates, scripts,
+  stylesheets, and vendored browser dependencies have been removed
+- **Inventory-backed routing** — shared upstream credentials and discovered model availability feed
+  provider state, routing expansion, health reporting, cooldown behavior, and the public model lists
+  without exposing decrypted credentials
+
+### Fixed
+
+- **Provider reload stability** — invalid credentials, partial upstream model responses, duplicate
+  provider prefixes, disabled models, and transient catalog failures no longer destabilize the
+  active routing snapshot
+
 ## [3.0.1] - 2026-08-26
 
 ### Fixed

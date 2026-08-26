@@ -74,8 +74,6 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 
 ## Dashboard & UX
 
-- [ ] **Replace `alert()` error handling** — `providers.html` and `combos.html` still use browser alerts on HTMX failures; use inline toasts like other pages.
-- [ ] **Vendor CDN dependencies** — Tailwind, HTMX, Chart.js, D3 load from CDNs in `base.html` / `analytics.html`. Bundle for offline, air-gapped, and CSP-hardened deployments.
 - [ ] **Missing provider logos** — several dashboard catalog entries have empty `logo` (Qwen, OpenCode, custom, GitHub Copilot). Add SVGs under `dashboard/static/logos/`.
 - [x] **Align README marketing numbers** — README says "40+ providers" and inventory "29 providers"; dashboard catalog is 14. Pick consistent, accurate counts. *(Done 2026-07-05 — README now says "29 built-in providers, or any OpenAI-compatible endpoint".)*
 - [ ] **Routing page enhancements** — show live rotation index, sticky-routing state per client key, and estimated try-order after cooldowns expire.

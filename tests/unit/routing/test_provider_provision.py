@@ -67,6 +67,7 @@ def test_preview_unidentified_keys() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_creates_routing_provider(tmp_path) -> None:
+    from janus.dashboard.catalog import CATALOG
     from janus.routing.provider_provision import ensure_routing_providers
     from janus.storage.database import init_db
     from janus.storage.providers_db import get_provider
@@ -77,7 +78,11 @@ async def test_ensure_creates_routing_provider(tmp_path) -> None:
     assert results[0]["action"] == "created"
     row = await get_provider(db_path, "openrouter")
     assert row is not None
+    assert row["catalog_id"] == "openrouter"
     assert row["prefix"] == "openrouter"
+    assert row["default_model"] == CATALOG["openrouter"]["default_model"]
+    assert row["live_models"] == 1
+    assert row["selected_models"] == "[]"
 
 
 @pytest.mark.asyncio

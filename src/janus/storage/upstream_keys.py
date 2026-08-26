@@ -384,6 +384,7 @@ async def update_upstream_key(
         "metadata",
         "source_node",
         "last_checked_at",
+        "models_discovered_at",
         "last_error",
         "consecutive_failures",
         "validation_paused_at",

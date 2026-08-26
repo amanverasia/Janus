@@ -139,7 +139,6 @@ async def test_headroom_disabled_by_default(app):
 @pytest.mark.asyncio
 async def test_savers_page_shows_headroom(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/savers")
+        r = await client.get("/dashboard/api/v2/state/savers")
         assert r.status_code == 200
-        assert "Headroom" in r.text
-        assert "saver_headroom_enabled" in r.text
+        assert "saver_headroom_enabled" in r.json()["data"]["settings"]

@@ -7,6 +7,25 @@ from urllib.parse import urlparse
 from janus.config.schema import ProviderConfig
 
 
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str) and value:
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return []
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, (str, int, float))]
+
+
+def _bool_value(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
 def _region_aligned_transports(
     transports: dict[str, str] | None,
     base_url: str,
@@ -37,9 +56,15 @@ def _region_aligned_transports(
 def expand_gateway_provider(
     row: dict[str, Any],
     upstream_keys: list[dict[str, Any]],
+    *,
+    custom_models: list[str] | None = None,
+    discovered_models_by_key: dict[str, list[str]] | None = None,
 ) -> list[ProviderConfig]:
-    models = json.loads(row["models"]) if row["models"] else []
-    allowed_models = json.loads(row["allowed_models"]) if row.get("allowed_models") else []
+    models = _string_list(row.get("models"))
+    live_models = _bool_value(row.get("live_models"), default=True)
+    selected_models = _string_list(row.get("selected_models"))
+    allowed_models = _string_list(row.get("allowed_models"))
+    custom_model_ids = list(custom_models or [])
     quota_window = row.get("quota_window") or None
     quota_limit = row.get("quota_limit")
     quota_metric = row.get("quota_metric") or "requests"
@@ -70,11 +95,21 @@ def expand_gateway_provider(
             configs.append(
                 ProviderConfig(
                     id=f"{row['id']}::uk_{key['id']}",
+                    catalog_id=row.get("catalog_id"),
                     prefix=row["prefix"],
                     api_type=row["api_type"],
                     base_url=base_url,
                     api_key=key["key_value"],
                     models=models,
+                    default_model=row.get("default_model"),
+                    live_models=live_models,
+                    selected_models=selected_models,
+                    custom_models=custom_model_ids,
+                    discovered_models=(
+                        discovered_models_by_key.get(str(key["id"]))
+                        if live_models and discovered_models_by_key is not None
+                        else None
+                    ),
                     allowed_models=allowed_models,
                     upstream_key_id=key["id"],
                     credential_expires_at=key.get("credential_expires_at"),
@@ -90,11 +125,17 @@ def expand_gateway_provider(
     return [
         ProviderConfig(
             id=row["id"],
+            catalog_id=row.get("catalog_id"),
             prefix=row["prefix"],
             api_type=row["api_type"],
             base_url=row["base_url"],
             api_key=row["api_key"],
             models=models,
+            default_model=row.get("default_model"),
+            live_models=live_models,
+            selected_models=selected_models,
+            custom_models=custom_model_ids,
+            discovered_models=None,
             allowed_models=allowed_models,
             quota_window=quota_window,
             quota_limit=quota_limit,

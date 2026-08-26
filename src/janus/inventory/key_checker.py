@@ -266,6 +266,7 @@ async def _fetch_with_headers(
     method: str = "GET",
     headers: dict[str, str] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
+    allow_private_network: bool = False,
 ) -> dict[str, Any]:
     content = json.dumps(body).encode() if body is not None else None
     try:
@@ -275,6 +276,7 @@ async def _fetch_with_headers(
             headers=headers,
             content=content,
             timeout=FETCH_TIMEOUT,
+            allow_private_network=allow_private_network,
         )
     except httpx.TimeoutException as exc:
         raise TimeoutError("Connection timeout") from exc
@@ -624,7 +626,13 @@ async def _probe_usability(
         }
 
     try:
-        response = await _fetch_with_headers(url, method="POST", headers=headers, body=body)
+        response = await _fetch_with_headers(
+            url,
+            method="POST",
+            headers=headers,
+            body=body,
+            allow_private_network=bool(provider.get("allow_private_network")),
+        )
     except Exception as exc:
         result["is_usable"] = result.get("is_valid", False)
         result["usability_status"] = "unknown"
@@ -678,7 +686,11 @@ async def _validate_via_chat(
 
     if not models:
         try:
-            model_list = await _fetch_with_headers(f"{base}/models", headers=headers)
+            model_list = await _fetch_with_headers(
+                f"{base}/models",
+                headers=headers,
+                allow_private_network=bool(provider.get("allow_private_network")),
+            )
             if model_list["status"] in {200, 201} and model_list["body"]:
                 models = _parse_openai_compat_models(model_list["body"])
         except Exception:
@@ -698,6 +710,7 @@ async def _validate_via_chat(
             "max_tokens": 1,
             "messages": [{"role": "user", "content": "hi"}],
         },
+        allow_private_network=bool(provider.get("allow_private_network")),
     )
 
     rate_limits = _extract_rate_limits(response["headers"])
@@ -750,7 +763,7 @@ async def _validate_via_chat(
 
 def _parse_models_from_body(provider: dict[str, Any], body: Any) -> list[dict[str, Any]]:
     provider_id = provider["id"]
-    if provider_id in OPENAI_COMPAT_PROVIDERS:
+    if provider_id in OPENAI_COMPAT_PROVIDERS or provider.get("model_format") == "openai":
         return _parse_openai_compat_models(body)
     if provider_id == "cohere" and isinstance(body, dict):
         raw_models = body.get("models")
@@ -867,7 +880,11 @@ async def _validate_openai_compat_health(
     """Single-endpoint OpenAI-compat health check (models list + optional probe)."""
     url = _get_check_url(provider, key_value, metadata)
     headers = _get_headers_for_provider(provider, key_value)
-    result = await _fetch_with_headers(url, headers=headers)
+    result = await _fetch_with_headers(
+        url,
+        headers=headers,
+        allow_private_network=bool(provider.get("allow_private_network")),
+    )
 
     if result["status"] in {200, 201}:
         check_result: dict[str, Any] = {"is_valid": True}
@@ -880,7 +897,7 @@ async def _validate_openai_compat_health(
             check_result["rate_limit_rpd"] = rate_limits["rpd"]
         if result["body"] is not None:
             models = _parse_models_from_body(provider, result["body"])
-            if models:
+            if models or provider.get("models_endpoint"):
                 check_result["models"] = models
         compute_health_status(check_result)
         if USABILITY_PROBE_ENABLED and not skip_probe:
@@ -1292,7 +1309,11 @@ async def validate_key(
 
         url = _get_check_url(provider, key_value, metadata)
         headers = _get_headers_for_provider(provider, key_value)
-        result = await _fetch_with_headers(url, headers=headers)
+        result = await _fetch_with_headers(
+            url,
+            headers=headers,
+            allow_private_network=bool(provider.get("allow_private_network")),
+        )
 
         if result["status"] in {200, 201}:
             check_result: dict[str, Any] = {"is_valid": True}
@@ -1315,7 +1336,7 @@ async def validate_key(
 
             if result["body"] is not None:
                 models = _parse_models_from_body(provider, result["body"])
-                if models:
+                if models or provider.get("models_endpoint"):
                     check_result["models"] = models
 
             credit_endpoint = provider.get("credit_check_endpoint")
@@ -1325,7 +1346,11 @@ async def validate_key(
                     if provider_id == "deepseek":
                         credit_base = re.sub(r"/v1/?$", "", credit_base)
                     credit_url = f"{credit_base}{credit_endpoint}"
-                    credit_result = await _fetch_with_headers(credit_url, headers=headers)
+                    credit_result = await _fetch_with_headers(
+                        credit_url,
+                        headers=headers,
+                        allow_private_network=bool(provider.get("allow_private_network")),
+                    )
                     if credit_result["status"] == 200 and credit_result["body"] is not None:
                         _parse_credit_check_response(
                             provider_id,
@@ -1523,12 +1548,17 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
             )
 
             models = result.get("models")
-            if models:
+            if isinstance(models, list):
                 await replace_models_for_key(
                     db_path,
                     upstream_key_id=key_id,
                     provider_id=key["provider_id"],
                     models=_enrich_models(models, key["provider_id"]),
+                )
+                await update_upstream_key(
+                    db_path,
+                    key_id,
+                    {"models_discovered_at": _now()},
                 )
         else:
             error = result.get("error") or "Unknown error"

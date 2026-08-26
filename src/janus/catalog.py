@@ -1452,6 +1452,148 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
 }
 
+
+def _gateway_only(
+    provider_id: str,
+    name: str,
+    base_url: str,
+    *,
+    prefix: str | None = None,
+    default_models: list[str] | None = None,
+    key_optional: bool = False,
+    allow_private_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "gateway": {
+            "id": provider_id,
+            "name": name,
+            "icon": "⚙️",
+            "logo": "",
+            "api_type": "openai_compat",
+            "base_url": base_url,
+            "prefix": prefix or provider_id,
+            "default_models": list(default_models or []),
+            "auth_kind": "local" if key_optional and allow_private_network else "key",
+            "key_optional": key_optional,
+            "allow_private_network": allow_private_network,
+            "live_models": True,
+            "default_model": default_models[0] if default_models else None,
+        },
+        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
+    }
+
+
+_OPENAI_COMPAT_GATEWAYS = {
+    "deepinfra": _gateway_only("deepinfra", "DeepInfra", "https://api.deepinfra.com/v1/openai"),
+    "nscale": _gateway_only(
+        "nscale",
+        "Nscale Serverless Inference",
+        "https://inference.api.nscale.com/v1",
+        default_models=["meta-llama/Llama-3.1-8B-Instruct"],
+    ),
+    "vultr": _gateway_only(
+        "vultr",
+        "Vultr Serverless Inference",
+        "https://api.vultrinference.com/v1",
+        default_models=["kimi-k2-instruct"],
+    ),
+    "baseten": _gateway_only("baseten", "Baseten Model APIs", "https://inference.baseten.co/v1"),
+    "sambanova": _gateway_only("sambanova", "SambaNova Cloud", "https://api.sambanova.ai/v1"),
+    "digitalocean": _gateway_only(
+        "digitalocean",
+        "DigitalOcean Serverless Inference",
+        "https://inference.do-ai.run/v1",
+    ),
+    "scaleway": _gateway_only("scaleway", "Scaleway Generative APIs", "https://api.scaleway.ai/v1"),
+    "featherless": _gateway_only("featherless", "Featherless AI", "https://api.featherless.ai/v1"),
+    "novita": _gateway_only("novita", "Novita AI", "https://api.novita.ai/openai/v1"),
+    "huggingface": _gateway_only("huggingface", "Hugging Face", "https://router.huggingface.co/v1"),
+    "nvidia": _gateway_only("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1"),
+    "nanogpt": _gateway_only("nanogpt", "NanoGPT", "https://nano-gpt.com/api/v1"),
+    "synthetic": _gateway_only("synthetic", "Synthetic", "https://api.synthetic.new/openai/v1"),
+    "siliconflow": _gateway_only("siliconflow", "SiliconFlow", "https://api.siliconflow.cn/v1"),
+    "qianfan": _gateway_only("qianfan", "Qianfan (Baidu)", "https://qianfan.baidubce.com/v2"),
+    "parallel": _gateway_only("parallel", "Parallel", "https://platform.parallel.ai"),
+    "zenmux": _gateway_only(
+        "zenmux",
+        "ZenMux",
+        "https://zenmux.ai/api/v1",
+        default_models=["moonshotai/kimi-k3-free", "moonshotai/kimi-k3"],
+    ),
+    "litellm": _gateway_only(
+        "litellm",
+        "LiteLLM (self-hosted)",
+        "http://localhost:4000/v1",
+        key_optional=True,
+        allow_private_network=True,
+    ),
+    "ollama-local": _gateway_only(
+        "ollama-local",
+        "Ollama (local)",
+        "http://localhost:11434/v1",
+        key_optional=True,
+        allow_private_network=True,
+    ),
+    "ollama-cloud": _gateway_only("ollama-cloud", "Ollama Cloud", "https://ollama.com/v1"),
+    "vllm": _gateway_only(
+        "vllm",
+        "vLLM (local)",
+        "http://localhost:8000/v1",
+        key_optional=True,
+        allow_private_network=True,
+    ),
+    "lm-studio": _gateway_only(
+        "lm-studio",
+        "LM Studio (local)",
+        "http://localhost:1234/v1",
+        key_optional=True,
+        allow_private_network=True,
+    ),
+    "cline": _gateway_only(
+        "cline",
+        "Cline",
+        "https://api.cline.bot/api/v1",
+        default_models=["anthropic/claude-sonnet-4-6"],
+    ),
+    "cline-pass": _gateway_only(
+        "cline-pass",
+        "ClinePass",
+        "https://api.cline.bot/api/v1",
+        default_models=["cline-pass/kimi-k3"],
+    ),
+    "orcarouter": _gateway_only(
+        "orcarouter",
+        "OrcaRouter",
+        "https://api.orcarouter.ai/v1",
+        default_models=["openai/gpt-5.5"],
+    ),
+    "bizrouter": _gateway_only(
+        "bizrouter",
+        "BizRouter",
+        "https://api.bizrouter.ai/v1",
+        default_models=["openai/gpt-5.6-sol"],
+    ),
+    "kilo": _gateway_only("kilo", "Kilo", "https://api.kilo.ai/api/gateway"),
+    "gitlab-duo": _gateway_only(
+        "gitlab-duo",
+        "GitLab Duo",
+        "https://cloud.gitlab.com/ai/v1/proxy/openai/v1",
+    ),
+    "cloudflare-workers-ai": _gateway_only(
+        "cloudflare-workers-ai",
+        "Cloudflare Workers AI",
+        "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+        default_models=["@cf/meta/llama-3.3-70b-instruct-fp8-fast"],
+    ),
+}
+
+for _provider_id, _extra in _OPENAI_COMPAT_GATEWAYS.items():
+    if _provider_id in PROVIDERS:
+        PROVIDERS[_provider_id]["gateway"] = _extra["gateway"]
+        PROVIDERS[_provider_id].setdefault("capabilities", _extra["capabilities"])
+    else:
+        PROVIDERS[_provider_id] = _extra
+
 GATEWAY_ORDER: list[str] = [
     "openai",
     "anthropic",
@@ -1495,6 +1637,11 @@ GATEWAY_ORDER: list[str] = [
     "custom",
 ]
 
+for _entry in PROVIDERS.values():
+    _gateway = _entry.get("gateway")
+    if isinstance(_gateway, dict) and _gateway["id"] not in GATEWAY_ORDER:
+        GATEWAY_ORDER.append(str(_gateway["id"]))
+
 
 def inventory_entries() -> dict[str, dict[str, Any]]:
     return {
@@ -1504,9 +1651,58 @@ def inventory_entries() -> dict[str, dict[str, Any]]:
     }
 
 
+def inventory_catalog_entries() -> dict[str, dict[str, Any]]:
+    result = inventory_entries()
+    for provider_id, entry in PROVIDERS.items():
+        gateway = entry.get("gateway")
+        if (
+            provider_id in result
+            or not isinstance(gateway, dict)
+            or gateway.get("api_type") != "openai_compat"
+        ):
+            continue
+        result[provider_id] = {
+            "id": provider_id,
+            "name": provider_id,
+            "display_name": str(gateway.get("name") or provider_id),
+            "base_url": str(gateway.get("base_url") or ""),
+            "auth_type": "api_key",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": None,
+            "models_endpoint": "/models",
+            "health_check_endpoint": "/models",
+            "credit_check_endpoint": None,
+            "billing_model": "unknown",
+            "is_direct": True,
+            "routing_note": "Provider preset",
+            "model_format": "openai",
+            "allow_private_network": bool(gateway.get("allow_private_network")),
+        }
+    return result
+
+
 def gateway_entries() -> dict[str, dict[str, Any]]:
     by_catalog_id: dict[str, dict[str, Any]] = {}
-    for entry in PROVIDERS.values():
+    account_api_types = {
+        "antigravity",
+        "claude_oauth",
+        "codex",
+        "cursor",
+        "github_copilot",
+        "kiro",
+    }
+    featured_ids = {
+        "anthropic",
+        "deepseek",
+        "gemini",
+        "groq",
+        "ollama-local",
+        "openai",
+        "openrouter",
+        "xai",
+    }
+    for provider_id, entry in PROVIDERS.items():
         if "gateway" not in entry:
             continue
         gw = entry["gateway"]
@@ -1515,6 +1711,45 @@ def gateway_entries() -> dict[str, dict[str, Any]]:
         # Top-level multi-format transports (e.g. DeepSeek Anthropic endpoint)
         if "transports" in entry and "transports" not in item:
             item["transports"] = deepcopy(entry["transports"])
+        inventory = entry.get("inventory")
+        api_type = str(item.get("api_type") or "")
+        auth_kind = item.get("auth_kind")
+        if not auth_kind:
+            if api_type in account_api_types:
+                auth_kind = "oauth"
+            elif item.get("allow_private_network") and item.get("key_optional"):
+                auth_kind = "local"
+            else:
+                auth_kind = "key"
+        item["auth_kind"] = auth_kind
+        item.setdefault("key_optional", api_type in {"mimo_free", "opencode_free"})
+        models_endpoint = inventory.get("models_endpoint") if isinstance(inventory, dict) else None
+        item.setdefault(
+            "live_models",
+            bool(models_endpoint)
+            or api_type
+            in {"antigravity", "cursor", "gemini", "github_copilot", "kiro", "openai_compat"},
+        )
+        default_models = item.get("default_models")
+        if "default_model" not in item:
+            item["default_model"] = (
+                default_models[0] if isinstance(default_models, list) and default_models else None
+            )
+        item["featured"] = provider_id in featured_ids
+        if catalog_id == "custom":
+            group = "custom"
+        elif auth_kind == "local":
+            group = "local"
+        elif auth_kind == "oauth":
+            group = "accounts"
+        elif isinstance(inventory, dict) and inventory.get("billing_model") == "free_tier":
+            group = "free"
+        else:
+            group = "paid"
+        item["group"] = group
+        item["capabilities"] = deepcopy(entry.get("capabilities") or {})
+        if isinstance(models_endpoint, str) and models_endpoint:
+            item["model_discovery"] = {"path": models_endpoint}
         by_catalog_id[catalog_id] = item
     ordered = {cid: by_catalog_id.pop(cid) for cid in GATEWAY_ORDER if cid in by_catalog_id}
     ordered.update(by_catalog_id)
@@ -1534,7 +1769,7 @@ def prefix_to_inventory_map() -> dict[str, str]:
         entry["gateway"]["prefix"]: provider_id
         for provider_id, entry in PROVIDERS.items()
         if "gateway" in entry
-        and "inventory" in entry
+        and ("inventory" in entry or entry["gateway"].get("api_type") == "openai_compat")
         and entry["gateway"]["prefix"]
         and entry["gateway"]["prefix"] != provider_id
     }

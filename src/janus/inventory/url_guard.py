@@ -134,7 +134,7 @@ def is_http_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"}
 
 
-async def assert_public_url(raw_url: str) -> None:
+async def assert_public_url(raw_url: str, *, allow_private_network: bool = False) -> None:
     try:
         parsed = httpx.URL(raw_url)
     except Exception as exc:
@@ -145,7 +145,7 @@ async def assert_public_url(raw_url: str) -> None:
     if parsed.username or parsed.password:
         raise BlockedUrlError("Credentials in URL are not allowed")
 
-    if _allow_private():
+    if allow_private_network or _allow_private():
         return
 
     host = parsed.host
@@ -208,6 +208,7 @@ async def safe_fetch(
     headers: dict[str, str] | None = None,
     content: bytes | None = None,
     timeout: float = 30.0,
+    allow_private_network: bool = False,
 ) -> httpx.Response:
     current_url = url
     current_method = method.upper()
@@ -218,7 +219,7 @@ async def safe_fetch(
         if headers:
             merged_headers.update(headers)
         for hop in range(MAX_REDIRECTS + 1):
-            await assert_public_url(current_url)
+            await assert_public_url(current_url, allow_private_network=allow_private_network)
             response = await client.request(
                 current_method,
                 current_url,

@@ -1,4 +1,5 @@
 import socket
+from typing import Any
 
 import pytest
 import respx
@@ -28,6 +29,10 @@ def mock_public_dns(monkeypatch):
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv("INVENTORY_SCHEDULER_ENABLED", "false")
+    monkeypatch.setattr(
+        "janus.dashboard.inventory_routes._schedule_recheck",
+        lambda key_id, db_path: None,
+    )
     cfg = JanusConfig(server=ServerSettings(port=0, data_dir=tmp_path))
     return with_dashboard_auth(create_app(config=cfg))
 
@@ -39,49 +44,70 @@ async def client(app):
         yield c
 
 
+async def _submit_inventory_key(
+    client: AsyncClient, key_value: str, provider_id: str
+) -> dict[str, Any]:
+    response = await client.post(
+        "/dashboard/api/inventory/submit",
+        data={"keys_text": key_value, "provider_id": provider_id},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["processed_count"] == 1
+    assert payload["accepted_count"] == 1
+    assert payload["rejected_count"] == 0
+    assert payload["queued_count"] == 1
+    return payload
+
+
 async def test_inventory_overview_page(client):
-    r = await client.get("/dashboard/inventory")
+    r = await client.get("/dashboard/api/v2/state/inventory")
     assert r.status_code == 200
-    assert "Key Inventory" in r.text
+    assert r.json()["section"] == "inventory"
+    assert "summary" in r.json()["data"]
 
 
 async def test_inventory_keys_page(client):
-    r = await client.get("/dashboard/inventory/keys")
+    r = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert r.status_code == 200
-    assert "Upstream Keys" in r.text
+    assert "keys" in r.json()["data"]
+    assert "filters" in r.json()["data"]
 
 
 async def test_inventory_add_page(client):
-    r = await client.get("/dashboard/inventory/add")
+    r = await client.get("/dashboard/api/inventory/providers")
     assert r.status_code == 200
-    assert "Preview &amp; Add Keys" in r.text or "Preview & Add Keys" in r.text
+    assert "providers" in r.json()
+    assert "catalog" in r.json()
 
 
-async def test_inventory_preview_openrouter(client):
-    key = "sk-or-v1-" + "a" * 20
-    r = await client.post(
-        "/dashboard/api/inventory/preview",
-        data={"keys_text": key, "provider_id": "auto"},
-    )
-    assert r.status_code == 200
-    assert "Confirm" in r.text
-    assert "OpenRouter" in r.text
+async def test_inventory_submit_provisions_routing_provider(client, monkeypatch):
+    async def provision_stub(db_path, provider_ids, *, custom_base_url=None):
+        del db_path, custom_base_url
+        assert provider_ids == {"openrouter"}
+        return [
+            {
+                "inventory_provider_id": "openrouter",
+                "provider_id": "openrouter",
+                "action": "created",
+                "prefix": "openrouter",
+            }
+        ]
 
-
-async def test_inventory_submit_provisions_routing_provider(client, tmp_path):
-    from janus.storage.providers_db import get_provider
-
+    monkeypatch.setattr("janus.dashboard.inventory_routes.ensure_routing_providers", provision_stub)
     key = "sk-or-v1-" + "b" * 20
     r = await client.post(
         "/dashboard/api/inventory/submit",
         data={"keys_text": key, "provider_id": "auto", "provision_routing": "true"},
+        headers={"Accept": "application/json"},
     )
     assert r.status_code == 200
-    assert "Created" in r.text or "Using existing" in r.text
-    db_path = tmp_path / "janus.db"
-    row = await get_provider(db_path, "openrouter")
-    assert row is not None
-    assert row["prefix"] == "openrouter"
+    payload = r.json()
+    assert payload["ok"] is True
+    assert payload["accepted_count"] == 1
+    assert payload["provision_results"][0]["provider_id"] == "openrouter"
+    assert payload["provision_results"][0]["prefix"] == "openrouter"
 
 
 async def test_inventory_submit_json_returns_safe_summary(client, monkeypatch):
@@ -157,20 +183,11 @@ async def test_inventory_submit_json_uses_error_statuses(client, monkeypatch):
     assert limited.json()["ok"] is False
 
 
-async def test_inventory_submit_without_json_accept_preserves_html_contract(client):
-    response = await client.post(
-        "/dashboard/api/inventory/submit",
-        data={"keys_text": "   ", "provider_id": "auto"},
-    )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-
-
 async def test_inventory_import_page(client):
-    r = await client.get("/dashboard/inventory/import")
+    r = await client.get("/dashboard/api/inventory/export")
     assert r.status_code == 200
-    assert "Expected JSON format" in r.text
+    assert "keys" in r.json()
+    assert "count" in r.json()
 
 
 async def _seed_upstream_key(app, provider_id: str, key_value: str) -> str:
@@ -254,14 +271,24 @@ async def test_archive_and_restore_upstream_key_endpoints(client, app):
 
     r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/archive")
     assert r.status_code == 200
-    assert "archived" in r.text.lower()
+    assert r.json() == {
+        "ok": True,
+        "key_id": key_id,
+        "count": 1,
+        "archived": True,
+    }
     archived = await get_upstream_key(db_path, key_id)
     assert archived is not None
     assert archived["is_archived"] == 1
 
     r = await client.post(f"/dashboard/api/inventory/keys/{key_id}/restore")
     assert r.status_code == 200
-    assert "restored" in r.text.lower()
+    assert r.json() == {
+        "ok": True,
+        "key_id": key_id,
+        "count": 1,
+        "archived": False,
+    }
     restored = await get_upstream_key(db_path, key_id)
     assert restored is not None
     assert restored["is_archived"] == 0
@@ -272,13 +299,13 @@ async def test_archived_keys_hidden_by_default_visible_with_filter(client, app):
 
     await client.post(f"/dashboard/api/inventory/keys/{key_id}/archive")
 
-    r = await client.get("/dashboard/api/inventory/keys/partial")
+    r = await client.get("/dashboard/api/inventory/keys")
     assert r.status_code == 200
-    assert key_id not in r.text
+    assert all(item["id"] != key_id for item in r.json()["keys"])
 
-    r = await client.get("/dashboard/api/inventory/keys/partial?status=archived")
+    r = await client.get("/dashboard/api/inventory/keys?status=archived")
     assert r.status_code == 200
-    assert key_id in r.text
+    assert any(item["id"] == key_id for item in r.json()["keys"])
 
 
 async def test_bulk_archive_by_ids(client, app):
@@ -293,7 +320,7 @@ async def test_bulk_archive_by_ids(client, app):
         data={"key_ids": f"{a},{b}", "action": "archive"},
     )
     assert r.status_code == 200
-    assert "Archived 2" in r.text
+    assert r.json() == {"ok": True, "count": 2, "action": "archive"}
     for kid in (a, b):
         key = await get_upstream_key(db_path, kid)
         assert key is not None
@@ -312,7 +339,7 @@ async def test_bulk_archive_apply_to_all(client, app):
         data={"apply_to_all": "true", "action": "archive"},
     )
     assert r.status_code == 200
-    assert "Archived 2" in r.text
+    assert r.json() == {"ok": True, "count": 2, "action": "archive"}
     for kid in (a, b):
         key = await get_upstream_key(db_path, kid)
         assert key is not None
@@ -331,7 +358,7 @@ async def test_bulk_delete_by_ids(client, app):
         data={"key_ids": f"{a},{b}"},
     )
     assert r.status_code == 200
-    assert "Deleted 2" in r.text
+    assert r.json() == {"ok": True, "count": 2}
     for kid in (a, b):
         assert await get_upstream_key(db_path, kid) is None
 
@@ -351,23 +378,24 @@ async def test_bulk_recheck_schedules(client, app, monkeypatch):
         data={"key_ids": f"{a},{b}"},
     )
     assert r.status_code == 200
-    assert "Rechecking 2" in r.text
+    assert r.json() == {"ok": True, "count": 2, "queued_count": 2}
     assert set(scheduled) == {a, b}
 
 
 async def test_routing_page(client):
-    r = await client.get("/dashboard/routing")
+    r = await client.get("/dashboard/api/v2/state/routing")
     assert r.status_code == 200
-    assert "Routing" in r.text
-    assert "Combo fallback chains" in r.text
+    assert "overview" in r.json()["data"]
+    assert "live" in r.json()["data"]
 
 
 async def test_inventory_overview_encryption_panel(client):
-    r = await client.get("/dashboard/inventory")
+    r = await client.get("/dashboard/api/v2/state/inventory")
     assert r.status_code == 200
-    assert "Encryption at Rest" in r.text
-    assert "Upstream keys:" in r.text
-    assert "Provider credentials:" in r.text
+    data = r.json()["data"]
+    assert "encryption" in data
+    assert "provider_encryption" in data
+    assert "encryption_enabled" in data
 
 
 async def test_missing_encryption_key_returns_actionable_503_for_upstream_keys(
@@ -420,7 +448,7 @@ async def test_wrong_encryption_key_returns_actionable_503_for_providers(
     )
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
-    response = await client.get("/dashboard/providers")
+    response = await client.get("/dashboard/api/v2/state/providers")
 
     assert response.status_code == 503
     error = response.json()["error"]
@@ -434,7 +462,7 @@ async def test_invalid_encryption_key_returns_actionable_503_on_write(client, mo
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", "not-a-fernet-key")
 
     response = await client.post(
-        "/dashboard/api/inventory/keys",
+        "/dashboard/api/inventory/submit",
         data={"keys_text": "sk-proj-new-secret", "provider_id": "openai"},
     )
 
@@ -469,7 +497,9 @@ async def test_inventory_encrypt_action_covers_provider_credentials(client, tmp_
     r = await client.post("/dashboard/api/inventory/encrypt-keys")
 
     assert r.status_code == 200
-    assert "Encrypted 0 upstream key(s) and 1 provider credential(s)" in r.text
+    assert r.json()["ok"] is True
+    assert r.json()["upstream_converted"] == 0
+    assert r.json()["provider_converted"] == 1
     async with get_connection(db_path) as db:
         async with db.execute("SELECT api_key FROM providers WHERE id = 'openai'") as cur:
             row = await cur.fetchone()
@@ -489,18 +519,13 @@ async def test_inventory_encrypt_json_requires_configuration(client, monkeypatch
     assert "not configured" in response.json()["error"]
     assert response.headers["cache-control"] == "no-store"
 
-    legacy = await client.post("/dashboard/api/inventory/encrypt-keys")
-    assert legacy.status_code == 200
-    assert legacy.headers["content-type"].startswith("text/html")
-    assert "Set INVENTORY_ENCRYPTION_KEY" in legacy.text
-
 
 async def test_inventory_encrypt_json_returns_safe_counts(client, app, monkeypatch):
     from cryptography.fernet import Fernet
 
     from janus.storage.providers_db import create_provider
 
-    await client.get("/dashboard/inventory")
+    await client.get("/dashboard/api/v2/state/inventory")
     secret = "sk-provider-json-encryption-secret"
     await create_provider(
         app.state.db_path,
@@ -529,10 +554,11 @@ async def test_inventory_encrypt_json_returns_safe_counts(client, app, monkeypat
 
 
 async def test_inventory_keys_has_reidentify_and_import_links(client):
-    r = await client.get("/dashboard/inventory/keys")
+    r = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert r.status_code == 200
-    assert "Re-identify" in r.text
-    assert "/dashboard/inventory/import" in r.text
+    assert "filters" in r.json()["data"]
+    import_endpoint = await client.get("/dashboard/api/inventory/export")
+    assert import_endpoint.status_code == 200
 
 
 async def test_inventory_import_upload(client):
@@ -547,8 +573,10 @@ async def test_inventory_import_upload(client):
         data={"verify": "true"},
     )
     assert r.status_code == 200
-    assert "Imported 1" in r.text
-    assert "Verification Summary" in r.text
+    assert r.json()["ok"] is True
+    assert r.json()["imported_count"] == 1
+    assert r.json()["recheck_count"] == 1
+    assert r.json()["verification"] is not None
 
 
 async def test_inventory_import_json_schedules_rechecks_and_reloads_routing(
@@ -556,7 +584,7 @@ async def test_inventory_import_json_schedules_rechecks_and_reloads_routing(
 ):
     import json
 
-    await client.get("/dashboard/inventory")
+    await client.get("/dashboard/api/v2/state/inventory")
     scheduled: list[tuple[str, object]] = []
     reloads: list[object] = []
 
@@ -637,32 +665,19 @@ async def test_inventory_import_json_errors_are_safe_and_actionable(client):
     assert invalid_field not in response.text
 
 
-async def test_inventory_import_without_json_accept_preserves_html_errors(client):
-    response = await client.post(
-        "/dashboard/api/inventory/import",
-        files={"export_file": ("broken.json", "{", "application/json")},
-    )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    assert "Expecting" in response.text
-
-
 async def test_inventory_reclassify_preview(client):
     r = await client.post(
         "/dashboard/api/inventory/reclassify?dry=true&scope=invalid",
-        headers={"HX-Request": "true"},
     )
     assert r.status_code == 200
-    assert "Re-identify Invalid Keys" in r.text
+    payload = r.json()
+    assert payload["dry_run"] is True
+    assert payload["scanned"] == 0
 
 
 async def test_inventory_keys_json_pagination(client):
     for idx in range(3):
-        await client.post(
-            "/dashboard/api/inventory/keys",
-            data={"keys_text": f"gsk_{idx}" + "x" * 16, "provider_id": "groq"},
-        )
+        await _submit_inventory_key(client, f"gsk_{idx}" + "x" * 16, "groq")
     listing = await client.get(
         "/dashboard/api/inventory/keys?limit=2&offset=0&sort=credits&dir=desc"
     )
@@ -674,11 +689,7 @@ async def test_inventory_keys_json_pagination(client):
 
 async def test_inventory_key_detail_endpoints(client):
     secret = "sk-proj-detail-endpoint-key"
-    create = await client.post(
-        "/dashboard/api/inventory/keys",
-        data={"keys_text": secret, "provider_id": "openai"},
-    )
-    assert create.status_code == 200
+    await _submit_inventory_key(client, secret, "openai")
     export = await client.get("/dashboard/api/inventory/export")
     key_id = export.json()["keys"][0]["id"]
 
@@ -690,13 +701,6 @@ async def test_inventory_key_detail_endpoints(client):
     assert "history" in body
     assert "key_value" not in body
     assert secret not in detail.text
-
-    partial = await client.get(f"/dashboard/api/inventory/keys/{key_id}/partial")
-    assert partial.status_code == 200
-    assert "Key Detail" not in partial.text
-    assert body["key_masked"] in partial.text or "sk-proj" in partial.text
-    assert secret not in partial.text
-    assert "full-key-value" not in partial.text
 
     agent = await client.get(f"/dashboard/api/inventory/keys/{key_id}/json")
     assert agent.status_code == 200
@@ -712,17 +716,14 @@ async def test_inventory_key_detail_endpoints(client):
 
 async def test_inventory_best_keys_endpoint(client):
     secret = "sk-proj-best-endpoint-key"
-    await client.post(
-        "/dashboard/api/inventory/keys",
-        data={"keys_text": secret, "provider_id": "openai"},
-    )
+    await _submit_inventory_key(client, secret, "openai")
     response = await client.get("/dashboard/api/inventory/best-keys")
     assert response.status_code == 200
     assert "bestKeys" in response.json()
     assert secret not in response.text
 
 
-async def test_inventory_overview_and_best_keys_partial_do_not_embed_secret(client, app):
+async def test_inventory_overview_and_best_keys_do_not_embed_secret(client, app):
     from janus.storage.upstream_keys import update_upstream_key
 
     secret = "sk-proj-overview-secret-value"
@@ -738,17 +739,13 @@ async def test_inventory_overview_and_best_keys_partial_do_not_embed_secret(clie
         },
     )
 
-    overview = await client.get("/dashboard/inventory")
-    partial = await client.get("/dashboard/api/inventory/best-keys/partial")
+    overview = await client.get("/dashboard/api/v2/state/inventory")
     best_keys = await client.get("/dashboard/api/inventory/best-keys")
 
     assert overview.status_code == 200
-    assert partial.status_code == 200
     assert best_keys.status_code == 200
     assert secret not in overview.text
-    assert secret not in partial.text
     assert secret not in best_keys.text
-    assert "best-key-full" not in partial.text
 
 
 async def test_inventory_key_reveal_requires_dashboard_login(app):
@@ -789,7 +786,7 @@ async def test_inventory_key_reveal_error_is_non_cacheable_and_does_not_leak(
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", encryption_key)
     secret = "sk-proj-encrypted-reveal-secret"
     key_id = await _seed_upstream_key(app, "openai", secret)
-    await client.get("/dashboard/inventory")
+    await client.get("/dashboard/api/v2/state/inventory")
     monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
 
     response = await client.post(f"/dashboard/api/inventory/keys/{key_id}/reveal")
@@ -801,14 +798,8 @@ async def test_inventory_key_reveal_error_is_non_cacheable_and_does_not_leak(
 
 
 async def test_inventory_export_provider_filter(client):
-    await client.post(
-        "/dashboard/api/inventory/keys",
-        data={"keys_text": "gsk_" + "y" * 16, "provider_id": "groq"},
-    )
-    await client.post(
-        "/dashboard/api/inventory/keys",
-        data={"keys_text": "sk-proj-" + "z" * 16, "provider_id": "openai"},
-    )
+    await _submit_inventory_key(client, "gsk_" + "y" * 16, "groq")
+    await _submit_inventory_key(client, "sk-proj-" + "z" * 16, "openai")
     export = await client.get("/dashboard/api/inventory/export?provider_id=groq")
     assert export.status_code == 200
     payload = export.json()
@@ -833,7 +824,10 @@ async def test_inventory_submit_key(client):
         data={"keys_text": "sk-proj-" + "t" * 16, "provider_id": "openai"},
     )
     assert r.status_code == 200
-    assert "pending_validation" in r.text
+    payload = r.json()
+    assert payload["ok"] is True
+    assert payload["queued_count"] == 1
+    assert payload["results"][0]["status"] == "pending_validation"
 
     export = await client.get("/dashboard/api/inventory/export")
     assert export.status_code == 200
@@ -841,43 +835,10 @@ async def test_inventory_submit_key(client):
     assert payload["count"] == 1
 
 
-async def test_inventory_keys_partial_polls_when_pending(client):
-    create = await client.post(
-        "/dashboard/api/inventory/keys",
-        data={"keys_text": "gsk_" + "x" * 16, "provider_id": "groq"},
-    )
-    assert create.status_code == 200
-    assert "Validation in progress" in create.text
-    assert 'hx-trigger="every 3s"' in create.text
-
-    partial = await client.get("/dashboard/api/inventory/keys/partial")
-    assert partial.status_code == 200
-
-
-async def test_inventory_submit_status_endpoint(client):
-    create = await client.post(
-        "/dashboard/api/inventory/submit",
-        data={"keys_text": "sk-proj-status-test", "provider_id": "openai"},
-    )
-    assert create.status_code == 200
-    assert 'hx-trigger="every 3s"' in create.text
-
-    export = await client.get("/dashboard/api/inventory/export")
-    key_id = export.json()["keys"][0]["id"]
-
-    status = await client.get(f"/dashboard/api/inventory/submit/status?ids={key_id}")
-    assert status.status_code == 200
-    assert "pending_validation" in status.text
-
-
 async def test_inventory_delete_key(client):
-    create = await client.post(
-        "/dashboard/api/inventory/keys",
-        data={"keys_text": "gsk_" + "x" * 16, "provider_id": "groq"},
-    )
-    assert create.status_code == 200
+    await _submit_inventory_key(client, "gsk_" + "x" * 16, "groq")
 
-    keys_page = await client.get("/dashboard/inventory/keys")
+    keys_page = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert keys_page.status_code == 200
 
     export_before = await client.get("/dashboard/api/inventory/export")
@@ -885,6 +846,7 @@ async def test_inventory_delete_key(client):
 
     delete = await client.delete(f"/dashboard/api/inventory/keys/{key_id}")
     assert delete.status_code == 200
+    assert delete.json() == {"ok": True, "key_id": key_id}
 
     export_after = await client.get("/dashboard/api/inventory/export")
     assert export_after.json()["count"] == 0

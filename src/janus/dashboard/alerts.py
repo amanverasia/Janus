@@ -108,7 +108,7 @@ async def _budget_alerts(db_path: Path, request: Request) -> list[DashboardAlert
                 severity=severity,
                 title=title,
                 detail=detail,
-                href="/dashboard/budgets",
+                href="/dashboard/ui/budgets",
             )
         )
 
@@ -126,7 +126,7 @@ async def _budget_alerts(db_path: Path, request: Request) -> list[DashboardAlert
                         f"Spend is at {pct_used:.0f}% of the daily limit "
                         f"(${status['today_spend']:.2f} / ${status['daily_limit']:.2f})."
                     ),
-                    href="/dashboard/budgets",
+                    href="/dashboard/ui/budgets",
                 )
             )
 
@@ -171,7 +171,7 @@ async def _quota_alerts(db_path: Path, request: Request) -> list[DashboardAlert]
                 severity=severity,
                 title=title,
                 detail=detail,
-                href="/dashboard/providers",
+                href="/dashboard/ui/providers",
             )
         )
     return alerts
@@ -189,7 +189,7 @@ async def _cooldown_alerts(db_path: Path, request: Request) -> list[DashboardAle
                 severity="info",
                 title="Account cooldowns disabled",
                 detail="Routing will retry cooled-down accounts immediately.",
-                href="/dashboard/settings",
+                href="/dashboard/ui/settings",
             )
         ]
     cooldowns = await get_active_cooldowns(db_path)
@@ -203,7 +203,7 @@ async def _cooldown_alerts(db_path: Path, request: Request) -> list[DashboardAle
             severity="warning",
             title="Routing cooldowns active",
             detail=f"{count} upstream {noun} on cooldown after recent errors.",
-            href="/dashboard/routing",
+            href="/dashboard/ui/routing",
         )
     ]
 
@@ -241,7 +241,7 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
                 severity="critical",
                 title="Upstream keys need attention",
                 detail=(f"{bad_status_count} inventory {noun} need validation or are unhealthy."),
-                href="/dashboard/inventory/keys",
+                href="/dashboard/ui/inventory/keys",
             )
         )
     if low_credit_count:
@@ -254,7 +254,7 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
                 detail=(
                     f"{low_credit_count} inventory {noun} below ${_LOW_CREDIT_USD:.2f} remaining."
                 ),
-                href="/dashboard/inventory/keys",
+                href="/dashboard/ui/inventory/keys",
             )
         )
     return alerts
@@ -279,7 +279,7 @@ async def _unpriced_alerts(db_path: Path, request: Request) -> list[DashboardAle
             severity="warning",
             title="Unpriced models in usage",
             detail=f"{count} {noun} have token usage but no pricing entry ({top}).",
-            href="/dashboard/pricing",
+            href="/dashboard/ui/pricing",
         )
     ]
 
@@ -295,7 +295,7 @@ async def _setup_alerts(db_path: Path, request: Request) -> list[DashboardAlert]
                 severity="critical",
                 title="No enabled providers",
                 detail="Add and enable at least one provider before routing traffic.",
-                href="/dashboard/providers",
+                href="/dashboard/ui/providers",
             )
         )
     keys = await list_keys(db_path)
@@ -307,7 +307,7 @@ async def _setup_alerts(db_path: Path, request: Request) -> list[DashboardAlert]
                 severity="info",
                 title="No Janus API keys",
                 detail="Create a Janus API key for clients to authenticate.",
-                href="/dashboard/keys",
+                href="/dashboard/ui/keys",
             )
         )
     return alerts

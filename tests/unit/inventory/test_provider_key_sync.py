@@ -60,6 +60,27 @@ async def test_sync_provider_key_known_catalog_prefix(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_sync_gateway_only_preset_has_persisted_inventory_provider(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    provider = _provider(
+        id="deepinfra-gw",
+        prefix="deepinfra",
+        base_url="https://api.deepinfra.com/v1/openai",
+        api_key="deepinfra-key-1234567890",
+    )
+
+    key_id = await sync_provider_key(db_path, provider=provider, schedule_recheck=False)
+
+    assert key_id is not None
+    inventory_provider = await get_inventory_provider(db_path, "deepinfra")
+    assert inventory_provider is not None
+    assert inventory_provider["models_endpoint"] == "/models"
+    keys = await list_upstream_keys(db_path, provider_id="deepinfra")
+    assert [key["id"] for key in keys] == [key_id]
+
+
+@pytest.mark.asyncio
 async def test_sync_provider_key_unchanged_skips(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)

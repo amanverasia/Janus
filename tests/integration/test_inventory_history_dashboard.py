@@ -1,5 +1,3 @@
-import re
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -41,17 +39,14 @@ async def test_inventory_history_renders_unit_neutral_balance_snapshots(tmp_path
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        overview = await client.get("/dashboard/inventory")
-        detail = await client.get(f"/dashboard/api/inventory/keys/{key['id']}/partial")
+        overview = await client.get("/dashboard/api/v2/state/inventory")
+        detail = await client.get(f"/dashboard/api/inventory/keys/{key['id']}")
 
     assert overview.status_code == 200
     assert detail.status_code == 200
-    for body in (overview.text, detail.text):
-        assert "Balance snapshot" in body
-        assert "12.50 credits" in body
-        assert "$12.50" not in body
-        assert re.search(
-            r"data-history-balance[^>]*>(?:\s*—|.*?Balance snapshot:\s*—)",
-            body,
-            re.DOTALL,
-        )
+    recent = overview.json()["data"]["recent_activity"]
+    assert any(row["credits_remaining"] == 12.5 for row in recent)
+    assert any(row["credits_remaining"] is None for row in recent)
+    history = detail.json()["history"]
+    assert any(row["credits_remaining"] == 12.5 for row in history)
+    assert any(row["credits_remaining"] is None for row in history)

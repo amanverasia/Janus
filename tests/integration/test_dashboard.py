@@ -31,36 +31,46 @@ def app(tmp_path):
 @pytest.mark.asyncio
 async def test_dashboard_overview(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard")
+        r = await client.get("/dashboard/api/v2/state/overview")
         assert r.status_code == 200
-        assert "Janus" in r.text
-        assert "http://test/v1" in r.text
-        assert "Quick setup" in r.text
+        assert r.json()["section"] == "overview"
+        assert r.json()["data"]["base_url"] == "http://test/v1"
+        assert set(r.json()["data"]["setup_checklist"]) == {
+            "has_providers",
+            "has_keys",
+            "has_requests",
+        }
 
 
 @pytest.mark.asyncio
 async def test_dashboard_providers(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/providers")
+        r = await client.get("/dashboard/api/v2/state/providers")
         assert r.status_code == 200
-        assert "t/" in r.text or "t" in r.text
+        provider = next(row for row in r.json()["data"]["providers"] if row["prefix"] == "t")
+        assert provider["catalog_model_count"] == 1
+        assert provider["visible_model_count"] == 1
+        assert provider["gateway_account_count"] == 1
+        assert provider["account_count"] >= 0
 
 
 @pytest.mark.asyncio
 async def test_dashboard_combos(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/combos")
+        r = await client.get("/dashboard/api/v2/state/combos")
         assert r.status_code == 200
-        assert "stk" in r.text
+        assert any(row["name"] == "stk" for row in r.json()["data"]["combos"])
 
 
 @pytest.mark.asyncio
 async def test_usage_page_has_live_section(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/usage")
+        r = await client.get("/dashboard/api/v2/state/usage")
         assert r.status_code == 200
-        assert "Live requests" in r.text
-        assert "/dashboard/api/usage/live" in r.text
+        assert r.json()["section"] == "usage"
+        snapshot = await client.get("/dashboard/api/usage/snapshot")
+        assert snapshot.status_code == 200
+        assert "inflight" in snapshot.json()
 
 
 @pytest.mark.asyncio
@@ -101,11 +111,10 @@ async def test_usage_live_sse_snapshot_and_event(app):
 @pytest.mark.asyncio
 async def test_combo_modal_lists_wired_providers(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/combos")
+        r = await client.get("/dashboard/api/v2/state/combos")
         assert r.status_code == 200
-        assert "Connected providers" in r.text
-        assert 'data-prefix="t"' in r.text
-        assert 'data-model="t/m1"' in r.text
+        wired = r.json()["data"]["wired_providers"]
+        assert wired == [{"prefix": "t", "models": ["m1"], "accounts": 1}]
 
 
 @pytest.mark.asyncio
@@ -126,28 +135,29 @@ async def test_combo_modal_hides_allowlist_blocked_models(tmp_path):
     )
     app = with_dashboard_auth(create_app(config=cfg))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/combos")
+        r = await client.get("/dashboard/api/v2/state/combos")
         assert r.status_code == 200
-        assert 'data-model="t/m1"' in r.text
-        assert 'data-model="t/m2"' not in r.text
+        wired = r.json()["data"]["wired_providers"]
+        assert wired == [{"prefix": "t", "models": ["m1"], "accounts": 1}]
 
 
 @pytest.mark.asyncio
 async def test_dashboard_keys_page(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/keys")
+        r = await client.get("/dashboard/api/v2/state/keys")
         assert r.status_code == 200
+        assert r.json()["section"] == "keys"
 
 
 @pytest.mark.asyncio
 async def test_dashboard_keys_create(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.post("/dashboard/api/keys", data={"name": "test-key"})
+        r = await client.post("/dashboard/api/v2/keys", data={"name": "test-key"})
         assert r.status_code == 200
-        assert "sk-janus-" in r.text
-        assert "Copy key" in r.text
-        assert 'data-copy-label="API key"' in r.text
-        assert "legacyCopy" in r.text
+        payload = r.json()
+        assert payload["api_key"].startswith("sk-janus-")
+        assert payload["key"]["name"] == "test-key"
+        assert r.headers["cache-control"] == "private, no-store"
 
 
 @pytest.mark.asyncio
@@ -158,20 +168,19 @@ async def test_dashboard_existing_key_copies_unmasked_prefix(app):
     await init_db(app.state.db_path)
     _, record = await create_key(app.state.db_path, "prefix-copy")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/dashboard/keys")
+        response = await client.get("/dashboard/api/v2/state/keys")
 
     prefix = record["prefix"]
     assert response.status_code == 200
-    assert f'data-copy="{prefix}"' in response.text
-    assert f'data-copy="{prefix}…"' not in response.text
-    assert 'aria-label="Copy key prefix"' in response.text
+    keys = response.json()["data"]["keys"]
+    assert any(row["prefix"] == prefix for row in keys)
 
 
 @pytest.mark.asyncio
 async def test_dashboard_keys_create_with_scopes(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(
-            "/dashboard/api/keys",
+            "/dashboard/api/v2/keys",
             data={
                 "name": "scoped",
                 "login_field": "1",
@@ -181,9 +190,10 @@ async def test_dashboard_keys_create_with_scopes(app):
             },
         )
         assert r.status_code == 200
-        assert "sk-janus-" in r.text
-        assert "No" in r.text or "api" in r.text.lower()
-        assert "test/*" in r.text
+        payload = r.json()
+        assert payload["api_key"].startswith("sk-janus-")
+        assert payload["key"]["can_login"] is False
+        assert payload["key"]["allowed_models"] == ["test/*", "combo"]
 
 
 @pytest.mark.asyncio
@@ -194,13 +204,6 @@ async def test_dashboard_keys_edit_can_remove_login_access(app):
     await init_db(app.state.db_path)
     _, record = await create_key(app.state.db_path, "dashboard-user", can_login=True)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        page = await client.get("/dashboard/keys")
-        assert "window.htmx.process(modal)" in page.text
-
-        edit = await client.get(f"/dashboard/api/keys/{record['id']}/edit")
-        assert edit.status_code == 200
-        assert 'method="post"' in edit.text
-
         response = await client.post(
             f"/dashboard/api/keys/{record['id']}",
             data={
@@ -236,30 +239,28 @@ async def test_dashboard_login_rejects_api_only_key(app):
 @pytest.mark.asyncio
 async def test_dashboard_keys_revoke(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # Create a key first
-        await client.post("/dashboard/api/keys", data={"name": "torevoke"})
-        # Revoke it
-        r = await client.delete("/dashboard/api/keys/1")
+        created = await client.post("/dashboard/api/v2/keys", data={"name": "torevoke"})
+        key_id = created.json()["key"]["id"]
+        r = await client.delete(f"/dashboard/api/keys/{key_id}")
         assert r.status_code == 200
-        assert "Revoked" in r.text or "revoked" in r.text.lower()
+        assert r.json() == {"ok": True}
 
 
 @pytest.mark.asyncio
 async def test_dashboard_usage(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/usage")
+        r = await client.get("/dashboard/api/v2/state/usage")
         assert r.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_settings_page_shows_account_strategy(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/settings")
+        r = await client.get("/dashboard/api/v2/state/settings")
         assert r.status_code == 200
-        body = r.text
-        assert "Account Selection Strategy" in body
-        assert "server_account_strategy" in body
-        assert "server_sticky_limit" in body
+        status = r.json()["data"]["status"]
+        assert "account_strategy" in status
+        assert "sticky_limit" in status
 
 
 @pytest.mark.asyncio
@@ -280,18 +281,15 @@ async def test_settings_post_updates_account_strategy(app):
 @pytest.mark.asyncio
 async def test_settings_page_shows_combo_routing(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/settings")
+        r = await client.get("/dashboard/api/v2/state/settings")
         assert r.status_code == 200
-        body = r.text
-        assert "Combo Routing" in body
-        assert "combo_strategy" in body
-        assert "combo_sticky_limit" in body
-        assert "combo_fusion_judge" in body
-        assert "combo_fusion_min_panel" in body
-        assert "combo_fusion_straggler_grace_s" in body
-        assert "combo_fusion_hard_timeout_s" in body
-        # placeholder for the judge model input
-        assert "prefix/model" in body
+        status = r.json()["data"]["status"]
+        assert "combo_strategy" in status
+        assert "combo_sticky_limit" in status
+        assert "combo_fusion_judge" in status
+        assert "combo_fusion_min_panel" in status
+        assert "combo_fusion_straggler_grace_s" in status
+        assert "combo_fusion_hard_timeout_s" in status
 
 
 @pytest.mark.asyncio
@@ -336,6 +334,24 @@ async def test_settings_post_updates_combo_fusion_settings(app):
 
 
 @pytest.mark.asyncio
+async def test_settings_post_can_clear_combo_fusion_judge(app):
+    from janus.storage.database import init_db
+    from janus.storage.settings import get_setting, set_setting
+
+    await init_db(app.state.db_path)
+    await set_setting(app.state.db_path, "combo_fusion_judge", "openai/gpt-4o-mini")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/dashboard/api/settings",
+            content="key=combo_fusion_judge&value=",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    assert response.status_code == 200
+    assert await get_setting(app.state.db_path, "combo_fusion_judge") == ""
+
+
+@pytest.mark.asyncio
 async def test_settings_post_rejects_invalid_combo_strategy(app):
     from janus.storage.settings import get_setting
 
@@ -370,8 +386,7 @@ async def test_settings_post_rejects_invalid_combo_fusion_min_panel(app):
     from janus.storage.settings import get_setting
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # Visit the settings page first so server defaults are seeded into the DB.
-        await client.get("/dashboard/settings")
+        await client.get("/dashboard/api/v2/state/settings")
         before = await get_setting(app.state.db_path, "combo_fusion_min_panel")
         r = await client.post(
             "/dashboard/api/settings",
@@ -388,7 +403,7 @@ async def test_settings_post_rejects_invalid_combo_fusion_timeout(app):
     from janus.storage.settings import get_setting
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await client.get("/dashboard/settings")
+        await client.get("/dashboard/api/v2/state/settings")
         before = await get_setting(app.state.db_path, "combo_fusion_hard_timeout_s")
         for bad in ("not-a-float", "nan", "inf", "-inf", "0", "-5", "3601"):
             r = await client.post(
@@ -406,7 +421,7 @@ async def test_settings_post_combo_fusion_grace_bounds(app):
     from janus.storage.settings import get_setting
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await client.get("/dashboard/settings")
+        await client.get("/dashboard/api/v2/state/settings")
         for bad in ("nan", "inf", "-1", "3601"):
             r = await client.post(
                 "/dashboard/api/settings",
@@ -427,9 +442,10 @@ async def test_settings_post_combo_fusion_grace_bounds(app):
 @pytest.mark.asyncio
 async def test_overview_status_strip(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard")
+        r = await client.get("/dashboard/api/v2/state/overview")
         assert r.status_code == 200
-        assert "All clear" in r.text or "Attention needed" in r.text or "Action required" in r.text
+        assert "alerts" in r.json()
+        assert "alert_summary" in r.json()["meta"]
 
 
 @pytest.mark.asyncio
@@ -461,6 +477,6 @@ async def test_analytics_unpriced_banner(app):
         )
         await conn.commit()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/analytics?days=30")
+        r = await client.get("/dashboard/api/v2/state/analytics?days=30")
         assert r.status_code == 200
-        assert "pricing" in r.text.lower() or "unpriced" in r.text.lower()
+        assert "unknown/model-x" in r.json()["data"]["unpriced_model_ids"]

@@ -31,6 +31,8 @@
   let revealTimer = 0;
   let testResults: Record<string, string> = {};
   let testing = '';
+  let reclassifying = false;
+  let reclassifyPreview: JsonObject | undefined;
 
   $: rows = firstList(data, 'keys', 'items');
   $: filters = object(data.filters);
@@ -48,6 +50,9 @@
   $: allSelected = rows.length > 0 && rows.every((row) => selected.has(idOf(row)));
   $: detailModels = detail ? firstList(detail, 'models') : [];
   $: detailHistory = detail ? firstList(detail, 'history') : [];
+  $: reclassifyMoves = reclassifyPreview ? list(reclassifyPreview.moved) : [];
+  $: reclassifyRegionFixes = reclassifyPreview ? list(reclassifyPreview.region_fixed) : [];
+  $: reclassifyChangeCount = reclassifyMoves.length + reclassifyRegionFixes.length;
 
   const tabs = [
     { label: 'Overview', href: '/dashboard/ui/inventory' },
@@ -219,6 +224,33 @@
     detail = { ...detail, priority: Math.max(0, detailPriority) };
   }
 
+  async function previewReclassification() {
+    reclassifying = true;
+    try {
+      reclassifyPreview = object(
+        await action('/dashboard/api/inventory/reclassify?dry=true&scope=invalid', {
+          refresh: false
+        })
+      );
+    } finally {
+      reclassifying = false;
+    }
+  }
+
+  async function applyReclassification() {
+    if (!reclassifyChangeCount) return;
+    if (!confirm(`Apply ${reclassifyChangeCount} detected credential corrections?`)) return;
+    reclassifying = true;
+    try {
+      await action('/dashboard/api/inventory/reclassify?dry=false&scope=invalid', {
+        success: `Re-identified ${reclassifyChangeCount} credentials`
+      });
+      reclassifyPreview = undefined;
+    } finally {
+      reclassifying = false;
+    }
+  }
+
   onDestroy(clearReveal);
 </script>
 
@@ -236,6 +268,9 @@
   >
     <Icon name="refresh" />Recheck all
   </button>
+  <button class="button" disabled={reclassifying} on:click={previewReclassification}>
+    <Icon name="search" />{reclassifying ? 'Scanning…' : 'Re-identify'}
+  </button>
   <button class="button primary" on:click={() => navigate('/dashboard/ui/inventory/add')}>
     <Icon name="plus" />Add keys
   </button>
@@ -249,6 +284,55 @@
       {tab.label}
     </button>{/each}
 </nav>
+
+{#if reclassifyPreview}
+  <section class="reclassify-panel" aria-live="polite">
+    <div>
+      <strong>Re-identify invalid credentials</strong>
+      <p>
+        Scanned {number(reclassifyPreview.scanned)} invalid credentials.
+        {reclassifyChangeCount
+          ? `${reclassifyChangeCount} corrections are available.`
+          : 'None can be reassigned.'}
+      </p>
+      {#if reclassifyMoves.length}
+        <ul>
+          {#each reclassifyMoves.slice(0, 12) as move}
+            <li>
+              <code>{text(move.key_masked, 'Credential')}</code>
+              :
+              {text(move.from, 'unknown')} → {text(move.to, 'unknown')}
+            </li>
+          {/each}
+        </ul>
+        {#if reclassifyMoves.length > 12}<small>
+            …and {reclassifyMoves.length - 12} more
+          </small>{/if}
+      {/if}
+      {#if reclassifyRegionFixes.length}
+        <ul>
+          {#each reclassifyRegionFixes.slice(0, 12) as change}
+            <li>
+              <code>{text(change.key_masked, 'Credential')}</code>
+              : update provider region to
+              {text(change.base_url, 'detected endpoint')}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+    <div class="reclassify-actions">
+      {#if reclassifyChangeCount}<button
+          class="button primary"
+          disabled={reclassifying}
+          on:click={applyReclassification}
+        >
+          Apply {reclassifyChangeCount} changes
+        </button>{/if}
+      <button class="button ghost" on:click={() => (reclassifyPreview = undefined)}>Dismiss</button>
+    </div>
+  </section>
+{/if}
 
 {#if data.has_pending}
   <div class="validation-banner">
@@ -662,6 +746,40 @@
     color: var(--accent-strong);
     background: var(--accent-soft);
   }
+  .reclassify-panel {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 15px 16px;
+    margin-bottom: 14px;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+    border-radius: 13px;
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  }
+  .reclassify-panel p {
+    margin: 5px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .reclassify-panel ul {
+    max-height: 160px;
+    padding-left: 18px;
+    margin: 10px 0 0;
+    overflow: auto;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.7;
+  }
+  .reclassify-panel small {
+    color: var(--muted);
+  }
+  .reclassify-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+  }
   .validation-banner {
     display: flex;
     align-items: center;
@@ -1055,6 +1173,12 @@
     }
   }
   @media (max-width: 570px) {
+    .reclassify-panel {
+      display: block;
+    }
+    .reclassify-actions {
+      margin-top: 12px;
+    }
     .inventory-tabs {
       width: 100%;
       overflow-x: auto;

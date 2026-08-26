@@ -11,9 +11,10 @@ from janus.inventory.url_guard import (
 
 
 def test_inventory_providers_count():
-    from janus.catalog import inventory_entries
+    from janus.catalog import inventory_catalog_entries
 
-    assert len(INVENTORY_PROVIDERS) == len(inventory_entries())
+    assert INVENTORY_PROVIDERS == inventory_catalog_entries()
+    assert "deepinfra" in INVENTORY_PROVIDERS
 
 
 def test_get_inventory_provider():
@@ -54,6 +55,10 @@ def test_is_http_url():
 async def test_assert_public_url_blocks_loopback():
     with pytest.raises(BlockedUrlError, match="Blocked address"):
         await assert_public_url("http://127.0.0.1/v1/models")
+
+
+async def test_assert_public_url_allows_loopback_for_trusted_local_preset():
+    await assert_public_url("http://127.0.0.1/v1/models", allow_private_network=True)
 
 
 @pytest.mark.asyncio
