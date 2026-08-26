@@ -1,41 +1,39 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign in - Janus</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏛️</text></svg>">
-    <link rel="stylesheet" href="/dashboard/static/css/dashboard.min.css">
-    <style>body { background-color: #111827; }</style>
+    <link rel="stylesheet" href="/dashboard/static/css/login.css">
 </head>
-<body class="h-full flex items-center justify-center">
-    <div class="bg-gray-800 rounded-xl border border-gray-700 p-8 max-w-md w-full mx-4">
-        <div class="flex items-center space-x-2 mb-6">
-            <span class="text-3xl">🏛️</span>
-            <span class="text-xl font-bold text-white">Janus Dashboard</span>
+<body>
+    <main class="login-card">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">J</span>
+            <div>
+                <span class="eyebrow">Janus control plane</span>
+                <h1>Sign in</h1>
+            </div>
         </div>
-        <p class="text-gray-400 text-sm mb-6">
+        <p class="intro">
             Sign in with a Janus API key that has dashboard access enabled.
         </p>
         {% if error %}
-        <div class="mb-4 bg-red-900/50 border border-red-700 rounded-lg px-4 py-3 text-red-200 text-sm">
+        <div class="error" role="alert">
             {{ error }}
         </div>
         {% endif %}
 
-        <form method="post" action="/dashboard/login" class="space-y-4">
+        <form method="post" action="/dashboard/login">
             <input type="hidden" name="next" value="{{ next }}">
-            <div>
-                <label class="block text-gray-400 text-sm mb-1">API Key</label>
+            <label for="api-key">API key</label>
+            <div class="field">
                 <input type="password" name="api_key" required autofocus autocomplete="off"
-                       placeholder="sk-janus-..."
-                       class="w-full bg-gray-900 text-white rounded-lg px-3 py-2 border border-gray-700 text-sm">
+                       id="api-key" placeholder="sk-janus-...">
             </div>
-            <button type="submit"
-                    class="w-full bg-gray-700 hover:bg-gray-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">
-                Sign in with API Key
-            </button>
+            <button type="submit">Continue to dashboard</button>
         </form>
-    </div>
+    </main>
 </body>
 </html>

@@ -1,5 +1,3 @@
-import re
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -52,10 +50,10 @@ async def test_gateway_limit_isolated_per_db_key(app) -> None:
     await set_setting(app.state.db_path, "server_require_api_key", "true")
     await _set_limit(app, 1)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        first_create = await client.post("/dashboard/api/keys", data={"name": "first"})
-        second_create = await client.post("/dashboard/api/keys", data={"name": "second"})
-        first_key = re.search(r"sk-janus-[a-f0-9]+", first_create.text).group(0)
-        second_key = re.search(r"sk-janus-[a-f0-9]+", second_create.text).group(0)
+        first_create = await client.post("/dashboard/api/v2/keys", data={"name": "first"})
+        second_create = await client.post("/dashboard/api/v2/keys", data={"name": "second"})
+        first_key = first_create.json()["api_key"]
+        second_key = second_create.json()["api_key"]
 
         assert (
             await client.get("/v1/models", headers={"Authorization": f"Bearer {first_key}"})

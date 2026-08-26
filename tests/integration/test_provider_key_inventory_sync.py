@@ -26,9 +26,9 @@ async def client(app):
 
 async def _list_inventory_keys(client, search: str = ""):
     params = {"search": search} if search else {}
-    r = await client.get("/dashboard/api/inventory/keys/partial", params=params)
+    r = await client.get("/dashboard/api/inventory/keys", params=params)
     assert r.status_code == 200
-    return r.text
+    return r.json()["keys"]
 
 
 async def test_custom_provider_key_appears_in_key_inventory(client, app):
@@ -45,11 +45,11 @@ async def test_custom_provider_key_appears_in_key_inventory(client, app):
     )
     assert r.status_code == 200
 
-    html = await _list_inventory_keys(client)
-    assert "mycustom" in html
+    keys = await _list_inventory_keys(client)
+    assert any(row["provider_id"] == "mycustom" for row in keys)
 
     found = await _list_inventory_keys(client, search="mycustom")
-    assert "mycustom" in found
+    assert any(row["provider_id"] == "mycustom" for row in found)
 
 
 async def test_update_provider_key_updates_mirrored_key(client, app):

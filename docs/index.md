@@ -73,11 +73,15 @@ Cost tracking, spend trends, success rates, and breakdowns by model, provider, a
 
 ### Dashboard
 
-HTMX-powered dark-themed UI at `/dashboard`. Thirteen pages across four groups — Monitor (Overview, Usage, Analytics, Key Inventory), Manage (Providers, Combos, Token Savers, Budgets), Access (API Keys, Tool Setup), and System (Pricing, Settings). Full CRUD for providers, combos, savers, and pricing with hot-reload — no server restart needed.
+Cloudline is the single dashboard UI: a responsive Svelte control plane at
+`/dashboard/ui` with light/dark/system themes, deep links, and a command palette.
+It provides monitoring, provider and model routing, key inventory, budgets, API
+keys, pricing, and settings. Changes hot-reload without a server restart.
+`/dashboard` and former page URLs are compatibility redirects to Cloudline.
 
 ## Tech Stack
 
-Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / Jinja2 / HTMX / Chart.js
+Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / SvelteKit 2 / Svelte 5 / TypeScript
 
 ## License
 

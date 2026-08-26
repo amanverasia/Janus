@@ -92,7 +92,7 @@ curl http://localhost:20128/v1/health
 # {"status": "ok"}
 ```
 
-The root URL `/` redirects to `/dashboard`.
+The root URL `/` redirects to the Cloudline dashboard at `/dashboard/ui`.
 
 ## Your First Request
 
@@ -144,4 +144,4 @@ Returns all registered provider models and combos.
 - [Providers](providers.md) — configure specific providers
 - [Combos](combos.md) — set up fallback chains
 - [Key Inventory](inventory.md) — manage many upstream API keys
-- [Dashboard](dashboard.md) — explore the web UI at `/dashboard`
+- [Dashboard](dashboard.md) — explore the web UI at `/dashboard/ui`

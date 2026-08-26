@@ -146,7 +146,7 @@ async def test_provider_delete(client):
     assert r.status_code == 200
 
 
-async def test_provider_create_with_allowed_models(client):
+async def test_provider_create_with_allowed_models(client, app):
     r = await client.post(
         "/dashboard/api/providers",
         data={
@@ -160,10 +160,16 @@ async def test_provider_create_with_allowed_models(client):
         },
     )
     assert r.status_code == 200
-    assert b"claude-opus-4-7" in r.content
+    assert r.json() == {"ok": True, "id": "anthropic"}
+
+    from janus.storage.providers_db import get_provider
+
+    provider = await get_provider(app.state.db_path, "anthropic")
+    assert provider is not None
+    assert provider["allowed_models"] == '["claude-opus-4-7"]'
 
 
-async def test_provider_edit_updates_allowed_models(client):
+async def test_provider_edit_updates_allowed_models(client, app):
     await client.post(
         "/dashboard/api/providers",
         data={
@@ -187,7 +193,13 @@ async def test_provider_edit_updates_allowed_models(client):
         },
     )
     assert r.status_code == 200
-    assert b"m1" in r.content
+    assert r.json() == {"ok": True, "id": "edit-allow"}
+
+    from janus.storage.providers_db import get_provider
+
+    provider = await get_provider(app.state.db_path, "edit-allow")
+    assert provider is not None
+    assert provider["allowed_models"] == '["m1"]'
 
 
 async def test_provider_edit_can_clear_model_fields(client, app):
@@ -391,11 +403,10 @@ async def test_savers_page(client):
     assert r.json()["data"]["settings"]["saver_rtk_enabled"] == "true"
 
 
-async def test_savers_partial_sync(client):
-    r = await client.get("/dashboard/api/savers/partial")
+async def test_savers_state_sync(client):
+    r = await client.get("/dashboard/api/v2/state/savers")
     assert r.status_code == 200
-    assert "RTK" in r.text
-    assert "saver_rtk_enabled" in r.text
+    assert r.json()["data"]["settings"]["saver_rtk_enabled"] == "true"
 
 
 async def test_tools_page(client):

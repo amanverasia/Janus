@@ -152,12 +152,12 @@ async def test_dashboard_keys_page(app):
 @pytest.mark.asyncio
 async def test_dashboard_keys_create(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.post("/dashboard/api/keys", data={"name": "test-key"})
+        r = await client.post("/dashboard/api/v2/keys", data={"name": "test-key"})
         assert r.status_code == 200
-        assert "sk-janus-" in r.text
-        assert "Copy key" in r.text
-        assert 'data-copy-label="API key"' in r.text
-        assert "legacyCopy" in r.text
+        payload = r.json()
+        assert payload["api_key"].startswith("sk-janus-")
+        assert payload["key"]["name"] == "test-key"
+        assert r.headers["cache-control"] == "private, no-store"
 
 
 @pytest.mark.asyncio
@@ -180,7 +180,7 @@ async def test_dashboard_existing_key_copies_unmasked_prefix(app):
 async def test_dashboard_keys_create_with_scopes(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(
-            "/dashboard/api/keys",
+            "/dashboard/api/v2/keys",
             data={
                 "name": "scoped",
                 "login_field": "1",
@@ -190,9 +190,10 @@ async def test_dashboard_keys_create_with_scopes(app):
             },
         )
         assert r.status_code == 200
-        assert "sk-janus-" in r.text
-        assert "No" in r.text or "api" in r.text.lower()
-        assert "test/*" in r.text
+        payload = r.json()
+        assert payload["api_key"].startswith("sk-janus-")
+        assert payload["key"]["can_login"] is False
+        assert payload["key"]["allowed_models"] == ["test/*", "combo"]
 
 
 @pytest.mark.asyncio
@@ -203,10 +204,6 @@ async def test_dashboard_keys_edit_can_remove_login_access(app):
     await init_db(app.state.db_path)
     _, record = await create_key(app.state.db_path, "dashboard-user", can_login=True)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        edit = await client.get(f"/dashboard/api/keys/{record['id']}/edit")
-        assert edit.status_code == 200
-        assert 'method="post"' in edit.text
-
         response = await client.post(
             f"/dashboard/api/keys/{record['id']}",
             data={
@@ -242,12 +239,11 @@ async def test_dashboard_login_rejects_api_only_key(app):
 @pytest.mark.asyncio
 async def test_dashboard_keys_revoke(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # Create a key first
-        await client.post("/dashboard/api/keys", data={"name": "torevoke"})
-        # Revoke it
-        r = await client.delete("/dashboard/api/keys/1")
+        created = await client.post("/dashboard/api/v2/keys", data={"name": "torevoke"})
+        key_id = created.json()["key"]["id"]
+        r = await client.delete(f"/dashboard/api/keys/{key_id}")
         assert r.status_code == 200
-        assert "Revoked" in r.text or "revoked" in r.text.lower()
+        assert r.json() == {"ok": True}
 
 
 @pytest.mark.asyncio

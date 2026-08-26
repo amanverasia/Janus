@@ -291,8 +291,7 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Analytics** — cost tracking, spend trends, success rates, per-model/provider/key breakdowns
 - **Pricing** — builtin model prices, YAML/DB overrides, cache token rates
 - **Cloudline dashboard** — responsive SvelteKit 2 + Svelte 5 + TypeScript SPA at `/dashboard/ui`, with light/dark/system themes, a command palette, live usage, analytics, routing visibility, and modular management screens
-- **Legacy dashboard** — the original server-rendered HTMX interface remains available at `/dashboard`
-- **Self-hosted frontend** — the versioned Cloudline bundle and legacy assets ship with Janus; production rendering has no runtime CDN or Node.js dependency
+- **Single self-hosted dashboard** — the versioned Cloudline bundle ships with Janus; production rendering has no runtime CDN or Node.js dependency. `/dashboard` and former page URLs are compatibility redirects to `/dashboard/ui`
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/ui/inventory`)
 
 ## Upstream Key Inventory
@@ -362,7 +361,7 @@ pip install -e ".[dev]"
 ## Tech Stack
 
 Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / SvelteKit 2 /
-Svelte 5 / TypeScript / Jinja2 / HTMX
+Svelte 5 / TypeScript
 
 ## License
 

@@ -16,15 +16,16 @@ Open it in your browser:
 http://localhost:20128/dashboard/ui
 ```
 
-The root URL `/`, `/dashboard`, and former server-rendered page URLs redirect to
-their matching Cloudline routes. Dashboard APIs remain under `/dashboard/api`.
+Cloudline is the only dashboard UI. The root URL `/`, `/dashboard`, and former
+page URLs are compatibility redirects to their matching Cloudline routes.
+Dashboard management APIs remain under `/dashboard/api`.
 
 ## Authentication
 
 Every dashboard client must authenticate with a valid Janus API key, including
 clients on `127.0.0.1` and `localhost`. There is no loopback bypass and no
-username/password login. Unauthenticated browser requests to either interface
-are redirected to `/dashboard/login`, which sets an httponly
+username/password login. Unauthenticated browser requests are redirected to
+`/dashboard/login`, which sets an httponly
 `janus_dashboard_key` cookie (30-day max-age) and returns to the originally
 requested page. API-style requests without a valid key or cookie receive `401`.
 
@@ -104,7 +105,7 @@ Logging** under Settings, or set `server_request_logging=true`):
   `500`, clamped between 50 and 5000) on the Settings page — oldest rows
   beyond the limit are pruned automatically
 
-The legacy table also has a **User** column. It shows the DB-issued key name,
+The table also has a **User** column. It shows the DB-issued key name,
 the configured static-key label (`client_key_label`), or `—` when an API request
 was allowed without a client key.
 
@@ -216,12 +217,11 @@ Each card shows the exact `export` commands for your server URL and auth setting
 - **Export secrets** — download current DB state as YAML after an explicit
   plaintext-credential warning
 
-The legacy `/dashboard/settings` page additionally exposes the advanced combo
-routing controls (`combo_strategy`, sticky limit, and Fusion tuning), server
-information, and **Reset to Defaults**. See [Combos &
-Fallback](combos.md#combo-strategies) for the routing fields. Values are
-validated server-side, and reset wipes the relevant DB state before re-seeding
-from `config.yaml`.
+Settings also exposes advanced combo routing controls (`combo_strategy`, sticky
+limit, and Fusion tuning), server information, and **Reset to Defaults**. See
+[Combos & Fallback](combos.md#combo-strategies) for the routing fields. Values
+are validated server-side, and reset wipes the relevant DB state before
+re-seeding from `config.yaml`.
 
 Settings does not contain a dashboard username or password. Dashboard identity
 and access are API-key based, and **API Keys** is the place to grant or revoke
@@ -236,9 +236,10 @@ cooldown timers without changing the enable toggle.
 ## Management API
 
 Cloudline reads authenticated, non-cacheable JSON state from the v2 API and
-uses the existing dashboard endpoints for mutations. The v2 responses include
-`section`, `alerts`, `data`, and `meta`; credentials and other sensitive fields
-are removed before serialization.
+uses the dashboard management API for mutations. Responses are structured data,
+not server-rendered or HTMX fragments. The v2 state responses include `section`,
+`alerts`, `data`, and `meta`; credentials and other sensitive fields are removed
+before serialization.
 
 | Method | Path | Action |
 |---|---|---|
@@ -251,15 +252,14 @@ Supported state sections are `overview`, `usage`, `analytics`, `leaderboard`,
 requires dashboard access; state and one-time credential responses use
 `Cache-Control: private, no-store`.
 
-The legacy management endpoints below default to HTML/HTMX responses. Endpoints
-marked as JSON, and several endpoints used by Cloudline, also support JSON
-responses. For scripting, prefer the [CLI](cli.md).
+The management endpoints below return structured responses. For scripting,
+prefer the [CLI](cli.md).
 
 ### API Keys
 
 | Method | Path | Action |
 |---|---|---|
-| `POST` | `/dashboard/api/keys` | Create an API key (dashboard access/models/budget) |
+| `POST` | `/dashboard/api/v2/keys` | Create an API key and return its plaintext value once |
 | `POST` | `/dashboard/api/keys/{id}` | Update key scopes and optional daily budget |
 | `DELETE` | `/dashboard/api/keys/{id}` | Revoke an API key |
 
@@ -277,8 +277,8 @@ responses. For scripting, prefer the [CLI](cli.md).
 | `POST` | `/dashboard/api/providers` | Create provider |
 | `PUT` | `/dashboard/api/providers/{id}` | Update provider |
 | `DELETE` | `/dashboard/api/providers/{id}` | Delete provider |
-| `POST` | `/dashboard/api/providers/fetch-models` | Fetch models from upstream (JSON) |
-| `POST` | `/dashboard/api/providers/{id}/test` | Test connection (JSON) |
+| `POST` | `/dashboard/api/providers/fetch-models` | Fetch models from upstream |
+| `POST` | `/dashboard/api/providers/{id}/test` | Test connection |
 
 ### Combos
 
@@ -293,7 +293,7 @@ responses. For scripting, prefer the [CLI](cli.md).
 | Method | Path | Action |
 |---|---|---|
 | `POST` | `/dashboard/api/settings` | Update runtime settings (savers, require_api_key, request logging) |
-| `GET` | `/dashboard/api/export` | Export DB config as YAML (JSON download) |
+| `GET` | `/dashboard/api/export` | Export DB config as a YAML download |
 | `POST` | `/dashboard/api/reset` | Reset DB and re-seed from YAML |
 | `GET` | `/dashboard/api/request-logs/export` | Export captured request logs as JSON |
 | `GET` | `/dashboard/api/request-logs/{id}` | Full detail for one captured request |
@@ -310,5 +310,5 @@ responses. For scripting, prefer the [CLI](cli.md).
 
 See [Key Inventory — Push API](inventory.md#push-api) for `POST /dashboard/api/inventory/push`.
 
-Former server-rendered page routes under `/dashboard` redirect to the matching
-screen names under `/dashboard/ui`; API routes are unchanged.
+Former page routes under `/dashboard` are compatibility redirects to matching
+screen names under `/dashboard/ui`; API routes remain under `/dashboard/api`.

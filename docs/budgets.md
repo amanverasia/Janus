@@ -102,12 +102,12 @@ Deleted budget 2
 
 ## Dashboard management
 
-The **Budgets** page at `/dashboard/budgets` provides a live view of all budgets
+The **Budgets** page at `/dashboard/ui/budgets` provides a live view of all budgets
 with their current status (ok / warning / exceeded), spent amount, and
 percentage bar.
 
-- **Create** budgets via the HTMX form (select key scope, enter daily limit and
-  warn percentage).
+- **Create** budgets in Cloudline by selecting the key scope, daily limit, and
+  warn percentage.
 - **Delete** budgets via the revoke button on each row.
 
 Changes take effect immediately — no server restart needed.

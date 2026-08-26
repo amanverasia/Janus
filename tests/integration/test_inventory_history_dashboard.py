@@ -40,13 +40,13 @@ async def test_inventory_history_renders_unit_neutral_balance_snapshots(tmp_path
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         overview = await client.get("/dashboard/api/v2/state/inventory")
-        detail = await client.get(f"/dashboard/api/inventory/keys/{key['id']}/partial")
+        detail = await client.get(f"/dashboard/api/inventory/keys/{key['id']}")
 
     assert overview.status_code == 200
     assert detail.status_code == 200
     recent = overview.json()["data"]["recent_activity"]
     assert any(row["credits_remaining"] == 12.5 for row in recent)
     assert any(row["credits_remaining"] is None for row in recent)
-    assert "Balance snapshot" in detail.text
-    assert "12.50 credits" in detail.text
-    assert "$12.50" not in detail.text
+    history = detail.json()["history"]
+    assert any(row["credits_remaining"] == 12.5 for row in history)
+    assert any(row["credits_remaining"] is None for row in history)

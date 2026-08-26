@@ -195,19 +195,24 @@ async def test_dashboard_page_and_clear(app):
 
 
 @pytest.mark.asyncio
-async def test_request_logs_partial_pagination(app):
+async def test_request_logs_state_pagination(app):
     await set_setting(app.state.db_path, "server_request_logging", "true")
     for i in range(3):
         await record_request_log(
             app.state.db_path, client_format="openai", model=f"m{i}", status=200
         )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.get("/dashboard/api/request-logs/partial?limit=2&offset=0")
+        r = await client.get("/dashboard/api/v2/state/request-logs?limit=2&offset=0")
         assert r.status_code == 200
-        assert "Showing" in r.text
-        assert "m2" in r.text or "m1" in r.text
-        r2 = await client.get("/dashboard/api/request-logs/partial?limit=2&offset=2")
+        pagination = r.json()["meta"]["pagination"]
+        assert pagination["limit"] == 2
+        assert pagination["offset"] == 0
+        assert pagination["total"] == 3
+        assert len(r.json()["data"]["logs"]) == 2
+        r2 = await client.get("/dashboard/api/v2/state/request-logs?limit=2&offset=2")
         assert r2.status_code == 200
+        assert r2.json()["meta"]["pagination"]["offset"] == 2
+        assert len(r2.json()["data"]["logs"]) == 1
 
 
 @pytest.mark.asyncio
