@@ -430,11 +430,67 @@ def _apply_client_body_quirks(
     return body, prep
 
 
+async def _malformed_request_response(
+    *,
+    client_format: str,
+    body: Any,
+    request: Request,
+    message: str,
+) -> JSONResponse:
+    """Return a 400 envelope for malformed inbound JSON, logging it bounded.
+
+    Lives at the protocol boundary so non-object payloads (top-level arrays or
+    strings from await request.json) never become a 500.
+    """
+    from janus.storage.settings import (
+        get_all_settings,
+        request_logging_enabled,
+        resolve_request_log_retention,
+    )
+
+    db_path = request.app.state.db_path
+    settings = await get_all_settings(db_path)
+    log_requests = request_logging_enabled(settings)
+    retention = resolve_request_log_retention(settings)
+    logged_request_body: str | None = None
+    if log_requests:
+        try:
+            logged_request_body = json.dumps(body, ensure_ascii=False)
+        except (TypeError, ValueError):
+            logged_request_body = str(body)
+    await _maybe_log_client_error(
+        log_requests=log_requests,
+        db_path=db_path,
+        client_format=client_format,
+        model=None,
+        status=400,
+        request_body=logged_request_body,
+        error=f"malformed_request: {message}",
+        max_rows=retention,
+    )
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": {
+                "message": message,
+                "type": "invalid_request_error",
+            }
+        },
+    )
+
+
 async def _handle(
     client_format: str,
     body: dict[str, Any],
     request: Request,
 ) -> Response:
+    if not isinstance(body, dict):
+        return await _malformed_request_response(
+            client_format=client_format,
+            body=body,
+            request=request,
+            message="Request body must be a JSON object",
+        )
     snapshot = acquire_provider_snapshot(request.app)
     try:
         response = await _handle_with_snapshot(client_format, body, request, snapshot)
@@ -512,7 +568,28 @@ async def _handle_with_snapshot(
         return blocked_response
 
     client_adapter = FORMATS[client_format]
-    canonical_req = client_adapter.parse_request(body)
+    try:
+        canonical_req = client_adapter.parse_request(body)
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        await _maybe_log_client_error(
+            log_requests=log_requests,
+            db_path=db_path,
+            client_format=client_format,
+            model=None,
+            status=400,
+            request_body=logged_request_body,
+            error=f"malformed_request: {exc}",
+            max_rows=retention,
+        )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "message": f"Invalid request body: {exc}",
+                    "type": "invalid_request_error",
+                }
+            },
+        )
 
     # Client detection (Claude Code / Codex / Gemini CLI / Copilot / …)
     header_map = {k.lower(): v for k, v in request.headers.items()}
