@@ -15,10 +15,19 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
                  SUM(
                    CASE WHEN status IN ('invalid', 'validation_paused') THEN 1 ELSE 0 END
                  ) as invalid,
+                 SUM(
+                   CASE
+                     WHEN status IN (
+                       'daily_exhausted', 'error', 'invalid', 'unidentified',
+                       'validation_paused'
+                     ) OR health_status IN ('critical', 'exhausted')
+                     THEN 1 ELSE 0
+                   END
+                 ) as needs_attention,
                  SUM(CASE WHEN is_usable = 1 AND status != 'revoked' THEN 1 ELSE 0 END) as usable,
                  SUM(CASE WHEN status = 'pending_validation' THEN 1 ELSE 0 END) as pending
                FROM upstream_keys
-               WHERE status != 'revoked'"""
+               WHERE status != 'revoked' AND is_archived = 0"""
         ) as cur:
             row = await cur.fetchone()
         async with db.execute(
@@ -30,7 +39,14 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
         ) as cur:
             models_row = await cur.fetchone()
     if row is None:
-        counts = {"total": 0, "active": 0, "invalid": 0, "usable": 0, "pending": 0}
+        counts = {
+            "total": 0,
+            "active": 0,
+            "invalid": 0,
+            "needs_attention": 0,
+            "usable": 0,
+            "pending": 0,
+        }
     else:
         counts = {key: int(row[key] or 0) for key in row.keys()}
     return {

@@ -33,7 +33,6 @@ from janus.storage.analytics import (
     Dimension,
     get_breakdown,
     get_calendar_day_spend_summary,
-    get_flow,
     get_leaderboard,
     get_spend_summary,
     get_success_rate,
@@ -83,7 +82,6 @@ from janus.storage.upstream_keys import (
     count_upstream_keys_filtered,
     list_upstream_keys_page,
 )
-from janus.storage.usage import get_unpriced_models
 
 router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
@@ -278,25 +276,16 @@ async def _overview_data(request: Request, db_path: Path, *, days: int) -> dict[
     }
 
 
-async def _analytics_data(
-    request: Request, db_path: Path, *, days: int, dimension: str
-) -> dict[str, Any]:
+async def _analytics_data(db_path: Path, *, days: int, dimension: str) -> dict[str, Any]:
     if dimension not in _DIMENSIONS:
         raise _invalid_query("dimension", "expected model, provider, account, or client_key")
     summary = await get_spend_summary(db_path, days=days)
     breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
     success = await get_success_rate(db_path, days=days)
-    flow = await get_flow(db_path, days=days)
-    raw_unpriced = await get_unpriced_models(db_path, days=days)
-    registry = request.app.state.pricing_registry
-    unpriced = [row for row in raw_unpriced if registry.get(str(row["model"])) is None]
     return {
         "summary": summary,
         "breakdown": breakdown,
         "success": success,
-        "flow": flow,
-        "unpriced_models": unpriced,
-        "unpriced_model_ids": [str(row["model"]) for row in unpriced],
     }
 
 
@@ -980,7 +969,7 @@ async def get_dashboard_state(
             request,
             db_path,
             section,
-            await _analytics_data(request, db_path, days=days, dimension=dimension),
+            await _analytics_data(db_path, days=days, dimension=dimension),
             meta={"query": {"days": days, "dimension": dimension}},
         )
     if section == "leaderboard":

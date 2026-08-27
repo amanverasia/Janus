@@ -25,7 +25,18 @@ Summary = Literal["ok", "warning", "critical"]
 _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 _ALERT_CAP = 8
 _LOW_CREDIT_USD = 1.0
-_BAD_INVENTORY_STATUSES = frozenset({"critical", "exhausted", "invalid", "validation_paused"})
+_BAD_INVENTORY_STATUSES = frozenset(
+    {
+        "critical",
+        "daily_exhausted",
+        "error",
+        "exhausted",
+        "invalid",
+        "unidentified",
+        "validation_paused",
+    }
+)
+_BAD_INVENTORY_HEALTH = frozenset({"critical", "exhausted"})
 _ALERT_CACHE_TTL_SECONDS = 5.0
 
 
@@ -292,10 +303,10 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
     alerts: list[DashboardAlert] = []
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT k.status, k.credits_remaining, p.billing_model
+            """SELECT k.status, k.health_status, k.credits_remaining, p.billing_model
                FROM upstream_keys k
                JOIN inventory_providers p ON k.provider_id = p.id
-               WHERE k.status != 'revoked'"""
+               WHERE k.status != 'revoked' AND k.is_archived = 0"""
         ) as cur:
             rows = await cur.fetchall()
 
@@ -303,11 +314,12 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
     low_credit_count = 0
     for row in rows:
         billing_model = str(row["billing_model"] or "")
+        status = str(row["status"] or "")
+        health_status = str(row["health_status"] or "")
+        if status in _BAD_INVENTORY_STATUSES or health_status in _BAD_INVENTORY_HEALTH:
+            bad_status_count += 1
         if billing_model == "subscription":
             continue
-        status = str(row["status"] or "")
-        if status in _BAD_INVENTORY_STATUSES:
-            bad_status_count += 1
         credits = row["credits_remaining"]
         if credits is not None and float(credits) < _LOW_CREDIT_USD:
             low_credit_count += 1

@@ -66,6 +66,37 @@ async def test_inventory_overview_page(client):
     assert r.status_code == 200
     assert r.json()["section"] == "inventory"
     assert "summary" in r.json()["data"]
+    assert r.json()["data"]["summary"]["needs_attention"] == 0
+
+
+async def test_inventory_overview_counts_unhealthy_keys_as_needing_attention(client, app):
+    from janus.storage.upstream_keys import (
+        archive_upstream_keys,
+        create_upstream_key,
+        update_upstream_key,
+    )
+
+    await client.get("/dashboard/api/v2/state/inventory")
+    key = await create_upstream_key(
+        app.state.db_path,
+        provider_id="openrouter",
+        key_value="sk-or-v1-attention-test",
+    )
+    await update_upstream_key(
+        app.state.db_path,
+        str(key["id"]),
+        {"status": "active", "health_status": "critical", "is_valid": 1, "is_usable": 1},
+    )
+
+    response = await client.get("/dashboard/api/v2/state/inventory")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["summary"]["needs_attention"] == 1
+
+    await archive_upstream_keys(app.state.db_path, [str(key["id"])])
+    archived = await client.get("/dashboard/api/v2/state/inventory")
+    assert archived.status_code == 200
+    assert archived.json()["data"]["summary"]["needs_attention"] == 0
 
 
 async def test_inventory_keys_page(client):
