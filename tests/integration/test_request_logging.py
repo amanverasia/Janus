@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -187,7 +189,9 @@ async def test_dashboard_page_and_clear(app):
 
         r = await client.get("/dashboard/api/request-logs/export")
         assert r.status_code == 200
-        assert r.json()[0]["model"] == "test/test-m1"
+        assert r.headers["content-type"].startswith("application/x-ndjson")
+        lines = [json.loads(line) for line in r.text.splitlines() if line]
+        assert lines[0]["model"] == "test/test-m1"
 
         r = await client.delete("/dashboard/api/request-logs")
         assert r.status_code == 200

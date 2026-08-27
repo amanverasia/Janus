@@ -5,8 +5,10 @@ from janus.storage.request_logs import (
     MAX_BODY_CHARS,
     clear_request_logs,
     count_request_logs,
+    encode_request_logs_ndjson,
     export_request_logs,
     get_request_log,
+    iter_request_logs,
     list_request_logs,
     record_request_log,
 )
@@ -83,6 +85,28 @@ async def test_export_and_clear(db):
     assert exported[0]["request_body"] == "req"
     await clear_request_logs(db)
     assert await count_request_logs(db) == 0
+
+
+async def test_iter_request_logs_streams_rows(db):
+    for i in range(3):
+        await record_request_log(db, model=f"m{i}")
+    rows = [row async for row in iter_request_logs(db)]
+    assert len(rows) == 3
+    assert [row["model"] for row in rows] == ["m2", "m1", "m0"]
+
+
+async def test_encode_request_logs_ndjson_is_streaming(db):
+    for i in range(2):
+        await record_request_log(db, model=f"m{i}")
+    encoded = encode_request_logs_ndjson(iter_request_logs(db))
+    chunks = [chunk async for chunk in encoded]
+    assert len(chunks) == 2
+    import json
+
+    decoded = [json.loads(chunk.decode()) for chunk in chunks]
+    assert decoded[0]["model"] == "m1"
+    assert decoded[1]["model"] == "m0"
+    assert all(chunk.endswith(b"\n") for chunk in chunks)
 
 
 async def test_record_is_fail_safe(tmp_path):

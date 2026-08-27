@@ -87,12 +87,6 @@
   }
 
   onMount(() => {
-    dashboardFetch('/dashboard/api/usage/snapshot', {
-      headers: { Accept: 'application/json' }
-    })
-      .then((response) => (response.ok ? response.json() : {}))
-      .then((payload: JsonObject) => applyLivePayload(payload))
-      .catch(() => undefined);
     void connect();
   });
 

@@ -68,17 +68,96 @@ budgets_app = typer.Typer(help="Manage spending budgets")
 pricing_app = typer.Typer(help="View model pricing")
 inventory_app = typer.Typer(help="Upstream key inventory")
 settings_app = typer.Typer(help="View and change server settings")
+db_app = typer.Typer(help="Bounded-memory database maintenance")
 app.add_typer(keys_app, name="keys")
 app.add_typer(usage_app, name="usage")
 app.add_typer(budgets_app, name="budgets")
 app.add_typer(pricing_app, name="pricing")
 app.add_typer(inventory_app, name="inventory")
 app.add_typer(settings_app, name="settings")
+app.add_typer(db_app, name="db")
 
 
 def _get_db_path(config: str) -> Path:
     cfg = load_config(Path(config).expanduser())
     return cfg.server.data_dir / "janus.db"
+
+
+def _get_data_dir(config: str) -> Path:
+    return _get_db_path(config).parent
+
+
+@db_app.command("export-request-logs")
+def db_export_request_logs(
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+    output: Path = typer.Option(
+        ...,
+        "--output",
+        "-o",
+        help="Destination file. NDJSON is streamed one row at a time.",
+    ),
+) -> None:
+    """Stream request logs to a file as NDJSON without buffering the table."""
+    import asyncio
+
+    from janus.storage.request_logs import encode_request_logs_ndjson, iter_request_logs
+
+    db_path = _get_db_path(config)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    async def _dump() -> int:
+        count = 0
+        with open(output, "w", encoding="utf-8") as handle:
+            async for chunk in encode_request_logs_ndjson(iter_request_logs(db_path)):
+                handle.write(chunk.decode())
+                count += chunk.count(b"\n")
+        return count
+
+    written = asyncio.run(_dump())
+    typer.echo(f"Wrote {written} request log(s) to {output}")
+
+
+@db_app.command("backup-prune")
+def db_backup_prune(
+    config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
+    keep: int = typer.Option(
+        3,
+        "--keep",
+        "-k",
+        help="Number of most-recent database snapshot files to retain.",
+    ),
+    pattern: str = typer.Option(
+        "janus.db*",
+        "--pattern",
+        help="Glob pattern for database snapshot files in the data directory.",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List files that would be removed."),
+) -> None:
+    """Bound retention of accumulated database snapshot files."""
+    import glob
+
+    if keep < 0:
+        typer.echo("--keep must be zero or positive.")
+        raise typer.Exit(code=1)
+
+    data_dir = _get_data_dir(config)
+    live_db = _get_db_path(config)
+    matches = sorted(
+        (Path(p) for p in glob.glob(str(data_dir / pattern))),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    snapshots = [p for p in matches if p != live_db]
+    removable = snapshots[keep:]
+    if not removable:
+        typer.echo(f"No snapshot files matching {pattern!r} to prune in {data_dir}.")
+        return
+    action = "Would remove" if dry_run else "Removed"
+    for path in removable:
+        typer.echo(f"{action} {path}")
+        if not dry_run:
+            path.unlink()
+    typer.echo(f"{action.lower()} {len(removable)} snapshot file(s) (kept {keep}).")
 
 
 @keys_app.command("create")
