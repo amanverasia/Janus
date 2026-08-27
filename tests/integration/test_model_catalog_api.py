@@ -8,7 +8,7 @@ import respx
 from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
-from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
+from janus.config.schema import ComboConfig, JanusConfig, ProviderConfig, ServerSettings
 from janus.storage.api_keys import create_key
 
 ADMIN_KEY = "model-admin-secret"
@@ -231,3 +231,63 @@ async def test_public_catalog_aggregates_multiple_provider_rows_with_shared_pref
     assert response.status_code == 200
     rows = [row for row in response.json()["data"] if row["id"] == "shared/model"]
     assert rows == [{"id": "shared/model", "object": "model", "created": 0, "owned_by": "shared-b"}]
+
+
+async def test_public_catalog_combo_collision_has_one_effective_entry(tmp_path) -> None:
+    config = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="test-provider",
+                catalog_id="custom",
+                prefix="test",
+                api_type="openai_compat",
+                base_url="https://provider.example/v1",
+                models=["model-1", "model-2"],
+            )
+        ],
+        combos=[
+            ComboConfig(name="test/model-1", models=["test/model-2"]),
+            ComboConfig(name="working-combo", models=["test/model-2"]),
+            ComboConfig(name="broken-combo", models=["missing/model"]),
+            ComboConfig(name="test/model-2", models=["missing/model"]),
+        ],
+        api_keys=[ADMIN_KEY],
+    )
+    combo_app = create_app(config=config)
+    async with AsyncClient(transport=remote_transport(combo_app), base_url="http://test") as client:
+        await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
+        public = await client.get("/v1/models", headers=ADMIN_HEADERS)
+        ollama = await client.get("/api/tags", headers=ADMIN_HEADERS)
+
+    public_rows = [row for row in public.json()["data"] if row["id"] == "test/model-1"]
+    assert public_rows == [
+        {"id": "test/model-1", "object": "model", "created": 0, "owned_by": "combo"}
+    ]
+    assert "working-combo" in {row["id"] for row in public.json()["data"]}
+    assert "broken-combo" not in {row["id"] for row in public.json()["data"]}
+    physical_rows = [row for row in public.json()["data"] if row["id"] == "test/model-2"]
+    assert physical_rows == [
+        {"id": "test/model-2", "object": "model", "created": 0, "owned_by": "test-provider"}
+    ]
+
+    ollama_rows = [row for row in ollama.json()["models"] if row["name"] == "test/model-1"]
+    assert len(ollama_rows) == 1
+    assert ollama_rows[0]["details"]["format"] == "combo"
+    assert "working-combo" in {row["name"] for row in ollama.json()["models"]}
+    assert "broken-combo" not in {row["name"] for row in ollama.json()["models"]}
+
+
+async def test_public_catalog_does_not_materialize_routes_per_model(app, monkeypatch) -> None:
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
+
+        def fail_lookup(*args, **kwargs):
+            raise AssertionError("public discovery must use the boolean route index")
+
+        monkeypatch.setattr("janus.providers.registry.ProviderRegistry.lookup", fail_lookup)
+        public = await client.get("/v1/models", headers=ADMIN_HEADERS)
+        ollama = await client.get("/api/tags", headers=ADMIN_HEADERS)
+
+    assert public.status_code == 200
+    assert ollama.status_code == 200
