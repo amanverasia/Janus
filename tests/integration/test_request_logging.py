@@ -185,7 +185,11 @@ async def test_dashboard_page_and_clear(app):
 
         r = await client.get("/dashboard/api/v2/state/request-logs")
         assert r.status_code == 200
-        assert r.json()["data"]["logs"][0]["model"] == "test/test-m1"
+        row = r.json()["data"]["logs"][0]
+        assert row["model"] == "test/test-m1"
+        assert row["timestamp"]
+        assert row["status"] == 200
+        assert isinstance(row["duration_ms"], int)
 
         r = await client.get("/dashboard/api/request-logs/export")
         assert r.status_code == 200
