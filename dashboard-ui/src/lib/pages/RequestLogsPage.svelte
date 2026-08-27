@@ -21,15 +21,15 @@
   $: total = Number(data.total ?? rows.length);
 
   const columns = [
-    { key: 'created_at', label: 'Time', format: dateTime },
+    { key: 'timestamp', label: 'Time', format: dateTime },
     { key: 'model', label: 'Model' },
     {
       key: 'provider_id',
       label: 'Provider',
       format: (value: unknown, row: JsonObject) => text(value ?? row.provider)
     },
-    { key: 'status_code', label: 'Status', format: (value: unknown) => text(value) },
-    { key: 'latency_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` }
+    { key: 'status', label: 'Status', format: (value: unknown) => text(value) },
+    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` }
   ];
 
   async function inspect(row: JsonObject) {
