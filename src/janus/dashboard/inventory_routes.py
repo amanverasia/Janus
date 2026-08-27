@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from janus.dashboard.auth import require_dashboard_access
+from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
@@ -47,7 +48,10 @@ from janus.storage.upstream_keys import (
 )
 from janus.storage.upstream_models import list_models_for_key
 
-router = APIRouter(dependencies=[Depends(require_dashboard_access)])
+router = APIRouter(
+    dependencies=[Depends(require_dashboard_access)],
+    route_class=DashboardMutationRoute,
+)
 logger = logging.getLogger(__name__)
 _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 

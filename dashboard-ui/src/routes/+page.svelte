@@ -3,6 +3,7 @@
   import '../app.css';
   import AlertStrip from '$lib/components/AlertStrip.svelte';
   import Icon from '$lib/components/Icon.svelte';
+  import PageSkeleton from '$lib/components/PageSkeleton.svelte';
   import Shell from '$lib/components/Shell.svelte';
   import Toasts from '$lib/components/Toasts.svelte';
   import AnalyticsPage from '$lib/pages/AnalyticsPage.svelte';
@@ -29,15 +30,26 @@
   import { routeFor, type NavItem } from '$lib/nav';
   import type { AlertItem, JsonObject, MutationOptions, ToastItem } from '$lib/types';
 
+  type CachedView = { data: JsonObject; alerts: AlertItem[] };
+
+  const VIEW_CACHE_LIMIT = 12;
+
   let active: NavItem = routeFor('/dashboard/ui');
   let data: JsonObject = {};
   let alerts: AlertItem[] = [];
   let loading = true;
+  let mutationCount = 0;
   let error = '';
   let request: AbortController | undefined;
   let toasts: ToastItem[] = [];
   let toastId = 0;
   let pathname = '/dashboard/ui';
+  let hasView = false;
+  let busy = true;
+  const viewCache = new Map<string, CachedView>();
+  const latestPathCache = new Map<string, CachedView>();
+
+  $: busy = loading || mutationCount > 0;
 
   function mergedData(source: JsonObject, meta: JsonObject): JsonObject {
     const query = object(meta.query);
@@ -62,28 +74,67 @@
     }, 3600);
   }
 
+  function getCachedView(viewKey: string, nextPathname: string): CachedView | undefined {
+    const exact = viewCache.get(viewKey);
+    if (exact) {
+      viewCache.delete(viewKey);
+      viewCache.set(viewKey, exact);
+      return exact;
+    }
+    return latestPathCache.get(nextPathname);
+  }
+
+  function cacheView(viewKey: string, nextPathname: string, value: CachedView) {
+    viewCache.delete(viewKey);
+    viewCache.set(viewKey, value);
+    while (viewCache.size > VIEW_CACHE_LIMIT) {
+      const oldest = viewCache.keys().next().value;
+      if (oldest === undefined) break;
+      viewCache.delete(oldest);
+    }
+    latestPathCache.set(nextPathname, value);
+  }
+
   async function load() {
     request?.abort();
     const controller = new AbortController();
     request = controller;
     loading = true;
     error = '';
-    pathname = window.location.pathname.replace(/\/+$/, '') || '/dashboard/ui';
+    const nextPathname = window.location.pathname.replace(/\/+$/, '') || '/dashboard/ui';
     const nextRoute = routeFor(window.location.pathname);
-    if (nextRoute.section !== active.section) {
+    const viewKey = `${nextPathname}${window.location.search}`;
+    const cached = getCachedView(viewKey, nextPathname);
+    pathname = nextPathname;
+    active = nextRoute;
+    hasView = cached !== undefined;
+    if (cached) {
+      data = cached.data;
+      alerts = cached.alerts;
+    } else {
       data = {};
       alerts = [];
     }
-    active = nextRoute;
     try {
       const result = await getState(active.section, controller.signal);
-      data = mergedData(result.data, result.meta);
-      alerts = result.alerts;
+      if (controller.signal.aborted || request !== controller) return;
+      const nextData = mergedData(result.data, result.meta);
+      const nextAlerts = result.alerts;
+      cacheView(viewKey, nextPathname, { data: nextData, alerts: nextAlerts });
+      data = nextData;
+      alerts = nextAlerts;
+      hasView = true;
     } catch (caught) {
-      if (caught instanceof DOMException && caught.name === 'AbortError') return;
-      error = caught instanceof Error ? caught.message : 'The dashboard could not be loaded.';
+      if (controller.signal.aborted || request !== controller) return;
+      const message =
+        caught instanceof Error ? caught.message : 'The dashboard could not be loaded.';
+      if (cached) notify(`Couldn’t refresh ${active.label.toLowerCase()}: ${message}`, 'error');
+      else error = message;
     } finally {
-      if (!controller.signal.aborted) loading = false;
+      if (request === controller) {
+        request = undefined;
+        loading = false;
+      }
     }
   }
 
@@ -110,7 +161,7 @@
   }
 
   async function action(url: string, options: MutationOptions = {}): Promise<unknown> {
-    loading = true;
+    mutationCount += 1;
     try {
       const result = await mutate(url, options);
       if (
@@ -140,7 +191,7 @@
       if (options.refresh !== false) await load().catch(() => undefined);
       throw caught;
     } finally {
-      loading = false;
+      mutationCount = Math.max(0, mutationCount - 1);
     }
   }
 
@@ -150,6 +201,7 @@
   }
 
   onMount(() => {
+    document.getElementById('dashboard-initial-shell')?.remove();
     const popstate = () => void load();
     window.addEventListener('popstate', popstate);
     void load();
@@ -162,19 +214,14 @@
 
 <Shell
   {active}
-  {loading}
+  loading={busy}
   on:navigate={(event) => navigate(event.detail)}
   on:refresh={load}
   on:logout={logout}
 >
-  {#if loading && !Object.keys(data).length}
-    <div class="loading-state" role="status">
-      <div>
-        <div class="loader"></div>
-        Loading {active.label.toLowerCase()}…
-      </div>
-    </div>
-  {:else if error}
+  {#if loading && !hasView}
+    <PageSkeleton label={active.label.toLowerCase()} section={active.section} {pathname} />
+  {:else if error && !hasView}
     <section class="error-state" role="alert">
       <Icon name="warning" size={26} />
       <h2>Couldn’t load this view</h2>
