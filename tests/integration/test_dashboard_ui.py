@@ -53,6 +53,7 @@ async def test_dashboard_ui_shell_and_deep_links_serve_the_current_app_shell(app
     assert deep_link.headers["cache-control"] == "no-cache"
     assert shell.content == deep_link.content
     assert b"<title>Janus" in shell.content
+    assert b'id="dashboard-initial-shell"' in shell.content
 
 
 @pytest.mark.parametrize(

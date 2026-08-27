@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 
 from janus.storage.api_keys import list_keys
 from janus.storage.budgets import get_budget_status, get_budgets
@@ -23,6 +26,7 @@ _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 _ALERT_CAP = 8
 _LOW_CREDIT_USD = 1.0
 _BAD_INVENTORY_STATUSES = frozenset({"critical", "exhausted", "invalid", "validation_paused"})
+_ALERT_CACHE_TTL_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -35,19 +39,29 @@ class DashboardAlert:
 
 
 async def collect_dashboard_alerts(db_path: Path, request: Request) -> dict[str, Any]:
+    result, _complete = await _collect_dashboard_alerts_with_status(db_path, request)
+    return result
+
+
+async def _collect_dashboard_alerts_with_status(
+    db_path: Path, request: Request
+) -> tuple[dict[str, Any], bool]:
     alerts: list[DashboardAlert] = []
-    for collector in (
+    collectors = (
         _budget_alerts,
         _quota_alerts,
         _cooldown_alerts,
         _inventory_alerts,
         _unpriced_alerts,
         _setup_alerts,
-    ):
-        try:
-            alerts.extend(await collector(db_path, request))
-        except Exception:
-            logger.exception("Dashboard alert collector %s failed", collector.__name__)
+    )
+    results = await asyncio.gather(
+        *(_collect_safely(collector, db_path, request) for collector in collectors)
+    )
+    complete = True
+    for result, succeeded in results:
+        alerts.extend(result)
+        complete = complete and succeeded
     alerts.sort(key=lambda a: (_SEVERITY_RANK[a.severity], a.id))
     alerts = alerts[:_ALERT_CAP]
     summary = _summarize(alerts)
@@ -55,7 +69,72 @@ async def collect_dashboard_alerts(db_path: Path, request: Request) -> dict[str,
         "critical": sum(1 for a in alerts if a.severity == "critical"),
         "warning": sum(1 for a in alerts if a.severity == "warning"),
     }
-    return {"alerts": alerts, "summary": summary, "counts": counts}
+    return {"alerts": alerts, "summary": summary, "counts": counts}, complete
+
+
+async def _collect_safely(
+    collector: Callable[[Path, Request], Awaitable[list[DashboardAlert]]],
+    db_path: Path,
+    request: Request,
+) -> tuple[list[DashboardAlert], bool]:
+    try:
+        return await collector(db_path, request), True
+    except Exception:
+        logger.exception("Dashboard alert collector %s failed", collector.__name__)
+        return [], False
+
+
+async def collect_dashboard_alerts_cached(
+    db_path: Path,
+    request: Request,
+    *,
+    max_age_seconds: float = _ALERT_CACHE_TTL_SECONDS,
+) -> dict[str, Any]:
+    app = request.app
+    now = time.monotonic()
+    generation = int(getattr(app.state, "_dashboard_alert_cache_generation", 0))
+    cached = cast(
+        tuple[float, int, dict[str, Any]] | None,
+        getattr(app.state, "_dashboard_alert_cache", None),
+    )
+    if cached is not None and cached[0] > now and cached[1] == generation:
+        return cached[2]
+    lock: asyncio.Lock | None = getattr(app.state, "_dashboard_alert_cache_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        app.state._dashboard_alert_cache_lock = lock
+    async with lock:
+        now = time.monotonic()
+        generation = int(getattr(app.state, "_dashboard_alert_cache_generation", 0))
+        cached = cast(
+            tuple[float, int, dict[str, Any]] | None,
+            getattr(app.state, "_dashboard_alert_cache", None),
+        )
+        if cached is not None and cached[0] > now and cached[1] == generation:
+            return cached[2]
+        result, complete = await _collect_dashboard_alerts_with_status(db_path, request)
+        current_generation = int(getattr(app.state, "_dashboard_alert_cache_generation", 0))
+        if complete and generation == current_generation:
+            app.state._dashboard_alert_cache = (
+                time.monotonic() + max(0.0, max_age_seconds),
+                generation,
+                result,
+            )
+        elif (
+            not complete
+            and cached is not None
+            and cached[1] == generation
+            and generation == current_generation
+        ):
+            return cached[2]
+        return result
+
+
+def invalidate_dashboard_alerts(app: FastAPI) -> None:
+    app.state._dashboard_alert_cache_generation = (
+        int(getattr(app.state, "_dashboard_alert_cache_generation", 0)) + 1
+    )
+    app.state._dashboard_alert_cache = None
 
 
 def _summarize(alerts: list[DashboardAlert]) -> Summary:

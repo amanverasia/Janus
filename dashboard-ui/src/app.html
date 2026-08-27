@@ -17,9 +17,166 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%2306b6b0' d='M12 10h17v17H12zm23 0h17v17H35zM12 33h17v17H12zm23 0h17v17H35z'/%3E%3C/svg%3E"
     />
+    <style>
+      #dashboard-initial-shell {
+        --initial-bg: #f6fafb;
+        --initial-surface: #fff;
+        --initial-line: #dce8ea;
+        --initial-shimmer: #edf4f5;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        background: var(--initial-bg);
+      }
+      #dashboard-initial-shell aside {
+        padding: 24px 20px;
+        border-right: 1px solid var(--initial-line);
+        background: var(--initial-surface);
+      }
+      #dashboard-initial-shell main {
+        display: grid;
+        align-content: start;
+        gap: 18px;
+        padding: 42px clamp(24px, 4vw, 64px);
+      }
+      #dashboard-initial-shell header,
+      #dashboard-initial-shell .initial-stats,
+      #dashboard-initial-shell .initial-panels {
+        display: grid;
+        gap: 14px;
+      }
+      #dashboard-initial-shell .initial-stats {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      #dashboard-initial-shell .initial-panels {
+        grid-template-columns: minmax(0, 1.65fr) minmax(260px, 1fr);
+      }
+      #dashboard-initial-shell[data-compact] .initial-stats,
+      #dashboard-initial-shell[data-form] .initial-stats,
+      #dashboard-initial-shell[data-compact] .initial-secondary,
+      #dashboard-initial-shell[data-form] .initial-secondary {
+        display: none;
+      }
+      #dashboard-initial-shell[data-compact] .initial-panels,
+      #dashboard-initial-shell[data-form] .initial-panels {
+        grid-template-columns: 1fr;
+      }
+      #dashboard-initial-shell .initial-line,
+      #dashboard-initial-shell .initial-card,
+      #dashboard-initial-shell .initial-panel {
+        border-radius: 12px;
+        background: var(--initial-shimmer);
+      }
+      #dashboard-initial-shell .initial-brand {
+        width: 96px;
+        height: 28px;
+        margin-bottom: 44px;
+      }
+      #dashboard-initial-shell .initial-nav {
+        width: 100%;
+        height: 34px;
+        margin-bottom: 10px;
+      }
+      #dashboard-initial-shell header .initial-line:first-child {
+        width: min(300px, 55vw);
+        height: 35px;
+      }
+      #dashboard-initial-shell header .initial-line:last-child {
+        width: min(520px, 70vw);
+        height: 13px;
+      }
+      #dashboard-initial-shell .initial-card {
+        height: 132px;
+        border: 1px solid var(--initial-line);
+        background: var(--initial-surface);
+      }
+      #dashboard-initial-shell .initial-panel {
+        height: 310px;
+        border: 1px solid var(--initial-line);
+        background: var(--initial-surface);
+      }
+      html[data-theme='dark'] #dashboard-initial-shell {
+        --initial-bg: #10191b;
+        --initial-surface: #152124;
+        --initial-line: #29393c;
+        --initial-shimmer: #223135;
+      }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme='light']) #dashboard-initial-shell {
+          --initial-bg: #10191b;
+          --initial-surface: #152124;
+          --initial-line: #29393c;
+          --initial-shimmer: #223135;
+        }
+      }
+      @media (max-width: 820px) {
+        #dashboard-initial-shell {
+          grid-template-columns: 1fr;
+        }
+        #dashboard-initial-shell aside {
+          display: none;
+        }
+        #dashboard-initial-shell .initial-stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        #dashboard-initial-shell .initial-panels {
+          grid-template-columns: 1fr;
+        }
+        #dashboard-initial-shell .initial-secondary {
+          display: none;
+        }
+      }
+    </style>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
-    <div style="display: contents">%sveltekit.body%</div>
+    <div style="display: contents">
+      <div id="dashboard-initial-shell" role="status" aria-label="Loading dashboard">
+        <aside aria-hidden="true">
+          <div class="initial-line initial-brand"></div>
+          <div class="initial-line initial-nav"></div>
+          <div class="initial-line initial-nav"></div>
+          <div class="initial-line initial-nav"></div>
+          <div class="initial-line initial-nav"></div>
+        </aside>
+        <main aria-hidden="true">
+          <header>
+            <div class="initial-line"></div>
+            <div class="initial-line"></div>
+          </header>
+          <div class="initial-stats">
+            <div class="initial-card"></div>
+            <div class="initial-card"></div>
+            <div class="initial-card"></div>
+            <div class="initial-card"></div>
+          </div>
+          <div class="initial-panels">
+            <div class="initial-panel"></div>
+            <div class="initial-panel initial-secondary"></div>
+          </div>
+        </main>
+        <script>
+          {
+            const shell = document.getElementById('dashboard-initial-shell');
+            const path = location.pathname.replace(/\/+$/, '') || '/dashboard/ui';
+            const statPaths = [
+              '/dashboard/ui',
+              '/dashboard/ui/usage',
+              '/dashboard/ui/analytics',
+              '/dashboard/ui/inventory',
+              '/dashboard/ui/routing',
+              '/dashboard/ui/budgets'
+            ];
+            if (!statPaths.includes(path)) shell.dataset.compact = '';
+            if (path.endsWith('/inventory/add') || path.endsWith('/inventory/import')) {
+              shell.dataset.form = '';
+            }
+          }
+        </script>
+      </div>
+      %sveltekit.body%
+    </div>
   </body>
 </html>

@@ -11,8 +11,9 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from janus.dashboard.alerts import collect_dashboard_alerts
+from janus.dashboard.alerts import collect_dashboard_alerts_cached
 from janus.dashboard.auth import require_dashboard_access
+from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import (
     _api_v1_base_url,
     _build_budget_statuses,
@@ -84,7 +85,10 @@ from janus.storage.upstream_keys import (
 )
 from janus.storage.usage import get_unpriced_models
 
-router = APIRouter(dependencies=[Depends(require_dashboard_access)])
+router = APIRouter(
+    dependencies=[Depends(require_dashboard_access)],
+    route_class=DashboardMutationRoute,
+)
 
 _SECTIONS = frozenset(
     {
@@ -189,7 +193,7 @@ async def _response(
     *,
     meta: dict[str, Any] | None = None,
 ) -> JSONResponse:
-    alert_data = await collect_dashboard_alerts(db_path, request)
+    alert_data = await collect_dashboard_alerts_cached(db_path, request)
     response_meta: dict[str, Any] = {
         "alert_summary": alert_data["summary"],
         "alert_counts": alert_data["counts"],

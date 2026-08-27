@@ -1,4 +1,7 @@
+import asyncio
 import json
+from collections import Counter
+from types import SimpleNamespace
 from urllib.parse import quote
 
 import pytest
@@ -63,6 +66,149 @@ async def test_state_requires_dashboard_authentication(app):
         assert response.headers["location"].startswith("/dashboard/login")
         response = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
         assert response.status_code == 200
+
+
+async def test_lazy_dashboard_initialization_is_single_flight(
+    app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from janus.dashboard.routes import _ensure_db
+
+    calls: Counter[str] = Counter()
+
+    def fake_step(name: str):
+        async def run(*_args, **_kwargs):
+            calls[name] += 1
+            if name == "init":
+                await asyncio.sleep(0.01)
+
+        return run
+
+    monkeypatch.setattr("janus.dashboard.routes.init_db", fake_step("init"))
+    monkeypatch.setattr("janus.storage.database.seed_from_config", fake_step("seed"))
+    monkeypatch.setattr("janus.storage.settings.ensure_server_defaults", fake_step("defaults"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_providers", fake_step("providers"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_combos", fake_step("combos"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_savers", fake_step("savers"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_pricing", fake_step("pricing"))
+    app.state._dashboard_db_ready = False
+    request = SimpleNamespace(app=app)
+
+    await asyncio.gather(_ensure_db(request), _ensure_db(request))
+
+    assert calls == {
+        "init": 1,
+        "seed": 1,
+        "defaults": 1,
+        "providers": 1,
+        "combos": 1,
+        "savers": 1,
+        "pricing": 1,
+    }
+
+
+async def test_lazy_dashboard_initialization_retries_after_failure(
+    app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from janus.dashboard.routes import _ensure_db
+
+    calls: Counter[str] = Counter()
+
+    async def flaky_init(*_args, **_kwargs):
+        calls["init"] += 1
+        if calls["init"] == 1:
+            raise RuntimeError("temporary initialization failure")
+
+    def fake_step(name: str):
+        async def run(*_args, **_kwargs):
+            calls[name] += 1
+
+        return run
+
+    monkeypatch.setattr("janus.dashboard.routes.init_db", flaky_init)
+    monkeypatch.setattr("janus.storage.database.seed_from_config", fake_step("seed"))
+    monkeypatch.setattr("janus.storage.settings.ensure_server_defaults", fake_step("defaults"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_providers", fake_step("providers"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_combos", fake_step("combos"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_savers", fake_step("savers"))
+    monkeypatch.setattr("janus.dashboard.reload.reload_pricing", fake_step("pricing"))
+    app.state._dashboard_db_ready = False
+    request = SimpleNamespace(app=app)
+
+    with pytest.raises(RuntimeError, match="temporary initialization failure"):
+        await _ensure_db(request)
+    assert app.state._dashboard_db_ready is False
+
+    await _ensure_db(request)
+
+    assert app.state._dashboard_db_ready is True
+    assert calls == {
+        "init": 2,
+        "seed": 1,
+        "defaults": 1,
+        "providers": 1,
+        "combos": 1,
+        "savers": 1,
+        "pricing": 1,
+    }
+
+
+async def test_lifespan_marks_dashboard_ready_before_first_request(
+    app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from janus.dashboard import reload as reload_module
+
+    calls = 0
+    original_reload = reload_module.reload_providers
+
+    async def tracked_reload(target_app):
+        nonlocal calls
+        calls += 1
+        await original_reload(target_app)
+
+    async def no_pricing_sync(_app):
+        return False
+
+    monkeypatch.setattr(reload_module, "reload_providers", tracked_reload)
+    monkeypatch.setattr("janus.app._pricing_catalog_needs_sync", no_pricing_sync)
+    monkeypatch.setattr("janus.inventory.scheduler.scheduler_enabled", lambda: False)
+    monkeypatch.setattr("janus.pricing.scheduler.pricing_scheduler_enabled", lambda: False)
+
+    async with app.router.lifespan_context(app):
+        assert app.state._dashboard_db_ready is True
+        async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+            response = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
+
+        assert response.status_code == 200
+        assert calls == 1
+
+
+async def test_successful_dashboard_mutation_invalidates_alert_cache(app) -> None:
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        state = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
+        generation = app.state._dashboard_alert_cache_generation
+        response = await client.post("/dashboard/api/routing/cooldowns/clear", headers=AUTH_HEADERS)
+
+    assert state.status_code == 200
+    assert app.state._dashboard_alert_cache is None
+    assert app.state._dashboard_alert_cache_generation == generation + 1
+    assert response.status_code == 200
+
+
+async def test_failed_dashboard_mutation_preserves_alert_cache(app) -> None:
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        state = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
+        cached = app.state._dashboard_alert_cache
+        generation = app.state._dashboard_alert_cache_generation
+        response = await client.post(
+            "/dashboard/api/budgets",
+            data={"key_select": "invalid", "daily_limit": "10", "warn_pct": "80"},
+            headers=AUTH_HEADERS,
+        )
+
+    assert state.status_code == 200
+    assert response.status_code == 422
+    assert app.state._dashboard_alert_cache is cached
+    assert app.state._dashboard_alert_cache_generation == generation
 
 
 async def test_key_create_returns_plaintext_once_in_non_cacheable_json(app):

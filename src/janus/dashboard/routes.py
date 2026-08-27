@@ -27,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.catalog import get_catalog
+from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.providers.drivers import supported_api_types
 from janus.storage.api_keys import list_keys, revoke_key, update_key
 from janus.storage.budgets import (
@@ -47,6 +48,7 @@ from janus.storage.usage import get_unpriced_models, get_usage_stats
 router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
     include_in_schema=False,
+    route_class=DashboardMutationRoute,
 )
 dashboard_page_redirect_router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
@@ -143,7 +145,15 @@ def _reject_unsafe_url(
 
 async def _ensure_db(request: Request) -> Path:
     db_path = Path(request.app.state.db_path)
-    if not getattr(request.app.state, "_dashboard_db_ready", False):
+    if getattr(request.app.state, "_dashboard_db_ready", False):
+        return db_path
+    lock: asyncio.Lock | None = getattr(request.app.state, "_dashboard_db_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        request.app.state._dashboard_db_lock = lock
+    async with lock:
+        if getattr(request.app.state, "_dashboard_db_ready", False):
+            return db_path
         await init_db(db_path)
         from janus.storage.database import seed_from_config
 

@@ -115,10 +115,15 @@ async def _pricing_catalog_needs_sync(app: FastAPI) -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state._dashboard_db_ready = False
     db_path = app.state.db_path
     await init_db(db_path)
     config: JanusConfig = app.state.config
     await seed_from_config(db_path, config)
+
+    from janus.storage.settings import ensure_server_defaults
+
+    await ensure_server_defaults(db_path)
 
     from janus.dashboard.reload import (
         reload_combos,
@@ -136,6 +141,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await reload_pricing(app)
     await app.state.fallback_handler.load_cooldowns()
     await app.state.fallback_handler.load_request_counts()
+    app.state._dashboard_db_ready = True
 
     from janus.inventory.scheduler import run_inventory_scheduler, scheduler_enabled
 
@@ -207,6 +213,9 @@ def create_app(
     app.state.pricing_registry = PricingRegistry(config.pricing)
     app.state.providers = {}
     app.state.model_catalog = []
+    app.state._dashboard_db_ready = False
+    app.state._dashboard_alert_cache = None
+    app.state._dashboard_alert_cache_generation = 0
     app.state.provider_snapshot = ProviderSnapshot(
         providers=app.state.providers,
         registry=app.state.registry,
