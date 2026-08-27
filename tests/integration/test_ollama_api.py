@@ -31,6 +31,42 @@ async def test_ollama_catalog_filters_models_outside_account_entitlements():
     assert [entry["name"] for entry in entries] == ["provider/entitled"]
 
 
+async def test_ollama_catalog_prefers_routable_combo_on_name_collision(monkeypatch):
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="provider",
+            prefix="provider",
+            api_type="openai_compat",
+            base_url="https://provider.example/v1",
+            models=["physical", "fallback"],
+        )
+    )
+    registry.register_combo(ComboConfig(name="provider/physical", models=["provider/fallback"]))
+    registry.register_combo(ComboConfig(name="later", models=["provider/fallback"]))
+    registry.register_combo(ComboConfig(name="broken", models=["missing/model"]))
+    catalog = [
+        {"namespaced": "provider/physical", "disabled": False},
+        {"namespaced": "provider/fallback", "disabled": False},
+    ]
+
+    def fail_lookup(*args, **kwargs):
+        raise AssertionError("discovery must not materialize resolved targets")
+
+    monkeypatch.setattr(registry, "lookup", fail_lookup)
+    entries = await _ollama_model_entries(catalog, registry)
+
+    collisions = [entry for entry in entries if entry["name"] == "provider/physical"]
+    assert len(collisions) == 1
+    assert collisions[0]["details"]["format"] == "combo"
+    assert "broken" not in {entry["name"] for entry in entries}
+    assert [entry["name"] for entry in entries] == [
+        "provider/fallback",
+        "provider/physical",
+        "later",
+    ]
+
+
 async def _seed_and_reload(app) -> None:
     from janus.dashboard.reload import (
         reload_combos,

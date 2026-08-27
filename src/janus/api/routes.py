@@ -1458,11 +1458,18 @@ async def list_models(request: Request) -> dict[str, Any]:
     snapshot: ProviderSnapshot = request.app.state.provider_snapshot
     registry = snapshot.registry
     allowed = key_allowed_models(request)
+    routable_combos = {
+        name: models
+        for name, models in registry.combos.items()
+        if any(registry.has_route(model) for model in models)
+    }
+    combo_names = {name for name in routable_combos if key_model_allowed(name, allowed)}
     catalog = [row for row in snapshot.model_catalog if not row["disabled"]]
     visible = [
         row
         for row in catalog
-        if registry.lookup(row["namespaced"]) is not None
+        if row["namespaced"] not in combo_names
+        and registry.has_route(row["namespaced"])
         and key_model_allowed(row["namespaced"], allowed)
     ]
     client_tool = detect_client_tool(client_header_map(request.headers))
@@ -1476,7 +1483,7 @@ async def list_models(request: Request) -> dict[str, Any]:
         }
         return build_claude_code_models_response(
             registry_providers=claude_providers,
-            combos=registry.combos,
+            combos=routable_combos,
             allowed_models=allowed,
         )
     data: list[dict[str, Any]] = [
@@ -1488,7 +1495,7 @@ async def list_models(request: Request) -> dict[str, Any]:
         }
         for row in visible
     ]
-    for combo_name in registry.combos:
+    for combo_name in routable_combos:
         if not key_model_allowed(combo_name, allowed):
             continue
         data.append(
@@ -1570,11 +1577,17 @@ async def _ollama_model_entries(
 ) -> list[dict[str, Any]]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     models: list[dict[str, Any]] = []
+    routable_combos = [
+        name
+        for name, members in registry.combos.items()
+        if any(registry.has_route(member) for member in members)
+    ]
+    combo_names = {name for name in routable_combos if key_model_allowed(name, allowed_models)}
     for row in catalog:
         if row["disabled"]:
             continue
         name = row["namespaced"]
-        if registry.lookup(name) is None:
+        if name in combo_names or not registry.has_route(name):
             continue
         if not key_model_allowed(name, allowed_models):
             continue
@@ -1588,7 +1601,7 @@ async def _ollama_model_entries(
                 "details": {"family": "janus", "format": "gateway"},
             }
         )
-    for combo_name in registry.combos:
+    for combo_name in routable_combos:
         if not key_model_allowed(combo_name, allowed_models):
             continue
         models.append(

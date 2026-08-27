@@ -351,3 +351,83 @@ def test_bare_lookup_respects_account_discovery_entitlement():
 
     assert targets is not None
     assert [target.account_id for target in targets] == ["two"]
+
+
+def test_has_route_matches_lookup_across_resolution_paths():
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderConfig(
+            id="bounded",
+            prefix="bounded",
+            api_type="openai_compat",
+            base_url="https://bounded.example/v1",
+            models=["configured", "native/vendor-model"],
+            custom_models=["custom"],
+            discovered_models=["live", "native/vendor-model"],
+            default_model="live",
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="unrestricted",
+            prefix="openrouter",
+            api_type="openai_compat",
+            base_url="https://openrouter.example/v1",
+            models=["vendor/model"],
+            allowed_models=["vendor/*"],
+        )
+    )
+    registry.register(
+        ProviderConfig(
+            id="alias",
+            prefix="xiaomi",
+            api_type="openai_compat",
+            base_url="https://xiaomi.example/v1",
+            discovered_models=["mimo-v2.5"],
+        )
+    )
+
+    names = [
+        "bounded/live",
+        "bounded/configured",
+        "bounded/custom",
+        "bounded/unknown",
+        "bounded",
+        "live",
+        "custom",
+        "native/vendor-model",
+        "openrouter/vendor/other",
+        "openrouter/not-allowed",
+        "mimo/mimo-v2.5",
+        "missing/model",
+    ]
+
+    assert {name: registry.has_route(name) for name in names} == {
+        name: registry.lookup(name) is not None for name in names
+    }
+
+
+def test_has_route_uses_precomputed_high_cardinality_indexes(monkeypatch):
+    registry = ProviderRegistry()
+    for account in range(64):
+        registry.register(
+            ProviderConfig(
+                id=f"bulk-{account}",
+                prefix="bulk",
+                api_type="openai_compat",
+                base_url="https://bulk.example/v1",
+                models=[f"model-{index}" for index in range(128)],
+                discovered_models=[f"model-{index}" for index in range(128)],
+            )
+        )
+
+    def fail_materialization(*args, **kwargs):
+        raise AssertionError("has_route must not build or scan resolved targets")
+
+    monkeypatch.setattr("janus.providers.registry._account_supports", fail_materialization)
+    monkeypatch.setattr("janus.providers.registry._native_format", fail_materialization)
+
+    assert registry.has_route("bulk/model-127") is True
+    assert registry.has_route("model-127") is True
+    assert registry.has_route("bulk/missing") is False
+    assert registry.has_route("missing") is False
