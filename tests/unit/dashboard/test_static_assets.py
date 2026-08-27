@@ -9,6 +9,40 @@ STATIC = DASHBOARD / "static"
 TEMPLATES = DASHBOARD / "templates"
 
 
+def _cache_control_for(relative_path: str) -> str:
+    from janus.app import _CachedDashboardStaticFiles
+
+    mount = _CachedDashboardStaticFiles(directory=str(STATIC))
+    full_path, stat_result = mount.lookup_path(relative_path.removeprefix("app/"))
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": f"/dashboard/static/{relative_path}",
+        "headers": [],
+    }
+    response = mount.file_response(full_path, stat_result, scope)
+    return response.headers.get("cache-control", "")
+
+
+def test_immutable_svelte_assets_are_cached_forever() -> None:
+    immutable_dir = STATIC / "app" / "_app" / "immutable"
+    assert immutable_dir.is_dir(), "Build dashboard-ui to emit _app/immutable assets"
+    samples = [path for path in immutable_dir.rglob("*") if path.is_file()][:3]
+    assert samples, "Expected at least one content-hashed immutable asset"
+    for asset in samples:
+        relative = asset.relative_to(STATIC).as_posix()
+        cache_control = _cache_control_for(relative)
+        assert "max-age=31536000" in cache_control, relative
+        assert "immutable" in cache_control, relative
+
+
+def test_index_html_and_version_json_stay_revalidatable() -> None:
+    index_cache = _cache_control_for("app/index.html")
+    version_cache = _cache_control_for("app/_app/version.json")
+    assert index_cache == "no-cache"
+    assert version_cache == "no-cache"
+
+
 def test_login_is_the_only_server_rendered_dashboard_template() -> None:
     templates = sorted(path.name for path in TEMPLATES.glob("*.html"))
     assert templates == ["login.html"]

@@ -2,6 +2,30 @@ import type { JsonObject, MutationOptions, StateEnvelope } from './types';
 
 let redirectingToLogin = false;
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+function isEventStreamRequest(init: RequestInit): boolean {
+  const headers = init.headers;
+  if (!headers) return false;
+  if (headers instanceof Headers)
+    return headers.get('Accept')?.includes('text/event-stream') ?? false;
+  if (Array.isArray(headers)) {
+    return headers.some(
+      ([key, value]) =>
+        key.toLowerCase() === 'accept' && String(value).includes('text/event-stream')
+    );
+  }
+  const accept =
+    (headers as Record<string, string>)['Accept'] ?? (headers as Record<string, string>)['accept'];
+  return typeof accept === 'string' && accept.includes('text/event-stream');
+}
+
+function withDefaultDeadline(init: RequestInit): RequestInit {
+  if (init.signal || isEventStreamRequest(init)) return init;
+  const timeoutSignal = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
+  return { ...init, signal: timeoutSignal };
+}
+
 export interface ValidatedMutationOptions extends MutationOptions {
   validate?: (payload: unknown, response: Response) => unknown | Promise<unknown>;
 }
@@ -37,7 +61,7 @@ export async function dashboardFetch(
   input: RequestInfo | URL,
   init: RequestInit = {}
 ): Promise<Response> {
-  const response = await fetch(input, { credentials: 'same-origin', ...init });
+  const response = await fetch(input, { credentials: 'same-origin', ...withDefaultDeadline(init) });
   if (await isLoginResponse(response)) {
     redirectToLogin();
     throw new Error('Your dashboard session expired. Redirecting to sign in.');
@@ -48,11 +72,13 @@ export async function dashboardFetch(
 export async function getState(section: string, signal?: AbortSignal): Promise<StateEnvelope> {
   if (section === 'not-found') return { section, alerts: [], data: {}, meta: {} };
   const query = window.location.search;
+  const timeoutSignal = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS);
+  const combined = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   const response = await dashboardFetch(
     `/dashboard/api/v2/state/${encodeURIComponent(section)}${query}`,
     {
       headers: { Accept: 'application/json' },
-      signal
+      signal: combined
     }
   );
   if (!response.ok) throw new Error(await responseError(response));
