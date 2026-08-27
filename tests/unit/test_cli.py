@@ -247,3 +247,91 @@ def test_pricing_backfill_respects_days(tmp_path):
     result = runner.invoke(app, ["pricing", "backfill", "--days", "30", "--config", config_path])
     assert result.exit_code == 0
     assert "Updated 0 row" in result.output
+
+
+def _touch(path: Path, mtime_offset: float) -> None:
+    import os
+
+    path.write_text("")
+    ts = os.path.getmtime(path) - mtime_offset
+    os.utime(path, (ts, ts))
+
+
+def test_db_backup_prune_keeps_most_recent(tmp_path):
+    import yaml
+
+    config_path = str(tmp_path / "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump({"server": {"data_dir": str(tmp_path)}}, f)
+
+    live = tmp_path / "janus.db"
+    live.write_text("live")
+    oldest = tmp_path / "janus.db.bak1"
+    middle = tmp_path / "janus.db.bak2"
+    newest = tmp_path / "janus.db.bak3"
+    for path, offset in [(oldest, 3600), (middle, 1800), (newest, 0)]:
+        _touch(path, offset)
+
+    result = runner.invoke(
+        app,
+        ["db", "backup-prune", "--config", config_path, "--keep", "1", "--dry-run"],
+    )
+    assert result.exit_code == 0
+    assert "Would remove" in result.output
+    assert "janus.db.bak1" in result.output
+    assert "janus.db.bak2" in result.output
+    # dry-run must not touch files
+    assert oldest.exists()
+    assert middle.exists()
+    assert newest.exists()
+
+    remove = runner.invoke(app, ["db", "backup-prune", "--config", config_path, "--keep", "1"])
+    assert remove.exit_code == 0
+    assert "Removed" in remove.output
+    assert not oldest.exists()
+    assert not middle.exists()
+    assert newest.exists()
+    # live database is never pruned
+    assert live.exists()
+
+
+def test_db_backup_prune_keep_zero_removes_all_snapshots(tmp_path):
+    import yaml
+
+    config_path = str(tmp_path / "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump({"server": {"data_dir": str(tmp_path)}}, f)
+
+    live = tmp_path / "janus.db"
+    live.write_text("live")
+    snapshot = tmp_path / "janus.db.bak"
+    _touch(snapshot, 0)
+
+    result = runner.invoke(app, ["db", "backup-prune", "--config", config_path, "--keep", "0"])
+    assert result.exit_code == 0
+    assert not snapshot.exists()
+    assert live.exists()
+
+
+def test_db_backup_prune_rejects_negative_keep(tmp_path):
+    import yaml
+
+    config_path = str(tmp_path / "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump({"server": {"data_dir": str(tmp_path)}}, f)
+
+    result = runner.invoke(app, ["db", "backup-prune", "--config", config_path, "--keep", "-1"])
+    assert result.exit_code == 1
+    assert "must be zero or positive" in result.output
+
+
+def test_db_backup_prune_empty_dir_is_noop(tmp_path):
+    import yaml
+
+    config_path = str(tmp_path / "config.yaml")
+    with open(config_path, "w") as f:
+        yaml.dump({"server": {"data_dir": str(tmp_path)}}, f)
+
+    result = runner.invoke(app, ["db", "backup-prune", "--config", config_path, "--keep", "2"])
+    assert result.exit_code == 0
+    assert "No snapshot files" in result.output

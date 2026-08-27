@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -103,10 +105,39 @@ async def get_request_log(db_path: str | Path, log_id: int) -> dict[str, Any] | 
 
 
 async def export_request_logs(db_path: str | Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    async for row in iter_request_logs(db_path):
+        rows.append(row)
+    return rows
+
+
+async def iter_request_logs(db_path: str | Path) -> AsyncIterator[dict[str, Any]]:
+    """Stream request log rows one at a time without buffering the full table.
+
+    Used by bounded-memory exporters (streaming HTTP responses and CLI file
+    dumps) so a large request_logs table never has to be materialised in
+    memory at once. Rows are yielded newest-first to match
+    :func:`export_request_logs`.
+    """
     async with get_connection(db_path) as db:
         async with db.execute("SELECT * FROM request_logs ORDER BY id DESC") as cur:
-            rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+            while True:
+                row = await cur.fetchone()
+                if row is None:
+                    break
+                yield dict(row)
+
+
+def encode_request_logs_ndjson(
+    rows: AsyncIterator[dict[str, Any]],
+) -> AsyncIterator[bytes]:
+    """Encode request log rows as newline-delimited JSON for streaming."""
+
+    async def _generate() -> AsyncIterator[bytes]:
+        async for row in rows:
+            yield (json.dumps(row, ensure_ascii=False, default=str) + "\n").encode()
+
+    return _generate()
 
 
 async def count_request_logs(db_path: str | Path) -> int:

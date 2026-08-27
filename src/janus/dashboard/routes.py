@@ -362,14 +362,17 @@ async def _request_logs_context(
 
 
 @router.get("/api/request-logs/export")
-async def api_export_request_logs(request: Request) -> JSONResponse:
+async def api_export_request_logs(request: Request) -> StreamingResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.request_logs import export_request_logs
+    from janus.storage.request_logs import encode_request_logs_ndjson, iter_request_logs
 
-    logs = await export_request_logs(db_path)
-    return JSONResponse(
-        content=logs,
-        headers={"Content-Disposition": "attachment; filename=janus-request-logs.json"},
+    return StreamingResponse(
+        encode_request_logs_ndjson(iter_request_logs(db_path)),
+        media_type="application/x-ndjson",
+        headers={
+            "Content-Disposition": "attachment; filename=janus-request-logs.ndjson",
+            "Cache-Control": "no-store",
+        },
     )
 
 
