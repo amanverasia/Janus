@@ -74,6 +74,26 @@ async def test_assert_public_url_blocks_private_range():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("address", ["192.0.2.1", "198.51.100.1", "2001:db8::1"])
+async def test_assert_public_url_blocks_reserved_ranges(address: str):
+    with pytest.raises(BlockedUrlError, match="Blocked address"):
+        await assert_public_url(f"http://[{address}]/" if ":" in address else f"http://{address}/")
+
+
+@pytest.mark.asyncio
+async def test_assert_public_url_can_ignore_private_environment_override(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("ALLOW_PRIVATE_BASE_URLS", "true")
+    await assert_public_url("http://169.254.169.254/latest/meta-data")
+    with pytest.raises(BlockedUrlError, match="Blocked address"):
+        await assert_public_url(
+            "http://169.254.169.254/latest/meta-data",
+            respect_private_env=False,
+        )
+
+
+@pytest.mark.asyncio
 async def test_assert_public_url_blocks_credentials():
     with pytest.raises(BlockedUrlError, match="Credentials"):
         await assert_public_url("https://user:pass@api.openai.com/v1/models")

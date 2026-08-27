@@ -2,7 +2,9 @@
 
 ## Dev environment
 
-- Python 3.11 in a `.venv` at repo root. Always use `.venv/bin/python -m pytest`, not bare `pytest`.
+- Python 3.11 in a `.venv` at repo root. Always use `.venv/bin/python -m <tool>`, not bare
+  console scripts: generated wrappers can retain a stale checkout/interpreter path after an
+  environment move.
 - Install: `pip install -e ".[dev]"` (editable + dev extras: respx, ruff, mypy, mkdocs-material, build).
 - CI runs on push/PR via `.github/workflows/ci.yml` (ruff check + format + mypy + pytest).
 - PyPI package name is `janus-ai`. Import name is `janus`. CLI binary is `janus`.
@@ -12,14 +14,15 @@
 ```bash
 .venv/bin/python -m pytest                                    # all tests
 .venv/bin/python -m pytest tests/unit/formats/test_openai.py::test_name -v  # single test
-.venv/bin/ruff check src/janus/ tests/                        # lint
-.venv/bin/ruff format --check src/janus/ tests/              # format check (run before committing)
-.venv/bin/mypy src/janus/                                    # typecheck (strict)
+.venv/bin/python -m ruff check src/janus/ tests/             # lint
+.venv/bin/python -m ruff format --check src/janus/ tests/    # format check (run before committing)
+.venv/bin/python -m mypy src/janus/                          # typecheck (strict)
 .venv/bin/janus serve --port 20128 --config ~/.janus/config.yaml  # dev server
 docker compose up -d                                         # Docker (persists in ./janus-data/)
 .venv/bin/mkdocs serve                                       # docs preview
 .venv/bin/mkdocs build --strict                              # docs verify
 .venv/bin/python -m build                                    # wheel + sdist
+scripts/build_dashboard_ui.py --check                         # dashboard build + committed-bundle check
 ```
 
 ## Architecture constraint
@@ -37,6 +40,10 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
 - `routing/errors.py` has `classify_error(status_code)` and `is_fallback_eligible(error)` — these drive fallback decisions in `_handle()`.
 - The retry loop lives in `api/routes.py::_handle()`. Streaming requests do NOT retry mid-stream (can't replay partial output).
 - Adding multi-account: register multiple `ProviderConfig` entries with the same `prefix` but different `id`/`api_key`.
+- `ProviderRegistry.has_route()` is the indexed, boolean equivalent of `lookup()`. Use it for
+  catalog filtering; do not materialize `ResolvedTarget` lists just to determine routability.
+- Model catalog entries must be unique, remain key-allowlist-aware, and preserve configured combo
+  order. A broken or allowlist-hidden combo must not hide a physical model with the same name.
 
 ## Provider lifecycle & connection pooling
 
@@ -100,9 +107,40 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 - Dashboard API routes validate values and referenced row IDs server-side and return structured 400/422 responses; browser dropdown constraints are not sufficient validation.
 - Dashboard runtime assets should be served locally and included in wheels, sdists, and Docker images. Core dashboard rendering must not require public CDN access.
 
-## Active dashboard audit handoff
+## Dashboard lifecycle and responsiveness
+
+- The normal FastAPI lifespan prepares dashboard defaults and marks `_dashboard_db_ready`; the
+  ASGI fallback in `_ensure_db()` must remain single-flight behind the app-scoped lock. Never make
+  every first dashboard request repeat seeding/reload work.
+- Dashboard alerts are shared state: collect independent sources concurrently, use the short
+  app-scoped cache/coalescing path, and invalidate it after a successful dashboard mutation. Do
+  not add an expensive global query to every state response without a bounded cache plan.
+- Preserve cached page state while a dashboard view revalidates. Only an initial uncached view
+  should use `PageSkeleton`; route changes must not blank known content behind a spinner.
+- When changing a dashboard state response, update the typed UI mapping and an API/UI regression
+  test together. Field names are contracts: Request Logs uses `timestamp`, `status`, and
+  `duration_ms`; inventory summaries include `needs_attention` and exclude archived credentials.
+
+## Remote content prefetch security
+
+- Remote image URLs are untrusted request input. For prefetch, reject private, loopback,
+  link-local, reserved, metadata, and credential-bearing URLs even when
+  `ALLOW_PRIVATE_BASE_URLS=true`; that development override is only for configured provider base
+  URLs.
+- Resolve and validate every redirect, disable automatic redirects, then connect to a validated
+  address while preserving the original Host header and HTTPS SNI. Do not resolve a hostname for
+  validation and then reconnect by hostname.
+- Request identity encoding and reject a non-identity content encoding before consuming the body.
+  Stream responses with both per-image and whole-request byte limits (currently 20 MiB each), and
+  fail safe by leaving an image URL unchanged when prefetch fails.
+
+## Dashboard audit handoff
 
 The production-data dashboard audit from 2026-08-25 is documented in `docs/audits/2026-08-25-dashboard-audit-handoff.md`. It contains evidence, proposed designs, file ownership, cleanup safety guidance, required tests, and acceptance criteria for GitHub issues #88 through #94. Read that report before changing inventory credential reveal, history, budget-time semantics, dashboard DOM rendering, or frontend asset packaging.
+
+The 2026-08-26 production-size audit and its open follow-up issues are recorded in `issues.md`.
+It includes safe Docker-test guidance and the benchmark baseline; read it before changing remote
+prefetch, public model discovery, dashboard startup/alerts, inventory summaries, or Request Logs.
 
 ## SQLite storage
 

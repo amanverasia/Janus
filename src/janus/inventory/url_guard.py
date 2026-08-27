@@ -121,6 +121,8 @@ def _is_blocked_ip(ip: str) -> bool:
         parsed = ipaddress.ip_address(ip)
     except ValueError:
         return True
+    if not parsed.is_global:
+        return True
     if isinstance(parsed, ipaddress.IPv4Address):
         return _is_blocked_v4(str(parsed))
     return _is_blocked_v6(str(parsed))
@@ -134,7 +136,12 @@ def is_http_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"}
 
 
-async def assert_public_url(raw_url: str, *, allow_private_network: bool = False) -> None:
+async def resolve_public_url(
+    raw_url: str,
+    *,
+    allow_private_network: bool = False,
+    respect_private_env: bool = True,
+) -> tuple[str, ...]:
     try:
         parsed = httpx.URL(raw_url)
     except Exception as exc:
@@ -145,8 +152,8 @@ async def assert_public_url(raw_url: str, *, allow_private_network: bool = False
     if parsed.username or parsed.password:
         raise BlockedUrlError("Credentials in URL are not allowed")
 
-    if allow_private_network or _allow_private():
-        return
+    if allow_private_network or (respect_private_env and _allow_private()):
+        return ()
 
     host = parsed.host
     if host is None:
@@ -161,7 +168,7 @@ async def assert_public_url(raw_url: str, *, allow_private_network: bool = False
     else:
         if _is_blocked_ip(host):
             raise BlockedUrlError(f"Blocked address: {host}")
-        return
+        return (str(ipaddress.ip_address(host)),)
 
     try:
         addresses = await asyncio.to_thread(
@@ -176,13 +183,36 @@ async def assert_public_url(raw_url: str, *, allow_private_network: bool = False
     if not addresses:
         raise BlockedUrlError(f"No addresses for {host}")
 
+    public_addresses: list[str] = []
     for info in addresses:
         sockaddr = info[4]
         if sockaddr is None:
             continue
-        address = str(sockaddr[0])
+        try:
+            address = str(ipaddress.ip_address(str(sockaddr[0])))
+        except ValueError as exc:
+            raise BlockedUrlError(f"DNS returned an invalid address for {host}") from exc
         if _is_blocked_ip(address):
             raise BlockedUrlError(f"Host {host} resolves to blocked address {address}")
+        if address not in public_addresses:
+            public_addresses.append(address)
+
+    if not public_addresses:
+        raise BlockedUrlError(f"No addresses for {host}")
+    return tuple(public_addresses)
+
+
+async def assert_public_url(
+    raw_url: str,
+    *,
+    allow_private_network: bool = False,
+    respect_private_env: bool = True,
+) -> None:
+    await resolve_public_url(
+        raw_url,
+        allow_private_network=allow_private_network,
+        respect_private_env=respect_private_env,
+    )
 
 
 def _resolve_redirect(current_url: str, location: str) -> str:
