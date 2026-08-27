@@ -164,3 +164,31 @@ async def test_inventory_api_is_not_captured_by_legacy_page_redirects(app) -> No
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/json")
     assert isinstance(response.json()["providers"], list)
+
+
+async def test_svelte_immutable_assets_are_cached_forever(app) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        index = await client.get(f"{APP_URL_PREFIX}index.html")
+        assets = [
+            ref
+            for ref in RESOURCE_REFERENCE_PATTERN.findall(index.text)
+            if ref.startswith(APP_URL_PREFIX) and "_app/immutable/" in ref
+        ]
+        assert assets
+        for asset in assets:
+            response = await client.get(asset)
+            assert response.status_code == 200, asset
+            cache_control = response.headers["cache-control"]
+            assert "max-age=31536000" in cache_control, asset
+            assert "immutable" in cache_control, asset
+
+
+async def test_svelte_html_and_version_json_stay_revalidatable(app) -> None:
+    async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
+        index = await client.get(f"{APP_URL_PREFIX}index.html")
+        version = await client.get(f"{APP_URL_PREFIX}_app/version.json")
+
+        assert index.status_code == 200
+        assert version.status_code == 200
+        assert index.headers["cache-control"] == "no-cache"
+        assert version.headers["cache-control"] == "no-cache"

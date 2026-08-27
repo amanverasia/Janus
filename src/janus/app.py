@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -10,6 +11,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.staticfiles import PathLike
+from starlette.types import Scope
 
 from janus.api.routes import gemini_router, ollama_router, router
 from janus.config.schema import JanusConfig, ProviderConfig
@@ -24,6 +28,37 @@ from janus.storage.database import init_db, seed_from_config
 from janus.tokensavers.pipeline import SaverPipeline
 
 logger = logging.getLogger(__name__)
+
+
+class _CachedDashboardStaticFiles(StaticFiles):
+    """Static file mount that caches SvelteKit content-hashed assets forever.
+
+    SvelteKit emits content-hashed bundles under `_app/immutable/`; the hash
+    changes when content does, so aggressive caching is safe and avoids
+    per-navigation revalidation. `index.html` and `version.json` stay
+    revalidated so the SPA picks up deploys immediately.
+    """
+
+    _IMMUTABLE_PREFIX = "_app/immutable/"
+    _IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+    _DEFAULT_CACHE = "no-cache"
+
+    def file_response(
+        self,
+        full_path: PathLike,
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        relative = str(scope.get("path", "")).removeprefix("/dashboard/static/app/")
+        cache = (
+            self._IMMUTABLE_CACHE
+            if relative.startswith(self._IMMUTABLE_PREFIX)
+            else self._DEFAULT_CACHE
+        )
+        response.headers["cache-control"] = cache
+        return response
 
 
 def _build_provider(config: ProviderConfig) -> Provider:
@@ -230,7 +265,7 @@ def create_app(
     dashboard_static = Path(__file__).parent / "dashboard" / "static"
     app.mount(
         "/dashboard/static",
-        StaticFiles(directory=str(dashboard_static)),
+        _CachedDashboardStaticFiles(directory=str(dashboard_static)),
         name="dashboard_static",
     )
 
