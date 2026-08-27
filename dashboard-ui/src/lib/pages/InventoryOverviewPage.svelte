@@ -130,8 +130,8 @@
   />
   <StatCard
     label="Needs attention"
-    value={compact(number(summary.invalid) + number(summary.exhausted))}
-    detail="Invalid or exhausted credentials"
+    value={compact(summary.needs_attention)}
+    detail="Invalid, exhausted, or unhealthy credentials"
     tone="amber"
   />
 </div>

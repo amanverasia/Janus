@@ -479,4 +479,7 @@ async def test_analytics_unpriced_banner(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/dashboard/api/v2/state/analytics?days=30")
         assert r.status_code == 200
-        assert "unknown/model-x" in r.json()["data"]["unpriced_model_ids"]
+        payload = r.json()
+        assert "unpriced_models" not in payload["data"]
+        assert "unpriced_model_ids" not in payload["data"]
+        assert "unpriced:models" in {alert["id"] for alert in payload["alerts"]}
