@@ -1573,6 +1573,21 @@ _OPENAI_COMPAT_GATEWAYS = {
         "https://api.bizrouter.ai/v1",
         default_models=["openai/gpt-5.6-sol"],
     ),
+    "seekai": _gateway_only(
+        "seekai",
+        "SeekAI",
+        "https://seekai.cc/v1",
+        default_models=[
+            "claude-opus-4-8",
+            "claude-sonnet-5",
+            "claude-fable-5",
+            "gpt-5.6-sol",
+            "gemini-3-6-flash",
+            "deepseek-v4-pro",
+            "grok-4-6",
+            "claude-opus-5",
+        ],
+    ),
     "kilo": _gateway_only("kilo", "Kilo", "https://api.kilo.ai/api/gateway"),
     "gitlab-duo": _gateway_only(
         "gitlab-duo",

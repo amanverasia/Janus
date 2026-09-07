@@ -71,6 +71,9 @@ BODY_PROVIDER_MISS_MARKERS: tuple[str, ...] = (
     "improperly formed request",
     "request not allowed",
     "no credentials",
+    # Codex account-plan restriction: free/Go ChatGPT accounts reject
+    # gpt-5.6-sol with a 400. Rotate to the next (Plus/Team) account.
+    "not supported when using codex with a chatgpt account",
 )
 
 
