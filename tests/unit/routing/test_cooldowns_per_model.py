@@ -10,7 +10,7 @@ from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import (
     AllAccountsCooledDown,
     FallbackHandler,
-    _cooldown_task_callback,
+    _persist_task_callback,
 )
 
 
@@ -162,7 +162,7 @@ async def test_cooldown_save_failure_is_logged_and_keeps_memory_state(
         await asyncio.sleep(0)
 
     assert ("acct-a", "m1") in h._cooldowns
-    assert "Cooldown persistence save failed" in caplog.text
+    assert "Persistence cooldown save failed" in caplog.text
     assert "account=acct-a model=m1" in caplog.text
     assert "disk full" in caplog.text
 
@@ -186,7 +186,7 @@ async def test_cooldown_delete_failure_is_logged_and_clears_memory_state(
 
     assert ("acct-b", "m2") not in h._cooldowns
     assert ("acct-b", "m2") not in h._backoff
-    assert "Cooldown persistence delete failed" in caplog.text
+    assert "Persistence cooldown delete failed" in caplog.text
     assert "account=acct-b model=m2" in caplog.text
     assert "database locked" in caplog.text
 
@@ -203,18 +203,18 @@ async def test_successful_cooldown_persistence_does_not_warn(
         await asyncio.sleep(0)
         await asyncio.sleep(0)
 
-    assert "Cooldown persistence" not in caplog.text
+    assert "Persistence" not in caplog.text
 
 
 async def test_cancelled_cooldown_persistence_does_not_warn(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     task = asyncio.create_task(asyncio.sleep(60))
-    task.add_done_callback(_cooldown_task_callback("save", "acct-d", "m4"))
+    task.add_done_callback(_persist_task_callback("cooldown save", "account=acct-d model=m4"))
 
     with caplog.at_level(logging.WARNING, logger="janus.routing.fallback"):
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         await asyncio.sleep(0)
 
-    assert "Cooldown persistence" not in caplog.text
+    assert "Persistence" not in caplog.text
