@@ -11,6 +11,7 @@ from janus.storage.custom_models import (
 )
 from janus.storage.database import get_connection, init_db
 from janus.storage.providers_db import create_provider, toggle_provider, update_provider
+from janus.storage.upstream_keys import create_upstream_key
 from janus.storage.upstream_models import replace_models_for_key
 
 pytestmark = pytest.mark.asyncio
@@ -73,6 +74,78 @@ async def test_catalog_merges_configured_discovered_and_custom_models(tmp_path) 
     assert rows["openai/gpt-custom"]["custom_enabled"] is True
     assert rows["openai/gpt-custom"]["custom_id"] == custom["id"]
     assert rows["openai/gpt-custom"]["provider_id"] == "openai"
+
+
+async def test_catalog_discovered_models_scale_with_distinct_pairs_not_key_rows(tmp_path) -> None:
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await create_provider(
+        db_path,
+        {
+            "id": "openai",
+            "catalog_id": "openai",
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "models": [],
+            "live_models": True,
+        },
+    )
+    keys = []
+    for index in range(12):
+        key = await create_upstream_key(
+            db_path,
+            provider_id="openai",
+            key_value=f"sk-test-catalog-scale-{index}",
+        )
+        keys.append(str(key["id"]))
+    discovered = [f"gpt-{index}" for index in range(40)]
+    for key_id in keys:
+        await replace_models_for_key(
+            db_path,
+            upstream_key_id=key_id,
+            provider_id="openai",
+            models=[{"model_id": model} for model in discovered],
+        )
+    await replace_models_for_key(
+        db_path,
+        upstream_key_id=keys[0],
+        provider_id="openai",
+        models=[{"model_id": "gpt-earliest", "display_name": "Earliest label"}]
+        + [{"model_id": model} for model in discovered],
+    )
+    await replace_models_for_key(
+        db_path,
+        upstream_key_id=keys[-1],
+        provider_id="openai",
+        models=[{"model_id": "gpt-earliest"}]
+        + [
+            {"model_id": model, "display_name": f"Latest label {model}"}
+            if model == "gpt-7"
+            else {"model_id": model}
+            for model in discovered
+        ],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE upstream_models SET created_at = '2026-01-01 00:00:00'"
+            " WHERE upstream_key_id = ?",
+            (keys[0],),
+        )
+        await db.execute(
+            "UPDATE upstream_models SET created_at = '2026-02-01 00:00:00'"
+            " WHERE upstream_key_id = ?",
+            (keys[-1],),
+        )
+        await db.commit()
+
+    rows = await list_catalog_models(db_path)
+    discovered_rows = {row["id"]: row for row in rows if row["source"] == "discovered"}
+
+    assert set(discovered_rows) == {*discovered, "gpt-earliest"}
+    assert discovered_rows["gpt-earliest"]["display_name"] == "Earliest label"
+    assert discovered_rows["gpt-7"]["display_name"] == "Latest label gpt-7"
+    assert rows == await list_catalog_models(db_path)
 
 
 async def test_live_models_toggle_controls_inventory_discovery(tmp_path) -> None:

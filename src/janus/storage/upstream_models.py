@@ -73,7 +73,7 @@ async def list_model_ids_for_keys(
     placeholders = ", ".join("?" for _ in upstream_key_ids)
     key_query = f"""SELECT id FROM upstream_keys
                     WHERE id IN ({placeholders}) AND models_discovered_at IS NOT NULL"""
-    model_query = f"""SELECT upstream_key_id, model_id
+    model_query = f"""SELECT DISTINCT upstream_key_id, model_id
                       FROM upstream_models
                       WHERE upstream_key_id IN ({placeholders}) AND is_available = 1
                       ORDER BY upstream_key_id, model_id"""
@@ -84,12 +84,74 @@ async def list_model_ids_for_keys(
             rows = await cur.fetchall()
     result: dict[str, list[str]] = {str(row["id"]): [] for row in discovered_keys}
     for row in rows:
-        key_id = str(row["upstream_key_id"])
-        model_id = str(row["model_id"])
-        models = result.setdefault(key_id, [])
-        if model_id not in models:
-            models.append(model_id)
+        result.setdefault(str(row["upstream_key_id"]), []).append(str(row["model_id"]))
     return result
+
+
+_DISTINCT_DISCOVERED_PACK_SEP = "\x1f"
+_DISTINCT_DISCOVERED_MODELS_QUERY = f"""
+SELECT
+    provider_id,
+    model_id,
+    MIN(created_at) AS first_created_at,
+    MIN(id) AS first_id,
+    MAX(CASE WHEN display_name IS NOT NULL
+        THEN created_at || '{_DISTINCT_DISCOVERED_PACK_SEP}' || id
+             || '{_DISTINCT_DISCOVERED_PACK_SEP}' || display_name END) AS display_name_packed,
+    MAX(CASE WHEN context_window IS NOT NULL
+        THEN created_at || '{_DISTINCT_DISCOVERED_PACK_SEP}' || id
+             || '{_DISTINCT_DISCOVERED_PACK_SEP}' || context_window END) AS context_window_packed,
+    MAX(CASE WHEN max_output_tokens IS NOT NULL
+        THEN created_at || '{_DISTINCT_DISCOVERED_PACK_SEP}' || id
+             || '{_DISTINCT_DISCOVERED_PACK_SEP}' || max_output_tokens END) AS max_output_packed,
+    MAX(CASE WHEN capabilities IS NOT NULL
+        THEN created_at || '{_DISTINCT_DISCOVERED_PACK_SEP}' || id
+             || '{_DISTINCT_DISCOVERED_PACK_SEP}' || capabilities END) AS capabilities_packed
+FROM upstream_models
+WHERE is_available = 1
+GROUP BY provider_id, model_id
+ORDER BY first_created_at, first_id
+"""
+
+
+def _unpack_discovered_field(packed: Any, *, as_int: bool = False) -> Any:
+    if packed is None:
+        return None
+    value = str(packed).rsplit(_DISTINCT_DISCOVERED_PACK_SEP, 2)[-1]
+    if as_int:
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return value
+
+
+async def list_distinct_discovered_models(db_path: str | Path) -> list[dict[str, Any]]:
+    """Available discoveries collapsed to one row per (provider_id, model_id) pair.
+
+    Cardinality scales with distinct provider/model pairs, not with the
+    per-key row count in ``upstream_models``. Metadata precedence: each field
+    (display_name, context_window, max_output_tokens, capabilities) takes its
+    value from the most recent observation (highest ``created_at``, then
+    highest ``id``) where that field is non-NULL; older non-NULL values only
+    survive when every newer observation of the pair has NULL for the field.
+    Rows come back ordered by the pair's earliest observation, matching the
+    legacy full-scan order.
+    """
+    async with get_connection(db_path) as db:
+        async with db.execute(_DISTINCT_DISCOVERED_MODELS_QUERY) as cur:
+            rows = await cur.fetchall()
+    return [
+        {
+            "provider_id": str(row["provider_id"]),
+            "model_id": str(row["model_id"]),
+            "display_name": _unpack_discovered_field(row["display_name_packed"]),
+            "context_window": _unpack_discovered_field(row["context_window_packed"], as_int=True),
+            "max_output_tokens": _unpack_discovered_field(row["max_output_packed"], as_int=True),
+            "capabilities": _unpack_discovered_field(row["capabilities_packed"]),
+        }
+        for row in rows
+    ]
 
 
 async def list_live_model_ids_for_provider(
