@@ -1247,6 +1247,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Pricing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-token-accounting-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache-token accounting invariant
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1532,6 +1549,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Pricing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cache-token-accounting-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache-token accounting invariant
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2001,6 +2035,37 @@ progressively shorter prefixes until a match is found. Unknown models cost
 </tr>
 </tbody>
 </table>
+<h3 id="cache-token-accounting-invariant">Cache-token accounting invariant<a class="headerlink" href="#cache-token-accounting-invariant" title="Permanent link">&para;</a></h3>
+<p><code>Usage.input_tokens</code> is the <strong>total</strong> prompt input; <code>cache_creation_input_tokens</code>
+and <code>cache_read_input_tokens</code> are <strong>subsets</strong> of it. Each format adapter
+normalizes its upstream wire format to this invariant before recording:</p>
+<ul>
+<li><strong>Anthropic</strong> reports the three fields as disjoint buckets (non-cached input,
+  cache writes, cache reads). The Anthropic adapter folds them into a single
+  total <code>input_tokens</code> and keeps the cache buckets as subsets, so downstream
+  accounting is uniform.</li>
+<li><strong>OpenAI Chat / Responses</strong> report <code>prompt_tokens</code> (or <code>input_tokens</code>) as the
+  total with <code>cached_tokens</code> as a subset — already the invariant; the adapter
+  just preserves the subset.</li>
+<li><strong>Gemini</strong> reports <code>promptTokenCount</code> as the total with
+  <code>cachedContentTokenCount</code> as a subset — already the invariant.</li>
+</ul>
+<p><code>compute_cost</code> bills the uncached remainder at the full input rate and each
+cache subset at its own (cheaper) rate:</p>
+<div class="highlight"><pre><span></span><code><span class="n">uncached</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">input_tokens</span> <span class="o">-</span> <span class="n">cache_creation_input_tokens</span> <span class="o">-</span> <span class="n">cache_read_input_tokens</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+</code></pre></div>
+<p>The <code>max(..., 0)</code> clamp guards against inconsistent payloads where a lying or
+malformed upstream reports cache subsets exceeding the total input — a negative
+uncached bill is never produced.</p>
+<div class="admonition note">
+<p class="admonition-title">Historical cost rows are not backfilled</p>
+<p>Costs recorded before this invariant was enforced are unreliable for
+cache-bearing requests: OpenAI/Gemini cached tokens were double-billed
+(charged at the full input rate <em>and</em> the cache-read rate), while Anthropic
+cache tokens were dropped entirely from the stored counts and cannot be
+reconstructed. No automatic backfill is performed; treat pre-fix <code>cost</code>
+values for cache-bearing requests as approximate.</p>
+</div>
 <h2 id="token-savers">Token savers<a class="headerlink" href="#token-savers" title="Permanent link">&para;</a></h2>
 <p>Token savers run on the <code>CanonicalRequest</code> after parsing and before routing.
 The <code>SaverPipeline</code> runs enabled savers in order (RTK → Caveman → Ponytail) and
