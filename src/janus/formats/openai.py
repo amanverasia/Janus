@@ -101,11 +101,13 @@ class OpenAIStreamParser:
 
         usage_raw = chunk.get("usage")
         if isinstance(usage_raw, dict) and usage_raw.get("prompt_tokens") is not None:
+            prompt_details = usage_raw.get("prompt_tokens_details") or {}
             events.append(
                 MessageDelta(
                     usage=Usage(
                         input_tokens=usage_raw.get("prompt_tokens", 0),
                         output_tokens=usage_raw.get("completion_tokens", 0),
+                        cache_read_input_tokens=prompt_details.get("cached_tokens", 0),
                     ),
                 )
             )
@@ -269,11 +271,16 @@ class OpenAIStreamEmitter:
                 "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
             }
             if event.usage:
-                data["usage"] = {
+                stream_usage: dict[str, Any] = {
                     "prompt_tokens": event.usage.input_tokens,
                     "completion_tokens": event.usage.output_tokens,
                     "total_tokens": event.usage.input_tokens + event.usage.output_tokens,
                 }
+                if event.usage.cache_read_input_tokens:
+                    stream_usage["prompt_tokens_details"] = {
+                        "cached_tokens": event.usage.cache_read_input_tokens
+                    }
+                data["usage"] = stream_usage
             return [encode_sse(data)]
 
         if isinstance(event, MessageStop):
@@ -608,9 +615,11 @@ class OpenAIAdapter:
             parts.append(ToolUse(id=tc.get("id", ""), name=fn.get("name", ""), input=args))
 
         usage_raw = raw.get("usage") or {}
+        prompt_details = usage_raw.get("prompt_tokens_details") or {}
         usage = Usage(
             input_tokens=usage_raw.get("prompt_tokens", 0),
             output_tokens=usage_raw.get("completion_tokens", 0),
+            cache_read_input_tokens=prompt_details.get("cached_tokens", 0),
         )
 
         return CanonicalResponse(
@@ -650,16 +659,19 @@ class OpenAIAdapter:
             message["reasoning_content"] = " "
 
         finish = _STOP_TO_FINISH.get(resp.stop_reason or "end_turn", "stop")
+        usage: dict[str, Any] = {
+            "prompt_tokens": resp.usage.input_tokens,
+            "completion_tokens": resp.usage.output_tokens,
+            "total_tokens": resp.usage.input_tokens + resp.usage.output_tokens,
+        }
+        if resp.usage.cache_read_input_tokens:
+            usage["prompt_tokens_details"] = {"cached_tokens": resp.usage.cache_read_input_tokens}
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
             "object": "chat.completion",
             "model": resp.model,
             "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-            "usage": {
-                "prompt_tokens": resp.usage.input_tokens,
-                "completion_tokens": resp.usage.output_tokens,
-                "total_tokens": resp.usage.input_tokens + resp.usage.output_tokens,
-            },
+            "usage": usage,
         }
 
     # ---- streaming ----

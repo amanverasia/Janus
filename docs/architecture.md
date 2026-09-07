@@ -315,6 +315,41 @@ Pricing fields per model:
 | `cache_creation_per_mtok` | $ per million cache-creation tokens |
 | `cache_read_per_mtok` | $ per million cache-read tokens |
 
+### Cache-token accounting invariant
+
+`Usage.input_tokens` is the **total** prompt input; `cache_creation_input_tokens`
+and `cache_read_input_tokens` are **subsets** of it. Each format adapter
+normalizes its upstream wire format to this invariant before recording:
+
+- **Anthropic** reports the three fields as disjoint buckets (non-cached input,
+  cache writes, cache reads). The Anthropic adapter folds them into a single
+  total `input_tokens` and keeps the cache buckets as subsets, so downstream
+  accounting is uniform.
+- **OpenAI Chat / Responses** report `prompt_tokens` (or `input_tokens`) as the
+  total with `cached_tokens` as a subset — already the invariant; the adapter
+  just preserves the subset.
+- **Gemini** reports `promptTokenCount` as the total with
+  `cachedContentTokenCount` as a subset — already the invariant.
+
+`compute_cost` bills the uncached remainder at the full input rate and each
+cache subset at its own (cheaper) rate:
+
+```python
+uncached = max(input_tokens - cache_creation_input_tokens - cache_read_input_tokens, 0)
+```
+
+The `max(..., 0)` clamp guards against inconsistent payloads where a lying or
+malformed upstream reports cache subsets exceeding the total input — a negative
+uncached bill is never produced.
+
+!!! note "Historical cost rows are not backfilled"
+    Costs recorded before this invariant was enforced are unreliable for
+    cache-bearing requests: OpenAI/Gemini cached tokens were double-billed
+    (charged at the full input rate *and* the cache-read rate), while Anthropic
+    cache tokens were dropped entirely from the stored counts and cannot be
+    reconstructed. No automatic backfill is performed; treat pre-fix `cost`
+    values for cache-bearing requests as approximate.
+
 ## Token savers
 
 Token savers run on the `CanonicalRequest` after parsing and before routing.

@@ -85,6 +85,7 @@ class GeminiStreamParser:
                         usage=Usage(
                             input_tokens=usage_meta.get("promptTokenCount", 0),
                             output_tokens=usage_meta.get("candidatesTokenCount", 0),
+                            cache_read_input_tokens=usage_meta.get("cachedContentTokenCount", 0),
                         )
                     )
                 )
@@ -140,6 +141,7 @@ class GeminiStreamParser:
                     usage=Usage(
                         input_tokens=usage_meta.get("promptTokenCount", 0),
                         output_tokens=usage_meta.get("candidatesTokenCount", 0),
+                        cache_read_input_tokens=usage_meta.get("cachedContentTokenCount", 0),
                     ),
                 )
             )
@@ -207,6 +209,7 @@ class GeminiStreamEmitter:
                 usage_metadata = {
                     "promptTokenCount": event.usage.input_tokens,
                     "candidatesTokenCount": event.usage.output_tokens,
+                    "cachedContentTokenCount": event.usage.cache_read_input_tokens,
                 }
             return [self._make_chunk([], finish_reason=finish, usage_metadata=usage_metadata)]
 
@@ -601,6 +604,7 @@ class GeminiAdapter:
         usage = Usage(
             input_tokens=usage_meta.get("promptTokenCount", 0),
             output_tokens=usage_meta.get("candidatesTokenCount", 0),
+            cache_read_input_tokens=usage_meta.get("cachedContentTokenCount", 0),
         )
 
         return CanonicalResponse(
@@ -640,6 +644,7 @@ class GeminiAdapter:
                 "promptTokenCount": resp.usage.input_tokens,
                 "candidatesTokenCount": resp.usage.output_tokens,
                 "totalTokenCount": resp.usage.input_tokens + resp.usage.output_tokens,
+                "cachedContentTokenCount": resp.usage.cache_read_input_tokens,
             },
         }
 

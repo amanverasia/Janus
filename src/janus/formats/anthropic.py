@@ -63,14 +63,19 @@ class AnthropicStreamParser:
         if event_type == "message_start":
             message = chunk.get("message") or {}
             usage_raw = message.get("usage") or {}
+            raw_input = usage_raw.get("input_tokens", 0)
+            cache_creation = usage_raw.get("cache_creation_input_tokens", 0)
+            cache_read = usage_raw.get("cache_read_input_tokens", 0)
             return [
                 MessageStart(
                     model=message.get("model", ""),
                 ),
                 MessageDelta(
                     usage=Usage(
-                        input_tokens=usage_raw.get("input_tokens", 0),
+                        input_tokens=raw_input + cache_creation + cache_read,
                         output_tokens=usage_raw.get("output_tokens", 0),
+                        cache_creation_input_tokens=cache_creation,
+                        cache_read_input_tokens=cache_read,
                     ),
                 ),
             ]
@@ -546,9 +551,14 @@ class AnthropicAdapter:
                 )
 
         usage_raw = raw.get("usage") or {}
+        raw_input = usage_raw.get("input_tokens", 0)
+        cache_creation = usage_raw.get("cache_creation_input_tokens", 0)
+        cache_read = usage_raw.get("cache_read_input_tokens", 0)
         usage = Usage(
-            input_tokens=usage_raw.get("input_tokens", 0),
+            input_tokens=raw_input + cache_creation + cache_read,
             output_tokens=usage_raw.get("output_tokens", 0),
+            cache_creation_input_tokens=cache_creation,
+            cache_read_input_tokens=cache_read,
         )
 
         return CanonicalResponse(
@@ -586,7 +596,14 @@ class AnthropicAdapter:
             "stop_reason": resp.stop_reason,
             "stop_sequence": None,
             "usage": {
-                "input_tokens": resp.usage.input_tokens,
+                "input_tokens": max(
+                    resp.usage.input_tokens
+                    - resp.usage.cache_creation_input_tokens
+                    - resp.usage.cache_read_input_tokens,
+                    0,
+                ),
+                "cache_creation_input_tokens": resp.usage.cache_creation_input_tokens,
+                "cache_read_input_tokens": resp.usage.cache_read_input_tokens,
                 "output_tokens": resp.usage.output_tokens,
             },
         }
