@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-07
+### Fixed
+- **Routing attempt counters survive reloads and restarts** — RPD and subscription
+  request/token quota counters now persist to a new `attempt_counters` ledger on every
+  attempt instead of being re-seeded from success-only `usage` rows. A provider reload
+  merges adopted in-memory counts with the ledger (max per current window) rather than
+  overwriting them, so failed attempts no longer restore consumed quota headroom or vanish
+  on a process restart. Window-keyed rows expire with the window; stale rows are pruned
+  after 35 days. Per-account RPD and per-provider-row quota scopes stay distinct. (#101)
+
+
 ## [3.1.0] - 2026-08-26
 
 ### Added
