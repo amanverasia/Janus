@@ -168,6 +168,10 @@ def test_200_wrapped_legitimate_response_not_flagged():
 
 
 def test_refine_400_codex_account_plan_restriction_becomes_fallback_eligible():
-    body = {"detail": "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."}
+    body = {
+        "detail": (
+            "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."
+        )
+    }
     assert refine_error_type(400, body) == ErrorType.SERVER_ERROR
     assert is_fallback_eligible_refined(400, body)
