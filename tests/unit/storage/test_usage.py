@@ -2,6 +2,7 @@ import pytest
 
 from janus.pricing.registry import PricingRegistry
 from janus.storage.database import get_connection, init_db
+from janus.storage.outcomes import record_request_outcome
 from janus.storage.usage import (
     backfill_costs,
     get_today_total_cost,
@@ -23,6 +24,7 @@ async def test_record_usage(tmp_path):
         output_tokens=50,
         status=200,
     )
+    await record_request_outcome(db_path, model="glm-4.7", status=200)
     stats = await get_usage_stats(db_path)
     assert stats["total_requests"] == 1
     assert stats["total_input_tokens"] == 100
@@ -57,6 +59,8 @@ async def test_record_multiple_usage(tmp_path):
         output_tokens=25,
         status=429,
     )
+    for model, status in (("glm-4.7", 200), ("claude", 200), ("glm-4.7", 429)):
+        await record_request_outcome(db_path, model=model, status=status)
     stats = await get_usage_stats(db_path)
     assert stats["total_requests"] == 3
     assert stats["total_input_tokens"] == 350
@@ -115,6 +119,9 @@ async def test_record_usage_with_cost_and_cache(tmp_path):
         client_key_id=1,
         cost=0.015,
     )
+    await record_request_outcome(
+        db_path, model="claude-sonnet-4-20250514", status=200, client_key_id=1
+    )
     stats = await get_usage_stats(db_path)
     assert stats["total_requests"] == 1
 
@@ -148,6 +155,7 @@ async def test_record_usage_defaults_backward_compatible(tmp_path):
         output_tokens=50,
         status=200,
     )
+    await record_request_outcome(db_path, model="glm-4.7", status=200)
     stats = await get_usage_stats(db_path)
     assert stats["total_requests"] == 1
 
@@ -295,6 +303,7 @@ async def test_backfill_updates_zero_cost_rows_with_tokens(tmp_path):
         status=200,
         cost=0.0,
     )
+    await record_request_outcome(db_path, model="mystery-model", status=200)
     rows_updated, total_added = await backfill_costs(db_path, _registry())
     assert rows_updated == 1
     expected = 3.0 + 7.5
@@ -433,6 +442,7 @@ async def test_backfill_updates_cache_only_rows(tmp_path):
         status=200,
         cost=0.0,
     )
+    await record_request_outcome(db_path, model="mystery-model", status=200)
     rows_updated, total_added = await backfill_costs(db_path, _registry())
     assert rows_updated == 1
     expected = 0.3

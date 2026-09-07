@@ -68,6 +68,7 @@ from janus.routing.thinking import (
 from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
 from janus.storage.key_access import model_allowed as key_model_allowed
+from janus.storage.outcomes import record_request_outcome
 from janus.storage.request_logs import MAX_ROWS, record_request_log
 from janus.storage.usage import record_usage
 from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
@@ -339,6 +340,7 @@ async def _maybe_log_client_error(
 
 async def _log_error_and_raise(
     *,
+    outcome: _OutcomeRecorder,
     log_requests: bool,
     db_path: str | Path,
     client_format: str,
@@ -353,8 +355,17 @@ async def _log_error_and_raise(
     client_key_id: int | None = None,
     client_key_label: str | None = None,
     max_rows: int = MAX_ROWS,
+    attempts: int = 1,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
+    await outcome.record(
+        status=status,
+        model=model,
+        provider_id=provider_id,
+        account_id=account_id,
+        duration_ms=duration_ms,
+        attempts=attempts,
+    )
     if log_requests:
         err_text = detail if isinstance(detail, str) else str(detail)
         resp_text: str | None = None
@@ -468,6 +479,13 @@ async def _malformed_request_response(
         error=f"malformed_request: {message}",
         max_rows=retention,
     )
+    await record_request_outcome(
+        db_path,
+        client_format=client_format,
+        status=400,
+        client_key_id=getattr(request.state, "client_key_id", None),
+        client_key_label=getattr(request.state, "client_key_label", None),
+    )
     return JSONResponse(
         status_code=400,
         content={
@@ -477,6 +495,64 @@ async def _malformed_request_response(
             }
         },
     )
+
+
+class _OutcomeRecorder:
+    """Records exactly one terminal outcome row per client request (#103).
+
+    Every terminal path (success, upstream error, exhausted fallback, budget
+    block, parse error, interrupted stream, unexpected exception) calls
+    ``record``; the guard makes double recording impossible even when an
+    already-recorded path raises through the ``_handle`` catch-all.
+    """
+
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        client_format: str,
+        model: str | None,
+        client_key_id: int | None,
+        client_key_label: str | None,
+    ) -> None:
+        self._db_path = db_path
+        self._client_format = client_format
+        self._model = model
+        self._client_key_id = client_key_id
+        self._client_key_label = client_key_label
+        self._start_time = time.monotonic()
+        self.recorded = False
+
+    def elapsed_ms(self) -> int:
+        return int((time.monotonic() - self._start_time) * 1000)
+
+    async def record(
+        self,
+        *,
+        status: int,
+        model: str | None = None,
+        provider_id: str | None = None,
+        account_id: str | None = None,
+        duration_ms: int | None = None,
+        streamed: bool = False,
+        attempts: int = 1,
+    ) -> None:
+        if self.recorded:
+            return
+        self.recorded = True
+        await record_request_outcome(
+            self._db_path,
+            client_format=self._client_format,
+            model=model if model is not None else self._model,
+            provider_id=provider_id,
+            account_id=account_id,
+            status=status,
+            duration_ms=duration_ms if duration_ms is not None else self.elapsed_ms(),
+            streamed=streamed,
+            attempts=attempts,
+            client_key_id=self._client_key_id,
+            client_key_label=self._client_key_label,
+        )
 
 
 async def _handle(
@@ -492,8 +568,24 @@ async def _handle(
             message="Request body must be a JSON object",
         )
     snapshot = acquire_provider_snapshot(request.app)
+    model_raw = body.get("model")
+    outcome = _OutcomeRecorder(
+        request.app.state.db_path,
+        client_format=client_format,
+        model=model_raw if isinstance(model_raw, str) else None,
+        client_key_id=getattr(request.state, "client_key_id", None),
+        client_key_label=getattr(request.state, "client_key_label", None),
+    )
     try:
-        response = await _handle_with_snapshot(client_format, body, request, snapshot)
+        response = await _handle_with_snapshot(client_format, body, request, snapshot, outcome)
+    except HTTPException as e:
+        await outcome.record(status=e.status_code, duration_ms=outcome.elapsed_ms())
+        await release_provider_snapshot(request.app, snapshot)
+        raise
+    except Exception:
+        await outcome.record(status=500, duration_ms=outcome.elapsed_ms())
+        await release_provider_snapshot(request.app, snapshot)
+        raise
     except BaseException:
         await release_provider_snapshot(request.app, snapshot)
         raise
@@ -518,6 +610,7 @@ async def _handle_with_snapshot(
     body: dict[str, Any],
     request: Request,
     snapshot: ProviderSnapshot,
+    outcome: _OutcomeRecorder,
 ) -> Response:
     handler = snapshot.handler
     providers = snapshot.providers
@@ -526,6 +619,9 @@ async def _handle_with_snapshot(
 
     client_key_id = getattr(request.state, "client_key_id", None)
     client_key_label = getattr(request.state, "client_key_label", None)
+
+    def _elapsed_ms() -> int:
+        return outcome.elapsed_ms()
 
     from janus.storage.settings import (
         get_all_settings,
@@ -555,16 +651,18 @@ async def _handle_with_snapshot(
     blocked_response = await _check_budgets(db_path, client_key_id)
     if blocked_response is not None:
         model_raw = body.get("model")
+        budget_model = model_raw if isinstance(model_raw, str) else None
         await _maybe_log_client_error(
             log_requests=log_requests,
             db_path=db_path,
             client_format=client_format,
-            model=model_raw if isinstance(model_raw, str) else None,
+            model=budget_model,
             status=429,
             request_body=logged_request_body,
             error="budget_exceeded",
             max_rows=retention,
         )
+        await outcome.record(status=429, model=budget_model)
         return blocked_response
 
     client_adapter = FORMATS[client_format]
@@ -581,6 +679,7 @@ async def _handle_with_snapshot(
             error=f"malformed_request: {exc}",
             max_rows=retention,
         )
+        await outcome.record(status=400, model=None)
         return JSONResponse(
             status_code=400,
             content={
@@ -625,6 +724,7 @@ async def _handle_with_snapshot(
             error=f"Model '{model}' is not allowed for this API key",
             max_rows=retention,
         )
+        await outcome.record(status=403, model=model)
         return JSONResponse(
             content={
                 "error": {
@@ -660,10 +760,6 @@ async def _handle_with_snapshot(
     sticky_limit = resolve_sticky_limit(settings)
     combo_strat = resolve_combo_strategy(settings)
     combo_csl = resolve_combo_sticky_limit(settings)
-    start_time = time.monotonic()
-
-    def _elapsed_ms() -> int:
-        return int((time.monotonic() - start_time) * 1000)
 
     # ── Fusion combo: fan out to the panel, then judge synthesizes ────────
     # Rewrites canonical_req to the judge request (a plain model), so the
@@ -727,6 +823,7 @@ async def _handle_with_snapshot(
         )
     except AllAccountsCooledDown as e:
         retry_after = e.retry_after
+        await outcome.record(status=503, model=canonical_req.model)
         raise HTTPException(
             status_code=503,
             detail=f"All accounts for '{canonical_req.model}' are cooling down; "
@@ -744,6 +841,7 @@ async def _handle_with_snapshot(
             error=str(e),
             max_rows=retention,
         )
+        await outcome.record(status=400, model=canonical_req.model)
         raise HTTPException(status_code=400, detail=str(e))
 
     if not explicit_namespace and not grants_combo:
@@ -842,6 +940,7 @@ async def _handle_with_snapshot(
                         _note_attempt_failure(target, str(result.status_code))
                         continue
                     await _log_error_and_raise(
+                        outcome=outcome,
                         log_requests=log_requests,
                         max_rows=retention,
                         db_path=db_path,
@@ -856,11 +955,13 @@ async def _handle_with_snapshot(
                         response_body=result.json_data,
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
+                        attempts=len(attempt_errors) + 1,
                     )
                 if pt_stream:
                     lines = result.lines
                     if lines is None:
                         await _log_error_and_raise(
+                            outcome=outcome,
                             log_requests=log_requests,
                             max_rows=retention,
                             db_path=db_path,
@@ -872,6 +973,7 @@ async def _handle_with_snapshot(
                             duration_ms=_elapsed_ms(),
                             request_body=logged_request_body,
                             detail="No stream from upstream",
+                            attempts=len(attempt_errors) + 1,
                         )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
@@ -935,6 +1037,15 @@ async def _handle_with_snapshot(
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
+                            await outcome.record(
+                                status=200 if stream_ok else 502,
+                                model=target.model,
+                                provider_id=target.provider_config.id,
+                                account_id=target.account_id,
+                                duration_ms=_elapsed_ms(),
+                                streamed=True,
+                                attempts=len(attempt_errors) + 1,
+                            )
 
                     return StreamingResponse(_pt_stream(), media_type=media_type)
 
@@ -981,6 +1092,14 @@ async def _handle_with_snapshot(
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
+                await outcome.record(
+                    status=200,
+                    model=target.model,
+                    provider_id=target.provider_config.id,
+                    account_id=target.account_id,
+                    duration_ms=_elapsed_ms(),
+                    attempts=len(attempt_errors) + 1,
+                )
                 pt_payload = _restore_claude_oauth_response(result.json_data, pt_prep)
                 return JSONResponse(content=pt_payload if pt_payload else {})
         # ── End transport passthrough ───────────────────────────────────
@@ -1049,6 +1168,7 @@ async def _handle_with_snapshot(
                         _note_attempt_failure(target, str(native_result.status_code))
                         continue
                     await _log_error_and_raise(
+                        outcome=outcome,
                         log_requests=log_requests,
                         max_rows=retention,
                         db_path=db_path,
@@ -1063,12 +1183,14 @@ async def _handle_with_snapshot(
                         response_body=native_result.json_data,
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
+                        attempts=len(attempt_errors) + 1,
                     )
 
                 if native_stream:
                     native_lines = native_result.lines
                     if native_lines is None:
                         await _log_error_and_raise(
+                            outcome=outcome,
                             log_requests=log_requests,
                             max_rows=retention,
                             db_path=db_path,
@@ -1080,6 +1202,7 @@ async def _handle_with_snapshot(
                             duration_ms=_elapsed_ms(),
                             request_body=logged_request_body,
                             detail="No stream from upstream",
+                            attempts=len(attempt_errors) + 1,
                         )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
@@ -1147,6 +1270,15 @@ async def _handle_with_snapshot(
                                 )
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
+                            await outcome.record(
+                                status=200 if stream_ok else 502,
+                                model=target.model,
+                                provider_id=target.provider_config.id,
+                                account_id=target.account_id,
+                                duration_ms=_elapsed_ms(),
+                                streamed=True,
+                                attempts=len(attempt_errors) + 1,
+                            )
 
                     return StreamingResponse(_native_stream(), media_type=native_media)
 
@@ -1198,6 +1330,14 @@ async def _handle_with_snapshot(
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
+                await outcome.record(
+                    status=200,
+                    model=target.model,
+                    provider_id=target.provider_config.id,
+                    account_id=target.account_id,
+                    duration_ms=_elapsed_ms(),
+                    attempts=len(attempt_errors) + 1,
+                )
                 native_payload = _restore_claude_oauth_response(
                     native_result.json_data, native_prep
                 )
@@ -1246,6 +1386,7 @@ async def _handle_with_snapshot(
                         _note_attempt_failure(target, str(result.status_code))
                         continue
                     await _log_error_and_raise(
+                        outcome=outcome,
                         log_requests=log_requests,
                         max_rows=retention,
                         db_path=db_path,
@@ -1260,10 +1401,12 @@ async def _handle_with_snapshot(
                         response_body=result.json_data,
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
+                        attempts=len(attempt_errors) + 1,
                     )
                 lines = result.lines
                 if lines is None:
                     await _log_error_and_raise(
+                        outcome=outcome,
                         log_requests=log_requests,
                         max_rows=retention,
                         db_path=db_path,
@@ -1277,6 +1420,7 @@ async def _handle_with_snapshot(
                         detail="No stream from upstream",
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
+                        attempts=len(attempt_errors) + 1,
                     )
                 parser = provider_adapter.stream_parser()
                 emitter = client_adapter.stream_emitter()
@@ -1325,6 +1469,15 @@ async def _handle_with_snapshot(
                             )
                         if stream_ok:
                             handler.mark_success(target.account_id, target.model)
+                        await outcome.record(
+                            status=200 if stream_ok else 502,
+                            model=target.model,
+                            provider_id=target.provider_config.id,
+                            account_id=target.account_id,
+                            duration_ms=_elapsed_ms(),
+                            streamed=True,
+                            attempts=len(attempt_errors) + 1,
+                        )
 
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 return StreamingResponse(_streaming_generator(), media_type=media_type)
@@ -1341,6 +1494,7 @@ async def _handle_with_snapshot(
                     _note_attempt_failure(target, str(result.status_code))
                     continue
                 await _log_error_and_raise(
+                    outcome=outcome,
                     log_requests=log_requests,
                     max_rows=retention,
                     db_path=db_path,
@@ -1355,9 +1509,11 @@ async def _handle_with_snapshot(
                     response_body=result.json_data,
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
+                    attempts=len(attempt_errors) + 1,
                 )
             if result.json_data is None:
                 await _log_error_and_raise(
+                    outcome=outcome,
                     log_requests=log_requests,
                     max_rows=retention,
                     db_path=db_path,
@@ -1371,6 +1527,7 @@ async def _handle_with_snapshot(
                     detail="Empty upstream response",
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
+                    attempts=len(attempt_errors) + 1,
                 )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             client_payload = client_adapter.emit_response(canonical_resp)
@@ -1418,6 +1575,14 @@ async def _handle_with_snapshot(
                 )
 
             handler.mark_success(target.account_id, target.model)
+            await outcome.record(
+                status=result.status_code,
+                model=target.model,
+                provider_id=target.provider_config.id,
+                account_id=target.account_id,
+                duration_ms=_elapsed_ms(),
+                attempts=len(attempt_errors) + 1,
+            )
             return JSONResponse(content=client_payload)
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
@@ -1450,6 +1615,9 @@ async def _handle_with_snapshot(
             client_key_label=client_key_label,
             max_rows=retention,
         )
+    await outcome.record(
+        status=503, model=canonical_req.model, attempts=max(len(attempt_errors), 1)
+    )
     raise HTTPException(status_code=503, detail=exhausted_detail)
 
 

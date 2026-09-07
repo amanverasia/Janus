@@ -20,8 +20,7 @@ _DIMENSION_COLUMN = {
 async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str, Any]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT COUNT(*) as cnt,
-                      COALESCE(SUM(input_tokens), 0) as inp,
+            """SELECT COALESCE(SUM(input_tokens), 0) as inp,
                       COALESCE(SUM(output_tokens), 0) as outp,
                       COALESCE(SUM(cache_creation_tokens), 0) as cc,
                       COALESCE(SUM(cache_read_tokens), 0) as cr,
@@ -34,24 +33,40 @@ async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str,
             assert row is not None
 
         async with db.execute(
-            """SELECT date(timestamp) as date,
-                      COUNT(*) as requests,
-                      COALESCE(SUM(cost), 0.0) as cost,
-                      COALESCE(SUM(input_tokens), 0) as input_tokens,
-                      COALESCE(SUM(output_tokens), 0) as output_tokens,
-                      COALESCE(SUM(input_tokens), 0)
-                        + COALESCE(SUM(output_tokens), 0) as tokens
-               FROM usage
-               WHERE timestamp >= datetime('now', ?)
-               GROUP BY date(timestamp)
-               ORDER BY date(timestamp)""",
+            "SELECT COUNT(*) as cnt FROM request_outcomes WHERE timestamp >= datetime('now', ?)",
             (f"-{days} days",),
+        ) as cur:
+            outcome_row = await cur.fetchone()
+            assert outcome_row is not None
+
+        async with db.execute(
+            """SELECT date(o.timestamp) as date,
+                      COUNT(o.id) as requests,
+                      COALESCE(u.cost, 0.0) as cost,
+                      COALESCE(u.input_tokens, 0) as input_tokens,
+                      COALESCE(u.output_tokens, 0) as output_tokens,
+                      COALESCE(u.input_tokens, 0)
+                        + COALESCE(u.output_tokens, 0) as tokens
+               FROM request_outcomes o
+               LEFT JOIN (
+                   SELECT date(timestamp) as date,
+                          SUM(cost) as cost,
+                          SUM(input_tokens) as input_tokens,
+                          SUM(output_tokens) as output_tokens
+                   FROM usage
+                   WHERE timestamp >= datetime('now', ?)
+                   GROUP BY date(timestamp)
+               ) u ON u.date = date(o.timestamp)
+               WHERE o.timestamp >= datetime('now', ?)
+               GROUP BY date(o.timestamp)
+               ORDER BY date(o.timestamp)""",
+            (f"-{days} days", f"-{days} days"),
         ) as cur:
             daily_rows = await cur.fetchall()
 
     return {
         "total_cost": row["cost"],
-        "total_requests": row["cnt"],
+        "total_requests": outcome_row["cnt"],
         "total_input_tokens": row["inp"],
         "total_output_tokens": row["outp"],
         "total_cache_creation_tokens": row["cc"],
@@ -69,8 +84,7 @@ async def get_calendar_day_spend_summary(
     start_utc, end_utc = window.query_bounds
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT COUNT(*) as cnt,
-                      COALESCE(SUM(input_tokens), 0) as inp,
+            """SELECT COALESCE(SUM(input_tokens), 0) as inp,
                       COALESCE(SUM(output_tokens), 0) as outp,
                       COALESCE(SUM(cache_creation_tokens), 0) as cc,
                       COALESCE(SUM(cache_read_tokens), 0) as cr,
@@ -81,9 +95,15 @@ async def get_calendar_day_spend_summary(
         ) as cur:
             row = await cur.fetchone()
             assert row is not None
+        async with db.execute(
+            "SELECT COUNT(*) as cnt FROM request_outcomes WHERE timestamp >= ? AND timestamp < ?",
+            (start_utc, end_utc),
+        ) as cur:
+            outcome_row = await cur.fetchone()
+            assert outcome_row is not None
     return {
         "total_cost": row["cost"],
-        "total_requests": row["cnt"],
+        "total_requests": outcome_row["cnt"],
         "total_input_tokens": row["inp"],
         "total_output_tokens": row["outp"],
         "total_cache_creation_tokens": row["cc"],
@@ -256,7 +276,7 @@ async def get_success_rate(db_path: str | Path, *, days: int = 30) -> dict[str, 
                 SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END) as s4xx,
                 SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) as s5xx,
                 COUNT(*) as total
-               FROM usage
+               FROM request_outcomes
                WHERE timestamp >= datetime('now', ?)""",
             (f"-{days} days",),
         ) as cur:
@@ -279,42 +299,56 @@ async def get_leaderboard(
 ) -> list[dict[str, Any]]:
     """Leaderboard of API keys ranked by usage (tokens, cost, or requests).
 
-    Includes ALL active keys — even those with zero usage — so everyone
-    appears on the board. Keys with usage are ranked first by the sort metric;
-    keys with zero usage are appended alphabetically at the end.
+    Request counts and success percentages come from ``request_outcomes``
+    (one row per client request, including terminal failures); token and cost
+    totals come from ``usage`` and are joined per key. Includes ALL active
+    keys — even those with zero usage — so everyone appears on the board.
+    Keys with usage are ranked first by the sort metric; keys with zero
+    usage are appended alphabetically at the end.
     """
     sort_col = {"tokens": "tokens", "cost": "cost", "requests": "requests"}.get(sort_by, "tokens")
     if days <= 0:
-        time_clause = "1=1"
-        time_params: tuple[str, ...] = ()
+        outcome_clause = "1=1"
+        usage_clause = "1=1"
+        params: tuple[Any, ...] = ()
     else:
-        time_clause = "u.timestamp >= datetime('now', ?)"
-        time_params = (f"-{days} days",)
+        outcome_clause = "o.timestamp >= datetime('now', ?)"
+        usage_clause = "u2.timestamp >= datetime('now', ?)"
+        params = (f"-{days} days", f"-{days} days")
     async with get_connection(db_path) as db:
-        # Keys with usage in the time window.
+        # Keys with requests in the time window.
         async with db.execute(
             f"""SELECT
-                   COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as key_name,
+                   COALESCE(k.name, o.client_key_label, 'Direct (no API key)') as key_name,
                    MAX(k.id) as key_id,
-                   COUNT(*) as requests,
-                   COALESCE(SUM(u.input_tokens), 0)
-                     + COALESCE(SUM(u.output_tokens), 0) as tokens,
-                   COALESCE(SUM(u.input_tokens), 0) as input_tokens,
-                   COALESCE(SUM(u.output_tokens), 0) as output_tokens,
-                   COALESCE(SUM(u.cost), 0.0) as cost,
-                   CASE WHEN COUNT(*) > 0
+                   COUNT(o.id) as requests,
+                   COALESCE(u.tokens, 0) as tokens,
+                   COALESCE(u.input_tokens, 0) as input_tokens,
+                   COALESCE(u.output_tokens, 0) as output_tokens,
+                   COALESCE(u.cost, 0.0) as cost,
+                   CASE WHEN COUNT(o.id) > 0
                      THEN CAST(
-                       SUM(CASE WHEN u.status >= 200 AND u.status < 300 THEN 1 ELSE 0 END)
-                       AS REAL) / COUNT(*) * 100
+                       SUM(CASE WHEN o.status >= 200 AND o.status < 300 THEN 1 ELSE 0 END)
+                       AS REAL) / COUNT(o.id) * 100
                      ELSE 0.0
                    END as success_pct
-            FROM usage u
-            LEFT JOIN api_keys k ON u.client_key_id = k.id
-            WHERE {time_clause}
-            GROUP BY COALESCE(k.name, u.client_key_label, 'Direct (no API key)')
+            FROM request_outcomes o
+            LEFT JOIN api_keys k ON o.client_key_id = k.id
+            LEFT JOIN (
+                SELECT client_key_id,
+                       SUM(input_tokens + output_tokens) as tokens,
+                       SUM(input_tokens) as input_tokens,
+                       SUM(output_tokens) as output_tokens,
+                       SUM(cost) as cost
+                FROM usage u2
+                WHERE {usage_clause}
+                GROUP BY client_key_id
+            ) u ON u.client_key_id IS o.client_key_id
+            WHERE {outcome_clause}
+            GROUP BY COALESCE(k.name, o.client_key_label, 'Direct (no API key)')
             ORDER BY {sort_col} DESC
             LIMIT ?""",
-            time_params + (limit,),
+            (*params, limit),
         ) as cur:
             used_rows = await cur.fetchall()
 

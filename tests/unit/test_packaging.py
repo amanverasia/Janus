@@ -42,9 +42,10 @@ def _build_sdist(tmp_path: Path) -> Path:
 
 
 def _sdist_members(archive: Path) -> set[str]:
-    prefix = "janus_ai-3.1.0/"
+    name = archive.name
+    prefix = name[: name.index(".tar.gz")] + "/"
     with tarfile.open(archive, "r:gz") as tar:
-        return {name[len(prefix) :] if name.startswith(prefix) else name for name in tar.getnames()}
+        return {n[len(prefix) :] if n.startswith(prefix) else n for n in tar.getnames()}
 
 
 def test_sdist_excludes_internal_artifacts(tmp_path: Path) -> None:
