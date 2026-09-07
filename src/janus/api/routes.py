@@ -47,6 +47,7 @@ from janus.routing.claude_oauth_tools import (
 )
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
 from janus.routing.errors import (
+    is_200_wrapped_error,
     is_fallback_eligible_refined,
     refine_error_type,
 )
@@ -923,7 +924,7 @@ async def _handle_with_snapshot(
                         prep=pt_prep,
                         client_tool=client_tool,
                     )
-                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                except httpx.RequestError as e:
                     handler.mark_cooldown(target.account_id, "network", model=target.model)
                     _note_attempt_failure(target, type(e).__name__)
                     continue
@@ -957,6 +958,10 @@ async def _handle_with_snapshot(
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
                     )
+                if is_200_wrapped_error(result.json_data):
+                    handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
+                    _note_attempt_failure(target, "200-wrapped quota error")
+                    continue
                 if pt_stream:
                     lines = result.lines
                     if lines is None:
@@ -985,6 +990,7 @@ async def _handle_with_snapshot(
 
                     async def _pt_stream() -> AsyncIterator[bytes]:
                         stream_ok = False
+                        upstream_failure = False
                         try:
                             if _pt_is_openai:
                                 async for chunk in openai_passthrough_stream(
@@ -1000,12 +1006,21 @@ async def _handle_with_snapshot(
                                 ):
                                     yield chunk
                             stream_ok = True
+                        except httpx.RequestError:
+                            upstream_failure = True
+                        except Exception:
+                            pass
                         finally:
+                            final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
                             )
+                            if upstream_failure and not stream_ok:
+                                handler.mark_cooldown(
+                                    target.account_id, "network", model=target.model
+                                )
                             await record_usage(
                                 db_path,
                                 provider_id=target.provider_config.id,
@@ -1015,7 +1030,7 @@ async def _handle_with_snapshot(
                                 output_tokens=usage.output_tokens,
                                 cache_creation_tokens=usage.cache_creation_input_tokens,
                                 cache_read_tokens=usage.cache_read_input_tokens,
-                                status=200,
+                                status=final_status,
                                 client_key_id=client_key_id,
                                 client_key_label=client_key_label,
                                 cost=cost,
@@ -1027,7 +1042,7 @@ async def _handle_with_snapshot(
                                     model=canonical_req.model,
                                     provider_id=target.provider_config.id,
                                     account_id=target.account_id,
-                                    status=200,
+                                    status=final_status,
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
@@ -1038,7 +1053,7 @@ async def _handle_with_snapshot(
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
                             await outcome.record(
-                                status=200 if stream_ok else 502,
+                                status=final_status,
                                 model=target.model,
                                 provider_id=target.provider_config.id,
                                 account_id=target.account_id,
@@ -1149,7 +1164,7 @@ async def _handle_with_snapshot(
                             target=target,
                         ),
                     )
-                except (httpx.TimeoutException, httpx.ConnectError) as e:
+                except httpx.RequestError as e:
                     handler.mark_cooldown(target.account_id, "network", model=target.model)
                     _note_attempt_failure(target, type(e).__name__)
                     continue
@@ -1185,7 +1200,10 @@ async def _handle_with_snapshot(
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
                     )
-
+                if is_200_wrapped_error(native_result.json_data):
+                    handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
+                    _note_attempt_failure(target, "200-wrapped quota error")
+                    continue
                 if native_stream:
                     native_lines = native_result.lines
                     if native_lines is None:
@@ -1218,6 +1236,7 @@ async def _handle_with_snapshot(
 
                     async def _native_stream() -> AsyncIterator[bytes]:
                         stream_ok = False
+                        upstream_failure = False
                         try:
                             if _native_is_openai:
                                 async for chunk in openai_passthrough_stream(
@@ -1233,12 +1252,21 @@ async def _handle_with_snapshot(
                                 ):
                                     yield chunk
                             stream_ok = True
+                        except httpx.RequestError:
+                            upstream_failure = True
+                        except Exception:
+                            pass
                         finally:
+                            final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
                             )
+                            if upstream_failure and not stream_ok:
+                                handler.mark_cooldown(
+                                    target.account_id, "network", model=target.model
+                                )
                             await record_usage(
                                 db_path,
                                 provider_id=target.provider_config.id,
@@ -1248,7 +1276,7 @@ async def _handle_with_snapshot(
                                 output_tokens=usage.output_tokens,
                                 cache_creation_tokens=usage.cache_creation_input_tokens,
                                 cache_read_tokens=usage.cache_read_input_tokens,
-                                status=200,
+                                status=final_status,
                                 client_key_id=client_key_id,
                                 client_key_label=client_key_label,
                                 cost=cost,
@@ -1260,7 +1288,7 @@ async def _handle_with_snapshot(
                                     model=canonical_req.model,
                                     provider_id=target.provider_config.id,
                                     account_id=target.account_id,
-                                    status=200,
+                                    status=final_status,
                                     duration_ms=_elapsed_ms(),
                                     streamed=True,
                                     request_body=logged_request_body,
@@ -1271,7 +1299,7 @@ async def _handle_with_snapshot(
                             if stream_ok:
                                 handler.mark_success(target.account_id, target.model)
                             await outcome.record(
-                                status=200 if stream_ok else 502,
+                                status=final_status,
                                 model=target.model,
                                 provider_id=target.provider_config.id,
                                 account_id=target.account_id,
@@ -1403,6 +1431,10 @@ async def _handle_with_snapshot(
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
                     )
+                if is_200_wrapped_error(result.json_data):
+                    handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
+                    _note_attempt_failure(target, "200-wrapped quota error")
+                    continue
                 lines = result.lines
                 if lines is None:
                     await _log_error_and_raise(
@@ -1428,16 +1460,24 @@ async def _handle_with_snapshot(
 
                 async def _streaming_generator() -> AsyncIterator[bytes]:
                     stream_ok = False
+                    upstream_failure = False
                     try:
                         async for chunk in translate_stream(lines, tracker, emitter):
                             yield chunk
                         stream_ok = True
+                    except httpx.RequestError:
+                        upstream_failure = True
+                    except Exception:
+                        pass
                     finally:
+                        final_status = 200 if stream_ok else 502
                         usage = tracker.get_usage()
                         cost = attempt_cost(usage, target, pricing_registry)
                         handler.record_quota_tokens(
                             target, usage.input_tokens + usage.output_tokens
                         )
+                        if upstream_failure and not stream_ok:
+                            handler.mark_cooldown(target.account_id, "network", model=target.model)
                         await record_usage(
                             db_path,
                             provider_id=target.provider_config.id,
@@ -1447,7 +1487,7 @@ async def _handle_with_snapshot(
                             output_tokens=usage.output_tokens,
                             cache_creation_tokens=usage.cache_creation_input_tokens,
                             cache_read_tokens=usage.cache_read_input_tokens,
-                            status=200,
+                            status=final_status,
                             client_key_id=client_key_id,
                             client_key_label=client_key_label,
                             cost=cost,
@@ -1459,7 +1499,7 @@ async def _handle_with_snapshot(
                                 model=canonical_req.model,
                                 provider_id=target.provider_config.id,
                                 account_id=target.account_id,
-                                status=200,
+                                status=final_status,
                                 duration_ms=_elapsed_ms(),
                                 streamed=True,
                                 request_body=logged_request_body,
@@ -1470,7 +1510,7 @@ async def _handle_with_snapshot(
                         if stream_ok:
                             handler.mark_success(target.account_id, target.model)
                         await outcome.record(
-                            status=200 if stream_ok else 502,
+                            status=final_status,
                             model=target.model,
                             provider_id=target.provider_config.id,
                             account_id=target.account_id,
@@ -1511,6 +1551,10 @@ async def _handle_with_snapshot(
                     client_key_label=client_key_label,
                     attempts=len(attempt_errors) + 1,
                 )
+            if is_200_wrapped_error(result.json_data):
+                handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
+                _note_attempt_failure(target, "200-wrapped quota error")
+                continue
             if result.json_data is None:
                 await _log_error_and_raise(
                     outcome=outcome,
@@ -1585,7 +1629,7 @@ async def _handle_with_snapshot(
             )
             return JSONResponse(content=client_payload)
 
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
+        except httpx.RequestError as e:
             handler.mark_cooldown(target.account_id, "network", model=target.model)
             _note_attempt_failure(target, type(e).__name__)
             continue

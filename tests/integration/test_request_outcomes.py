@@ -315,17 +315,13 @@ async def test_streaming_interruption_records_502(one_account_app):
         )
     )
     transport = ASGITransport(app=one_account_app)
-    stream_errored = False
     async with AsyncClient(transport=transport) as client:
-        try:
-            async with client.stream(
-                "POST", "http://test/v1/chat/completions", json=_post_body(stream=True)
-            ) as response:
-                async for _ in response.aiter_bytes():
-                    pass
-        except Exception:
-            stream_errored = True
-    assert stream_errored
+        async with client.stream(
+            "POST", "http://test/v1/chat/completions", json=_post_body(stream=True)
+        ) as response:
+            assert response.status_code == 200
+            async for _ in response.aiter_bytes():
+                pass
     rows = await _outcomes(one_account_app)
     assert len(rows) == 1
     assert rows[0]["status"] == 502
