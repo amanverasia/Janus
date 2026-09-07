@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-09-07
+### Fixed
+- **Cache-token accounting across adapters** — `compute_cost` no longer
+  double-bills cached tokens. It charged the full input rate on
+  `Usage.input_tokens` and then added cache subsets at their own rates, so
+  OpenAI Chat/Responses and Gemini cached tokens were billed twice (full input
+  rate plus the cache-read rate), while Anthropic dropped its cache fields
+  entirely so cached tokens got no cache discount. A single invariant is now
+  enforced at the adapter boundary: `Usage.input_tokens` is the total prompt
+  input and `cache_creation_input_tokens` / `cache_read_input_tokens` are
+  subsets of it. `compute_cost` bills only the uncached remainder
+  `max(input - cache_creation - cache_read, 0)` at the full input rate, plus
+  each cache subset at its own rate. The Anthropic adapter folds its disjoint
+  usage buckets into a total at parse time (and reconstructs the disjoint form
+  on emit); the OpenAI Chat and Gemini adapters now parse and round-trip their
+  cached-token fields in non-stream, stream, and emit paths. Historical cost
+  rows are not backfilled — pre-fix costs for cache-bearing requests are
+  approximate. (#105)
+
 ## [3.3.0] - 2026-09-07
 ### Fixed
 - **Truthful request analytics** — the dashboard success rate is no longer derived
