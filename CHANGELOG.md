@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-07
+### Fixed
+- **Truthful request analytics** — the dashboard success rate is no longer derived
+  from the success-only `usage` table, which always reported 100% success. A new
+  `request_outcomes` table records a terminal status on every request path: upstream
+  success (streaming and non-streaming), fallback-exhausted 503s, all-accounts-cooled
+  503s, budget blocks, parse and allowlist rejections, non-fallback upstream errors,
+  and mid-stream interruptions. Attempts and duration are captured so request counts
+  match reality even when fallback retried several accounts. Token and cost sums stay
+  on `usage` (success-only rows); success rate, spend-summary request totals, usage
+  stats, and leaderboard now read from `request_outcomes` via aggregated joins.
+  Historical `usage` rows are backfilled once (marker in `PRAGMA user_version`) so
+  counts stay continuous across the upgrade. (#103)
+
 ## [3.2.0] - 2026-09-07
 ### Fixed
 - **Routing attempt counters survive reloads and restarts** — RPD and subscription
