@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-09-07
+### Fixed
+- **Streaming and transport failures in fallback** — `ReadError`,
+  `WriteError`, `RemoteProtocolError`, and other `httpx.RequestError`
+  subclasses now rotate to the next account with a network cooldown instead
+  of surfacing as an unhandled 500. Previously only `TimeoutException` and
+  `ConnectError` were caught. Mid-stream failures are recorded as an
+  accurate terminal 502 (never a false 200) and cool the account for future
+  requests, while client cancellation (`CancelledError`) is deliberately
+  left uncaught so it never penalises an account. Explicit quota/error
+  envelopes returned with HTTP 200 (e.g. `{"error": "quota exceeded"}`) are
+  now detected via `is_200_wrapped_error` and trigger fallback instead of
+  being parsed as empty successes. (#104)
+
 ## [3.4.0] - 2026-09-07
 ### Fixed
 - **Cache-token accounting across adapters** — `compute_cost` no longer
