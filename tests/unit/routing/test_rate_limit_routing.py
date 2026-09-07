@@ -2,7 +2,6 @@ from janus.config.schema import ProviderConfig
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.storage.database import init_db
-from janus.storage.usage import record_usage
 
 
 def _registry(*configs: ProviderConfig) -> ProviderRegistry:
@@ -111,8 +110,12 @@ def test_daily_counts_reset_on_new_day():
 async def test_load_request_counts_seeds_daily_counts(tmp_path):
     db_path = tmp_path / "janus.db"
     await init_db(db_path)
-    await record_usage(db_path, provider_id="ds", model="m1", account_id="uk-1", status=200)
-    await record_usage(db_path, provider_id="ds", model="m1", account_id="uk-1", status=200)
+
+    seed_registry = _registry(_config("uk-1"))
+    seed_handler = FallbackHandler(seed_registry, db_path=db_path)
+    seed_handler.record_request("uk-1")
+    seed_handler.record_request("uk-1")
+    await seed_handler._drain_persist_tasks()
 
     registry = _registry(
         _config("uk-1", rate_limit_rpd=2),

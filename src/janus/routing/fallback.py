@@ -10,9 +10,18 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from janus.config.schema import ProviderConfig
 from janus.providers.registry import ProviderRegistry, ResolvedTarget
 from janus.routing.capabilities import reorder_combo_by_capabilities
 from janus.routing.errors import RETRY_AFTER_CAP_S, get_cooldown
+from janus.storage.attempt_counters import (
+    DAILY_SCOPE,
+    QUOTA_REQUESTS_SCOPE,
+    QUOTA_TOKENS_SCOPE,
+    bump_attempt_counter,
+    get_attempt_counts,
+    prune_attempt_counters,
+)
 from janus.storage.cooldowns import (
     clear_all_cooldowns as clear_all_cooldowns_db,
 )
@@ -21,8 +30,7 @@ from janus.storage.cooldowns import (
     get_active_cooldowns,
     save_cooldown,
 )
-from janus.storage.quotas import get_window_usage, window_id
-from janus.storage.usage import get_request_counts_today
+from janus.storage.quotas import window_id
 
 RPM_WINDOW_SECONDS = 60.0
 DEFAULT_COOLDOWN_RETRY_AFTER_S = 60.0
@@ -31,19 +39,16 @@ MIN_RETRY_AFTER_S = 1.0
 logger = logging.getLogger(__name__)
 
 
-def _cooldown_task_callback(
-    operation: str, account_id: str, model: str
-) -> Callable[[asyncio.Task[Any]], None]:
+def _persist_task_callback(operation: str, subject: str) -> Callable[[asyncio.Task[Any]], None]:
     def _log_failure(task: asyncio.Task[Any]) -> None:
         if task.cancelled():
             return
         error = task.exception()
         if error is not None:
             logger.warning(
-                "Cooldown persistence %s failed for account=%s model=%s: %s",
+                "Persistence %s failed for %s: %s",
                 operation,
-                account_id,
-                model,
+                subject,
                 error,
                 exc_info=error,
             )
@@ -76,7 +81,7 @@ class FallbackHandler:
         self.cooldowns_enabled: bool = True
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._backoff: dict[tuple[str, str], int] = {}
-        self._cooldown_tasks: set[asyncio.Task[Any]] = set()
+        self._persist_tasks: set[asyncio.Task[Any]] = set()
         self._rotation_counters: dict[str, int] = {}
         self._sticky: dict[str, tuple[str, int]] = {}
         self._combo_rotation: dict[str, int] = {}
@@ -109,6 +114,7 @@ class FallbackHandler:
         times.append(now)
         self._prune_window(times, now)
         self._daily_counts[account_id] = self._daily_counts.get(account_id, 0) + 1
+        self._persist_counter(DAILY_SCOPE, account_id, self._daily_date, 1)
 
     def record_attempt(self, target: ResolvedTarget) -> None:
         """Record an upstream attempt: rate-limit counters plus request-metric quota."""
@@ -116,6 +122,9 @@ class FallbackHandler:
         config = target.provider_config
         if config.quota_window and config.quota_limit and config.quota_metric == "requests":
             self._bump_quota(config.row_id, config.quota_window, 1)
+            self._persist_counter(
+                QUOTA_REQUESTS_SCOPE, config.row_id, window_id(config.quota_window), 1
+            )
 
     def record_quota_tokens(self, target: ResolvedTarget, tokens: int) -> None:
         """Record consumed tokens for providers with a token-metric quota."""
@@ -127,6 +136,9 @@ class FallbackHandler:
             and tokens > 0
         ):
             self._bump_quota(config.row_id, config.quota_window, tokens)
+            self._persist_counter(
+                QUOTA_TOKENS_SCOPE, config.row_id, window_id(config.quota_window), tokens
+            )
 
     def _bump_quota(self, row_id: str, window: str, amount: int) -> None:
         wid = window_id(window)
@@ -153,6 +165,7 @@ class FallbackHandler:
         if self.db_path is None:
             return
         seen: set[str] = set()
+        by_window: dict[str, list[ProviderConfig]] = {}
         for configs in self.registry.providers.values():
             for config in configs:
                 if not config.quota_window or not config.quota_limit:
@@ -161,10 +174,26 @@ class FallbackHandler:
                 if row_id in seen:
                     continue
                 seen.add(row_id)
-                usage = await get_window_usage(self.db_path, row_id, config.quota_window)
-                metric = "tokens" if config.quota_metric == "tokens" else "requests"
-                self._quota_window_id[row_id] = window_id(config.quota_window)
-                self._quota_used[row_id] = usage[metric]
+                by_window.setdefault(config.quota_window, []).append(config)
+        for window, configs in by_window.items():
+            wid = window_id(window)
+            requests_counts: dict[str, int] = {}
+            tokens_counts: dict[str, int] = {}
+            if any(config.quota_metric != "tokens" for config in configs):
+                requests_counts = await get_attempt_counts(self.db_path, QUOTA_REQUESTS_SCOPE, wid)
+            if any(config.quota_metric == "tokens" for config in configs):
+                tokens_counts = await get_attempt_counts(self.db_path, QUOTA_TOKENS_SCOPE, wid)
+            for config in configs:
+                row_id = config.row_id
+                metric_counts = (
+                    tokens_counts if config.quota_metric == "tokens" else requests_counts
+                )
+                used = metric_counts.get(row_id, 0)
+                if self._quota_window_id.get(row_id) == wid:
+                    # Reload: keep newer adopted in-memory counts over the ledger.
+                    used = max(used, self._quota_used.get(row_id, 0))
+                self._quota_window_id[row_id] = wid
+                self._quota_used[row_id] = used
 
     def has_rate_headroom(self, target: ResolvedTarget) -> bool:
         rpm_limit = target.provider_config.rate_limit_rpm
@@ -196,8 +225,16 @@ class FallbackHandler:
     async def load_request_counts(self) -> None:
         if self.db_path is None:
             return
-        self._daily_date = self._today()
-        self._daily_counts = await get_request_counts_today(self.db_path)
+        today = self._today()
+        counts = await get_attempt_counts(self.db_path, DAILY_SCOPE, today)
+        if self._daily_date == today:
+            # Reload: keep newer adopted in-memory counts over the ledger.
+            for account_id, count in self._daily_counts.items():
+                if count > counts.get(account_id, 0):
+                    counts[account_id] = count
+        self._daily_date = today
+        self._daily_counts = counts
+        await prune_attempt_counters(self.db_path)
 
     def adopt_runtime_state(self, other: FallbackHandler) -> None:
         """Preserve in-memory rotation/rate state across provider reloads."""
@@ -498,19 +535,32 @@ class FallbackHandler:
             if self.db_path is not None:
                 self._delete_cooldown(account_id, mk)
 
-    def _track_cooldown_task(self, task: asyncio.Task[Any]) -> None:
-        self._cooldown_tasks.add(task)
+    def _track_persist_task(self, task: asyncio.Task[Any]) -> None:
+        self._persist_tasks.add(task)
 
         def _done(done: asyncio.Task[Any]) -> None:
-            self._cooldown_tasks.discard(done)
+            self._persist_tasks.discard(done)
 
         task.add_done_callback(_done)
 
-    async def _drain_cooldown_tasks(self) -> None:
-        pending = list(self._cooldown_tasks)
+    async def _drain_persist_tasks(self) -> None:
+        pending = list(self._persist_tasks)
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-            self._cooldown_tasks.clear()
+            self._persist_tasks.clear()
+
+    def _persist_counter(self, scope: str, scope_key: str, window: str, amount: int) -> None:
+        if self.db_path is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            bump_attempt_counter(self.db_path, scope, scope_key, window, amount)
+        )
+        self._track_persist_task(task)
+        task.add_done_callback(_persist_task_callback("counter bump", f"{scope}/{scope_key}"))
 
     def _persist_cooldown(
         self, account_id: str, model: str, expires_at: float, error_type: str, level: int
@@ -530,8 +580,10 @@ class FallbackHandler:
                 backoff_level=level,
             )
         )
-        self._track_cooldown_task(task)
-        task.add_done_callback(_cooldown_task_callback("save", account_id, model))
+        self._track_persist_task(task)
+        task.add_done_callback(
+            _persist_task_callback("cooldown save", f"account={account_id} model={model}")
+        )
 
     def _delete_cooldown(self, account_id: str, model: str) -> None:
         assert self.db_path is not None
@@ -540,8 +592,10 @@ class FallbackHandler:
         except RuntimeError:
             return
         task = loop.create_task(delete_cooldown(self.db_path, account_id, model))
-        self._track_cooldown_task(task)
-        task.add_done_callback(_cooldown_task_callback("delete", account_id, model))
+        self._track_persist_task(task)
+        task.add_done_callback(
+            _persist_task_callback("cooldown delete", f"account={account_id} model={model}")
+        )
 
     async def load_cooldowns(self) -> None:
         if self.db_path is None:
@@ -589,7 +643,7 @@ class FallbackHandler:
         return True
 
     async def clear_all_cooldowns(self) -> int:
-        await self._drain_cooldown_tasks()
+        await self._drain_persist_tasks()
         count = len(self._cooldowns)
         self._cooldowns.clear()
         self._backoff.clear()

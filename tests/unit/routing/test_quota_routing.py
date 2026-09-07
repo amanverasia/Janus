@@ -2,7 +2,6 @@ from janus.config.schema import ProviderConfig
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.storage.database import init_db
-from janus.storage.usage import record_usage
 
 
 def _registry(*configs: ProviderConfig) -> ProviderRegistry:
@@ -89,9 +88,12 @@ def test_window_rollover_resets_counter(monkeypatch):
 async def test_load_quota_usage_seeds_from_db(tmp_path):
     db = tmp_path / "t.db"
     await init_db(db)
-    await record_usage(db, provider_id="cp-1", input_tokens=10, output_tokens=5, status=200)
-    await record_usage(db, provider_id="cp-1::uk_x", input_tokens=1, output_tokens=1, status=200)
     registry = _registry(_config("cp-1", quota_window="daily", quota_limit=2))
+    seed = FallbackHandler(registry, db_path=db)
+    seed.record_attempt(_target(seed))
+    seed.record_attempt(_target(seed))
+    await seed._drain_persist_tasks()
+
     handler = FallbackHandler(registry, db_path=db)
     await handler.load_quota_usage()
     assert handler.quota_used("cp-1", "daily") == 2
@@ -101,10 +103,13 @@ async def test_load_quota_usage_seeds_from_db(tmp_path):
 async def test_load_quota_usage_seeds_tokens_metric(tmp_path):
     db = tmp_path / "t.db"
     await init_db(db)
-    await record_usage(db, provider_id="cp-1", input_tokens=70, output_tokens=40, status=200)
     registry = _registry(
         _config("cp-1", quota_window="monthly", quota_limit=100, quota_metric="tokens")
     )
+    seed = FallbackHandler(registry, db_path=db)
+    seed.record_quota_tokens(_target(seed), 110)
+    await seed._drain_persist_tasks()
+
     handler = FallbackHandler(registry, db_path=db)
     await handler.load_quota_usage()
     assert handler.quota_used("cp-1", "monthly") == 110

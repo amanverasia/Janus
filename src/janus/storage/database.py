@@ -119,6 +119,15 @@ CREATE TABLE IF NOT EXISTS cooldowns (
     PRIMARY KEY (account_id, model)
 );
 
+CREATE TABLE IF NOT EXISTS attempt_counters (
+    scope TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    window_id TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (scope, scope_key, window_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
