@@ -306,6 +306,7 @@ async def test_every_supported_state_section_returns_stable_json(app, section):
 
 @pytest.mark.parametrize("section", ("overview", "usage"))
 async def test_usage_summary_includes_cost_daily_series_and_timezone(app, section):
+    from janus.storage.outcomes import record_request_outcome
     from janus.storage.settings import set_setting
     from janus.storage.usage import record_usage
 
@@ -321,6 +322,7 @@ async def test_usage_summary_includes_cost_daily_series_and_timezone(app, sectio
             status=200,
             cost=0.42,
         )
+        await record_request_outcome(app.state.db_path, model="test/model-1", status=200)
         response = await client.get(
             f"/dashboard/api/v2/state/{section}?days=7", headers=AUTH_HEADERS
         )

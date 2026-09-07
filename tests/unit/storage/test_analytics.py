@@ -6,11 +6,12 @@ import pytest
 from janus.storage.analytics import (
     get_breakdown,
     get_flow,
+    get_leaderboard,
     get_spend_summary,
     get_success_rate,
 )
 from janus.storage.database import init_db
-from tests.fixtures.usage_seed import seed_usage
+from tests.fixtures.usage_seed import seed_outcomes, seed_usage
 
 
 def _ts(days_ago: int) -> str:
@@ -291,6 +292,133 @@ async def test_get_success_rate(tmp_path):
     assert result["client_4xx"] == 1
     assert result["server_5xx"] == 1
     assert result["total"] == 4
+
+
+@pytest.mark.asyncio
+async def test_get_success_rate_counts_terminal_failures_without_usage_rows(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_outcomes(
+        db_path,
+        [
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 200},
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 400},
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 429},
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 503},
+        ],
+    )
+    result = await get_success_rate(db_path, days=30)
+    assert result["success_2xx"] == 1
+    assert result["client_4xx"] == 2
+    assert result["server_5xx"] == 1
+    assert result["total"] == 4
+
+
+@pytest.mark.asyncio
+async def test_get_success_rate_ignores_old_outcomes(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_outcomes(
+        db_path,
+        [
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 200},
+            {"timestamp": _ts(60), "model": "gpt-4o", "status": 500},
+        ],
+    )
+    result = await get_success_rate(db_path, days=30)
+    assert result["total"] == 1
+    assert result["success_2xx"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_spend_summary_request_totals_from_outcomes(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost": 0.01,
+                "status": 200,
+            },
+        ],
+    )
+    await seed_outcomes(
+        db_path,
+        [
+            # Terminal failures recorded by the gateway without usage rows.
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 429},
+            {"timestamp": _ts(0), "model": "gpt-4o", "status": 503},
+        ],
+    )
+    result = await get_spend_summary(db_path, days=30)
+    assert result["total_requests"] == 3
+    assert result["total_input_tokens"] == 100
+    assert result["total_output_tokens"] == 50
+    assert abs(result["total_cost"] - 0.01) < 0.0001
+    today = result["daily"][-1]
+    assert today["requests"] == 3
+    assert today["input_tokens"] == 100
+    assert abs(today["cost"] - 0.01) < 0.0001
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_counts_failures_in_success_pct(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("cursor", "abc", "sk-janus-cursor"),
+        )
+        await db.commit()
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "client_key_id": 1,
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cost": 0.01,
+                "status": 200,
+            },
+        ],
+    )
+    await seed_outcomes(
+        db_path,
+        [
+            {"timestamp": _ts(0), "model": "gpt-4o", "client_key_id": 1, "status": 429},
+            {"timestamp": _ts(0), "model": "gpt-4o", "client_key_id": 1, "status": 503},
+        ],
+    )
+    result = await get_leaderboard(db_path, days=30)
+    cursor = next(r for r in result if r["key_name"] == "cursor")
+    assert cursor["requests"] == 3
+    assert abs(cursor["success_pct"] - 33.3) < 0.1
+    assert cursor["tokens"] == 150
+    assert abs(cursor["cost"] - 0.01) < 0.0001
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_zero_keys_keep_zero_success(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("idle", "abc", "sk-janus-idle"),
+        )
+        await db.commit()
+    result = await get_leaderboard(db_path, days=30)
+    idle = next(r for r in result if r["key_name"] == "idle")
+    assert idle["requests"] == 0
+    assert idle["success_pct"] == 0.0
 
 
 @pytest.mark.asyncio

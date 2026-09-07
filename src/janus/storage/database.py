@@ -128,10 +128,27 @@ CREATE TABLE IF NOT EXISTS attempt_counters (
     PRIMARY KEY (scope, scope_key, window_id)
 );
 
+CREATE TABLE IF NOT EXISTS request_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    client_format TEXT,
+    model TEXT,
+    provider_id TEXT,
+    account_id TEXT,
+    status INTEGER NOT NULL,
+    duration_ms INTEGER,
+    streamed INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 1,
+    client_key_id INTEGER,
+    client_key_label TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
 CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id);
+CREATE INDEX IF NOT EXISTS idx_request_outcomes_ts ON request_outcomes(timestamp);
+CREATE INDEX IF NOT EXISTS idx_request_outcomes_key ON request_outcomes(client_key_id, timestamp);
 
 CREATE TABLE IF NOT EXISTS inventory_providers (
     id TEXT PRIMARY KEY,
@@ -580,6 +597,36 @@ async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
     await db.execute("ALTER TABLE cooldowns_new RENAME TO cooldowns")
 
 
+_OUTCOMES_BACKFILL_VERSION = 1
+
+
+async def _backfill_request_outcomes(db: aiosqlite.Connection) -> None:
+    """One-time import of historical usage rows into request_outcomes.
+
+    Issue #103: analytics used to derive the success rate from the usage
+    table, which only ever received rows on success, so the dashboard showed
+    a misleading 100% success rate. request_outcomes is the new source of
+    truth for per-request terminal statuses; existing usage rows are
+    backfilled once so historical request counts and success buckets stay
+    continuous across the upgrade. The marker lives in PRAGMA user_version
+    (DB header), not the settings table, so it stays invisible to the
+    settings API.
+    """
+    async with db.execute("PRAGMA user_version") as cur:
+        row = await cur.fetchone()
+        version = int(row[0]) if row else 0
+    if version >= _OUTCOMES_BACKFILL_VERSION:
+        return
+    await db.execute(
+        """INSERT INTO request_outcomes
+           (timestamp, model, provider_id, account_id, status, client_key_id, client_key_label)
+           SELECT timestamp, model, provider_id, account_id,
+                  COALESCE(status, 200), client_key_id, client_key_label
+           FROM usage"""
+    )
+    await db.execute(f"PRAGMA user_version = {_OUTCOMES_BACKFILL_VERSION}")
+
+
 async def init_db(db_path: str | Path) -> None:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -592,6 +639,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_request_log_columns(db)
         await _migrate_cooldowns_per_model(db)
         await _migrate_api_key_columns(db)
+        await _backfill_request_outcomes(db)
         await db.execute(
             "DELETE FROM settings WHERE key IN (?, ?, ?)",
             _LEGACY_DASHBOARD_SETTINGS,

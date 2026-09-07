@@ -130,13 +130,16 @@ async def get_unpriced_models(db_path: str | Path, days: int = 30) -> list[dict[
 
 async def get_usage_stats(db_path: str | Path) -> dict[str, Any]:
     async with get_connection(db_path) as db:
+        async with db.execute("SELECT COUNT(*) as cnt FROM request_outcomes") as cur:
+            outcome_row = await cur.fetchone()
+            assert outcome_row is not None
         async with db.execute(
-            "SELECT COUNT(*) as cnt, COALESCE(SUM(input_tokens),0) as inp,"
+            "SELECT COALESCE(SUM(input_tokens),0) as inp,"
             "COALESCE(SUM(output_tokens),0) as outp FROM usage"
         ) as cur:
             row = await cur.fetchone()
             assert row is not None
-        total_requests = row["cnt"]
+        total_requests = outcome_row["cnt"]
         total_input = row["inp"]
         total_output = row["outp"]
 

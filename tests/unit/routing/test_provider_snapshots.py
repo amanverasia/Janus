@@ -25,13 +25,15 @@ class FakeProvider:
         self.close_count += 1
 
 
-def _app_with_provider(provider: FakeProvider) -> FastAPI:
+def _app_with_provider(provider: FakeProvider, tmp_path: Any = None) -> FastAPI:
     app = FastAPI()
     registry = ProviderRegistry()
     handler = FallbackHandler(registry)
     app.state.providers = {"provider": cast(Provider, provider)}
     app.state.registry = registry
     app.state.fallback_handler = handler
+    if tmp_path is not None:
+        app.state.db_path = tmp_path / "snapshots.db"
     return app
 
 
@@ -46,15 +48,16 @@ def _request(app: FastAPI) -> Request:
     return Request(scope)
 
 
-async def test_stream_holds_snapshot_until_body_finishes(monkeypatch) -> None:
+async def test_stream_holds_snapshot_until_body_finishes(monkeypatch, tmp_path) -> None:
     old_provider = FakeProvider()
-    app = _app_with_provider(old_provider)
+    app = _app_with_provider(old_provider, tmp_path)
 
     async def fake_handle(
         client_format: str,
         body: dict[str, Any],
         request: Request,
         snapshot: ProviderSnapshot,
+        outcome: routes._OutcomeRecorder,
     ) -> StreamingResponse:
         assert client_format == "openai"
         assert body == {"model": "test"}
