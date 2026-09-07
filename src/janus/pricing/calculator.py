@@ -40,12 +40,30 @@ def is_subscription_api_type(api_type: str) -> bool:
 
 
 def compute_cost(usage: Usage, model: str, registry: PricingRegistry) -> float:
+    """Compute the USD cost of a request from its canonical usage.
+
+    Invariant: ``Usage.input_tokens`` is the *total* prompt input, and
+    ``cache_creation_input_tokens`` / ``cache_read_input_tokens`` are subsets of
+    it (the cache-related portions). Each adapter normalizes its upstream wire
+    format to this invariant — e.g. the Anthropic adapter adds its disjoint
+    ``input_tokens`` and cache fields into the total, while OpenAI/Gemini
+    report total input with cached tokens as a subset.
+
+    Cached tokens are therefore billed once at their own (cheaper) rate, never
+    at the full input rate on top of the cache rate. The uncached remainder is
+    clamped at zero so inconsistent payloads (cache subsets exceeding the
+    reported total) can never produce a negative bill.
+    """
     pricing = registry.get(model)
     if pricing is None:
         logger.debug("No pricing for model %s; recording cost as $0.00", model)
         return 0.0
+    uncached_input = max(
+        usage.input_tokens - usage.cache_creation_input_tokens - usage.cache_read_input_tokens,
+        0,
+    )
     return (
-        usage.input_tokens / 1_000_000 * pricing.input_per_mtok
+        uncached_input / 1_000_000 * pricing.input_per_mtok
         + usage.output_tokens / 1_000_000 * pricing.output_per_mtok
         + usage.cache_creation_input_tokens / 1_000_000 * pricing.cache_creation_per_mtok
         + usage.cache_read_input_tokens / 1_000_000 * pricing.cache_read_per_mtok

@@ -32,40 +32,94 @@ def test_unknown_model():
     assert cost == 0.0
 
 
-def test_cache_token_cost():
-    overrides = {
-        "test-model": {
-            "input_per_mtok": 3.0,
-            "output_per_mtok": 15.0,
-            "cache_creation_per_mtok": 3.75,
-            "cache_read_per_mtok": 0.3,
+def _cache_registry() -> PricingRegistry:
+    return PricingRegistry(
+        {
+            "test-model": {
+                "input_per_mtok": 3.0,
+                "output_per_mtok": 15.0,
+                "cache_creation_per_mtok": 3.75,
+                "cache_read_per_mtok": 0.3,
+            }
         }
-    }
-    reg = PricingRegistry(overrides)
+    )
+
+
+# Cache accounting invariant: ``Usage.input_tokens`` is the *total* prompt
+# input; ``cache_creation_input_tokens`` and ``cache_read_input_tokens`` are
+# subsets of it. Only the uncached remainder is billed at the full input rate:
+#     uncached = max(input - cache_creation - cache_read, 0)
+
+
+def test_uncached_only_billed_at_input_rate():
+    reg = _cache_registry()
+    usage = Usage(input_tokens=1_000_000)
+    assert abs(compute_cost(usage, "test-model", reg) - 3.0) < 1e-9
+
+
+def test_cache_read_is_subset_of_input_not_added():
+    reg = _cache_registry()
+    usage = Usage(input_tokens=1_000_000, cache_read_input_tokens=200_000)
+    uncached = 800_000
+    expected = uncached / 1_000_000 * 3.0 + 200_000 / 1_000_000 * 0.3
+    assert abs(compute_cost(usage, "test-model", reg) - expected) < 1e-9
+    assert expected < 3.0, "cached tokens must not be billed at the full input rate"
+
+
+def test_cache_creation_is_subset_of_input_not_added():
+    reg = _cache_registry()
+    usage = Usage(input_tokens=1_000_000, cache_creation_input_tokens=400_000)
+    uncached = 600_000
+    expected = uncached / 1_000_000 * 3.0 + 400_000 / 1_000_000 * 3.75
+    assert abs(compute_cost(usage, "test-model", reg) - expected) < 1e-9
+
+
+def test_mixed_cache_creation_read_and_output():
+    reg = _cache_registry()
     usage = Usage(
         input_tokens=1_000_000,
-        output_tokens=0,
-        cache_creation_input_tokens=500_000,
-        cache_read_input_tokens=2_000_000,
+        output_tokens=500_000,
+        cache_creation_input_tokens=300_000,
+        cache_read_input_tokens=200_000,
     )
-    cost = compute_cost(usage, "test-model", reg)
-    assert abs(cost - (3.0 + 1.875 + 0.6)) < 0.0001
+    uncached = 500_000
+    expected = (
+        uncached / 1_000_000 * 3.0
+        + 500_000 / 1_000_000 * 15.0
+        + 300_000 / 1_000_000 * 3.75
+        + 200_000 / 1_000_000 * 0.3
+    )
+    assert abs(compute_cost(usage, "test-model", reg) - expected) < 1e-9
 
 
-def test_partial_cache_only():
-    overrides = {
-        "test-model": {
-            "input_per_mtok": 1.0,
-            "output_per_mtok": 1.0,
-            "cache_creation_per_mtok": 1.0,
-            "cache_read_per_mtok": 1.0,
-        }
-    }
-    reg = PricingRegistry(overrides)
-    usage = Usage(input_tokens=100, cache_read_input_tokens=200)
+def test_cache_exceeds_input_clamps_uncached_to_zero():
+    """Malformed/inconsistent usage where cache subsets exceed reported total
+    input must never produce a negative uncached bill."""
+    reg = _cache_registry()
+    usage = Usage(
+        input_tokens=100_000,
+        cache_creation_input_tokens=200_000,
+        cache_read_input_tokens=50_000,
+    )
+    expected = 200_000 / 1_000_000 * 3.75 + 50_000 / 1_000_000 * 0.3
     cost = compute_cost(usage, "test-model", reg)
-    expected = (100 / 1_000_000 * 1.0) + (200 / 1_000_000 * 1.0)
-    assert abs(cost - expected) < 0.0001
+    assert cost >= 0
+    assert abs(cost - expected) < 1e-9
+
+
+def test_zero_cache_fields_behaves_like_plain_input():
+    reg = _cache_registry()
+    usage = Usage(input_tokens=1_000_000, output_tokens=0)
+    explicit_zero = Usage(
+        input_tokens=1_000_000,
+        output_tokens=0,
+        cache_creation_input_tokens=0,
+        cache_read_input_tokens=0,
+    )
+    assert (
+        abs(compute_cost(usage, "test-model", reg) - compute_cost(explicit_zero, "test-model", reg))
+        < 1e-9
+    )
 
 
 # --- subscription/OAuth providers: $0 marginal cost ------------------------
