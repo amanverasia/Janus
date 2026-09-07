@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-09-07
+### Fixed
+- **Provider-to-model navigation is SPA-native with deep links** — the
+  provider page's internal links (Manage models, inventory add/import and
+  key management) used raw anchors that reloaded the whole dashboard, and
+  the Models page ignored the `?provider=` query parameter its own links
+  produced, always opening on "All providers". Internal links now use the
+  shared SPA navigation action (links opened from inside the provider
+  modal close it first), the selected model provider group is tracked in
+  the URL so Back/Forward restores it and direct links to
+  `/dashboard/ui/models?provider=<prefix>` open the intended group
+  (unknown values degrade gracefully to All providers), and the models
+  state endpoint echoes a length-validated `provider` filter in
+  `meta.query` following the established dashboard query contract. (#113,
+  PR #143)
+
 ## [3.7.0] - 2026-09-07
 ### Added
 - **SeekAI gateway** — SeekAI is now available as an OpenAI-compatible
