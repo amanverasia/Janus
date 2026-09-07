@@ -18,6 +18,7 @@ SECTIONS = (
     "request-logs",
     "inventory",
     "inventory-keys",
+    "models",
     "providers",
     "combos",
     "routing",
@@ -418,6 +419,7 @@ async def test_state_responses_do_not_leak_credentials(app):
         ("request-logs", "limit=201"),
         ("request-logs", "offset=-1"),
         ("keys", "status=invalid"),
+        ("models", "provider=" + "x" * 101),
     ),
 )
 async def test_state_query_validation(app, section, query):
@@ -446,3 +448,19 @@ async def test_inventory_state_echoes_valid_filters_and_pagination(app):
         "direction": "asc",
     }
     assert payload["meta"]["pagination"]["limit"] == 7
+
+
+async def test_models_state_echoes_provider_filter(app):
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        known = await client.get(
+            "/dashboard/api/v2/state/models?provider=test", headers=AUTH_HEADERS
+        )
+        unknown = await client.get(
+            "/dashboard/api/v2/state/models?provider=missing", headers=AUTH_HEADERS
+        )
+
+    assert known.status_code == 200
+    assert known.json()["meta"]["query"] == {"provider": "test"}
+    assert known.json()["data"]["providers"][0]["prefix"] == "test"
+    assert unknown.status_code == 200
+    assert unknown.json()["meta"]["query"] == {"provider": "missing"}

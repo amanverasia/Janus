@@ -8,6 +8,7 @@
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;
+  export let navigate: (href: string) => void;
 
   type ModelGroup = {
     key: string;
@@ -23,6 +24,7 @@
 
   let search = '';
   let selectedGroupKey = 'all';
+  let appliedProviderKey: string | undefined;
   let collapsed: Record<string, boolean> = {};
   let busy = '';
   let customOpen = false;
@@ -46,6 +48,24 @@
       ? searchedGroups
       : searchedGroups.filter((group) => group.key === selectedGroupKey);
   $: visibleCount = models.filter(isVisible).length;
+  $: urlProvider = text(data.provider, '');
+  $: if (urlProvider !== appliedProviderKey) {
+    appliedProviderKey = urlProvider;
+    selectedGroupKey = providerGroupKey(urlProvider, allGroups);
+  }
+
+  function providerGroupKey(prefix: string, groupRows: ModelGroup[]): string {
+    return prefix && groupRows.some((group) => group.key === prefix) ? prefix : 'all';
+  }
+
+  function selectGroup(key: string) {
+    selectedGroupKey = key;
+    navigate(
+      key === 'all'
+        ? '/dashboard/ui/models'
+        : `/dashboard/ui/models?provider=${encodeURIComponent(key)}`
+    );
+  }
 
   function buildGroups(modelRows: JsonObject[], providerRows: JsonObject[]): ModelGroup[] {
     const grouped = new Map<string, ModelGroup>();
@@ -131,6 +151,7 @@
 
   function isCollapsed(group: ModelGroup): boolean {
     if (search.trim()) return false;
+    if (group.key === selectedGroupKey) return false;
     return collapsed[group.key] ?? true;
   }
 
@@ -293,7 +314,7 @@
     <button
       type="button"
       class:active={selectedGroupKey === 'all'}
-      on:click={() => (selectedGroupKey = 'all')}
+      on:click={() => selectGroup('all')}
     >
       <span>
         <strong>All providers</strong>
@@ -305,7 +326,7 @@
       <button
         type="button"
         class:active={selectedGroupKey === group.key}
-        on:click={() => (selectedGroupKey = group.key)}
+        on:click={() => selectGroup(group.key)}
       >
         <span class="provider-mark">{group.label.slice(0, 1).toUpperCase()}</span>
         <span>

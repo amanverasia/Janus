@@ -938,6 +938,7 @@ async def get_dashboard_state(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=200),
     offset: int = Query(0, ge=0),
     status: str = Query(""),
+    provider: str = Query("", max_length=100),
     provider_id: str = Query("", max_length=100),
     search: str = Query("", max_length=200),
     direction: Literal["asc", "desc"] = Query("desc", alias="dir"),
@@ -1003,7 +1004,13 @@ async def get_dashboard_state(
         )
         return await _response(request, db_path, section, data, meta=meta)
     if section == "models":
-        return await _response(request, db_path, section, await _models_data(request, db_path))
+        return await _response(
+            request,
+            db_path,
+            section,
+            await _models_data(request, db_path),
+            meta={"query": {"provider": provider}},
+        )
     if section == "providers":
         return await _response(request, db_path, section, await _providers_data(request, db_path))
     if section == "combos":

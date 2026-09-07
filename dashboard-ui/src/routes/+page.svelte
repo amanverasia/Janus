@@ -249,9 +249,9 @@
     {:else if active.section === 'inventory'}
       <InventoryOverviewPage {data} {action} {navigate} />
     {:else if active.section === 'providers'}
-      <ProvidersPage {data} {action} />
+      <ProvidersPage {data} {action} {navigate} />
     {:else if active.section === 'models'}
-      <ModelsPage {data} {action} />
+      <ModelsPage {data} {action} {navigate} />
     {:else if active.section === 'combos'}
       <CombosPage {data} {action} />
     {:else if active.section === 'routing'}

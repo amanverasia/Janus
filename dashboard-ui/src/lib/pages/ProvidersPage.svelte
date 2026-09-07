@@ -10,6 +10,7 @@
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;
+  export let navigate: (href: string) => void;
 
   type CatalogTab = 'accounts' | 'free' | 'paid';
   type DetailTab = 'overview' | 'models' | 'accounts' | 'limits';
@@ -89,6 +90,12 @@
     (group) => providerGroupStatus(group) === 'Disabled'
   );
   $: selectedProvider = providers.find((provider) => idOf(provider) === selectedProviderId);
+  $: selectedModelsHref = `/dashboard/ui/models?provider=${encodeURIComponent(
+    text(selectedProvider?.prefix, '')
+  )}`;
+  $: selectedCredentialsHref = `/dashboard/ui/inventory/keys?provider_id=${encodeURIComponent(
+    text(selectedProvider?.inventory_provider_id, '')
+  )}`;
   $: selectedPrefixProviders = selectedProvider
     ? providers.filter(
         (provider) => text(provider.prefix, '') === text(selectedProvider?.prefix, '')
@@ -482,6 +489,11 @@
     open = false;
   }
 
+  function navigateFromModal(href: string) {
+    closeModal();
+    navigate(href);
+  }
+
   function backToCatalog() {
     stopCopilotFlow();
     selectedPresetId = '';
@@ -826,7 +838,8 @@
               </p>
               <a
                 class="button ghost compact"
-                href={`/dashboard/ui/models?provider=${encodeURIComponent(text(selectedProvider.prefix, ''))}`}
+                href={selectedModelsHref}
+                on:click|preventDefault={() => navigate(selectedModelsHref)}
               >
                 Manage models
               </a>
@@ -845,7 +858,8 @@
               </div>
               <a
                 class="button"
-                href={`/dashboard/ui/models?provider=${encodeURIComponent(text(selectedProvider.prefix, ''))}`}
+                href={selectedModelsHref}
+                on:click|preventDefault={() => navigate(selectedModelsHref)}
               >
                 Manage models
               </a>
@@ -859,7 +873,8 @@
               </div>
               <a
                 class="button"
-                href={`/dashboard/ui/models?provider=${encodeURIComponent(text(selectedProvider.prefix, ''))}`}
+                href={selectedModelsHref}
+                on:click|preventDefault={() => navigate(selectedModelsHref)}
               >
                 Open Models
               </a>
@@ -877,12 +892,25 @@
             <div class="provider-account-links">
               <a
                 class="button"
-                href={`/dashboard/ui/inventory/keys?provider_id=${encodeURIComponent(text(selectedProvider.inventory_provider_id, ''))}`}
+                href={selectedCredentialsHref}
+                on:click|preventDefault={() => navigate(selectedCredentialsHref)}
               >
                 Manage credentials
               </a>
-              <a class="button" href="/dashboard/ui/inventory/add">Add credentials</a>
-              <a class="button ghost" href="/dashboard/ui/inventory/import">Import JSON</a>
+              <a
+                class="button"
+                href="/dashboard/ui/inventory/add"
+                on:click|preventDefault={() => navigate('/dashboard/ui/inventory/add')}
+              >
+                Add credentials
+              </a>
+              <a
+                class="button ghost"
+                href="/dashboard/ui/inventory/import"
+                on:click|preventDefault={() => navigate('/dashboard/ui/inventory/import')}
+              >
+                Import JSON
+              </a>
             </div>
           </header>
           <div class="provider-model-summary">
@@ -1237,8 +1265,21 @@
                 across that shared pool.
               </p>
               <div class="provider-account-links">
-                <a class="button" href="/dashboard/ui/inventory/add">Add credentials</a>
-                <a class="button ghost" href="/dashboard/ui/inventory/import">Import JSON</a>
+                <a
+                  class="button"
+                  href="/dashboard/ui/inventory/add"
+                  on:click|preventDefault={() => navigateFromModal('/dashboard/ui/inventory/add')}
+                >
+                  Add credentials
+                </a>
+                <a
+                  class="button ghost"
+                  href="/dashboard/ui/inventory/import"
+                  on:click|preventDefault={() =>
+                    navigateFromModal('/dashboard/ui/inventory/import')}
+                >
+                  Import JSON
+                </a>
               </div>
             </div>
           </section>
@@ -1306,8 +1347,20 @@
               {credentialInstructions(configurePreset ?? draft)}
             </p>
             <div class="provider-account-links">
-              <a class="button" href="/dashboard/ui/inventory/add">Add exported credential</a>
-              <a class="button ghost" href="/dashboard/ui/inventory/import">Import JSON</a>
+              <a
+                class="button"
+                href="/dashboard/ui/inventory/add"
+                on:click|preventDefault={() => navigateFromModal('/dashboard/ui/inventory/add')}
+              >
+                Add exported credential
+              </a>
+              <a
+                class="button ghost"
+                href="/dashboard/ui/inventory/import"
+                on:click|preventDefault={() => navigateFromModal('/dashboard/ui/inventory/import')}
+              >
+                Import JSON
+              </a>
             </div>
           </section>
         {/if}
