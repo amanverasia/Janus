@@ -8,6 +8,7 @@ from janus.catalog import PROVIDERS
 from janus.providers.registry import model_allowed as provider_model_allowed
 from janus.routing.model_caps import get_model_capabilities
 from janus.storage.database import get_connection
+from janus.storage.upstream_models import list_distinct_discovered_models
 
 VisibilityScope = Literal["provider", "models"]
 ProviderMatch = Literal["auto", "catalog", "prefix"]
@@ -251,11 +252,7 @@ async def list_catalog_models(
 
     inventory_routes = _inventory_routes()
     if await _table_exists(db_path, "upstream_models"):
-        async with get_connection(db_path) as db:
-            async with db.execute(
-                "SELECT * FROM upstream_models WHERE is_available = 1 ORDER BY created_at, id"
-            ) as cursor:
-                discovered_rows = [dict(row) for row in await cursor.fetchall()]
+        discovered_rows = await list_distinct_discovered_models(db_path)
         for discovered in discovered_rows:
             inventory_id = str(discovered["provider_id"])
             route = inventory_routes.get(inventory_id, (inventory_id, inventory_id))
