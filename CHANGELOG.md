@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-09-07
+### Changed
+- **Discovered-model reloads scale with distinct models, not key×model
+  rows** — provider reload and the model catalog read every per-key
+  `upstream_models` row even though most collapse to the same
+  provider/model pair (audited database: ~116,500 rows for ~1,200
+  distinct pairs), and `list_model_ids_for_keys` deduplicated with an
+  O(n²) list-membership check per key. `list_catalog_models` now reads
+  through the new `list_distinct_discovered_models`, which collapses rows
+  in SQL with a single `GROUP BY` over packed `(created_at, id, field)`
+  values, and the per-key helper uses `SELECT DISTINCT`. Result
+  cardinality now scales with distinct provider/model pairs; on a seeded
+  audit-sized database (116,000 rows → 40 distinct pairs)
+  `list_catalog_models` drops from ~5.6 s to ~0.15 s (~37×). Metadata
+  precedence is specified: each field (`display_name`,
+  `context_window`, `max_output_tokens`, `capabilities`) resolves to the
+  most recent non-NULL observation, older non-NULL values backfill
+  fields newer observations lack, and pairs keep the legacy
+  earliest-observation order so reload output stays deterministic. (#114)
+
 ## [3.5.0] - 2026-09-07
 ### Fixed
 - **Streaming and transport failures in fallback** — `ReadError`,
