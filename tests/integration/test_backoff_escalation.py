@@ -144,13 +144,14 @@ async def test_mid_stream_failure_does_not_mark_success(two_account_app):
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,
         }
-        with pytest.raises(httpx.ReadError):
-            async with client.stream("POST", "/v1/chat/completions", json=payload) as response:
-                assert response.status_code == 200
-                async for _ in response.aiter_bytes():
-                    pass
+        async with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+            assert response.status_code == 200
+            async for _ in response.aiter_bytes():
+                pass
 
     assert route_a.call_count == 1
     assert mark_success_calls == []
-    assert handler._cooldowns.get((account_a_id, "m1")) is None
-    assert handler._backoff.get((account_a_id, "m1")) is None
+    # Mid-stream transport failure now cools the account so future requests
+    # skip it (previously it propagated uncaught and left the account healthy).
+    assert handler._cooldowns.get((account_a_id, "m1")) is not None
+    assert handler._backoff.get((account_a_id, "m1"), 0) == 0

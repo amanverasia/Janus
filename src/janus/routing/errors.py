@@ -148,6 +148,17 @@ def is_fallback_eligible_refined(status_code: int, body: Any | None) -> bool:
     )
 
 
+def is_200_wrapped_error(body: Any | None) -> bool:
+    """Detect quota/error envelopes delivered with an HTTP 200 status.
+
+    Some gateways return 200 with a body like ``{"error": "quota exceeded"}``
+    instead of a real 429/5xx. Without inspection these are parsed as empty
+    successes and never trigger fallback. We treat the rate-limit markers as
+    the signal because they are the unambiguous, actionable subset.
+    """
+    return refine_error_type(200, body) == ErrorType.RATE_LIMIT
+
+
 BACKOFF_BASE_MS = 2000
 BACKOFF_MAX_S = 300.0
 BACKOFF_MAX_LEVEL = 15

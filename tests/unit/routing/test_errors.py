@@ -149,3 +149,19 @@ def test_kiro_improperly_formed_request_rotates():
 def test_request_not_allowed_and_no_credentials_rotate():
     assert is_fallback_eligible_refined(400, {"error": "Request not allowed"})
     assert is_fallback_eligible_refined(400, {"error": "No credentials available"})
+
+
+def test_200_wrapped_quota_error_detected():
+    from janus.routing.errors import is_200_wrapped_error
+
+    assert is_200_wrapped_error({"error": "quota exceeded"})
+    assert is_200_wrapped_error({"error": {"message": "Too many requests"}})
+    assert is_200_wrapped_error("Rate limit exceeded")
+
+
+def test_200_wrapped_legitimate_response_not_flagged():
+    from janus.routing.errors import is_200_wrapped_error
+
+    assert not is_200_wrapped_error({"choices": [{"message": {"content": "hi"}}]})
+    assert not is_200_wrapped_error(None)
+    assert not is_200_wrapped_error({"id": "r1", "object": "chat.completion"})
