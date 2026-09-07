@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-09-07
+### Added
+- **SeekAI gateway** — SeekAI is now available as an OpenAI-compatible
+  gateway provider in the catalog (default models include
+  `claude-opus-4-8`, `claude-sonnet-5`, `gpt-5.6-sol`, `gemini-3-6-flash`,
+  `deepseek-v4-pro`, and `grok-4-6`). (#142, contributed by @hett-patell)
+
+### Fixed
+- **Codex account-plan restriction rotates accounts** — free/Go ChatGPT
+  accounts reject `gpt-5.6-sol` with a 400 "not supported when using Codex
+  with a ChatGPT account". That marker is now classified as a provider miss
+  so the request rotates to the next (Plus/Team) account instead of
+  surfacing the 400 to the client. (#142, contributed by @hett-patell)
+- **Committed dashboard bundle matches sources again** — the v3.6.0
+  release bumped the package version without regenerating the committed
+  SvelteKit bundle, so the shipped wheel carried dashboard assets built
+  from 3.5.0 sources and the bundle-consistency CI check failed on main.
+  The bundle is now regenerated from the release sources as part of the
+  release process.
+
 ## [3.6.0] - 2026-09-07
 ### Changed
 - **Discovered-model reloads scale with distinct models, not key×model
