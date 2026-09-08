@@ -299,7 +299,7 @@ async def test_db_key_records_client_key_id(tmp_path):
     logs = await list_request_logs(app.state.db_path)
     assert len(logs) == 1
     assert logs[0]["client_key_id"] == key_info["id"]
-    assert logs[0]["client_key_label"] is None
+    assert logs[0]["client_key_label"] == "my-app"
     assert logs[0]["client_key_name"] == "my-app"
 
 
