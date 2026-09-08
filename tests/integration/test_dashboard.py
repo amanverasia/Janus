@@ -68,9 +68,9 @@ async def test_usage_page_has_live_section(app):
         r = await client.get("/dashboard/api/v2/state/usage")
         assert r.status_code == 200
         assert r.json()["section"] == "usage"
+        assert "live" not in r.json()["data"]
         snapshot = await client.get("/dashboard/api/usage/snapshot")
-        assert snapshot.status_code == 200
-        assert "inflight" in snapshot.json()
+        assert snapshot.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -82,6 +82,7 @@ async def test_usage_live_sse_snapshot_and_event(app):
 
     reset_bus()
     try:
+        get_bus().record_completed(model="t/m0", client_key_label="pre", status=200)
 
         class _FakeRequest:
             async def is_disconnected(self) -> bool:
@@ -95,6 +96,8 @@ async def test_usage_live_sse_snapshot_and_event(app):
         snap = json.loads(first.decode().removeprefix("data: "))
         assert snap["type"] == "snapshot"
         assert snap["inflight"] == 0
+        assert snap["seq"] == 1
+        assert [event["model"] for event in snap["recent"]] == ["t/m0"]
 
         get_bus().record_completed(model="t/m1", client_key_label="alice", status=200, cost=0.01)
         chunk = await asyncio.wait_for(anext(stream), timeout=5)
@@ -102,6 +105,7 @@ async def test_usage_live_sse_snapshot_and_event(app):
         assert event["type"] == "request"
         assert event["model"] == "t/m1"
         assert event["user"] == "alice"
+        assert event["seq"] == 2
 
         await stream.aclose()
     finally:
@@ -449,19 +453,10 @@ async def test_overview_status_strip(app):
 
 
 @pytest.mark.asyncio
-async def test_usage_snapshot_endpoint(app):
-    from janus.dashboard.live import get_bus, reset_bus
-
-    reset_bus()
-    get_bus().record_completed(model="t/m1", status=200, input_tokens=1, output_tokens=2)
+async def test_usage_snapshot_endpoint_removed(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.get("/dashboard/api/usage/snapshot")
-        assert r.status_code == 200
-        data = r.json()
-        assert "inflight" in data
-        assert "recent" in data
-        assert len(data["recent"]) >= 1
-    reset_bus()
+        assert r.status_code == 404
 
 
 @pytest.mark.asyncio

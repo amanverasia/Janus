@@ -47,6 +47,8 @@ class LiveUsageBus:
         self._ids = itertools.count(1)
         self._recent: deque[dict[str, Any]] = deque(maxlen=RING_CAP)
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._request_seq = itertools.count(1)
+        self._last_request_seq = 0
 
     # ── request lifecycle (called from the ASGI middleware) ──────────
 
@@ -63,8 +65,11 @@ class LiveUsageBus:
     # ── completed usage (called via the record_usage hook) ───────────
 
     def record_completed(self, **fields: Any) -> None:
+        seq = next(self._request_seq)
+        self._last_request_seq = seq
         event = {
             "type": "request",
+            "seq": seq,
             "ts": time.time(),
             "model": fields.get("model"),
             "provider_id": fields.get("provider_id"),
@@ -83,6 +88,7 @@ class LiveUsageBus:
     def snapshot(self) -> dict[str, Any]:
         return {
             "type": "snapshot",
+            "seq": self._last_request_seq,
             "inflight": len(self._in_flight),
             "recent": list(self._recent),
         }
