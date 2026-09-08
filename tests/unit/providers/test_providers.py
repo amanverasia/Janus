@@ -144,3 +144,59 @@ async def test_openai_compat_default_headers():
     assert req.headers.get("x-title") == "Janus"
     assert req.headers.get("authorization") == "Bearer sk-or"
     await provider.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openai_compat_responses_payload_hits_responses_endpoint():
+    """A Responses-shaped payload (``input``) posts to /responses, not /chat/completions."""
+    responses_route = respx.post("https://test.com/v1/responses").mock(
+        return_value=httpx.Response(200, json={"id": "resp", "object": "response"})
+    )
+    provider = OpenAICompatProvider(base_url="https://test.com/v1", api_key="sk-test")
+    result = await provider.call(
+        {"model": "gpt-6-astra", "input": [{"type": "message", "role": "user", "content": "hi"}]},
+        stream=False,
+    )
+    assert result.status_code == 200
+    assert responses_route.called
+    assert result.json_data == {"id": "resp", "object": "response"}
+    await provider.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openai_compat_chat_payload_hits_chat_endpoint():
+    """A Chat-shaped payload (``messages``) keeps posting to /chat/completions."""
+    chat_route = respx.post("https://test.com/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
+    )
+    provider = OpenAICompatProvider(base_url="https://test.com/v1", api_key="sk-test")
+    result = await provider.call({"model": "m", "messages": []}, stream=False)
+    assert result.status_code == 200
+    assert chat_route.called
+    await provider.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openai_compat_responses_stream_hits_responses_endpoint():
+    sse = (
+        'data: {"type":"response.created","response":{"model":"gpt-6-astra"}}\n\n'
+        'data: {"type":"response.completed","response":{"status":"completed"}}\n\n'
+    )
+    responses_route = respx.post("https://test.com/v1/responses").mock(
+        return_value=httpx.Response(
+            200, content=sse.encode(), headers={"content-type": "text/event-stream"}
+        )
+    )
+    provider = OpenAICompatProvider(base_url="https://test.com/v1", api_key="sk-test")
+    result = await provider.call(
+        {"model": "gpt-6-astra", "input": "hi", "stream": True}, stream=True
+    )
+    assert result.status_code == 200
+    assert responses_route.called
+    assert result.lines is not None
+    lines = [line async for line in result.lines]
+    assert any("response.created" in ln for ln in lines)
+    await provider.close()

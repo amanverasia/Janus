@@ -415,6 +415,12 @@ def apply_thinking_to_payload(
     fmt = resolve_thinking_format(target_format, caps)
     _strip_thinking_fields(payload)
     _apply_format(fmt, payload, cfg, caps)
+    # The OpenAI Responses API encodes reasoning effort as
+    # ``reasoning: {"effort": ...}`` rather than the chat ``reasoning_effort``
+    # scalar. The "openai" thinking style emits the chat field; remap it onto
+    # the Responses field so Responses-only models receive a valid payload.
+    if target_format in ("openai_responses", "openai-responses") and "reasoning_effort" in payload:
+        payload["reasoning"] = {"effort": payload.pop("reasoning_effort")}
     if "model" in payload and isinstance(payload["model"], str):
         payload["model"] = strip_thinking_suffix(payload["model"])
     return payload

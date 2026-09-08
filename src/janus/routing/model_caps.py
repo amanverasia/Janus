@@ -24,6 +24,7 @@ DEFAULT_CAPABILITIES: dict[str, Any] = {
     "thinking_format": None,
     "thinking_can_disable": True,
     "thinking_range": None,
+    "requires_responses": False,
     "context_window": 200_000,
     "max_output": 64_000,
 }
@@ -43,6 +44,13 @@ MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
         "reasoning": True,
         "thinking_format": "openai",
         "thinking_can_disable": False,
+    },
+    "gpt-6-astra": {
+        "vision": True,
+        "reasoning": True,
+        "thinking_format": "openai",
+        "thinking_can_disable": False,
+        "requires_responses": True,
     },
     "claude-opus-4-20250514": {
         "vision": True,
@@ -92,6 +100,16 @@ PATTERN_CAPABILITIES: list[tuple[str, dict[str, Any]]] = [
     (
         "claude-*",
         {"vision": True, "pdf": True, "tool_use": True},
+    ),
+    (
+        "gpt-6-astra*",
+        {
+            "vision": True,
+            "reasoning": True,
+            "thinking_format": "openai",
+            "thinking_can_disable": False,
+            "requires_responses": True,
+        },
     ),
     (
         "gpt-5*",

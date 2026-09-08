@@ -41,8 +41,21 @@ class OpenAICompatProvider:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
+    @staticmethod
+    def _is_responses_payload(payload: dict[str, Any]) -> bool:
+        # Responses API requests carry an ``input`` array; Chat Completions
+        # requests carry ``messages``. The routing layer only builds a
+        # Responses payload for models that require it (see ``requires_responses``),
+        # so this selects the upstream endpoint without the provider needing to
+        # know about format adapters.
+        return "input" in payload
+
+    def _endpoint_url(self, payload: dict[str, Any]) -> str:
+        path = "/responses" if self._is_responses_payload(payload) else "/chat/completions"
+        return f"{self.base_url}{path}"
+
     async def call(self, payload: dict[str, Any], stream: bool = False) -> RawResult:
-        url = f"{self.base_url}/chat/completions"
+        url = self._endpoint_url(payload)
         if stream:
             return await self._call_stream(url, payload)
         r = await self._client.post(url, json=payload, headers=self._headers)
