@@ -42,9 +42,7 @@ def test_void_response_uses_zero_usage():
 def test_event_produces_output_positive():
     assert _event_produces_output(TextDelta(index=0, text="x")) is True
     assert _event_produces_output(TextBlockStart(index=0)) is True
-    assert _event_produces_output(
-        ToolUseBlockStart(index=0, id="call_1", name="ls")
-    ) is True
+    assert _event_produces_output(ToolUseBlockStart(index=0, id="call_1", name="ls")) is True
 
 
 def test_event_produces_output_negative():

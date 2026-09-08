@@ -1640,9 +1640,7 @@ async def _handle_with_snapshot(
                 )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             if _is_void_response(canonical_resp):
-                handler.mark_cooldown(
-                    target.account_id, "server_error", model=target.model
-                )
+                handler.mark_cooldown(target.account_id, "server_error", model=target.model)
                 _note_attempt_failure(target, "Empty completion (no content or tool call)")
                 continue
             client_payload = client_adapter.emit_response(canonical_resp)
