@@ -325,7 +325,13 @@ class OpenAIAdapter:
                 messages.append(self._parse_tool(msg))
 
         tools = [self._parse_tool_def(t) for t in raw.get("tools") or []]
+        # Reasoning models (gpt-5/gpt-6-astra &c.) require ``max_completion_tokens``,
+        # not the deprecated ``max_tokens``. Clients (OpenAI SDK 1.x, coding agents)
+        # send the former; accept both so the token budget is never dropped (an
+        # unset budget lets reasoning exhaust it and yields empty completions).
         max_tokens = raw.get("max_tokens")
+        if max_tokens is None:
+            max_tokens = raw.get("max_completion_tokens")
         temperature = raw.get("temperature")
         top_p = raw.get("top_p")
         stop = raw.get("stop")
