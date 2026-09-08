@@ -30,3 +30,14 @@ export interface MutationOptions {
   success?: string;
   refresh?: boolean;
 }
+
+export interface HealthState {
+  status?: 'online' | 'degraded';
+  version?: string;
+  database?: { reachable?: boolean };
+  providers?: { total?: number; enabled?: number };
+  schedulers?: Record<string, string>;
+  last_inventory_check_age_s?: number | null;
+  cooldown_count?: number;
+  identity?: { kind?: string; label?: string };
+}
