@@ -9,6 +9,7 @@
     format?: (value: unknown, row: JsonObject) => string;
   }[] = [];
   export let emptyTitle = 'No records found';
+  $: hasActions = $$slots.actions;
 </script>
 
 {#if rows.length}
@@ -17,7 +18,7 @@
       <thead>
         <tr>
           {#each columns as column}<th>{column.label}</th>{/each}
-          <th class="actions-heading"><span class="sr-only">Actions</span></th>
+          {#if hasActions}<th class="actions-heading"><span class="sr-only">Actions</span></th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -25,7 +26,7 @@
             {#each columns as column}<td data-label={column.label}>
                 {column.format ? column.format(row[column.key], row) : text(row[column.key])}
               </td>{/each}
-            <td class="row-actions"><slot name="actions" {row} /></td>
+            {#if hasActions}<td class="row-actions"><slot name="actions" {row} /></td>{/if}
           </tr>{/each}
       </tbody>
     </table>

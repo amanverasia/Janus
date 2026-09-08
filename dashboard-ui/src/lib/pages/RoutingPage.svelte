@@ -178,7 +178,7 @@
     border-radius: 9px;
     color: var(--accent-strong);
     background: var(--accent-soft);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 800;
   }
 
@@ -197,6 +197,6 @@
   .account-row small {
     margin-top: 3px;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
   }
 </style>

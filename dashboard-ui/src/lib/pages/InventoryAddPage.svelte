@@ -361,7 +361,7 @@
   .success-banner p {
     margin: 3px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.45;
   }
   .file-error {
@@ -373,7 +373,7 @@
     border-radius: 11px;
     color: var(--danger);
     background: var(--danger-soft);
-    font-size: 10px;
+    font-size: 11px;
   }
   .file-error span,
   .file-error strong {
@@ -442,7 +442,7 @@
   .routing-option small {
     margin-top: 4px;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.45;
   }
   .guidance-stack {
@@ -483,7 +483,7 @@
   .guide-card p {
     margin: 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.55;
   }
   .guide-card ol {
@@ -507,7 +507,7 @@
     border-radius: 8px;
     color: var(--accent-strong);
     background: var(--accent-soft);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
   }
   .guide-card li strong,
@@ -520,7 +520,7 @@
   .guide-card li small {
     margin-top: 3px;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1.45;
   }
   .privacy-card {

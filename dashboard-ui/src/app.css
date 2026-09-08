@@ -182,7 +182,7 @@ a {
 .eyebrow {
   display: block;
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.13em;
@@ -310,7 +310,7 @@ a {
   border-radius: 10px;
   color: #fff;
   background: linear-gradient(145deg, var(--accent), #527fe3);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 800;
 }
 .profile strong {
@@ -318,7 +318,7 @@ a {
   font-size: 11px;
 }
 .profile small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .profile > svg {
@@ -500,7 +500,7 @@ a {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   margin-top: 7px;
 }
 .table-wrap {
@@ -515,7 +515,7 @@ table {
 th {
   text-align: left;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.11em;
   font-weight: 750;
@@ -555,7 +555,7 @@ tbody tr:hover {
   border-radius: 99px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -672,7 +672,7 @@ tbody tr:hover {
 }
 .field label,
 .field > span {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 700;
   text-transform: uppercase;
@@ -685,7 +685,7 @@ tbody tr:hover {
   gap: 10px;
 }
 .field-title > span {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 700;
   text-transform: uppercase;
@@ -694,7 +694,7 @@ tbody tr:hover {
 .button.compact {
   min-height: 28px;
   padding: 4px 8px;
-  font-size: 10px;
+  font-size: 11px;
 }
 .field input,
 .field select,
@@ -715,7 +715,7 @@ tbody tr:hover {
   min-height: 88px;
 }
 .field small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
   line-height: 1.45;
 }
@@ -915,8 +915,13 @@ dialog::backdrop {
   text-align: left;
 }
 .palette-results button:hover,
-.palette-results button:focus {
+.palette-results button:focus,
+.palette-results button.active {
   background: var(--accent-soft);
+}
+.palette-results button[aria-selected='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .palette-results button svg:last-child {
   margin-left: auto;
@@ -935,7 +940,7 @@ dialog::backdrop {
   padding: 10px 16px;
   border-top: 1px solid var(--line);
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
 }
 kbd {
   padding: 2px 6px;
@@ -1298,7 +1303,7 @@ kbd {
 .model-provider-rail button small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 .provider-overview-link > svg,
 .provider-rail-row > svg,
@@ -1319,7 +1324,7 @@ kbd {
   justify-content: space-between;
   padding: 7px 8px 4px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1352,7 +1357,7 @@ kbd {
   border: 0;
   color: var(--muted);
   background: transparent;
-  font-size: 10px;
+  font-size: 11px;
   cursor: pointer;
 }
 .workspace-back svg {
@@ -1389,7 +1394,7 @@ kbd {
 .workspace-overview-head p {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .workspace-tabs,
 .provider-catalog-tabs {
@@ -1445,7 +1450,7 @@ kbd {
 .workspace-section header p {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .workspace-definition-list {
   margin: 0;
@@ -1459,7 +1464,7 @@ kbd {
 }
 .workspace-definition-list dt {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .workspace-definition-list dd {
   min-width: 0;
@@ -1468,7 +1473,7 @@ kbd {
   font-size: 11px;
 }
 .workspace-definition-list code {
-  font-size: 10px;
+  font-size: 11px;
 }
 .provider-auth-card {
   align-content: start;
@@ -1481,7 +1486,7 @@ kbd {
 .workspace-section-label,
 .provider-model-summary span {
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1493,7 +1498,7 @@ kbd {
 .provider-auth-card > p {
   margin: 8px 0 16px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.55;
 }
 .workspace-summary,
@@ -1534,7 +1539,7 @@ kbd {
 .model-overview span {
   margin-top: 4px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1569,7 +1574,7 @@ kbd {
 .workspace-row-list small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 .workspace-row-list svg {
   color: var(--faint);
@@ -1578,7 +1583,7 @@ kbd {
   margin: 0;
   padding: 12px 8px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .provider-model-summary {
@@ -1601,7 +1606,7 @@ kbd {
   padding: 6px 8px;
   border-radius: 8px;
   background: var(--surface-soft);
-  font-size: 9px;
+  font-size: 11px;
 }
 .provider-model-catalog-note {
   display: flex;
@@ -1613,7 +1618,7 @@ kbd {
 }
 .provider-model-catalog-note p {
   margin: 0;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .workspace-inline-empty,
@@ -1641,7 +1646,7 @@ kbd {
 .workspace-inline-empty p,
 .model-provider-empty p {
   margin-top: 3px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.45;
 }
 .workspace-inline-empty > .button {
@@ -1685,13 +1690,13 @@ kbd {
 .gateway-config-list small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 .gateway-config-url {
   margin-top: 5px;
   overflow: hidden;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1705,7 +1710,7 @@ kbd {
 .provider-catalog-hint {
   margin: 10px 2px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .preset-list {
@@ -1751,7 +1756,7 @@ kbd {
 .preset-row-copy small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   text-transform: capitalize;
 }
 .preset-row-badges {
@@ -1799,7 +1804,7 @@ kbd {
 .custom-model-context small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 .provider-architecture-note,
 .provider-credential-guide,
@@ -1839,7 +1844,7 @@ kbd {
 .provider-credential-guide p {
   margin-top: 5px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.55;
 }
 .provider-architecture-note .provider-account-links,
@@ -1873,7 +1878,7 @@ kbd {
 .copilot-oauth header p {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .copilot-device-code {
@@ -1889,7 +1894,7 @@ kbd {
 }
 .copilot-device-code small {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1903,7 +1908,7 @@ kbd {
 .copilot-status,
 .copilot-error {
   margin-top: 9px !important;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .copilot-expiry {
@@ -1923,7 +1928,7 @@ kbd {
 .provider-advanced summary {
   padding: 11px 13px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -2000,7 +2005,7 @@ kbd {
 .model-provider-title small {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 .model-provider-title > svg {
   color: var(--faint);
@@ -2093,7 +2098,7 @@ kbd {
 .model-meta {
   margin-top: 6px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: 11px;
 }
 .model-meta span + span::before {
   content: '·';
@@ -2126,7 +2131,7 @@ kbd {
 .capability-field legend {
   padding: 0 5px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -2144,7 +2149,7 @@ kbd {
   border-radius: 9px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   text-transform: capitalize;
 }
 .capability-options input {
@@ -2377,7 +2382,7 @@ kbd {
   td::before {
     content: attr(data-label);
     color: var(--faint);
-    font-size: 9px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     text-align: left;

@@ -358,7 +358,7 @@
   .secret-export-warning p {
     margin: 4px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.5;
   }
   .secret-export-warning .export-error {

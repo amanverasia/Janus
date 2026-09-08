@@ -132,9 +132,49 @@ export async function mutate(
 }
 
 export async function responseError(response: Response): Promise<string> {
-  const body = (await response.text())
+  const raw = await response.text();
+  const parsed = parseStructuredError(raw);
+  if (parsed) return parsed;
+  const body = raw
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   return body.slice(0, 320) || `${response.status} ${response.statusText}`;
+}
+
+function parseStructuredError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+  try {
+    const payload: unknown = JSON.parse(trimmed);
+    return describeErrorPayload(payload, 0);
+  } catch {
+    return null;
+  }
+}
+
+function describeErrorPayload(payload: unknown, depth: number): string | null {
+  if (depth > 3) return null;
+  if (typeof payload === 'string') {
+    const text = payload.trim();
+    return text ? text.slice(0, 320) : null;
+  }
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const described = describeErrorPayload(item, depth + 1);
+      if (described) return described;
+    }
+    return null;
+  }
+  if (payload !== null && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    for (const key of ['detail', 'error', 'message', 'reason']) {
+      if (key in record) {
+        const described = describeErrorPayload(record[key], depth + 1);
+        if (described) return described;
+      }
+    }
+    return null;
+  }
+  return null;
 }
