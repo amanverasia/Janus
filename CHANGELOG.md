@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-09-08
+### Added
+- **Dashboard accessibility and operator quality-of-life pass** — all
+  9–10 px table/status/field labels raised to an 11 px floor (80
+  declarations); DataTable omits the Actions column when a page provides
+  no actions slot; the command palette supports ArrowUp/ArrowDown/Home/End
+  selection with `aria-activedescendant` combobox/listbox semantics and a
+  visually distinct active item; API error toasts parse structured JSON
+  bodies (`detail`/`error`/`message`/`reason`) instead of showing raw
+  JSON; the Leaderboard gains a visible 7/30/90/365-day time-range
+  control; and Tools examples are authentication-aware, reflecting
+  `require_api_key` with a copyable runnable `curl` command using
+  `$JANUS_API_KEY` (never an actual key). Route-level page chunking was
+  considered and deliberately deferred to be revisited with #111's
+  payload budgets. (#116, PR #147)
+
 ## [3.9.0] - 2026-09-08
 ### Fixed
 - **Single live-usage initialization path** — the Usage view received its
