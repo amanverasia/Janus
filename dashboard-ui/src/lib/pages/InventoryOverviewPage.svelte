@@ -456,7 +456,7 @@
   .section-heading p {
     margin: 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   .best-grid {
     display: grid;
@@ -488,7 +488,7 @@
   .best-card header > div:first-child span {
     margin-top: 4px;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   .balance {
     text-align: right;
@@ -500,7 +500,7 @@
   }
   .balance span {
     color: var(--faint);
-    font-size: 9px;
+    font-size: 11px;
   }
   .credential-line {
     display: flex;
@@ -534,14 +534,14 @@
   .compact-button {
     min-height: 29px;
     padding: 5px 9px;
-    font-size: 10px;
+    font-size: 11px;
   }
   .best-card footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   .inventory-panels {
     margin-bottom: 18px;
@@ -579,7 +579,7 @@
     border-radius: 11px;
     color: var(--accent-strong);
     background: var(--accent-soft);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
   }
   .provider-copy {
@@ -602,7 +602,7 @@
   .credit-row small {
     margin: 3px 0 7px;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
   }
   .provider-copy .progress {
     height: 4px;

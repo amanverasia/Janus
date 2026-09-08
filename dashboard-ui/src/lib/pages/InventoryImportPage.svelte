@@ -384,7 +384,7 @@
   .success-banner p {
     margin: 3px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.45;
   }
   .import-layout {
@@ -448,7 +448,7 @@
   .drop-zone p {
     margin: 5px 0 15px;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   .file-error {
     display: flex;
@@ -460,7 +460,7 @@
     border-radius: 11px;
     color: var(--danger);
     background: var(--danger-soft);
-    font-size: 10px;
+    font-size: 11px;
   }
   .file-error span,
   .file-error strong {
@@ -494,7 +494,7 @@
   .verify-option small {
     margin-top: 3px;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
   }
   .import-actions {
     display: flex;
@@ -516,7 +516,7 @@
   .format-card > p {
     margin: 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.55;
   }
   .format-card code {
@@ -566,7 +566,7 @@
   .privacy-note p {
     margin: 0;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1.5;
   }
   .examples-section {
@@ -587,7 +587,7 @@
   .section-heading p {
     margin: 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   .example-grid {
     display: grid;

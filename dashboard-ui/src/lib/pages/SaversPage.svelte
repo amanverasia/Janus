@@ -206,7 +206,7 @@
   .saver-card header p {
     margin: 5px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.5;
   }
   .toggle-button {
@@ -249,13 +249,13 @@
   }
   .saver-option > span {
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.07em;
   }
   .saver-option > strong {
-    font-size: 10px;
+    font-size: 11px;
   }
   .saver-option.field {
     align-items: stretch;
@@ -286,7 +286,7 @@
   }
   .saver-card footer strong {
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
   }
   @media (max-width: 900px) {

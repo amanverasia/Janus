@@ -760,7 +760,7 @@
   .reclassify-panel p {
     margin: 5px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.5;
   }
   .reclassify-panel ul {
@@ -769,7 +769,7 @@
     margin: 10px 0 0;
     overflow: auto;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.7;
   }
   .reclassify-panel small {
@@ -807,7 +807,7 @@
   .validation-banner p {
     margin: 3px 0 0;
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   @keyframes pulse {
     50% {
@@ -911,7 +911,7 @@
     border-radius: 10px;
     color: var(--accent-strong);
     background: var(--accent-soft);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 800;
   }
   .provider-cell strong,
@@ -930,7 +930,7 @@
   .cell-subtitle {
     margin-top: 3px;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
   }
   .credential-cell code {
     font:
@@ -942,7 +942,7 @@
     max-width: 240px;
     margin-top: 4px;
     color: var(--accent-strong);
-    font-size: 9px;
+    font-size: 11px;
     font-style: normal;
   }
   .credit-amount {
@@ -963,7 +963,7 @@
       monospace;
   }
   .checked-cell {
-    font-size: 10px;
+    font-size: 11px;
   }
   .row-actions {
     min-width: 184px;
@@ -985,7 +985,7 @@
     padding: 13px 16px;
     border-top: 1px solid var(--line);
     color: var(--muted);
-    font-size: 10px;
+    font-size: 11px;
   }
   .pagination p {
     margin: 0;
@@ -1070,7 +1070,7 @@
   }
   .detail-metrics span {
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
@@ -1114,7 +1114,7 @@
     border-radius: 7px;
     color: var(--muted);
     background: var(--surface-soft);
-    font-size: 9px;
+    font-size: 11px;
   }
   .model-cloud {
     display: flex;
@@ -1133,7 +1133,7 @@
   }
   .detail-copy {
     margin: 9px 0 0;
-    font-size: 10px;
+    font-size: 11px;
   }
   .history-list {
     display: grid;
@@ -1154,7 +1154,7 @@
   .history-list time {
     margin: 0;
     color: var(--muted);
-    font-size: 9px;
+    font-size: 11px;
   }
   .history-list time {
     text-align: right;

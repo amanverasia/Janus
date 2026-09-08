@@ -7,12 +7,23 @@
   export let navigateQuery: (p: Record<string, string>) => void;
   $: rows = firstList(data, 'leaderboard', 'rows', 'items');
   $: sort = text(data.sort, 'tokens');
+  $: days = text(data.days, '30');
 </script>
 
 <PageHeader
   title="Leaderboard"
   description="The clients and models driving the most gateway activity."
 >
+  <select
+    aria-label="Time range"
+    value={days}
+    on:change={(e) => navigateQuery({ days: (e.currentTarget as HTMLSelectElement).value })}
+  >
+    <option value="7">7 days</option>
+    <option value="30">30 days</option>
+    <option value="90">90 days</option>
+    <option value="365">1 year</option>
+  </select>
   <div class="tabs">
     {#each ['tokens', 'cost', 'requests'] as item}<button
         class:active={sort === item}
