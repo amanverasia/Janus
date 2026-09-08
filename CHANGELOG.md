@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.11.0] - 2026-09-08
+### Fixed
+- **Responses-only OpenAI models with function tools** — calls to
+  `openai/gpt-6-astra` (and other Responses-only models) that include
+  function tools failed with HTTP 400 from OpenAI, which rejects
+  `tools` + `reasoning_effort` on `/v1/chat/completions` for these models
+  and requires `/v1/responses`. Janus now promotes the per-attempt wire
+  format to `openai_responses` for any `openai`-format model that sets the
+  new `requires_responses` capability (`gpt-6-astra` today, plus the
+  `gpt-6-astra*` pattern), so a `/chat/completions` client gets a
+  Responses payload built and posted to `{base}/responses`, then emitted
+  back as chat. `OpenAICompatProvider` selects the upstream endpoint from
+  the payload shape (`input` → `/responses`, `messages` →
+  `/chat/completions`), and the thinking layer remaps the chat
+  `reasoning_effort` scalar onto the Responses `reasoning: {"effort": …}`
+  field. The decision is per-request and gated on the model capability, so
+  the same shared OpenAI keys keep using `/chat/completions` for normal
+  models. (#149, PR #150)
 
 ## [3.10.0] - 2026-09-08
 ### Added
