@@ -332,3 +332,37 @@ async def test_gpt6_astra_responses_client_passthrough_uses_responses(app):
     fc = next(i for i in data["output"] if i["type"] == "function_call")
     assert fc["name"] == "ls"
     assert fc["call_id"] == "call_1"
+
+
+def _responses_empty_body() -> dict:
+    """A well-formed Responses completion whose output is empty (a "void")."""
+    return {
+        "id": "resp_void",
+        "object": "response",
+        "model": "gpt-6-astra",
+        "status": "completed",
+        "output": [],
+        "usage": {
+            "input_tokens": 5,
+            "output_tokens": 0,
+            "input_tokens_details": {"cached_tokens": 0},
+        },
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_gpt6_astra_void_completion_is_not_success(app):
+    """An empty upstream completion (no content, no tool call) must not be a 200."""
+    respx.post(f"{BASE}/responses").mock(
+        return_value=httpx.Response(200, json=_responses_empty_body())
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "openai/gpt-6-astra", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        # Only one account is configured; a void completion is treated as a failed
+        # attempt, so the request must NOT return a successful empty 200.
+        assert r.status_code != 200

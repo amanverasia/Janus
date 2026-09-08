@@ -14,7 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from janus.api.auth import key_allowed_models
-from janus.canonical.models import Usage
+from janus.canonical.events import (
+    InputJsonDelta,
+    TextBlockStart,
+    TextDelta,
+    ToolUseBlockStart,
+)
+from janus.canonical.models import TextPart, ToolUse, Usage
 from janus.canonical.tool_calls import prepare_tool_messages
 from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.base import FormatAdapter
@@ -73,7 +79,6 @@ from janus.storage.outcomes import record_request_outcome
 from janus.storage.request_logs import MAX_ROWS, record_request_log
 from janus.storage.usage import record_usage
 from janus.streaming.passthrough import generic_sse_passthrough, openai_passthrough_stream
-from janus.streaming.translator import translate_stream
 from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
 
@@ -90,6 +95,32 @@ FORMATS: dict[str, FormatAdapter] = {
     "gemini": GeminiAdapter(),
     "ollama": OllamaAdapter(),
 }
+
+
+_OUTPUT_EVENT_TYPES = (TextBlockStart, TextDelta, ToolUseBlockStart, InputJsonDelta)
+
+
+def _event_produces_output(event: object) -> bool:
+    """Whether a canonical stream event carries client-visible content or a tool call.
+
+    Reasoning/role-only events do not count, so a stream that ends with no text and
+    no tool call (a "void" completion) is treated as an upstream failure rather than
+    a successful empty answer.
+    """
+    return isinstance(event, _OUTPUT_EVENT_TYPES)
+
+
+def _is_void_response(response: Any) -> bool:
+    """True when an upstream completion produced no assistant text and no tool call.
+
+    Reasoning models / relays intermittently return a well-formed 200 whose output
+    is empty (no content, no tool call). Surfacing that as a successful empty answer
+    makes clients (coding agents) think the call silently did nothing.
+    """
+    content = getattr(response, "content", None) or []
+    return not any(
+        isinstance(part, (TextPart, ToolUse)) for part in content if isinstance(part, object)
+    )
 
 
 def _resolve_format(name: str) -> FormatAdapter:
@@ -1467,8 +1498,27 @@ async def _handle_with_snapshot(
                 async def _streaming_generator() -> AsyncIterator[bytes]:
                     stream_ok = False
                     upstream_failure = False
+                    produced_output = False
                     try:
-                        async for chunk in translate_stream(lines, tracker, emitter):
+                        async for raw_line in lines:
+                            if not raw_line or not raw_line.strip():
+                                continue
+                            line_data = raw_line
+                            if raw_line.startswith("data: "):
+                                line_data = raw_line[6:]
+                            elif raw_line.startswith("data:"):
+                                line_data = raw_line[5:]
+                            for event in tracker.feed(line_data):
+                                if _event_produces_output(event):
+                                    produced_output = True
+                                for chunk in emitter.feed(event):
+                                    yield chunk
+                        for event in tracker.finish():
+                            if _event_produces_output(event):
+                                produced_output = True
+                            for chunk in emitter.feed(event):
+                                yield chunk
+                        for chunk in emitter.finish():
                             yield chunk
                         stream_ok = True
                     except httpx.RequestError:
@@ -1482,7 +1532,16 @@ async def _handle_with_snapshot(
                         handler.record_quota_tokens(
                             target, usage.input_tokens + usage.output_tokens
                         )
-                        if upstream_failure and not stream_ok:
+                        void_completion = stream_ok and not produced_output
+                        if void_completion:
+                            # A 200 that produced no text and no tool call is an empty
+                            # (void) upstream completion. Cool the account so the next
+                            # request routes to a healthy key: reasoning relays
+                            # intermittently return these for tool-bearing calls.
+                            handler.mark_cooldown(
+                                target.account_id, "server_error", model=target.model
+                            )
+                        elif upstream_failure and not stream_ok:
                             handler.mark_cooldown(target.account_id, "network", model=target.model)
                         await record_usage(
                             db_path,
@@ -1513,7 +1572,7 @@ async def _handle_with_snapshot(
                                 client_key_label=client_key_label,
                                 max_rows=retention,
                             )
-                        if stream_ok:
+                        if stream_ok and produced_output:
                             handler.mark_success(target.account_id, target.model)
                         await outcome.record(
                             status=final_status,
@@ -1580,6 +1639,10 @@ async def _handle_with_snapshot(
                     attempts=len(attempt_errors) + 1,
                 )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
+            if _is_void_response(canonical_resp):
+                handler.mark_cooldown(target.account_id, "server_error", model=target.model)
+                _note_attempt_failure(target, "Empty completion (no content or tool call)")
+                continue
             client_payload = client_adapter.emit_response(canonical_resp)
 
             cost = attempt_cost(canonical_resp.usage, target, pricing_registry)
