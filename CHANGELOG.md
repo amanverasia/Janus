@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.12.0] - 2026-09-08
+### Fixed
+- **Empty (void) gpt-6-astra responses** — after routing to
+  `/v1/responses` (v3.11.0), `gpt-6-astra` still intermittently returned an
+  empty 200 to coding-agent clients for two reasons. (1) The OpenAI chat
+  adapter only read `max_tokens`, so coding agents / OpenAI SDK 1.x that send
+  `max_completion_tokens` never forwarded their token budget to the
+  Responses `max_output_tokens` field; without an explicit budget, reasoning
+  could exhaust the default and the model returned empty.
+  `OpenAIAdapter.parse_request` now accepts `max_completion_tokens` as a
+  fallback (`max_tokens` still wins). (2) Some OpenAI-compat relays return a
+  well-formed 200 with empty output (no content, no tool call) for
+  tool-bearing requests; Janus forwarded that as a successful empty answer,
+  so agents saw a call that silently did nothing. Janus now treats such void
+  completions as failures: non-stream responses with no text and no tool call
+  cool the account (`server_error`) and fall back to the next account;
+  streaming requests watch for client-visible output (text/tool-call events)
+  and, if the stream ends with none, cool the account for the next turn (a
+  committed 200 can't be retried mid-stream). (#151, PR #151)
+
 ## [3.11.0] - 2026-09-08
 ### Fixed
 - **Responses-only OpenAI models with function tools** — calls to
