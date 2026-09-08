@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 import yaml
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -111,16 +111,17 @@ def _api_v1_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/v1"
 
 
-def _reject_unsafe_url(
+async def _reject_unsafe_url(
     base_url: str, *, allow_private_network: bool = False
 ) -> JSONResponse | None:
     """Return a 400 JSONResponse if base_url is not a public http(s) address, else None.
 
     Guards dashboard endpoints that send the user's API key to an arbitrary URL
-    against scheme abuse and SSRF to internal/private addresses.
+    against scheme abuse and SSRF to internal/private addresses. DNS resolution
+    goes through the event loop's threadpool so a slow resolver never blocks
+    concurrent dashboard requests.
     """
     import ipaddress
-    import socket
 
     try:
         parsed = httpx.URL(base_url)
@@ -128,18 +129,19 @@ def _reject_unsafe_url(
         return JSONResponse({"error": "Invalid URL"}, status_code=400)
     if parsed.scheme not in ("http", "https"):
         return JSONResponse({"error": "Only http/https URLs are allowed"}, status_code=400)
-    try:
-        hostname = parsed.host
-        if hostname and not allow_private_network:
-            for _family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
-                ip = ipaddress.ip_address(sockaddr[0])
-                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                    return JSONResponse(
-                        {"error": "URLs pointing to internal/private addresses are not allowed"},
-                        status_code=400,
-                    )
-    except (socket.gaierror, ValueError):
-        pass
+    hostname = parsed.host
+    if hostname and not allow_private_network:
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(hostname, None)
+        except OSError:
+            infos = []
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return JSONResponse(
+                    {"error": "URLs pointing to internal/private addresses are not allowed"},
+                    status_code=400,
+                )
     return None
 
 
@@ -870,7 +872,7 @@ async def api_fetch_models(request: Request) -> JSONResponse:
             catalog_id = str(provider.get("catalog_id") or catalog_id)
 
     preset = get_catalog().get(catalog_id)
-    unsafe = _reject_unsafe_url(
+    unsafe = await _reject_unsafe_url(
         base_url,
         allow_private_network=bool(preset and preset.get("allow_private_network")),
     )
@@ -1093,111 +1095,205 @@ async def api_copilot_oauth_poll(request: Request) -> JSONResponse:
     return JSONResponse(result)
 
 
+_PROBE_TIMEOUT_S = 20.0
+
+
+def _sanitize_probe_detail(text: str, secret: str) -> str:
+    cleaned = " ".join(text.split())
+    if secret and secret in cleaned:
+        cleaned = cleaned.replace(secret, "***")
+    return cleaned[:200]
+
+
+def _probe_model_matches(candidate: str, prefix: str, models: list[str]) -> bool:
+    wanted = {candidate, f"{prefix}/{candidate}"}
+    return any(str(item) in wanted for item in models)
+
+
 @router.post("/api/providers/{provider_id}/test")
-async def api_test_connection(request: Request, provider_id: str) -> JSONResponse:
+async def api_test_connection(
+    request: Request,
+    provider_id: str,
+    model: str = Query("", max_length=200),
+    account: str = Query("", max_length=100),
+) -> JSONResponse:
+    """Representative connection probe for a provider row.
+
+    Builds the same executor and the same upstream payload format the gateway
+    uses for live traffic, so every api_type the dashboard can configure is
+    testable. Without ``account`` the probe targets the provider's configured
+    credential (or its best inventory credential) — the aggregate scope. Passing
+    ``account=<upstream_key_id>`` scopes the probe to that one credential and
+    prefers a model discovered as available on it, avoiding the false negatives
+    the old first-model/first-credential probe produced.
+    """
     db_path = await _ensure_db(request)
+    from janus.providers.drivers import get_driver
     from janus.storage.providers_db import get_provider
 
     provider = await get_provider(db_path, provider_id)
     if not provider:
         return JSONResponse({"error": "Provider not found"}, status_code=404)
 
-    models = json.loads(provider["models"]) if provider["models"] else []
-    model = models[0] if models else ""
-    api_type = provider["api_type"]
-    base_url = provider["base_url"].rstrip("/")
-    api_key = await _resolve_provider_api_key(db_path, provider)
+    api_type = str(provider["api_type"])
+    driver = get_driver(api_type)
+    if driver is None:
+        return JSONResponse(
+            {
+                "error": (
+                    f"Test not supported for api_type: {api_type}; "
+                    f"supported types: {', '.join(sorted(supported_api_types()))}"
+                )
+            },
+            status_code=400,
+        )
+
+    provider_models = [
+        str(item) for item in (json.loads(provider["models"]) if provider["models"] else [])
+    ]
+    prefix = str(provider["prefix"])
+    base_url = str(provider["base_url"] or "").rstrip("/")
+    api_key = str(provider.get("api_key") or "")
+    credential_expires_at: float | None = None
+    account_label = ""
+    scope = "account" if account else "provider"
+    key_row: dict[str, Any] | None = None
+
+    if account:
+        from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
+        from janus.storage.upstream_keys import get_upstream_keys_by_ids
+
+        inventory_id = inventory_provider_id_for_prefix(prefix)
+        rows = await get_upstream_keys_by_ids(db_path, [account])
+        key_row = rows[0] if rows else None
+        if key_row is None or str(key_row.get("provider_id")) != inventory_id:
+            return JSONResponse({"error": "Unknown account for this provider"}, status_code=404)
+    elif not api_key:
+        from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
+        from janus.storage.upstream_keys import get_probe_upstream_key_row
+
+        key_row = await get_probe_upstream_key_row(
+            db_path, inventory_provider_id_for_prefix(prefix)
+        )
+
+    if key_row is not None:
+        api_key = str(key_row.get("key_value") or "")
+        raw_expires = key_row.get("credential_expires_at")
+        credential_expires_at = float(raw_expires) if raw_expires else None
+        if account:
+            account_label = str(key_row.get("key_label") or key_row.get("key_masked") or "")
+        if not base_url and key_row.get("custom_base_url"):
+            base_url = str(key_row["custom_base_url"]).rstrip("/")
+        from janus.storage.upstream_models import list_models_for_key
+
+        discovered = await list_models_for_key(db_path, str(key_row["id"]))
+        available = [
+            str(row["model_id"]) for row in discovered if int(row.get("is_available") or 0)
+        ]
+        if provider_models:
+            matched = [m for m in available if _probe_model_matches(m, prefix, provider_models)]
+            available = matched or available
+        if available:
+            provider_models = available
+
+    chosen = model.strip()
+    if not chosen:
+        default_model = str(provider.get("default_model") or "")
+        if default_model and _probe_model_matches(default_model, prefix, provider_models):
+            chosen = default_model
+        elif provider_models:
+            chosen = provider_models[0]
+    if not chosen:
+        return JSONResponse(
+            {
+                "error": (
+                    "No model available to test: configure models on the provider "
+                    "or pass an account with discovered models"
+                )
+            },
+            status_code=422,
+        )
 
     preset = get_catalog().get(str(provider.get("catalog_id") or ""))
-    unsafe = _reject_unsafe_url(
-        base_url,
-        allow_private_network=bool(preset and preset.get("allow_private_network")),
-    )
-    if unsafe is not None:
-        return unsafe
-
-    try:
-        start = time.perf_counter()
-        if api_type == "openai_compat":
-            headers: dict[str, str] = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            body: dict[str, Any] = {
-                "model": model,
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 1,
-            }
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=body)
-
-        elif api_type == "anthropic":
-            headers = {
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            }
-            body = {
-                "model": model,
-                "max_tokens": 1,
-                "messages": [{"role": "user", "content": "hi"}],
-            }
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(f"{base_url}/v1/messages", headers=headers, json=body)
-
-        elif api_type == "gemini":
-            params: dict[str, str] = {}
-            if api_key:
-                params["key"] = api_key
-            body = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    f"{base_url}/v1beta/models/{model}:generateContent",
-                    params=params,
-                    json=body,
-                )
-        elif api_type == "github_copilot":
-            from janus.providers.github_copilot import GitHubCopilotProvider
-
-            copilot = GitHubCopilotProvider(oauth_token=api_key or "", base_url=base_url)
-            try:
-                result = await copilot.call(
-                    {
-                        "model": model,
-                        "messages": [{"role": "user", "content": "hi"}],
-                        "max_tokens": 1,
-                    },
-                    stream=False,
-                )
-            finally:
-                await copilot.close()
-            latency_ms = round((time.perf_counter() - start) * 1000)
-            ok = result.status_code < 400
-            return JSONResponse(
-                {"ok": ok, "status": result.status_code, "latency_ms": latency_ms}
-                if ok
-                else {
-                    "ok": False,
-                    "status": result.status_code,
-                    "latency_ms": latency_ms,
-                    "error": str(result.json_data)[:200] if result.json_data else "",
-                }
-            )
-        else:
-            return JSONResponse(
-                {"error": f"Test not supported for api_type: {api_type}"}, status_code=400
-            )
-
-        latency_ms = round((time.perf_counter() - start) * 1000)
-        ok = resp.status_code < 400
-        return JSONResponse(
-            {"ok": ok, "status": resp.status_code, "latency_ms": latency_ms}
-            if ok
-            else {"ok": False, "status": resp.status_code, "latency_ms": latency_ms}
+    if base_url:
+        unsafe = await _reject_unsafe_url(
+            base_url,
+            allow_private_network=bool(preset and preset.get("allow_private_network")),
         )
-    except httpx.TimeoutException:
-        return JSONResponse({"ok": False, "error": "Request timed out"}, status_code=504)
-    except (httpx.ConnectError, httpx.RequestError) as e:
-        return JSONResponse({"ok": False, "error": str(type(e).__name__)}, status_code=502)
+        if unsafe is not None:
+            return unsafe
+
+    from janus.api.routes import _resolve_format
+    from janus.canonical.models import CanonicalRequest, Message, Role
+    from janus.config.schema import ProviderConfig
+    from janus.providers.drivers import build_provider
+
+    probe_config = ProviderConfig(
+        id=f"{provider_id}::probe",
+        catalog_id=str(provider.get("catalog_id") or "") or None,
+        prefix=prefix,
+        api_type=api_type,
+        base_url=base_url,
+        api_key=api_key or None,
+        models=[chosen],
+        default_model=chosen,
+        credential_expires_at=credential_expires_at,
+    )
+    canonical = CanonicalRequest(
+        model=chosen,
+        messages=[Message(role=Role.USER, content="hi")],
+        max_tokens=16,
+    )
+    upstream_payload = _resolve_format(driver.native_format).build_upstream_request(
+        canonical, chosen
+    )
+
+    result_payload: dict[str, Any] = {"model": chosen, "scope": scope}
+    if account_label:
+        result_payload["account_label"] = account_label
+    try:
+        executor = build_provider(probe_config)
+        try:
+            start = time.perf_counter()
+            result = await asyncio.wait_for(
+                executor.call(upstream_payload, stream=False),
+                timeout=_PROBE_TIMEOUT_S,
+            )
+        finally:
+            await executor.close()
+        latency_ms = round((time.perf_counter() - start) * 1000)
+        ok = result.status_code < 400
+        result_payload.update({"ok": ok, "status": result.status_code, "latency_ms": latency_ms})
+        if not ok:
+            detail = str(result.json_data) if result.json_data else ""
+            result_payload["error"] = _sanitize_probe_detail(
+                detail or f"Upstream returned {result.status_code}", api_key
+            )
+        return JSONResponse(result_payload)
+    except TimeoutError:
+        result_payload["ok"] = False
+        result_payload["error"] = (
+            f"Upstream did not respond within {int(_PROBE_TIMEOUT_S)}s (model {chosen})"
+        )
+        return JSONResponse(result_payload, status_code=504)
+    except httpx.TimeoutException as exc:
+        result_payload["ok"] = False
+        result_payload["error"] = _sanitize_probe_detail(
+            f"Upstream timed out: {type(exc).__name__}", api_key
+        )
+        return JSONResponse(result_payload, status_code=504)
+    except httpx.ConnectError as exc:
+        host = httpx.URL(base_url).host if base_url else ""
+        reason = f"{host}: {exc}" if host and str(exc) else (host or "connection refused")
+        result_payload["ok"] = False
+        result_payload["error"] = _sanitize_probe_detail(
+            f"Could not connect to {reason} (DNS or network failure)", api_key
+        )
+        return JSONResponse(result_payload, status_code=502)
+    except httpx.RequestError as exc:
+        result_payload["ok"] = False
+        result_payload["error"] = _sanitize_probe_detail(f"{type(exc).__name__}: {exc}", api_key)
+        return JSONResponse(result_payload, status_code=502)
 
 
 # ---- Combo CRUD ----
