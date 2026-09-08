@@ -875,6 +875,12 @@ async def _handle_with_snapshot(
         attempt_thinking = thinking_intent or alias_intent
         model_caps = get_capabilities_for_model(target.prefix, target.model)
         attempt_req = strip_unsupported_modalities(canonical_req, model_caps)
+        # Responses-only OpenAI models (gpt-6-astra &c.) reject function tools on
+        # /chat/completions; serve them from /v1/responses by promoting the wire
+        # format so the cross-format path builds a Responses payload.
+        effective_native_format = target.native_format
+        if target.native_format == "openai" and model_caps.get("requires_responses"):
+            effective_native_format = "openai_responses"
         if target.native_format in ("gemini", "ollama", "antigravity", "vertex"):
             attempt_req = await prefetch_remote_images(attempt_req, target.native_format)
 
@@ -1123,14 +1129,14 @@ async def _handle_with_snapshot(
         # Same wire format on both sides: build from the *post-saver*
         # CanonicalRequest (so RTK/Caveman/Ponytail still apply), then either
         # stream with full usage/log lifecycle or return JSON with usage.
-        if client_format == target.native_format:
+        if client_format == effective_native_format:
             provider_p = providers.get(target.provider_config.id)
             if provider_p is not None:
                 handler.record_attempt(target)
                 native_body = client_adapter.build_upstream_request(attempt_req, upstream_model)
                 apply_thinking_to_payload(
                     native_body,
-                    target_format=target.native_format,
+                    target_format=effective_native_format,
                     model=upstream_model,
                     caps=model_caps,
                     intent=attempt_thinking,
@@ -1372,11 +1378,11 @@ async def _handle_with_snapshot(
                 return JSONResponse(content=native_payload if native_payload else {})
         # ── End native passthrough ─────────────────────────────────────
 
-        provider_adapter = _resolve_format(target.native_format)
+        provider_adapter = _resolve_format(effective_native_format)
         upstream_payload = provider_adapter.build_upstream_request(attempt_req, upstream_model)
         apply_thinking_to_payload(
             upstream_payload,
-            target_format=target.native_format,
+            target_format=effective_native_format,
             model=upstream_model,
             caps=model_caps,
             intent=attempt_thinking,
@@ -1388,7 +1394,7 @@ async def _handle_with_snapshot(
             client_tool=client_tool,
             model=upstream_model,
             provider_prefix=target.prefix,
-            wire_format=target.native_format,
+            wire_format=effective_native_format,
             oauth_upstream=_oauth_upstream(target),
         )
         provider = providers[target.provider_config.id]

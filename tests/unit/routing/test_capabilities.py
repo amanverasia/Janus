@@ -46,3 +46,24 @@ def test_reorder_prioritizes_vision_capable(monkeypatch):
 def test_reorder_noop_without_required():
     models = ["groq/x", "openai/y"]
     assert reorder_combo_by_capabilities(models, frozenset()) == models
+
+
+def test_gpt6_astra_requires_responses():
+    from janus.routing.capabilities import get_capabilities_for_model
+
+    caps = get_capabilities_for_model("openai", "gpt-6-astra")
+    assert caps["requires_responses"] is True
+    assert caps["reasoning"] is True
+
+
+def test_gpt6_astra_variant_requires_responses():
+    from janus.routing.capabilities import get_capabilities_for_model
+
+    assert get_capabilities_for_model("openai", "gpt-6-astra-mini")["requires_responses"] is True
+
+
+def test_non_responses_model_does_not_require_responses():
+    from janus.routing.capabilities import get_capabilities_for_model
+
+    assert get_capabilities_for_model("openai", "gpt-4o")["requires_responses"] is False
+    assert get_capabilities_for_model("openai", "o4-mini")["requires_responses"] is False
