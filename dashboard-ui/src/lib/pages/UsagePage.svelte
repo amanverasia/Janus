@@ -15,6 +15,7 @@
   let recent: JsonObject[] = [];
   let stream: AbortController | undefined;
   let reconnect: ReturnType<typeof setTimeout> | undefined;
+  let lastSeq = 0;
 
   $: stats = object(data.stats ?? data.summary);
   $: historical = firstList(stats, 'daily', 'series');
@@ -26,8 +27,12 @@
     if (Array.isArray(payload.recent)) {
       recent = payload.recent.map(object).reverse();
     } else if (payload.type === 'request') {
+      const seq = number(payload.seq);
+      if (seq <= lastSeq) return;
+      lastSeq = seq;
       recent = [payload, ...recent].slice(0, 20);
     }
+    if (payload.type === 'snapshot') lastSeq = number(payload.seq);
   }
 
   function eventTime(event: JsonObject): string {

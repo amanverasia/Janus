@@ -58,6 +58,39 @@ def test_ring_capped():
     assert recent[0]["model"] == "m10"
 
 
+def test_request_events_carry_monotonic_seq_and_snapshot_watermark_matches_ring():
+    bus = LiveUsageBus()
+    bus.record_completed(model="t/m1", status=200)
+    bus.record_completed(model="t/m2", status=200)
+    snap = bus.snapshot()
+    assert snap["seq"] == snap["recent"][-1]["seq"] == 2
+    assert snap["recent"][0]["seq"] < snap["recent"][-1]["seq"]
+
+
+def test_snapshot_watermark_covers_queued_events_published_before_snapshot():
+    # Events published between subscribe() and snapshot() land in both the ring
+    # and the subscriber queue; the snapshot watermark lets clients drop the
+    # queued copy instead of rendering it twice.
+    bus = LiveUsageBus()
+    q = bus.subscribe()
+    bus.record_completed(model="t/m1", status=200)
+    snap = bus.snapshot()
+    queued = q.get_nowait()
+    assert queued["type"] == "request"
+    assert queued["seq"] <= snap["seq"]
+    bus.unsubscribe(q)
+
+
+def test_snapshot_watermark_persists_after_ring_drain():
+    bus = LiveUsageBus()
+    bus.record_completed(model="t/m1", status=200)
+    for i in range(RING_CAP):
+        bus.record_completed(model=f"m{i}", status=200)
+    snap = bus.snapshot()
+    assert snap["seq"] == RING_CAP + 1
+    assert all(event["model"] != "t/m1" for event in snap["recent"])
+
+
 async def test_subscribers_receive_events():
     bus = LiveUsageBus()
     q = bus.subscribe()

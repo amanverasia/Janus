@@ -288,22 +288,17 @@ async def api_clear_cooldowns(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "cleared": n})
 
 
-@router.get("/api/usage/snapshot")
-async def usage_snapshot(_request: Request) -> JSONResponse:
-    from janus.dashboard.live import get_bus
-
-    snap = get_bus().snapshot()
-    return JSONResponse({"inflight": snap["inflight"], "recent": snap["recent"][-5:]})
-
-
 @router.get("/api/usage/live")
 async def usage_live_stream(request: Request) -> StreamingResponse:
     """SSE feed for the Usage tab's live activity view.
 
-    Emits a `snapshot` event on connect (in-flight count + recent-request
-    ring), then pushes `request` events as usage is recorded and `inflight`
-    gauge updates as gateway requests start/finish. A comment ping every 25s
-    keeps proxies from closing the idle stream.
+    The snapshot emitted on connect is the single initialization path for the
+    live view: it carries the in-flight gauge, the recent-request ring, and a
+    ``seq`` watermark matching the newest ring entry. Subsequent ``request``
+    events carry their own ``seq`` so clients can discard queued events that
+    were already folded into a snapshot (the subscribe/snapshot race and
+    reconnect replays). ``inflight`` events are idempotent gauge updates. A
+    comment ping every 25s keeps proxies from closing the idle stream.
     """
     from janus.dashboard.live import get_bus
 

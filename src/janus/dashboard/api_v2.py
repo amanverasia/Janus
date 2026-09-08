@@ -956,13 +956,11 @@ async def get_dashboard_state(
             meta={"query": {"days": days}},
         )
     if section == "usage":
-        from janus.dashboard.live import get_bus
-
         return await _response(
             request,
             db_path,
             section,
-            {"stats": await _usage_stats_data(db_path, days=days), "live": get_bus().snapshot()},
+            {"stats": await _usage_stats_data(db_path, days=days)},
             meta={"query": {"days": days}},
         )
     if section == "analytics":
