@@ -1,4 +1,4 @@
-import type { JsonObject, MutationOptions, StateEnvelope } from './types';
+import type { HealthState, JsonObject, MutationOptions, StateEnvelope } from './types';
 
 let redirectingToLogin = false;
 
@@ -94,6 +94,58 @@ export async function getState(section: string, signal?: AbortSignal): Promise<S
     meta:
       result.meta !== null && typeof result.meta === 'object' && !Array.isArray(result.meta)
         ? (result.meta as JsonObject)
+        : {}
+  };
+}
+
+export async function getHealth(): Promise<HealthState> {
+  const response = await dashboardFetch('/dashboard/api/v2/health', {
+    headers: { Accept: 'application/json' }
+  });
+  if (!response.ok) throw new Error(await responseError(response));
+  const raw: unknown = await response.json();
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const result = raw as Record<string, unknown>;
+  const database = result.database;
+  const providers = result.providers;
+  const identity = result.identity;
+  return {
+    status: result.status === 'degraded' ? 'degraded' : 'online',
+    version: typeof result.version === 'string' ? result.version : undefined,
+    database:
+      database !== null && typeof database === 'object' && !Array.isArray(database)
+        ? { reachable: (database as Record<string, unknown>).reachable === true }
+        : {},
+    providers:
+      providers !== null && typeof providers === 'object' && !Array.isArray(providers)
+        ? {
+            total: Number((providers as Record<string, unknown>).total ?? 0) || 0,
+            enabled: Number((providers as Record<string, unknown>).enabled ?? 0) || 0
+          }
+        : {},
+    schedulers:
+      result.schedulers !== null &&
+      typeof result.schedulers === 'object' &&
+      !Array.isArray(result.schedulers)
+        ? (result.schedulers as Record<string, string>)
+        : {},
+    last_inventory_check_age_s:
+      typeof result.last_inventory_check_age_s === 'number'
+        ? result.last_inventory_check_age_s
+        : null,
+    cooldown_count: typeof result.cooldown_count === 'number' ? result.cooldown_count : 0,
+    identity:
+      identity !== null && typeof identity === 'object' && !Array.isArray(identity)
+        ? {
+            kind:
+              typeof (identity as Record<string, unknown>).kind === 'string'
+                ? (identity as Record<string, string>).kind
+                : undefined,
+            label:
+              typeof (identity as Record<string, unknown>).label === 'string'
+                ? (identity as Record<string, string>).label
+                : undefined
+          }
         : {}
   };
 }

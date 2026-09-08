@@ -15,6 +15,11 @@
   $: chart = daily.map((point) => number(point.requests ?? point.total_requests ?? point.value));
   $: providers = firstList(data, 'providers', 'provider_health');
   $: checklist = object(data.setup_checklist);
+  $: providerCount = number(data.provider_count ?? providers.length);
+  $: cooldowns = number(data.cooldown_count);
+  $: providerHealthTone = providerCount === 0 ? 'pending' : cooldowns > 0 ? 'warning' : 'active';
+  $: providerHealthLabel =
+    providerCount === 0 ? 'No providers' : cooldowns > 0 ? 'Degraded' : 'Operational';
 </script>
 
 <PageHeader
@@ -81,7 +86,7 @@
         <h2>Provider health</h2>
         <p>{number(data.provider_count ?? providers.length)} enabled</p>
       </div>
-      <span class="status active">Operational</span>
+      <span class="status {providerHealthTone}">{providerHealthLabel}</span>
     </div>
     <div class="panel-body">
       {#if providers.length}<div class="metric-list">

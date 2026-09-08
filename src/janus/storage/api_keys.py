@@ -51,6 +51,18 @@ async def create_key(
     }
 
 
+async def get_key_name(db_path: str | Path, key_id: int) -> str | None:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            "SELECT name FROM api_keys WHERE id = ?",
+            (key_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None or row["name"] is None:
+        return None
+    return str(row["name"])
+
+
 async def verify_key(db_path: str | Path, key: str) -> int | None:
     if not key.startswith("sk-janus-"):
         return None

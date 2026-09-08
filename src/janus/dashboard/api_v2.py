@@ -1042,3 +1042,121 @@ async def get_dashboard_state(
         pricing.pop("request", None)
         return await _response(request, db_path, section, pricing)
     return await _response(request, db_path, section, await _settings_data(db_path))
+
+
+_UNSET: Any = object()
+
+
+@router.get("/api/v2/health")
+async def get_dashboard_health(request: Request) -> JSONResponse:
+    """State-backed health and identity contract for the dashboard shell.
+
+    Replaces the hardcoded "System online"/"Administrator" indicators: exposes
+    DB reachability, provider counts, scheduler status, and the age of the last
+    inventory check so the shell can render online/degraded/offline states and
+    flag stale health. The identity block carries only the authenticated key's
+    stored label (or a masked/neutral label) — never credential material.
+    """
+    db_path = await _ensure_db(request)
+
+    db_reachable = False
+    try:
+        from janus.storage.database import get_connection
+
+        async with get_connection(db_path) as db:
+            await db.execute("SELECT 1")
+        db_reachable = True
+    except Exception:
+        db_reachable = False
+
+    provider_total = 0
+    provider_enabled = 0
+    cooldown_count = 0
+    last_inventory_check_age_s: float | None = None
+    if db_reachable:
+        from janus.storage.cooldowns import get_active_cooldowns
+        from janus.storage.providers_db import list_providers
+
+        try:
+            rows = await list_providers(db_path)
+            provider_total = len(rows)
+            provider_enabled = sum(1 for row in rows if row.get("is_enabled", 1))
+        except Exception:
+            provider_total = 0
+            provider_enabled = 0
+        try:
+            cooldowns = await get_active_cooldowns(db_path)
+            now = datetime.now(UTC).timestamp()
+            cooldown_count = sum(1 for expires_at, _level in cooldowns.values() if expires_at > now)
+        except Exception:
+            cooldown_count = 0
+        try:
+            from janus.storage.database import get_connection
+
+            async with get_connection(db_path) as db:
+                async with db.execute("SELECT MAX(last_checked_at) FROM upstream_keys") as cur:
+                    row = await cur.fetchone()
+            raw = row[0] if row else None
+            if raw:
+                checked = datetime.fromisoformat(str(raw))
+                if checked.tzinfo is None:
+                    checked = checked.replace(tzinfo=UTC)
+                last_inventory_check_age_s = max(0.0, (datetime.now(UTC) - checked).total_seconds())
+        except Exception:
+            last_inventory_check_age_s = None
+
+    from janus.inventory.scheduler import scheduler_enabled as inventory_scheduler_enabled
+    from janus.pricing.scheduler import pricing_scheduler_enabled
+
+    schedulers: dict[str, str] = {}
+    for name, enabled, task in (
+        (
+            "inventory",
+            inventory_scheduler_enabled(),
+            getattr(request.app.state, "inventory_scheduler_task", _UNSET),
+        ),
+        (
+            "pricing",
+            pricing_scheduler_enabled(),
+            getattr(request.app.state, "pricing_scheduler_task", _UNSET),
+        ),
+    ):
+        if task is _UNSET:
+            schedulers[name] = "unknown"
+        elif not enabled:
+            schedulers[name] = "disabled"
+        elif task is None or task.done():
+            schedulers[name] = "stopped"
+        else:
+            schedulers[name] = "running"
+
+    key_label = getattr(request.state, "client_key_label", None)
+    key_id = getattr(request.state, "client_key_id", None)
+    if key_id is not None:
+        key_name: str | None = None
+        if db_reachable:
+            from janus.storage.api_keys import get_key_name
+
+            key_name = await get_key_name(db_path, int(key_id))
+        identity = {"kind": "api_key", "label": key_name or f"API key #{key_id}"}
+    elif isinstance(key_label, str) and key_label:
+        identity = {"kind": "config_key", "label": key_label}
+    else:
+        identity = {"kind": "session", "label": "Dashboard session"}
+
+    status = "online"
+    if not db_reachable or "stopped" in schedulers.values():
+        status = "degraded"
+    return _no_store_json(
+        {
+            "status": status,
+            "version": request.app.version,
+            "now": datetime.now(UTC).isoformat(),
+            "database": {"reachable": db_reachable},
+            "providers": {"total": provider_total, "enabled": provider_enabled},
+            "schedulers": schedulers,
+            "last_inventory_check_age_s": last_inventory_check_age_s,
+            "cooldown_count": cooldown_count,
+            "identity": identity,
+        }
+    )

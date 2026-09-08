@@ -574,24 +574,30 @@ async def summarize_upstream_keys_for_inventory(
     }
 
 
-async def get_probe_upstream_key(
+async def get_probe_upstream_key_row(
     db_path: str | Path,
     inventory_provider_id: str,
-) -> str | None:
+) -> dict[str, Any] | None:
     routable = await list_routable_upstream_keys(db_path, inventory_provider_id)
     if routable:
-        return str(routable[0]["key_value"])
+        return routable[0]
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT key_value FROM upstream_keys
+            """SELECT * FROM upstream_keys
                WHERE provider_id = ? AND status != 'revoked' AND is_archived = 0
                ORDER BY created_at ASC LIMIT 1""",
             (inventory_provider_id,),
         ) as cur:
             row = await cur.fetchone()
-    if row is None:
-        return None
-    return str(row[0])
+    return _decode_upstream_row(row) if row else None
+
+
+async def get_probe_upstream_key(
+    db_path: str | Path,
+    inventory_provider_id: str,
+) -> str | None:
+    row = await get_probe_upstream_key_row(db_path, inventory_provider_id)
+    return str(row["key_value"]) if row else None
 
 
 async def count_pending_upstream_keys(db_path: str | Path) -> int:

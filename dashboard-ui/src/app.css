@@ -234,6 +234,19 @@ a {
   border-radius: 50%;
   background: #32bb8c;
   box-shadow: 0 0 0 4px color-mix(in srgb, #32bb8c 15%, transparent);
+  flex-shrink: 0;
+}
+.system-dot.degraded {
+  background: var(--warning);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warning) 15%, transparent);
+}
+.system-dot.stale {
+  background: var(--muted);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 15%, transparent);
+}
+.system-dot.offline {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 15%, transparent);
 }
 .main-shell {
   min-height: 100vh;
@@ -316,6 +329,10 @@ a {
 .profile strong {
   display: block;
   font-size: 11px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .profile small {
   font-size: 11px;

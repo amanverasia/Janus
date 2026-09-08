@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-09-08
+### Fixed
+- **Single live-usage initialization path** — the Usage view received its
+  initial live snapshot three times (embedded in the usage section state,
+  via a separate `/dashboard/api/usage/snapshot` fetch, and again from the
+  SSE stream's connect-time snapshot), and events published between SSE
+  subscription and snapshot emission could render twice. The SSE snapshot
+  on connect is now the only initialization path: the duplicate REST
+  endpoint and the section-state `live` payload are removed, request
+  events carry a monotonic `seq` with a matching snapshot watermark so
+  clients discard already-folded events (subscribe/snapshot race,
+  reconnect replays), and the recent-activity ring stays mounted across
+  transient disconnects. (#115, PR #144)
+- **Representative provider connection tests** — the Providers page Test
+  action is available for every executor type displayed by the UI, selects
+  a model available to the credential under test instead of blindly using
+  the first configured model, supports per-account and aggregate scopes,
+  performs URL safety validation without blocking the event loop while
+  preserving SSRF protections, and returns sanitized, actionable failure
+  detail. (#112, PR #145)
+- **State-backed dashboard health and identity** — the shell no longer
+  hardcodes "System online"/"Administrator / JA" and the Overview page no
+  longer labels providers "Operational" without data. A new
+  `/dashboard/api/v2/health` contract exposes DB reachability, provider
+  counts, scheduler status, cooldown counts, and last inventory check age;
+  the shell renders online/degraded/offline states with a visually
+  distinct stale indicator, and the identity chip shows the authenticated
+  key's stored label (never credential material). The Overview
+  provider-health chip reflects provider and cooldown state. (#119,
+  PR #148)
+
 ## [3.8.0] - 2026-09-07
 ### Fixed
 - **Provider-to-model navigation is SPA-native with deep links** — the
