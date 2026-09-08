@@ -1,15 +1,59 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { navGroups, type NavItem } from '$lib/nav';
+  import type { HealthState } from '$lib/types';
   import Icon from './Icon.svelte';
   import CommandPalette from './CommandPalette.svelte';
 
   export let active: NavItem;
   export let loading = false;
+  export let health: HealthState = {};
+  export let healthAgeMs = Infinity;
+  export let healthOffline = false;
   let mobileOpen = false;
   let paletteOpen = false;
   let themeMode: 'system' | 'light' | 'dark' = 'system';
   const dispatch = createEventDispatcher<{ navigate: string; refresh: void; logout: void }>();
+
+  $: stale = !healthOffline && healthAgeMs > 90_000;
+  $: systemTone = healthOffline
+    ? 'offline'
+    : stale
+      ? 'stale'
+      : health.status === 'degraded'
+        ? 'degraded'
+        : 'online';
+  $: systemTitle =
+    systemTone === 'offline'
+      ? 'Dashboard offline'
+      : systemTone === 'stale'
+        ? 'Connection stale'
+        : systemTone === 'degraded'
+          ? 'System degraded'
+          : 'System online';
+  $: enabledProviders = health.providers?.enabled ?? 0;
+  $: totalProviders = health.providers?.total ?? 0;
+  $: systemDetail =
+    systemTone === 'offline'
+      ? 'Retrying connection'
+      : systemTone === 'stale'
+        ? `Last update ${Math.round(healthAgeMs / 1000)}s ago`
+        : health.status === 'degraded'
+          ? health.database?.reachable === false
+            ? 'Database unreachable'
+            : 'A background scheduler stopped'
+          : totalProviders > 0
+            ? `${enabledProviders}/${totalProviders} providers · updated ${Math.round(healthAgeMs / 1000)}s ago`
+            : 'Control plane connected';
+  $: identityLabel = health.identity?.label ?? 'Dashboard session';
+  $: identityInitials =
+    identityLabel
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0] ?? '')
+      .join('')
+      .toUpperCase() || '•';
 
   onMount(() => {
     const saved = localStorage.getItem('janus-theme');
@@ -90,10 +134,10 @@
       {/each}
     </nav>
     <div class="sidebar-footer">
-      <div class="system-dot"></div>
+      <div class="system-dot {systemTone}"></div>
       <div>
-        <strong>System online</strong>
-        <small>Control plane connected</small>
+        <strong>{systemTitle}</strong>
+        <small>{systemDetail}</small>
       </div>
     </div>
   </aside>
@@ -130,9 +174,9 @@
           <Icon name={themeMode === 'light' ? 'moon' : themeMode === 'dark' ? 'sun' : 'settings'} />
         </button>
         <button class="profile" on:click={() => dispatch('logout')} aria-label="Log out">
-          <span>JA</span>
+          <span>{identityInitials}</span>
           <div>
-            <strong>Administrator</strong>
+            <strong>{identityLabel}</strong>
             <small>Log out</small>
           </div>
           <Icon name="logout" size={16} />

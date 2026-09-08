@@ -25,14 +25,15 @@
   import SettingsPage from '$lib/pages/SettingsPage.svelte';
   import ToolsPage from '$lib/pages/ToolsPage.svelte';
   import UsagePage from '$lib/pages/UsagePage.svelte';
-  import { getState, mutate } from '$lib/api';
+  import { getState, getHealth, mutate } from '$lib/api';
   import { object } from '$lib/data';
   import { routeFor, type NavItem } from '$lib/nav';
-  import type { AlertItem, JsonObject, MutationOptions, ToastItem } from '$lib/types';
+  import type { AlertItem, HealthState, JsonObject, MutationOptions, ToastItem } from '$lib/types';
 
   type CachedView = { data: JsonObject; alerts: AlertItem[] };
 
   const VIEW_CACHE_LIMIT = 12;
+  const HEALTH_POLL_MS = 30_000;
 
   let active: NavItem = routeFor('/dashboard/ui');
   let data: JsonObject = {};
@@ -46,10 +47,25 @@
   let pathname = '/dashboard/ui';
   let hasView = false;
   let busy = true;
+  let health: HealthState = {};
+  let healthAt = 0;
+  let healthOffline = false;
+  let nowTs = Date.now();
   const viewCache = new Map<string, CachedView>();
   const latestPathCache = new Map<string, CachedView>();
 
   $: busy = loading || mutationCount > 0;
+  $: healthAgeMs = healthAt ? nowTs - healthAt : Infinity;
+
+  async function refreshHealth() {
+    try {
+      health = await getHealth();
+      healthAt = Date.now();
+      healthOffline = false;
+    } catch {
+      healthOffline = true;
+    }
+  }
 
   function mergedData(source: JsonObject, meta: JsonObject): JsonObject {
     const query = object(meta.query);
@@ -205,9 +221,19 @@
     const popstate = () => void load();
     window.addEventListener('popstate', popstate);
     void load();
+    void refreshHealth();
+    const healthTimer = setInterval(() => void refreshHealth(), HEALTH_POLL_MS);
+    const tickTimer = setInterval(() => (nowTs = Date.now()), 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshHealth();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       request?.abort();
       window.removeEventListener('popstate', popstate);
+      clearInterval(healthTimer);
+      clearInterval(tickTimer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   });
 </script>
@@ -215,6 +241,9 @@
 <Shell
   {active}
   loading={busy}
+  {health}
+  {healthAgeMs}
+  {healthOffline}
   on:navigate={(event) => navigate(event.detail)}
   on:refresh={load}
   on:logout={logout}
