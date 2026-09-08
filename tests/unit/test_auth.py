@@ -127,3 +127,34 @@ async def test_authenticate_static_yaml_key_unrestricted(tmp_path) -> None:
     assert await authenticate_api_key(req, "sk-static") is True
     assert req.state.can_login is True
     assert req.state.allowed_models is None
+
+
+@pytest.mark.asyncio
+async def test_authenticate_db_key_sets_label_from_name(tmp_path) -> None:
+    from janus.storage.api_keys import create_key
+    from janus.storage.database import init_db
+
+    cfg = JanusConfig(server=ServerSettings(data_dir=tmp_path))
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    full_key, _ = await create_key(db_path, "ops key")
+    req = _request(config=cfg)
+    req.app.state.db_path = db_path
+    assert await authenticate_api_key(req, full_key) is True
+    assert req.state.client_key_label == "ops key"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_db_key_label_falls_back_to_key_id(tmp_path) -> None:
+    from janus.storage.api_keys import create_key
+    from janus.storage.database import init_db
+
+    cfg = JanusConfig(server=ServerSettings(data_dir=tmp_path))
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    full_key, info = await create_key(db_path, "")
+    req = _request(config=cfg)
+    req.app.state.db_path = db_path
+    assert await authenticate_api_key(req, full_key) is True
+    assert req.state.client_key_label == f"key #{info['id']}"
+    assert full_key not in req.state.client_key_label

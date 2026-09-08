@@ -64,8 +64,11 @@ async def authenticate_api_key(request: Request, key: str | None) -> bool:
         if policy is not None:
             request.state.can_login = policy["can_login"]
             request.state.allowed_models = policy["allowed_models"]
+            name = str(policy.get("name") or "").strip()
+            request.state.client_key_label = name if name else f"key #{key_id}"
         else:
             request.state.can_login = True
             request.state.allowed_models = None
+            request.state.client_key_label = f"key #{key_id}"
         return True
     return False

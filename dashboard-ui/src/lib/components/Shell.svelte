@@ -1,15 +1,70 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
+  import { bool, object, text } from '$lib/data';
   import { navGroups, type NavItem } from '$lib/nav';
+  import type { JsonObject } from '$lib/types';
   import Icon from './Icon.svelte';
   import CommandPalette from './CommandPalette.svelte';
 
   export let active: NavItem;
   export let loading = false;
+  export let health: JsonObject | null = null;
+  export let identity = '';
   let mobileOpen = false;
   let paletteOpen = false;
   let themeMode: 'system' | 'light' | 'dark' = 'system';
   const dispatch = createEventDispatcher<{ navigate: string; refresh: void; logout: void }>();
+
+  $: healthInfo = object(health);
+  $: healthStatus = health === null ? 'unknown' : text(healthInfo.status, 'unknown');
+  $: schedulerInfo = object(healthInfo.schedulers);
+  $: staleNotes = [
+    bool(object(schedulerInfo.inventory).stale)
+      ? `Inventory check ${text(object(schedulerInfo.inventory).last_check_ago) || 'never run'}`
+      : '',
+    bool(object(schedulerInfo.pricing).stale)
+      ? `Pricing sync ${text(object(schedulerInfo.pricing).last_sync_ago) || 'never run'}`
+      : ''
+  ].filter((note) => note.length > 0);
+  $: dotClass =
+    healthStatus === 'offline'
+      ? 'offline'
+      : healthStatus === 'degraded'
+        ? 'degraded'
+        : healthStatus === 'ok' && staleNotes.length
+          ? 'stale'
+          : healthStatus === 'ok'
+            ? ''
+            : 'unknown';
+  $: healthTitle =
+    healthStatus === 'ok'
+      ? 'System online'
+      : healthStatus === 'degraded'
+        ? 'System degraded'
+        : healthStatus === 'offline'
+          ? 'System offline'
+          : 'Checking system…';
+  $: healthDetail =
+    healthStatus === 'ok'
+      ? staleNotes.length
+        ? `Stale: ${staleNotes.join(' · ')}`
+        : 'All components healthy'
+      : healthStatus === 'degraded'
+        ? 'Providers or schedulers need attention'
+        : healthStatus === 'offline'
+          ? 'Database unreachable'
+          : 'Connecting to control plane';
+  $: identityLabel = identity || 'Signed in';
+  $: initials =
+    (
+      identityLabel
+        .replace(/[^A-Za-z0-9]/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)[0] ?? ''
+    )
+      .slice(0, 2)
+      .toUpperCase() || '··';
 
   onMount(() => {
     const saved = localStorage.getItem('janus-theme');
@@ -90,10 +145,10 @@
       {/each}
     </nav>
     <div class="sidebar-footer">
-      <div class="system-dot"></div>
+      <div class="system-dot {dotClass}"></div>
       <div>
-        <strong>System online</strong>
-        <small>Control plane connected</small>
+        <strong>{healthTitle}</strong>
+        <small>{healthDetail}</small>
       </div>
     </div>
   </aside>
@@ -130,9 +185,9 @@
           <Icon name={themeMode === 'light' ? 'moon' : themeMode === 'dark' ? 'sun' : 'settings'} />
         </button>
         <button class="profile" on:click={() => dispatch('logout')} aria-label="Log out">
-          <span>JA</span>
+          <span>{initials}</span>
           <div>
-            <strong>Administrator</strong>
+            <strong>{identityLabel}</strong>
             <small>Log out</small>
           </div>
           <Icon name="logout" size={16} />

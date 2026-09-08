@@ -25,14 +25,15 @@
   import SettingsPage from '$lib/pages/SettingsPage.svelte';
   import ToolsPage from '$lib/pages/ToolsPage.svelte';
   import UsagePage from '$lib/pages/UsagePage.svelte';
-  import { getState, mutate } from '$lib/api';
-  import { object } from '$lib/data';
+  import { dashboardFetch, getState, mutate } from '$lib/api';
+  import { object, text } from '$lib/data';
   import { routeFor, type NavItem } from '$lib/nav';
   import type { AlertItem, JsonObject, MutationOptions, ToastItem } from '$lib/types';
 
   type CachedView = { data: JsonObject; alerts: AlertItem[] };
 
   const VIEW_CACHE_LIMIT = 12;
+  const HEALTH_POLL_MS = 30_000;
 
   let active: NavItem = routeFor('/dashboard/ui');
   let data: JsonObject = {};
@@ -46,6 +47,9 @@
   let pathname = '/dashboard/ui';
   let hasView = false;
   let busy = true;
+  let identity = '';
+  let health: JsonObject | null = null;
+  let healthTimer: ReturnType<typeof setInterval> | undefined;
   const viewCache = new Map<string, CachedView>();
   const latestPathCache = new Map<string, CachedView>();
 
@@ -195,6 +199,31 @@
     }
   }
 
+  function refreshAll() {
+    void load();
+    void loadHealth();
+  }
+
+  async function loadIdentity() {
+    try {
+      const response = await dashboardFetch('/dashboard/api/session');
+      if (!response.ok) return;
+      const payload = object(await response.json());
+      identity = text(payload.label);
+    } catch {
+      identity = '';
+    }
+  }
+
+  async function loadHealth() {
+    try {
+      const response = await dashboardFetch('/dashboard/api/health');
+      health = response.ok ? object(await response.json()) : { status: 'offline' };
+    } catch {
+      health = { status: 'offline' };
+    }
+  }
+
   async function logout() {
     await mutate('/dashboard/logout', { method: 'POST' }).catch(() => undefined);
     window.location.assign('/dashboard/login');
@@ -205,18 +234,24 @@
     const popstate = () => void load();
     window.addEventListener('popstate', popstate);
     void load();
+    void loadIdentity();
+    void loadHealth();
+    healthTimer = setInterval(() => void loadHealth(), HEALTH_POLL_MS);
     return () => {
       request?.abort();
       window.removeEventListener('popstate', popstate);
+      if (healthTimer) clearInterval(healthTimer);
     };
   });
 </script>
 
 <Shell
   {active}
+  {health}
+  {identity}
   loading={busy}
   on:navigate={(event) => navigate(event.detail)}
-  on:refresh={load}
+  on:refresh={refreshAll}
   on:logout={logout}
 >
   {#if loading && !hasView}

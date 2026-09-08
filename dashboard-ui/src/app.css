@@ -235,6 +235,23 @@ a {
   background: #32bb8c;
   box-shadow: 0 0 0 4px color-mix(in srgb, #32bb8c 15%, transparent);
 }
+.system-dot.unknown {
+  background: var(--muted);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 15%, transparent);
+}
+.system-dot.degraded {
+  background: var(--warning);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warning) 15%, transparent);
+}
+.system-dot.offline {
+  background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 15%, transparent);
+}
+.system-dot.stale {
+  background: transparent;
+  border: 2px solid var(--warning);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--warning) 12%, transparent);
+}
 .main-shell {
   min-height: 100vh;
   margin-left: var(--sidebar);

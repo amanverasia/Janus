@@ -14,6 +14,8 @@
     : firstList(data, 'daily', 'series');
   $: chart = daily.map((point) => number(point.requests ?? point.total_requests ?? point.value));
   $: providers = firstList(data, 'providers', 'provider_health');
+  $: providerHealth = object(data.provider_health);
+  $: healthStatus = text(providerHealth.status, number(data.provider_count) > 0 ? 'ok' : 'setup');
   $: checklist = object(data.setup_checklist);
 </script>
 
@@ -81,7 +83,15 @@
         <h2>Provider health</h2>
         <p>{number(data.provider_count ?? providers.length)} enabled</p>
       </div>
-      <span class="status active">Operational</span>
+      <span
+        class="status {healthStatus === 'ok'
+          ? 'active'
+          : healthStatus === 'degraded'
+            ? 'warning'
+            : 'pending'}"
+      >
+        {healthStatus === 'ok' ? 'Operational' : healthStatus === 'degraded' ? 'Degraded' : 'Setup'}
+      </span>
     </div>
     <div class="panel-body">
       {#if providers.length}<div class="metric-list">
@@ -103,19 +113,29 @@
           <div class="metric-row">
             <div>
               <strong>Connected providers</strong>
-              <span class="status active">{compact(data.provider_count)} available</span>
+              <span class="status active">
+                {compact(providerHealth.enabled ?? data.provider_count)} available
+              </span>
             </div>
             <div class="progress"><span style="width:100%"></span></div>
           </div>
           <div class="metric-row">
             <div>
               <strong>Account cooldowns</strong>
-              <span class="status {number(data.cooldown_count) ? 'warning' : 'active'}">
-                {number(data.cooldown_count) ? `${compact(data.cooldown_count)} active` : 'Clear'}
+              <span
+                class="status {number(providerHealth.cooldown_accounts ?? data.cooldown_count)
+                  ? 'warning'
+                  : 'active'}"
+              >
+                {number(providerHealth.cooldown_accounts ?? data.cooldown_count)
+                  ? `${compact(providerHealth.cooldown_accounts ?? data.cooldown_count)} active`
+                  : 'Clear'}
               </span>
             </div>
             <div class="progress">
-              <span style={`width:${number(data.cooldown_count) ? 36 : 100}%`}></span>
+              <span
+                style={`width:${number(providerHealth.cooldown_accounts ?? data.cooldown_count) ? 36 : 100}%`}
+              ></span>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from collections import Counter
 from types import SimpleNamespace
 from urllib.parse import quote
@@ -464,3 +465,109 @@ async def test_models_state_echoes_provider_filter(app):
     assert known.json()["data"]["providers"][0]["prefix"] == "test"
     assert unknown.status_code == 200
     assert unknown.json()["meta"]["query"] == {"provider": "missing"}
+
+
+async def test_session_reports_config_key_label(app):
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        response = await client.get("/dashboard/api/session", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    label = response.json()["label"]
+    assert label.startswith("Config (")
+    assert AUTH_KEY not in label
+    assert "no-store" in response.headers["cache-control"]
+
+
+async def test_session_reports_db_key_label(app):
+    from janus.storage.api_keys import create_key
+
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        warmup = await client.get("/dashboard/api/v2/state/keys", headers=AUTH_HEADERS)
+        assert warmup.status_code == 200
+        named, _ = await create_key(app.state.db_path, "ops key")
+        blank, _ = await create_key(app.state.db_path, "")
+
+        named_response = await client.get(
+            "/dashboard/api/session", headers={"Authorization": f"Bearer {named}"}
+        )
+        blank_response = await client.get(
+            "/dashboard/api/session", headers={"Authorization": f"Bearer {blank}"}
+        )
+
+    assert named_response.status_code == 200
+    assert named_response.json()["label"] == "ops key"
+    assert blank_response.status_code == 200
+    assert blank_response.json()["label"].startswith("key #")
+    assert "sk-janus-" not in blank_response.json()["label"]
+
+
+async def test_health_contract(app):
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        response = await client.get("/dashboard/api/health", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert "no-store" in response.headers["cache-control"]
+    payload = response.json()
+    assert payload["status"] in {"ok", "degraded"}
+    assert payload["database"]["status"] == "ok"
+    assert payload["providers"]["enabled"] >= 1
+    assert set(payload["schedulers"]) == {"inventory", "pricing"}
+    for scheduler in payload["schedulers"].values():
+        assert scheduler["configured"] is True
+        assert scheduler["running"] is None
+    assert payload["schedulers"]["inventory"]["last_check_at"] is None
+    assert payload["schedulers"]["inventory"]["stale"] is False
+    assert payload["schedulers"]["pricing"]["stale"] is True
+    assert "sk-janus-" not in json.dumps(payload)
+
+
+async def test_health_degraded_without_enabled_providers(app):
+    from janus.storage.database import get_connection
+
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        warmup = await client.get("/dashboard/api/health", headers=AUTH_HEADERS)
+        assert warmup.status_code == 200
+        assert warmup.json()["providers"]["enabled"] >= 1
+
+        async with get_connection(app.state.db_path) as db:
+            await db.execute("UPDATE providers SET is_enabled = 0")
+            await db.commit()
+
+        response = await client.get("/dashboard/api/health", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database"]["status"] == "ok"
+    assert payload["providers"]["enabled"] == 0
+    assert payload["status"] == "degraded"
+
+
+async def test_health_reports_stale_inventory_check(app):
+    from datetime import UTC, datetime, timedelta
+
+    from janus.storage.database import get_connection
+
+    checked_at = (datetime.now(UTC) - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        warmup = await client.get("/dashboard/api/health", headers=AUTH_HEADERS)
+        assert warmup.status_code == 200
+
+        async with get_connection(app.state.db_path) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO inventory_providers (id, name, display_name, base_url) "
+                "VALUES ('openai', 'openai', 'OpenAI', 'https://api.openai.com/v1')"
+            )
+            await db.execute(
+                "INSERT INTO upstream_keys (id, provider_id, key_value, key_masked, "
+                "last_checked_at) VALUES ('k1', 'openai', 'v', 'm', ?)",
+                (checked_at,),
+            )
+            await db.commit()
+
+        response = await client.get("/dashboard/api/health", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    inventory = response.json()["schedulers"]["inventory"]
+    assert inventory["last_check_at"] == checked_at
+    assert re.fullmatch(r"\d+d ago", inventory["last_check_ago"])
+    assert inventory["stale"] is True

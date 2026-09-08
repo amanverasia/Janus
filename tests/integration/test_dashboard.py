@@ -40,6 +40,29 @@ async def test_dashboard_overview(app):
             "has_keys",
             "has_requests",
         }
+        assert r.json()["data"]["provider_health"] == {
+            "enabled": 1,
+            "cooldown_accounts": 0,
+            "status": "ok",
+        }
+
+
+@pytest.mark.asyncio
+async def test_dashboard_overview_provider_health_degraded(app):
+    import time
+
+    from janus.storage.cooldowns import save_cooldown
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        warmup = await client.get("/dashboard/api/v2/state/overview")
+        assert warmup.status_code == 200
+        await save_cooldown(app.state.db_path, "t/acct-1", time.time() + 60)
+        r = await client.get("/dashboard/api/v2/state/overview")
+        assert r.status_code == 200
+        health = r.json()["data"]["provider_health"]
+        assert health["enabled"] == 1
+        assert health["cooldown_accounts"] == 1
+        assert health["status"] == "degraded"
 
 
 @pytest.mark.asyncio

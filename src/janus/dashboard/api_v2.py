@@ -20,7 +20,9 @@ from janus.dashboard.routes import (
     _enrich_providers,
     _ensure_db,
     _get_usage_stats_safe,
+    _humanize_age,
     _pricing_page_context,
+    _pricing_sync_status,
     _request_logs_context,
     _savers_context,
     _wired_providers,
@@ -258,9 +260,20 @@ async def _overview_data(request: Request, db_path: Path, *, days: int) -> dict[
     }
     live = get_bus().snapshot()
     registry = request.app.state.registry
+    if not providers:
+        provider_health_status = "setup"
+    elif cooled_accounts:
+        provider_health_status = "degraded"
+    else:
+        provider_health_status = "ok"
     return {
         "stats": stats,
         "provider_count": len(providers),
+        "provider_health": {
+            "enabled": len(providers),
+            "cooldown_accounts": len(cooled_accounts),
+            "status": provider_health_status,
+        },
         "combos": registry.combos,
         "today_cost": summary["total_cost"],
         "reporting_timezone": summary["reporting_timezone"],
@@ -925,6 +938,102 @@ async def create_dashboard_api_key(
             "Expires": "0",
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+@router.get("/api/session")
+async def dashboard_session(request: Request) -> JSONResponse:
+    """Identity of the authenticated dashboard key (label only, never key material)."""
+    label = getattr(request.state, "client_key_label", None)
+    if not label:
+        key_id = getattr(request.state, "client_key_id", None)
+        label = f"key #{key_id}" if key_id is not None else "Dashboard session"
+    return _no_store_json({"label": label})
+
+
+@router.get("/api/health")
+async def dashboard_health(request: Request) -> JSONResponse:
+    """State-backed health contract for the dashboard shell.
+
+    Reports DB reachability, enabled-provider count, and scheduler freshness so
+    offline/degraded/stale states can render distinctly instead of a hardcoded
+    "System online". Contains no credential material and no secrets.
+    """
+    from janus.inventory.scheduler import CHECK_INTERVAL_HOURS, scheduler_enabled
+    from janus.pricing.scheduler import pricing_scheduler_enabled
+    from janus.storage.database import get_connection
+    from janus.storage.providers_db import list_providers
+    from janus.storage.settings import get_setting
+
+    db_path = request.app.state.db_path
+    database_ok = True
+    enabled_providers = 0
+    last_inventory_check: str | None = None
+    last_pricing_sync: str | None = None
+    try:
+        await _ensure_db(request)
+        enabled_providers = len(await list_providers(db_path, enabled_only=True))
+        async with get_connection(db_path) as db:
+            async with db.execute(
+                "SELECT MAX(last_checked_at) AS last_check FROM upstream_keys"
+            ) as cur:
+                row = await cur.fetchone()
+        if row is not None and row["last_check"]:
+            last_inventory_check = str(row["last_check"])
+        last_pricing_sync = await get_setting(db_path, "pricing_last_sync_at")
+    except Exception:
+        database_ok = False
+
+    def _scheduler_state(attr: str, configured: bool) -> dict[str, Any]:
+        started = hasattr(request.app.state, attr)
+        task = getattr(request.app.state, attr, None) if started else None
+        running: bool | None = task is not None if started else None
+        return {"configured": configured, "running": running}
+
+    inventory_state = _scheduler_state("inventory_scheduler_task", scheduler_enabled())
+    pricing_state = _scheduler_state("pricing_scheduler_task", pricing_scheduler_enabled())
+
+    inventory_stale = False
+    if last_inventory_check:
+        try:
+            checked_at = datetime.fromisoformat(last_inventory_check)
+            if checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=UTC)
+            inventory_stale = (
+                datetime.now(UTC) - checked_at
+            ).total_seconds() / 3600 >= 2 * CHECK_INTERVAL_HOURS
+        except ValueError:
+            inventory_stale = False
+
+    status = "ok"
+    if not database_ok:
+        status = "offline"
+    elif enabled_providers == 0:
+        status = "degraded"
+    elif (inventory_state["configured"] and inventory_state["running"] is False) or (
+        pricing_state["configured"] and pricing_state["running"] is False
+    ):
+        status = "degraded"
+
+    return _no_store_json(
+        {
+            "status": status,
+            "checked_at": datetime.now(UTC).isoformat(),
+            "database": {"status": "ok" if database_ok else "fail"},
+            "providers": {"enabled": enabled_providers},
+            "schedulers": {
+                "inventory": {
+                    **inventory_state,
+                    "last_check_at": last_inventory_check,
+                    "last_check_ago": _humanize_age(last_inventory_check),
+                    "stale": inventory_stale,
+                },
+                "pricing": {
+                    **pricing_state,
+                    **_pricing_sync_status(last_pricing_sync),
+                },
+            },
+        }
     )
 
 

@@ -69,7 +69,8 @@ async def verify_key(db_path: str | Path, key: str) -> int | None:
 async def get_key_policy(db_path: str | Path, key_id: int) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT id, can_login, allowed_models FROM api_keys WHERE id = ? AND is_active = 1",
+            "SELECT id, name, can_login, allowed_models "
+            "FROM api_keys WHERE id = ? AND is_active = 1",
             (key_id,),
         ) as cur:
             row = await cur.fetchone()
@@ -77,6 +78,7 @@ async def get_key_policy(db_path: str | Path, key_id: int) -> dict[str, Any] | N
         return None
     return {
         "id": int(row["id"]),
+        "name": row["name"],
         "can_login": bool(row["can_login"]),
         "allowed_models": parse_allowed_models(row["allowed_models"]),
     }
