@@ -909,8 +909,17 @@ async def _handle_with_snapshot(
         # Responses-only OpenAI models (gpt-6-astra &c.) reject function tools on
         # /chat/completions; serve them from /v1/responses by promoting the wire
         # format so the cross-format path builds a Responses payload.
+        #
+        # Only the OpenAI gateway (api.openai.com / its relays) enforces this;
+        # other OpenAI-compatible providers (e.g. Cline, gorouter) serve the same
+        # model names via /chat/completions, so scoping the promotion to the
+        # ``openai`` prefix keeps them from being wrongly sent to /responses.
         effective_native_format = target.native_format
-        if target.native_format == "openai" and model_caps.get("requires_responses"):
+        if (
+            target.prefix == "openai"
+            and target.native_format == "openai"
+            and model_caps.get("requires_responses")
+        ):
             effective_native_format = "openai_responses"
         if target.native_format in ("gemini", "ollama", "antigravity", "vertex"):
             attempt_req = await prefetch_remote_images(attempt_req, target.native_format)

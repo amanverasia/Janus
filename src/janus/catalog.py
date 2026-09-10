@@ -1589,6 +1589,13 @@ _OPENAI_COMPAT_GATEWAYS = {
         ],
     ),
     "kilo": _gateway_only("kilo", "Kilo", "https://api.kilo.ai/api/gateway"),
+    "tokenrouter": _gateway_only(
+        "tokenrouter",
+        "TokenRouter",
+        "https://api.tokenrouter.com/v1",
+        prefix="tr",
+        default_models=["z-ai/glm-5.3-free"],
+    ),
     "gitlab-duo": _gateway_only(
         "gitlab-duo",
         "GitLab Duo",

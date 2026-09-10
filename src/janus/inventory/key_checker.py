@@ -159,7 +159,7 @@ _MEDIA_MODEL_MARKERS = (
 )
 
 _QUOTA_ERROR_RE = re.compile(
-    r"quota|insufficient|billing|exceeded|credit|balance|spending\s*limit|"
+    r"quota|insufficient_user_quota|insufficient|billing|exceeded|credit|balance|spending\s*limit|"
     r"permission-denied|used all available|monthly spending",
     re.I,
 )
@@ -1194,11 +1194,62 @@ async def _validate_antigravity_key(
     }
 
 
+async def _validate_cline_key(
+    key_value: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate / refresh a Cline (api.cline.bot) WorkOS OAuth credential.
+
+    Access tokens expire ~1h. On a 401 we attempt a WorkOS refresh; a dead
+    session (``Session has already ended``) is reported invalid so the key gets
+    archived rather than retried forever.
+    """
+    from janus.inventory.cline_credentials import (
+        credential_value,
+        probe_cline,
+        refresh_cline,
+    )
+
+    access = key_value or ""
+    probe_status = await probe_cline(access)
+    if probe_status in (200, 201):
+        return {
+            "is_valid": True,
+            "is_usable": True,
+            "usability_status": "usable",
+            "usability_note": "Cline identity probe succeeded",
+        }
+
+    meta = metadata if isinstance(metadata, dict) else {}
+    rt = meta.get("refresh_token")
+    if rt:
+        tokens = await refresh_cline(rt)
+        if tokens and tokens.get("access_token"):
+            new_meta = {**meta, "refresh_token": tokens["refresh_token"] or rt}
+            if tokens.get("email"):
+                new_meta["email"] = tokens["email"]
+            if tokens.get("user_id"):
+                new_meta["user_id"] = tokens["user_id"]
+            return {
+                "is_valid": True,
+                "is_usable": True,
+                "usability_status": "usable",
+                "usability_note": "Cline token refreshed via WorkOS",
+                "key_value": credential_value(tokens["access_token"]),
+                "metadata": new_meta,
+            }
+
+    status_note = f"HTTP {probe_status}" if probe_status is not None else "probe unavailable"
+    return {
+        "is_valid": False,
+        "error": f"Cline auth failed ({status_note})",
+    }
+
+
 async def _validate_codex_key(
     key_value: str,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    del metadata  # reserved for future regional overrides
     from janus.inventory.codex_credentials import normalize_codex_credential
     from janus.providers.oauth_tokens import (
         access_token,
@@ -1284,6 +1335,8 @@ async def validate_key(
     try:
         if provider_id == "codex":
             return await _validate_codex_key(key_value, metadata)
+        if provider_id == "cline":
+            return await _validate_cline_key(key_value, metadata)
         if provider_id == "antigravity":
             return await _validate_antigravity_key(key_value, metadata)
         if provider_id == "kiro":

@@ -50,9 +50,9 @@ GATEWAY_FIELDS = {
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 78
+    assert len(PROVIDERS) == 79
     assert len(inventory_entries()) == 43
-    assert len(gateway_entries()) == 70
+    assert len(gateway_entries()) == 71
 
 
 def test_groq_default_model_is_valid() -> None:
@@ -154,6 +154,7 @@ def test_id_bridges_are_derived() -> None:
         "minimax-io": "minimax_io",
         "kimi": "kimi_coding",
         "glm": "glm_coding",
+        "tr": "tokenrouter",
     }
 
 
