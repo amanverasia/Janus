@@ -366,3 +366,81 @@ async def test_gpt6_astra_void_completion_is_not_success(app):
         # Only one account is configured; a void completion is treated as a failed
         # attempt, so the request must NOT return a successful empty 200.
         assert r.status_code != 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_non_openai_compat_gateway_uses_chat_for_astra(tmp_path):
+    """gpt-6-astra on a non-OpenAI gateway (e.g. Cline) must stay on /chat/completions.
+
+    ``requires_responses`` only applies to the OpenAI gateway; other
+    openai_compat providers serve the same model name via chat/completions.
+    """
+    from janus.app import create_app
+    from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
+    from janus.dashboard.reload import (
+        reload_combos,
+        reload_pricing,
+        reload_providers,
+        reload_savers,
+    )
+    from janus.storage.database import init_db, seed_from_config
+
+    cline_base = "https://cline.local/api/v1"
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="cline",
+                prefix="cline",
+                api_type="openai_compat",
+                base_url=cline_base,
+                api_key="workos:test",
+                models=["openai/gpt-6-astra"],
+            )
+        ],
+    )
+    app = create_app(config=cfg)
+    db_path = app.state.db_path
+    await init_db(db_path)
+    await seed_from_config(db_path, app.state.config)
+    await reload_providers(app)
+    await reload_combos(app)
+    await reload_savers(app)
+    await reload_pricing(app)
+
+    responses_route = respx.post(f"{cline_base}/responses").mock(
+        return_value=httpx.Response(404, json={"error": "Not Found"})
+    )
+    chat_route = respx.post(f"{cline_base}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "c1",
+                "object": "chat.completion",
+                "model": "openai/gpt-6-astra",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "OK"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "cline/openai/gpt-6-astra",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["choices"][0]["message"]["content"] == "OK"
+
+    assert chat_route.called
+    assert not responses_route.called
