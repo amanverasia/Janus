@@ -331,15 +331,10 @@ async def test_validate_key_tokenrouter_insufficient_user_quota_not_auth_failure
     body = {
         "error": {
             "code": "insufficient_user_quota",
-            "message": (
-                "User's credit limit is insufficient, "
-                "remaining credit limit: $0.000000"
-            ),
+            "message": ("User's credit limit is insufficient, remaining credit limit: $0.000000"),
         }
     }
-    respx.get("https://api.tokenrouter.com/v1/models").mock(
-        return_value=Response(403, json=body)
-    )
+    respx.get("https://api.tokenrouter.com/v1/models").mock(return_value=Response(403, json=body))
 
     result = await validate_key("sk-tr-test", "tokenrouter", skip_probe=True)
     assert result["is_valid"] is True
