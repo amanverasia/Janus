@@ -327,6 +327,30 @@ async def test_validate_key_xai_probe_marks_quota_on_inference_403():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_validate_key_tokenrouter_insufficient_user_quota_not_auth_failure():
+    body = {
+        "error": {
+            "code": "insufficient_user_quota",
+            "message": (
+                "User's credit limit is insufficient, "
+                "remaining credit limit: $0.000000"
+            ),
+        }
+    }
+    respx.get("https://api.tokenrouter.com/v1/models").mock(
+        return_value=Response(403, json=body)
+    )
+
+    result = await validate_key("sk-tr-test", "tokenrouter", skip_probe=True)
+    assert result["is_valid"] is True
+    assert result["is_usable"] is False
+    assert result["usability_status"] == "no_quota"
+    assert result["credits_remaining"] == 0.0
+    assert result["health_status"] == "exhausted"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_check_upstream_key_marks_invalid(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)

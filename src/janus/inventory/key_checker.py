@@ -159,7 +159,7 @@ _MEDIA_MODEL_MARKERS = (
 )
 
 _QUOTA_ERROR_RE = re.compile(
-    r"quota|insufficient|billing|exceeded|credit|balance|spending\s*limit|"
+    r"quota|insufficient_user_quota|insufficient|billing|exceeded|credit|balance|spending\s*limit|"
     r"permission-denied|used all available|monthly spending",
     re.I,
 )
