@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.13.0] - 2026-09-10
+### Added
+- **Cline provider** (`api.cline.bot/api/v1`) — WorkOS-OAuth OpenAI-compatible
+  gateway exposing ~436 models (incl. `openai/gpt-6-astra`,
+  `anthropic/claude-opus-5`, `google/gemini-3.8-flash`). Credentials are
+  stored as `workos:<jwt>` and refreshed via WorkOS
+  (`/user_management/authenticate`); `_validate_cline_key` probes identity,
+  refreshes on 401, and persists the rotated tokens.
+- **TokenRouter provider** (`api.tokenrouter.com/v1`) — static-key
+  OpenAI-compatible aggregator (PaleBlueDot upstream) with a genuinely free
+  `z-ai/glm-5.3-free` tier on every key. Registered as prefix `tr`; only the
+  free model is exposed (`allowed_models`) because the full keys advertise
+  quota-locked SOTA models.
+### Fixed
+- **`requires_responses` over-application** — the v3.11.0 promotion of
+  Responses-only models to `/v1/responses` now applies only to the OpenAI
+  gateway (`target.prefix == "openai"`). Other `openai_compat` gateways
+  (Cline, gorouter, TokenRouter) serve `gpt-6-astra` via `/chat/completions`
+  and were returning 404.
+- **`insufficient_user_quota` quota classification** — TokenRouter's
+  unfunded-account 403 is now classified as `no_quota` (a billing state)
+  rather than an auth failure, so it does not burn the key's health score.
+  (#152)
 ## [3.12.0] - 2026-09-08
 ### Fixed
 - **Empty (void) gpt-6-astra responses** — after routing to
