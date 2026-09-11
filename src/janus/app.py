@@ -249,9 +249,14 @@ def create_app(
             },
         )
 
+    from janus.compression import SelectiveGZipMiddleware
     from janus.dashboard.live import LiveTrackingMiddleware, get_bus
 
     app.add_middleware(LiveTrackingMiddleware, bus=get_bus())
+    # Large dashboard state payloads compress ~35x. Streamed responses declare
+    # no content-length and are skipped, so SSE and chunked completions are
+    # untouched.
+    app.add_middleware(SelectiveGZipMiddleware)
 
     app.include_router(router, prefix="/v1")
     app.include_router(gemini_router)
