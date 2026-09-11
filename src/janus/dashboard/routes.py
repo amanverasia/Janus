@@ -483,7 +483,7 @@ async def update_api_key(
         kwargs["can_login"] = can_login.lower() in {"on", "1", "true", "yes"}
     if clear_models.lower() in {"on", "1", "true", "yes"}:
         kwargs["allowed_models"] = None
-    elif models_field:
+    elif models_field and allowed_models.strip():
         kwargs["allowed_models"] = parse_models_input(allowed_models)
     if kwargs:
         await update_key(db_path, key_id, **kwargs)

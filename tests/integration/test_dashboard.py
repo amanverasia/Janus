@@ -225,6 +225,61 @@ async def test_dashboard_keys_edit_can_remove_login_access(app):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_keys_edit_preserves_models_when_field_is_blank(app):
+    from janus.storage.api_keys import create_key, get_key_policy
+    from janus.storage.database import init_db
+
+    await init_db(app.state.db_path)
+    _, record = await create_key(
+        app.state.db_path,
+        "scoped",
+        allowed_models=["test/m1"],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/dashboard/api/keys/{record['id']}",
+            data={
+                "name": "scoped",
+                "models_field": "1",
+                "allowed_models": "",
+            },
+        )
+        assert response.status_code == 200
+
+    policy = await get_key_policy(app.state.db_path, int(record["id"]))
+    assert policy is not None
+    assert policy["allowed_models"] == ["test/m1"]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_keys_edit_can_clear_models(app):
+    from janus.storage.api_keys import create_key, get_key_policy
+    from janus.storage.database import init_db
+
+    await init_db(app.state.db_path)
+    _, record = await create_key(
+        app.state.db_path,
+        "scoped",
+        allowed_models=["test/m1"],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            f"/dashboard/api/keys/{record['id']}",
+            data={
+                "name": "scoped",
+                "models_field": "1",
+                "allowed_models": "",
+                "clear_models": "1",
+            },
+        )
+        assert response.status_code == 200
+
+    policy = await get_key_policy(app.state.db_path, int(record["id"]))
+    assert policy is not None
+    assert policy["allowed_models"] is None
+
+
+@pytest.mark.asyncio
 async def test_dashboard_login_rejects_api_only_key(app):
     from janus.storage.api_keys import create_key
     from janus.storage.database import init_db
