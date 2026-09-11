@@ -376,3 +376,48 @@ async def test_ollama_show_respects_key_allowlist(app):
         )
         assert r.status_code == 404
         assert "not found" in r.json()["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_accepts_implicit_latest_tag(app):
+    """Ollama treats an untagged name as ':latest' and clients normalise to it.
+
+    Production logs showed repeated 404s on /api/show for exactly this reason.
+    """
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        untagged = await client.post("/api/show", json={"name": "test/test-m1"})
+        tagged = await client.post("/api/show", json={"name": "test/test-m1:latest"})
+
+        assert untagged.status_code == 200
+        assert tagged.status_code == 200, "':latest' is Ollama's implicit default tag"
+        assert tagged.json()["details"] == untagged.json()["details"]
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_still_rejects_an_unknown_tag(app):
+    """Only ':latest' is implicit. A real tag that does not exist must still 404,
+
+    otherwise a typo silently resolves to a different model.
+    """
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/api/show", json={"name": "test/test-m1:v2"})
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_ollama_show_latest_tag_respects_key_allowlist(app):
+    """The ':latest' fallback must not become a way around model restrictions."""
+    from janus.storage.api_keys import create_key
+    from janus.storage.settings import set_setting
+
+    await set_setting(app.state.db_path, "server_require_api_key", "true")
+    key, _ = await create_key(
+        app.state.db_path, name="scoped-latest", can_login=False, allowed_models=["other/*"]
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/api/show",
+            json={"name": "test/test-m1:latest"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 404
