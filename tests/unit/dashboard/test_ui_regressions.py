@@ -249,3 +249,30 @@ def test_logging_out_is_not_the_primary_profile_action() -> None:
     """The whole identity chip was a logout button; a stray click ended the session."""
     source = _read("lib/components/Shell.svelte")
     assert 'class="profile" on:click={() => dispatch(\'logout\')}' not in source
+
+
+def test_aggregate_spend_is_not_formatted_as_a_per_token_rate() -> None:
+    """Live dashboard showed "US$26.4929" for Spend today.
+
+    money() used maximumFractionDigits: 4 for everything, so aggregate currency
+    inherited the precision that only per-MTok rates need.
+    """
+    source = _read("lib/data.ts")
+    money_block = source[_index_of(source, "export const money") :][:400]
+    assert "maximumFractionDigits: 4" not in money_block, "aggregates are money, not rates"
+    assert "export const rate" in source, "per-MTok pricing needs its own 4dp formatter"
+
+
+def test_pricing_columns_use_the_rate_formatter() -> None:
+    """Per-MTok values genuinely need 4dp and must not be rounded to cents."""
+    source = _read("lib/pages/PricingPage.svelte")
+    assert "format: rate" in source
+
+
+def test_setup_checklist_hides_once_the_gateway_is_configured() -> None:
+    """It rendered whenever the server sent the object, so a fully configured
+
+    gateway kept a permanent "Gateway readiness" panel of all-green items.
+    """
+    source = _read("lib/pages/OverviewPage.svelte")
+    assert "checklistComplete" in source

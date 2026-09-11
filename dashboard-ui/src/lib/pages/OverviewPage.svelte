@@ -15,6 +15,9 @@
   $: chart = daily.map((point) => number(point.requests ?? point.total_requests ?? point.value));
   $: providers = firstList(data, 'providers', 'provider_health');
   $: checklist = object(data.setup_checklist);
+  // Once every step is done the panel is permanent noise on a working gateway.
+  $: checklistComplete =
+    bool(checklist.has_providers) && bool(checklist.has_keys) && bool(checklist.has_requests);
   $: providerCount = number(data.provider_count ?? providers.length);
   $: cooldowns = number(data.cooldown_count);
   $: providerHealthTone = providerCount === 0 ? 'pending' : cooldowns > 0 ? 'warning' : 'active';
@@ -132,7 +135,7 @@
     </div>
   </section>
 </div>
-{#if Object.keys(checklist).length}
+{#if Object.keys(checklist).length && !checklistComplete}
   <section class="panel" style="margin-top:18px">
     <div class="panel-header">
       <div>
