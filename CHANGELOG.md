@@ -6,6 +6,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.14.0] - 2026-09-11
+### Added
+- **`GET /v1/models/{id}`** — OpenAI's "Retrieve model" endpoint was never
+  registered, so clients fetching a single model received a router-level 404
+  (observed in a live deployment as
+  `GET /v1/models/deepseek/deepseek-v4-flash-vision-exp`). It reuses the list
+  endpoint's visibility logic through a shared helper so the two cannot drift,
+  is registered after `/models` so the list route still wins, and uses a
+  `:path` converter because Janus model ids are namespaced. "Absent" and "not
+  entitled" both return 404, so a restricted key cannot use it to probe which
+  models exist. (#154)
+### Fixed
+- **Ollama's implicit `:latest` tag was rejected by `/api/show`** — the handler
+  matched catalog names exactly, so `openai/gpt-5` returned 200 while
+  `openai/gpt-5:latest` returned 404. Ollama treats an untagged reference as
+  `:latest` and clients normalise to that form, so a model that could be
+  chatted with could not be described; since Ollama clients call `/api/show`
+  before a chat to read capabilities, this blocked them outright. The fallback
+  applies only to `:latest`, only after an exact match fails, and searches the
+  already-allowlist-filtered entries, so it cannot widen what a restricted key
+  sees. An unknown tag such as `model:v2` still 404s. (#154)
+- **API key model restrictions were cleared on a blank edit** — the Keys form
+  always sends `models_field="1"` while editing, and the update route treated
+  that marker as an instruction to apply model changes, so an empty
+  `allowed_models` parsed to `None` and wiped the stored allowlist. An edit now
+  updates `allowed_models` only when the submitted field is non-blank; the
+  dedicated "Clear model restrictions" checkbox remains the only way to remove
+  it. (#153)
+- **Dashboard UI defects** — a frontend audit found and fixed ~30 issues, ten of
+  them reproduced in a browser against a running gateway and re-verified after
+  the fix. Visible defects: a stray close button rendered in the sidebar at
+  every viewport width (`.icon-button { display: grid }` outranked
+  `.mobile-close { display: none }` at equal specificity); the time-range
+  `<select>` rendered as unstyled browser chrome; all three Response-health bars
+  drew identical teal because each row's severity tone was computed and never
+  rendered; Settings labels rendered larger (16px) than the section headings
+  above them (14px) because they set no `font-size` and fell back to the
+  default; Settings used system-blue OS checkboxes while Models and Token
+  savers used pill switches; opening the mobile nav and widening the viewport
+  left a stray unstyled button in normal flow; currency rendered `US$0.00` in
+  every non-US locale; "Spend today" rendered `US$26.4929` because one `money()`
+  helper served both aggregates and per-MTok rates (now split into `money()` at
+  2dp and `rate()` at 4dp); an empty chart drew a flat line pinned to the
+  baseline that read as real data at zero; and the "Gateway readiness"
+  checklist never disappeared on a fully configured gateway. Behavioural fixes:
+  the command palette's arrow keys and Escape were dead whenever a result had
+  focus (the panel stopped keydown propagation), and it now also traps Tab and
+  restores focus on close; request-log detail errors rendered unstyled because
+  their class was defined only in another component's scoped block; concurrent
+  log inspections could resolve out of order and show the wrong row; the Combos
+  empty-state create button kept a stale `editing` and could `PUT` to a deleted
+  id; the selected Models group could never be collapsed; Leaderboard rendered
+  `NaN%` for non-numeric input; the API-key daily budget never prefilled when
+  editing; Budgets and Combos submit handlers left unhandled rejections;
+  Settings number inputs saved out-of-range values without validation; modals
+  and the palette dismissed on a drag that started inside and ended on the
+  backdrop; toasts were not dismissible, uncapped, and re-announced the whole
+  stack; `Ctrl`/`Cmd`-click could not open nav links in a new tab and alert
+  links bypassed the SPA router; and the identity chip was itself a logout
+  button, so a stray click ended the session. Also: keyed table rows, `100dvh`
+  for mobile viewports, modal height accounting for its header, scrolling tab
+  strips, and per-instance DOM ids for modal labels and chart gradients. (#155)
+- **A legibility guard that did not guard** —
+  `test_no_sub_11px_font_sizes_remain` matched only `(?:9|10)px`, so six 8px
+  declarations, smaller than what the test was written to ban, passed it. The
+  pattern is corrected, widened to `lib/components`, and verified to fail when
+  8px is reintroduced. (#155)
 ## [3.13.0] - 2026-09-10
 ### Added
 - **Cline provider** (`api.cline.bot/api/v1`) — WorkOS-OAuth OpenAI-compatible
