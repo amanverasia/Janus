@@ -1776,6 +1776,15 @@ async def list_models(request: Request) -> dict[str, Any]:
             combos=routable_combos,
             allowed_models=allowed,
         )
+    return {"object": "list", "data": _openai_model_objects(visible, routable_combos, allowed)}
+
+
+def _openai_model_objects(
+    visible: Sequence[Mapping[str, Any]],
+    routable_combos: Mapping[str, Any],
+    allowed: list[str] | None,
+) -> list[dict[str, Any]]:
+    """The OpenAI `model` objects a caller is entitled to see."""
     data: list[dict[str, Any]] = [
         {
             "id": row["namespaced"],
@@ -1796,7 +1805,38 @@ async def list_models(request: Request) -> dict[str, Any]:
                 "owned_by": "combo",
             }
         )
-    return {"object": "list", "data": data}
+    return data
+
+
+@router.get("/models/{model_id:path}", dependencies=[Depends(require_gateway_rate_limit)])
+async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
+    """OpenAI "Retrieve model". Registered after /models so the list route still wins.
+
+    `:path` because Janus model ids are namespaced and contain a slash.
+    """
+    snapshot: ProviderSnapshot = request.app.state.provider_snapshot
+    registry = snapshot.registry
+    allowed = key_allowed_models(request)
+    routable_combos = {
+        name: models
+        for name, models in registry.combos.items()
+        if any(registry.has_route(model) for model in models)
+    }
+    combo_names = {name for name in routable_combos if key_model_allowed(name, allowed)}
+    visible = [
+        row
+        for row in snapshot.model_catalog
+        if not row["disabled"]
+        and row["namespaced"] not in combo_names
+        and registry.has_route(row["namespaced"])
+        and key_model_allowed(row["namespaced"], allowed)
+    ]
+    for entry in _openai_model_objects(visible, routable_combos, allowed):
+        if entry["id"] == model_id:
+            return entry
+    # Same response for "absent" and "not entitled", so a restricted key cannot
+    # use this endpoint to probe which models exist.
+    raise HTTPException(status_code=404, detail=f"Unknown model: {model_id}")
 
 
 @router.get("/health")
@@ -1858,6 +1898,9 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
 
 
 ollama_router = APIRouter()
+
+
+OLLAMA_DEFAULT_TAG = ":latest"
 
 
 async def _ollama_model_entries(
@@ -2012,6 +2055,14 @@ async def ollama_show(request: Request) -> Response:
         snapshot.model_catalog, snapshot.registry, key_allowed_models(request)
     )
     match = next((e for e in entries if e["name"] == name), None)
+    if match is None and name.endswith(OLLAMA_DEFAULT_TAG):
+        # Ollama treats an untagged reference as ":latest", and clients normalise
+        # names to that form, so the tagged spelling must resolve too. `entries`
+        # is already filtered by the caller's allowlist, so this cannot widen access.
+        match = next(
+            (e for e in entries if e["name"] == name[: -len(OLLAMA_DEFAULT_TAG)]),
+            None,
+        )
     if match is None:
         return JSONResponse(
             content={"error": f"model '{name}' not found"},

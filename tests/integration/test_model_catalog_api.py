@@ -291,3 +291,37 @@ async def test_public_catalog_does_not_materialize_routes_per_model(app, monkeyp
 
     assert public.status_code == 200
     assert ollama.status_code == 200
+
+
+async def test_retrieve_single_model_matches_the_list_entry(app) -> None:
+    """OpenAI's "Retrieve model" endpoint. Production logs showed clients calling
+
+    GET /v1/models/<id> and receiving 404 because the route was never registered.
+    """
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
+        listed = await client.get("/v1/models", headers=ADMIN_HEADERS)
+        entry = next(m for m in listed.json()["data"] if m["id"] == "test/model-1")
+
+        single = await client.get("/v1/models/test/model-1", headers=ADMIN_HEADERS)
+
+        assert single.status_code == 200
+        assert single.json() == entry
+
+
+async def test_retrieve_unknown_model_is_404(app) -> None:
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
+        r = await client.get("/v1/models/test/nope", headers=ADMIN_HEADERS)
+        assert r.status_code == 404
+
+
+async def test_retrieve_model_respects_the_key_allowlist(app) -> None:
+    """A restricted key must not be able to confirm a model it cannot use."""
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
+        scoped, _ = await create_key(
+            app.state.db_path, name="scoped-retrieve", can_login=False, allowed_models=["other/*"]
+        )
+        headers = {"Authorization": f"Bearer {scoped}", "Accept": "application/json"}
+        assert (await client.get("/v1/models/test/model-1", headers=headers)).status_code == 404
