@@ -82,12 +82,17 @@
     return result;
   }
 
+  const TOAST_LIMIT = 4;
+
+  function dismissToast(id: number) {
+    toasts = toasts.filter((toast) => toast.id !== id);
+  }
+
   function notify(message: string, kind: ToastItem['kind'] = 'success') {
     const id = ++toastId;
-    toasts = [...toasts, { id, kind, message }];
-    window.setTimeout(() => {
-      toasts = toasts.filter((toast) => toast.id !== id);
-    }, 3600);
+    // Cap the stack; an error loop used to fill the viewport with toasts.
+    toasts = [...toasts, { id, kind, message }].slice(-TOAST_LIMIT);
+    window.setTimeout(() => dismissToast(id), 3600);
   }
 
   function getCachedView(viewKey: string, nextPathname: string): CachedView | undefined {
@@ -258,7 +263,7 @@
       <button class="button primary" on:click={load}>Try again</button>
     </section>
   {:else}
-    <AlertStrip {alerts} />
+    <AlertStrip {alerts} on:navigate={(event) => navigate(event.detail)} />
     {#if active.section === 'overview'}
       <OverviewPage {data} {navigate} />
     {:else if active.section === 'usage'}
@@ -309,4 +314,4 @@
     {/if}
   {/if}
 </Shell>
-<Toasts {toasts} />
+<Toasts {toasts} on:dismiss={(event) => dismissToast(event.detail)} />

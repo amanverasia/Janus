@@ -85,7 +85,7 @@ html {
 }
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at 75% -15%, rgba(10, 190, 191, 0.1), transparent 34rem), var(--bg);
   color: var(--text);
@@ -124,7 +124,7 @@ a {
   border: 0;
 }
 .app-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 .sidebar {
   position: fixed;
@@ -171,9 +171,18 @@ a {
   border-radius: 2px;
   opacity: 0.93;
 }
-.mobile-close {
+/* Compound selector so it outranks `.icon-button { display: grid }` below. */
+.sidebar .mobile-close {
   display: none;
   margin-left: auto;
+}
+/* Base styles so the scrim is never an unstyled button when the viewport
+   widens while the mobile nav is open. */
+.nav-scrim {
+  display: none;
+  border: 0;
+  padding: 0;
+  background: rgba(5, 17, 21, 0.42);
 }
 .nav-group {
   margin: 4px 0 16px;
@@ -249,7 +258,7 @@ a {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 15%, transparent);
 }
 .main-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   margin-left: var(--sidebar);
 }
 .topbar {
@@ -307,12 +316,9 @@ a {
   display: flex;
   align-items: center;
   gap: 9px;
-  border: 0;
   border-left: 1px solid var(--line);
-  background: none;
   margin-left: 5px;
   padding: 2px 0 2px 13px;
-  cursor: pointer;
   text-align: left;
 }
 .profile > span {
@@ -338,9 +344,10 @@ a {
   font-size: 11px;
   color: var(--muted);
 }
-.profile > svg {
+.profile-logout {
+  width: 32px;
+  height: 32px;
   margin-left: 3px;
-  color: var(--faint);
 }
 .mobile-menu {
   display: none;
@@ -375,6 +382,31 @@ a {
   align-items: center;
   gap: 9px;
   flex-wrap: wrap;
+}
+.page-actions select,
+.page-actions input {
+  min-height: 39px;
+  padding: 8px 32px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-solid);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236c858c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 15px;
+}
+.page-actions input {
+  padding-right: 12px;
+  background-image: none;
+  cursor: text;
+}
+.page-actions select:hover {
+  border-color: var(--line-strong);
 }
 .button {
   min-height: 39px;
@@ -684,7 +716,8 @@ tbody tr:hover {
   flex-direction: column;
   gap: 6px;
 }
-.field.full {
+.field.full,
+.check-field.full {
   grid-column: 1/-1;
 }
 .field label,
@@ -747,6 +780,38 @@ tbody tr:hover {
   accent-color: var(--accent);
   margin-top: 2px;
 }
+/* Native OS checkboxes rendered system-blue against a teal UI, and clashed
+   with the pill switches used on Models and Token savers. */
+.switch {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 39px;
+  height: 23px;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.switch::after {
+  content: '';
+  display: block;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.18);
+  transition: transform 0.18s ease;
+}
+.switch:checked {
+  background: var(--accent);
+}
+.switch:checked::after {
+  transform: translateX(16px);
+}
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -755,6 +820,7 @@ tbody tr:hover {
 }
 .filterbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
   align-items: center;
   margin-bottom: 16px;
@@ -773,6 +839,16 @@ tbody tr:hover {
   border-radius: 12px;
   background: var(--surface-soft);
   width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tabs button,
+.tabs a {
+  flex: none;
 }
 .tabs button,
 .tabs a {
@@ -793,6 +869,7 @@ tbody tr:hover {
 dialog {
   border: 0;
   padding: 0;
+  max-height: calc(100dvh - 40px);
   background: transparent;
   max-width: min(570px, calc(100vw - 28px));
   width: 100%;
@@ -806,6 +883,9 @@ dialog::backdrop {
   backdrop-filter: blur(5px);
 }
 .modal-card {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
   border: 1px solid var(--line);
   border-radius: 21px;
   background: var(--surface-solid);
@@ -813,6 +893,7 @@ dialog::backdrop {
   overflow: hidden;
 }
 .modal-card > header {
+  flex: none;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -831,8 +912,9 @@ dialog::backdrop {
   font-size: 11px;
 }
 .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 22px;
-  max-height: 72vh;
   overflow-y: auto;
 }
 .toasts {
@@ -848,6 +930,7 @@ dialog::backdrop {
   display: flex;
   align-items: center;
   gap: 9px;
+  pointer-events: auto;
   width: min(380px, calc(100vw - 32px));
   padding: 12px 14px;
   border: 1px solid var(--line);
@@ -1127,6 +1210,17 @@ kbd {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent), var(--cyan));
+}
+.progress.active span,
+.progress.success span {
+  background: linear-gradient(90deg, var(--success), var(--accent));
+}
+.progress.warning span {
+  background: linear-gradient(90deg, var(--warning), #e0a94e);
+}
+.progress.error span,
+.progress.danger span {
+  background: linear-gradient(90deg, var(--danger), #e8848c);
 }
 .metric-list {
   display: grid;
@@ -1787,7 +1881,7 @@ kbd {
   border-radius: 999px;
   color: var(--muted);
   background: var(--surface-soft);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 750;
   white-space: nowrap;
 }
@@ -2103,7 +2197,7 @@ kbd {
   border-radius: 999px;
   color: var(--muted);
   background: var(--surface-soft);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2199,7 +2293,7 @@ kbd {
   .sidebar.open {
     transform: translateX(0);
   }
-  .mobile-close,
+  .sidebar .mobile-close,
   .mobile-menu {
     display: grid;
   }
@@ -2224,8 +2318,7 @@ kbd {
   .command-trigger kbd {
     display: none;
   }
-  .profile div,
-  .profile > svg {
+  .profile > div {
     display: none;
   }
   .profile {

@@ -10,17 +10,21 @@ def _read(relative: str) -> str:
 
 def _all_style_sources() -> list[tuple[str, str]]:
     sources = [("app.css", _read("app.css"))]
-    sources += [
-        (path.name, path.read_text()) for path in (UI_SRC / "lib" / "pages").glob("*.svelte")
-    ]
+    for folder in ("pages", "components"):
+        sources += [
+            (path.name, path.read_text())
+            for path in (UI_SRC / "lib" / folder).glob("*.svelte")
+        ]
     return sources
 
 
 def test_no_sub_11px_font_sizes_remain() -> None:
+    # The previous pattern matched only 9px and 10px, so six 8px declarations --
+    # smaller than what it banned -- passed this guard.
     offenders = [
         f"{name}: {match.group(0)}"
         for name, source in _all_style_sources()
-        for match in re.finditer(r"font-size:\s*(?:9|10)px", source)
+        for match in re.finditer(r"font-size:\s*(?:[0-9]|10)px\b", source)
     ]
     assert not offenders, offenders
 

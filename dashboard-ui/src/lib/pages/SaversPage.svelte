@@ -198,7 +198,7 @@
     border-radius: 7px;
     color: var(--accent-strong);
     background: var(--accent-soft);
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
     text-transform: uppercase;
     letter-spacing: 0.07em;
@@ -282,7 +282,7 @@
   }
   .saver-card footer span {
     color: var(--muted);
-    font-size: 8px;
+    font-size: 11px;
   }
   .saver-card footer strong {
     margin-top: 4px;

@@ -545,13 +545,13 @@
   }
   .format-list span {
     color: var(--faint);
-    font-size: 8px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
   .format-list small {
     color: var(--muted);
-    font-size: 8px;
+    font-size: 11px;
     text-align: right;
   }
   .privacy-note {

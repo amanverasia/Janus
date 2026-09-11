@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from janus.dashboard.live import get_bus, reset_bus
@@ -27,7 +28,9 @@ def test_untrusted_live_model_is_rendered_as_svelte_text() -> None:
 def test_untrusted_toast_message_is_rendered_as_svelte_text() -> None:
     source = _svelte("lib/components/Toasts.svelte")
 
-    assert "<span>{toast.message}</span>" in source
+    # Assert the security property -- the message is a Svelte text binding
+    # inside an element -- rather than one exact spelling of the markup.
+    assert re.search(r"<span[^>]*>\{toast\.message\}</span>", source)
     assert "{@html" not in source
 
 

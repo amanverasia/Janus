@@ -179,7 +179,14 @@
       </label>
       <label class="field">
         <span>Daily budget</span>
-        <input name="daily_budget" type="number" min="0" step="0.01" placeholder="Optional" />
+        <input
+          name="daily_budget"
+          type="number"
+          min="0"
+          step="0.01"
+          value={editing?.daily_budget == null ? '' : text(editing.daily_budget, '')}
+          placeholder="Optional"
+        />
       </label>
       <label class="check-field">
         <input
@@ -189,7 +196,7 @@
         />
         <span>Allow dashboard login</span>
       </label>
-      {#if editing}<label class="check-field full">
+      {#if editing}<label class="check-field field full">
           <input name="clear_models" type="checkbox" />
           <span>Clear model restrictions</span>
         </label>{/if}

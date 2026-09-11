@@ -1,6 +1,6 @@
 <script lang="ts">
   import EmptyState from './EmptyState.svelte';
-  import { text } from '$lib/data';
+  import { idOf, text } from '$lib/data';
   import type { JsonObject } from '$lib/types';
   export let rows: JsonObject[] = [];
   export let columns: {
@@ -9,6 +9,9 @@
     format?: (value: unknown, row: JsonObject) => string;
   }[] = [];
   export let emptyTitle = 'No records found';
+  // Stable identity per row; falls back to index only when a row has no id.
+  export let rowKey: (row: JsonObject, index: number) => string | number = (row, index) =>
+    idOf(row) || index;
   $: hasActions = $$slots.actions;
 </script>
 
@@ -22,7 +25,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each rows as row}<tr>
+        {#each rows as row, index (rowKey(row, index))}<tr>
             {#each columns as column}<td data-label={column.label}>
                 {column.format ? column.format(row[column.key], row) : text(row[column.key])}
               </td>{/each}

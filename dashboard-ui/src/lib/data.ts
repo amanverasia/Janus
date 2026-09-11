@@ -37,6 +37,8 @@ export const money = (value: unknown): string =>
   new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency: 'USD',
+    // Without narrowSymbol every non-US locale renders "US$0.00".
+    currencyDisplay: 'narrowSymbol',
     maximumFractionDigits: 4
   }).format(number(value));
 
