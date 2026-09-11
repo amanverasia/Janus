@@ -3,7 +3,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import { firstList, money, text } from '$lib/data';
+  import { firstList, rate, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
   export let data: JsonObject;
@@ -18,9 +18,9 @@
 
   const cols = [
     { key: 'model', label: 'Model' },
-    { key: 'input_per_mtok', label: 'Input / MTok', format: money },
-    { key: 'output_per_mtok', label: 'Output / MTok', format: money },
-    { key: 'cache_read_per_mtok', label: 'Cache read', format: money }
+    { key: 'input_per_mtok', label: 'Input / MTok', format: rate },
+    { key: 'output_per_mtok', label: 'Output / MTok', format: rate },
+    { key: 'cache_read_per_mtok', label: 'Cache read', format: rate }
   ];
 
   async function submit(event: SubmitEvent) {

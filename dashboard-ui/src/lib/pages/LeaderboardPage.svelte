@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageHeader from '$lib/components/PageHeader.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
-  import { compact, firstList, money, text } from '$lib/data';
+  import { compact, firstList, money, number, text } from '$lib/data';
   import type { JsonObject } from '$lib/types';
   export let data: JsonObject;
   export let navigateQuery: (p: Record<string, string>) => void;
@@ -52,7 +52,7 @@
               <td data-label="Client">{text(row.client_key_name ?? row.key_name ?? row.name)}</td>
               <td data-label="Requests">{compact(row.requests)}</td>
               <td data-label="Tokens">{compact(row.tokens ?? row.total_tokens)}</td>
-              <td data-label="Success">{Number(row.success_pct ?? 0).toFixed(1)}%</td>
+              <td data-label="Success">{number(row.success_pct).toFixed(1)}%</td>
               <td data-label="Cost">{money(row.cost ?? row.total_cost)}</td>
             </tr>{/each}
         </tbody>

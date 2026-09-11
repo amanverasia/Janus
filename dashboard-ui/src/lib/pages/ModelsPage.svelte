@@ -151,8 +151,11 @@
 
   function isCollapsed(group: ModelGroup): boolean {
     if (search.trim()) return false;
-    if (group.key === selectedGroupKey) return false;
-    return collapsed[group.key] ?? true;
+    // The selected group defaults to open, but an explicit toggle still wins --
+    // otherwise its header chevron did nothing and "Collapse all" left it open.
+    const explicit = collapsed[group.key];
+    if (explicit !== undefined) return explicit;
+    return group.key !== selectedGroupKey;
   }
 
   function toggleCollapsed(group: ModelGroup) {

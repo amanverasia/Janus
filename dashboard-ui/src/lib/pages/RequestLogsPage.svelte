@@ -14,6 +14,8 @@
   let detail: JsonObject | undefined;
   let detailOpen = false;
   let detailError = '';
+  // Rapid clicks resolved out of order and showed the wrong row's detail.
+  let detailRequest: AbortController | undefined;
 
   $: rows = firstList(data, 'logs', 'request_logs', 'items');
   $: offset = Number(data.offset ?? 0);
@@ -33,6 +35,9 @@
   ];
 
   async function inspect(row: JsonObject) {
+    detailRequest?.abort();
+    const controller = new AbortController();
+    detailRequest = controller;
     detailError = '';
     detail = undefined;
     detailOpen = true;
@@ -40,7 +45,8 @@
       const response = await dashboardFetch(
         `/dashboard/api/request-logs/${encodeURIComponent(idOf(row))}`,
         {
-          headers: { Accept: 'application/json' }
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
         }
       );
       if (!response.ok) throw new Error(await responseError(response));
@@ -48,8 +54,10 @@
       if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error('The request detail response was not valid.');
       }
+      if (detailRequest !== controller) return;
       detail = payload as JsonObject;
     } catch (error) {
+      if (controller.signal.aborted || detailRequest !== controller) return;
       detailError = error instanceof Error ? error.message : 'Request details could not be loaded.';
     }
   }
@@ -93,28 +101,32 @@
       </button>
     </svelte:fragment>
   </DataTable>
-  <div class="panel-body" style="display:flex;justify-content:flex-end;gap:8px">
-    <button
-      class="button"
-      disabled={offset <= 0}
-      on:click={() =>
-        navigateQuery({ offset: String(Math.max(0, offset - limit)), limit: String(limit) })}
-    >
-      Previous
-    </button>
-    <button
-      class="button"
-      disabled={offset + limit >= total}
-      on:click={() => navigateQuery({ offset: String(offset + limit), limit: String(limit) })}
-    >
-      Next
-    </button>
-  </div>
+  {#if rows.length}<div class="panel-body" style="display:flex;justify-content:flex-end;gap:8px">
+      <button
+        class="button"
+        disabled={offset <= 0}
+        on:click={() =>
+          navigateQuery({ offset: String(Math.max(0, offset - limit)), limit: String(limit) })}
+      >
+        Previous
+      </button>
+      <button
+        class="button"
+        disabled={offset + limit >= total}
+        on:click={() => navigateQuery({ offset: String(offset + limit), limit: String(limit) })}
+      >
+        Next
+      </button>
+    </div>{/if}
 </section>
 
 <Modal open={detailOpen} title="Request detail" wide on:close={() => (detailOpen = false)}>
-  {#if detailError}<div class="file-error" role="alert">{detailError}</div>{:else if detail}<pre
-      class="code-block">{JSON.stringify(detail, null, 2)}</pre>{:else}<div class="loading-state">
-      Loading request detail…
-    </div>{/if}
+  {#if detailError}<div class="alert-strip error" role="alert">
+      <Icon name="warning" size={17} />
+      <div><span>{detailError}</span></div>
+    </div>{:else if detail}<pre class="code-block">{JSON.stringify(
+        detail,
+        null,
+        2
+      )}</pre>{:else}<div class="loading-state">Loading request detail…</div>{/if}
 </Modal>

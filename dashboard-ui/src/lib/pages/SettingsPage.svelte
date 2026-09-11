@@ -35,6 +35,16 @@
     await action('/dashboard/api/settings', { body, success: 'Setting saved' });
   }
 
+  // `on:change` fired for out-of-range values too, persisting them silently.
+  function saveField(event: Event, key: string) {
+    const field = event.currentTarget as HTMLInputElement | HTMLSelectElement;
+    if (!field.checkValidity()) {
+      field.reportValidity();
+      return;
+    }
+    void save(key, field.value);
+  }
+
   async function exportConfiguration() {
     const confirmed = window.confirm(
       'This configuration export contains provider API keys in plaintext. Download it only to a trusted device and store it securely. Continue?'
@@ -126,6 +136,7 @@
             <small class="muted" style="display:block;margin-top:4px">{setting[0]}</small>
           </span>
           <input
+            class="switch"
             type="checkbox"
             checked={bool(values[setting[0]] ?? status[setting[1]])}
             on:change={(event) =>
@@ -140,8 +151,7 @@
         <span>Reporting timezone</span>
         <input
           value={text(values.server_reporting_timezone ?? status.reporting_timezone, 'UTC')}
-          on:change={(event) =>
-            save('server_reporting_timezone', (event.currentTarget as HTMLInputElement).value)}
+          on:change={(event) => saveField(event, 'server_reporting_timezone')}
         />
       </label>
       <label class="field">
@@ -151,8 +161,7 @@
           min="50"
           max="5000"
           value={text(values.server_request_log_retention ?? status.request_log_retention, '500')}
-          on:change={(event) =>
-            save('server_request_log_retention', (event.currentTarget as HTMLInputElement).value)}
+          on:change={(event) => saveField(event, 'server_request_log_retention')}
         />
       </label>
       <label class="field">
@@ -174,8 +183,7 @@
             type="number"
             min="1"
             value={text(values.server_sticky_limit ?? status.sticky_limit, '3')}
-            on:change={(event) =>
-              save('server_sticky_limit', (event.currentTarget as HTMLInputElement).value)}
+            on:change={(event) => saveField(event, 'server_sticky_limit')}
           />
         </label>
         <label class="field">
@@ -185,11 +193,7 @@
             min="0"
             max="100000"
             value={text(values.server_gateway_rate_limit_rpm ?? status.gateway_rate_limit_rpm, '0')}
-            on:change={(event) =>
-              save(
-                'server_gateway_rate_limit_rpm',
-                (event.currentTarget as HTMLInputElement).value
-              )}
+            on:change={(event) => saveField(event, 'server_gateway_rate_limit_rpm')}
           />
         </label>
       </div>
@@ -222,8 +226,7 @@
           type="number"
           min="1"
           value={text(values.combo_sticky_limit ?? status.combo_sticky_limit, '1')}
-          on:change={(event) =>
-            save('combo_sticky_limit', (event.currentTarget as HTMLInputElement).value)}
+          on:change={(event) => saveField(event, 'combo_sticky_limit')}
         />
       </label>
       {#if comboStrategy === 'fusion'}
@@ -232,8 +235,7 @@
           <input
             placeholder="Leave blank to use the first response"
             value={text(values.combo_fusion_judge ?? status.combo_fusion_judge, '')}
-            on:change={(event) =>
-              save('combo_fusion_judge', (event.currentTarget as HTMLInputElement).value)}
+            on:change={(event) => saveField(event, 'combo_fusion_judge')}
           />
         </label>
         <div class="field-grid">
@@ -243,8 +245,7 @@
               type="number"
               min="1"
               value={text(values.combo_fusion_min_panel ?? status.combo_fusion_min_panel, '2')}
-              on:change={(event) =>
-                save('combo_fusion_min_panel', (event.currentTarget as HTMLInputElement).value)}
+              on:change={(event) => saveField(event, 'combo_fusion_min_panel')}
             />
           </label>
           <label class="field">
@@ -258,11 +259,7 @@
                 values.combo_fusion_straggler_grace_s ?? status.combo_fusion_straggler_grace_s,
                 '8'
               )}
-              on:change={(event) =>
-                save(
-                  'combo_fusion_straggler_grace_s',
-                  (event.currentTarget as HTMLInputElement).value
-                )}
+              on:change={(event) => saveField(event, 'combo_fusion_straggler_grace_s')}
             />
           </label>
         </div>
@@ -277,8 +274,7 @@
               values.combo_fusion_hard_timeout_s ?? status.combo_fusion_hard_timeout_s,
               '90'
             )}
-            on:change={(event) =>
-              save('combo_fusion_hard_timeout_s', (event.currentTarget as HTMLInputElement).value)}
+            on:change={(event) => saveField(event, 'combo_fusion_hard_timeout_s')}
           />
         </label>
       {/if}
@@ -374,11 +370,15 @@
     justify-content: space-between;
     gap: 16px;
   }
+  .setting-toggle strong {
+    font-size: 12px;
+  }
   .danger-panel {
     border-color: color-mix(in srgb, var(--danger) 24%, var(--line));
   }
   .reset-copy {
     margin: 0 0 14px;
+    font-size: 11px;
     line-height: 1.6;
   }
 </style>

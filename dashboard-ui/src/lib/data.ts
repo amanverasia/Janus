@@ -33,12 +33,26 @@ export const bool = (value: unknown, fallback = false): boolean => {
   return fallback;
 };
 
-export const money = (value: unknown): string =>
+const currency = (value: number, maximumFractionDigits: number): string =>
   new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency: 'USD',
-    maximumFractionDigits: 4
-  }).format(number(value));
+    // Without narrowSymbol every non-US locale renders "US$0.00".
+    currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: 2,
+    maximumFractionDigits
+  }).format(value);
+
+/** Spend, balances and totals. Reads as money: $26.49, not $26.4929. */
+export const money = (value: unknown): string => {
+  const amount = number(value);
+  // Sub-cent amounts would collapse to $0.00, so keep enough digits to stay useful.
+  const hasSubCentDetail = amount !== 0 && Math.abs(amount) < 0.01;
+  return currency(amount, hasSubCentDetail ? 4 : 2);
+};
+
+/** Per-MTok pricing, where the fourth decimal is meaningful. */
+export const rate = (value: unknown): string => currency(number(value), 4);
 
 export const compact = (value: unknown): string =>
   new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(

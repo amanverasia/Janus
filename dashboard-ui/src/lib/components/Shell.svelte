@@ -63,6 +63,10 @@
         event.preventDefault();
         paletteOpen = !paletteOpen;
       }
+      if (event.key === 'Escape' && mobileOpen) {
+        mobileOpen = false;
+        return;
+      }
       if (
         event.key === '/' &&
         !(event.target instanceof HTMLInputElement) &&
@@ -73,13 +77,32 @@
       }
     };
     window.addEventListener('keydown', listener);
-    return () => window.removeEventListener('keydown', listener);
+    // The scrim is only styled below 820px. Without this it survives a resize
+    // as an unstyled button in normal flow.
+    const desktop = window.matchMedia('(min-width: 821px)');
+    const onDesktop = (event: MediaQueryListEvent | MediaQueryList) => {
+      if (event.matches) mobileOpen = false;
+    };
+    onDesktop(desktop);
+    desktop.addEventListener('change', onDesktop);
+    return () => {
+      window.removeEventListener('keydown', listener);
+      desktop.removeEventListener('change', onDesktop);
+    };
   });
 
   function navigate(href: string) {
     mobileOpen = false;
     paletteOpen = false;
     dispatch('navigate', href);
+  }
+  // Only intercept plain left clicks; Ctrl/Cmd/Shift-click must still open a tab.
+  function follow(event: MouseEvent, href: string) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    navigate(href);
   }
   function theme() {
     themeMode = themeMode === 'system' ? 'light' : themeMode === 'light' ? 'dark' : 'system';
@@ -125,7 +148,7 @@
               class:active={item.section === active.section ||
                 (item.section === 'inventory' && active.section === 'inventory-keys')}
               aria-current={item.section === active.section ? 'page' : undefined}
-              on:click|preventDefault={() => navigate(item.href)}
+              on:click={(event) => follow(event, item.href)}
             >
               <span class="nav-icon"><Icon name={item.icon} /></span>
               <span>{item.label}</span>
@@ -173,14 +196,21 @@
         >
           <Icon name={themeMode === 'light' ? 'moon' : themeMode === 'dark' ? 'sun' : 'settings'} />
         </button>
-        <button class="profile" on:click={() => dispatch('logout')} aria-label="Log out">
-          <span>{identityInitials}</span>
+        <div class="profile">
+          <span aria-hidden="true">{identityInitials}</span>
           <div>
             <strong>{identityLabel}</strong>
-            <small>Log out</small>
+            <small>Signed in</small>
           </div>
-          <Icon name="logout" size={16} />
-        </button>
+          <button
+            class="icon-button profile-logout"
+            on:click={() => dispatch('logout')}
+            aria-label="Log out"
+            title="Log out"
+          >
+            <Icon name="logout" size={16} />
+          </button>
+        </div>
       </div>
     </header>
     <div class="content"><slot /></div>

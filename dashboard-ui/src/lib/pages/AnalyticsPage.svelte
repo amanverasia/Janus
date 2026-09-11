@@ -93,7 +93,7 @@
             <strong>{row[0]}</strong>
             <span>{compact(row[1])}</span>
           </div>
-          <div class="progress">
+          <div class="progress {row[2]}">
             <span
               style={`width:${number(success.total) ? Math.min(100, (number(row[1]) / number(success.total)) * 100) : 0}%`}
             ></span>

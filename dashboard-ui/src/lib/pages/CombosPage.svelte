@@ -13,11 +13,15 @@
   async function submit(e: SubmitEvent) {
     const f = e.currentTarget as HTMLFormElement;
     const id = editing ? idOf(editing) : '';
-    await action(id ? `/dashboard/api/combos/${id}` : '/dashboard/api/combos', {
-      method: id ? 'PUT' : 'POST',
-      body: new FormData(f),
-      success: id ? 'Combo updated' : 'Combo created'
-    });
+    try {
+      await action(id ? `/dashboard/api/combos/${id}` : '/dashboard/api/combos', {
+        method: id ? 'PUT' : 'POST',
+        body: new FormData(f),
+        success: id ? 'Combo updated' : 'Combo created'
+      });
+    } catch {
+      return;
+    }
     open = false;
   }
 </script>
@@ -74,7 +78,15 @@
       title="No fallback combos yet"
       message="Group models into an ordered fallback chain."
     >
-      <button class="button primary" on:click={() => (open = true)}>Create combo</button>
+      <button
+        class="button primary"
+        on:click={() => {
+          editing = undefined;
+          open = true;
+        }}
+      >
+        Create combo
+      </button>
     </EmptyState>
   </section>{/if}
 <Modal {open} title={editing ? 'Edit combo' : 'Create combo'} on:close={() => (open = false)}>

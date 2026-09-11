@@ -25,10 +25,14 @@
     { key: 'warn_pct', label: 'Warn at', format: percent }
   ];
   async function submit(e: SubmitEvent) {
-    await action('/dashboard/api/budgets', {
-      body: new FormData(e.currentTarget as HTMLFormElement),
-      success: 'Budget saved'
-    });
+    try {
+      await action('/dashboard/api/budgets', {
+        body: new FormData(e.currentTarget as HTMLFormElement),
+        success: 'Budget saved'
+      });
+    } catch {
+      return;
+    }
     open = false;
   }
 </script>
