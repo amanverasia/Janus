@@ -248,7 +248,7 @@ def test_sidebar_closes_on_escape() -> None:
 def test_logging_out_is_not_the_primary_profile_action() -> None:
     """The whole identity chip was a logout button; a stray click ended the session."""
     source = _read("lib/components/Shell.svelte")
-    assert 'class="profile" on:click={() => dispatch(\'logout\')}' not in source
+    assert "class=\"profile\" on:click={() => dispatch('logout')}" not in source
 
 
 def test_aggregate_spend_is_not_formatted_as_a_per_token_rate() -> None:

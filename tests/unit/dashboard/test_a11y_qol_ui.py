@@ -12,8 +12,7 @@ def _all_style_sources() -> list[tuple[str, str]]:
     sources = [("app.css", _read("app.css"))]
     for folder in ("pages", "components"):
         sources += [
-            (path.name, path.read_text())
-            for path in (UI_SRC / "lib" / folder).glob("*.svelte")
+            (path.name, path.read_text()) for path in (UI_SRC / "lib" / folder).glob("*.svelte")
         ]
     return sources
 
