@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.15.0] - 2026-09-11
+### Added
+- **Response compression for dashboard state payloads** — sections were served
+  uncompressed, and a live deployment running uvicorn with no reverse proxy had
+  nothing else compressing them. Measured against real data (25 providers, 937
+  upstream credentials, 4,096 pricing rows): models 1,196,941 B to 34,397 B
+  (97% smaller), pricing 826,915 to 53,357, providers 126,777 to 14,654,
+  routing 167,342 to 25,195. The main dashboard JS chunk drops 228,398 to
+  72,416 since the same middleware covers mounted static files.
+
+  Janus streams across 21 call sites, and compressing a stream buffers it. A
+  content-type blocklist would hold until something streamed an unlisted type,
+  so the rule is structural instead: only a response that already declared a
+  `content-length` is compressed, and a streamed response never does.
+  `text/event-stream` is excluded explicitly as a second layer, and
+  `Vary: Accept-Encoding` is set so caches stay correct. Verified in production
+  after deploy: SSE live usage and a real streaming completion both arrive as
+  plaintext chunked frames, while a non-streaming completion round-trips
+  correctly through gzip. (#111, #157)
+### Changed
+- **CI gates publishing, tests both supported Python versions, and reports
+  coverage** — a tag previously triggered publishing independently of CI; the
+  v3.14.0 release reached PyPI 2m21s before CI finished. Checks now live in a
+  reusable workflow that `publish.yml` and `docker.yml` both depend on. The
+  matrix covers 3.11 and 3.12 (the classifiers advertised 3.12 while CI tested
+  only 3.11). `pytest-cov` was installed but unused; coverage is now reported,
+  uploaded, summarised, and gated at 80% against a measured 83%. `scripts/` is
+  linted and type-checked. Publishing runs `twine check --strict`, asserts the
+  built wheel actually contains the dashboard bundle, and verifies the git tag
+  matches the packaged version. (#122, #158)
 ## [3.14.0] - 2026-09-11
 ### Added
 - **`GET /v1/models/{id}`** — OpenAI's "Retrieve model" endpoint was never
