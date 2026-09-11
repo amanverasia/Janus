@@ -9,12 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = (
-    REPO_ROOT.parent
-    / "Dashboard_For_Apis"
-    / "backend"
-    / "src"
-    / "services"
-    / "model-catalog.ts"
+    REPO_ROOT.parent / "Dashboard_For_Apis" / "backend" / "src" / "services" / "model-catalog.ts"
 )
 OUTPUT_JSON = REPO_ROOT / "src" / "janus" / "inventory" / "data" / "model_catalog.json"
 OUTPUT_PY_HEADER = """from __future__ import annotations

@@ -6,12 +6,18 @@ on:
       - "v*"
 
 jobs:
+  # A tag used to publish without running CI at all: v3.14.0 reached PyPI
+  # 2m21s before CI on main finished. Publishing now depends on the same
+  # checks a pull request faces.
+  checks:
+    uses: ./.github/workflows/checks.yml
+
   publish:
+    needs: checks
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -19,11 +25,25 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Verify the tag matches the packaged version
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib, pathlib
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          if tag != f"v{version}":
+              sys.exit(f"tag {tag} does not match pyproject version {version}")
+          print(f"tag {tag} matches packaged version {version}")
+          PY
+
       - name: Install build tool
-        run: pip install build
+        run: pip install build twine
 
       - name: Build distributions
         run: python -m build
+
+      - name: Validate distribution metadata
+        run: twine check --strict dist/*
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
