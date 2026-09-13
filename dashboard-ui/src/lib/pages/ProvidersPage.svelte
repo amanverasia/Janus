@@ -66,7 +66,7 @@
   let copilotError = '';
 
   $: providers = firstList(data, 'providers', 'items');
-  $: catalog = catalogRows(data.catalog_presets ?? data.catalog);
+  $: catalog = catalogRows(data.catalog);
   $: logoMap = object(data.logo_map);
   $: providerGroups = buildProviderGroups(providers);
   $: filteredProviderGroups = providerGroups.filter((group) => {

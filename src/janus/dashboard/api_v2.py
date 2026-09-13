@@ -47,7 +47,6 @@ from janus.storage.inventory_overview import (
     get_inventory_summary,
     get_provider_cards,
     get_recent_activity,
-    get_top_keys_per_provider,
 )
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.key_access import parse_models_input
@@ -325,7 +324,6 @@ async def _inventory_data(db_path: Path) -> dict[str, Any]:
         "recent_activity": await get_recent_activity(db_path),
         "credit_summary": await get_credit_summary(db_path),
         "best_keys": await get_best_upstream_keys(db_path),
-        "top_keys": await get_top_keys_per_provider(db_path),
         "encryption": await count_storage_encryption_state(db_path),
         "provider_encryption": await count_provider_encryption_state(db_path),
         "encryption_enabled": encryption_enabled(),
@@ -481,8 +479,9 @@ async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
     ]
     return {
         "providers": providers,
+        # `catalog_presets` used to carry this same object under a second key,
+        # duplicating 33,640 B (25% of the payload) on a production instance.
         "catalog": catalog,
-        "catalog_presets": catalog,
         "logo_map": get_provider_logo_map(),
         "quota_warnings": quota_warnings,
     }
