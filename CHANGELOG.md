@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.16.0] - 2026-09-13
+### Changed
+- **Dashboard state payloads no longer carry duplicated or unread sections** —
+  compression (v3.15.0) shrank the transfer but not the work at either end: the
+  server still builds and serialises every byte, and the browser still parses
+  it. Measured on a production deployment with real data,
+  `providers.catalog_presets` held the *same object* as `providers.catalog`
+  (the source read `"catalog": catalog, "catalog_presets": catalog`),
+  duplicating 33,640 B or 25% of that payload, while the dashboard read
+  `data.catalog_presets ?? data.catalog` and only ever used one.
+  `inventory.top_keys` was 18,579 B, 47.9% of the inventory payload, referenced
+  nowhere in the frontend, and cost a `get_top_keys_per_provider` database
+  query on every inventory page load. Both are removed: roughly 52 KB per
+  affected page load and one fewer query.
+
+  `pricing.unpriced` looked like a third candidate but is asserted by two
+  integration tests, so it encodes intended behaviour and was left alone. A new
+  payload-shape guard covers both regressions plus a general check that no
+  state section serves two top-level keys holding identical values. (#111, #160)
 ## [3.15.0] - 2026-09-11
 ### Added
 - **Response compression for dashboard state payloads** — sections were served
