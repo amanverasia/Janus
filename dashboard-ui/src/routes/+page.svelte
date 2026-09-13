@@ -299,7 +299,7 @@
     {:else if active.section === 'tools'}
       <ToolsPage {data} />
     {:else if active.section === 'pricing'}
-      <PricingPage {data} {action} />
+      <PricingPage {data} {action} {navigateQuery} />
     {:else if active.section === 'settings'}
       <SettingsPage {data} {action} {navigate} />
     {:else}

@@ -1037,9 +1037,27 @@ async def get_dashboard_state(
             },
         )
     if section == "pricing":
-        pricing = await _pricing_page_context(request, db_path)
+        pricing = await _pricing_page_context(
+            request, db_path, limit=limit, offset=offset, search=search
+        )
         pricing.pop("request", None)
-        return await _response(request, db_path, section, pricing)
+        total = int(pricing.pop("catalog_total", 0))
+        return await _response(
+            request,
+            db_path,
+            section,
+            pricing,
+            meta={
+                "pagination": {
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "page": (offset // limit) + 1 if limit else 1,
+                    "total_pages": max(1, -(-total // limit)) if limit else 1,
+                },
+                "query": {"search": search},
+            },
+        )
     return await _response(request, db_path, section, await _settings_data(db_path))
 
 
