@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.17.0] - 2026-09-13
+### Changed
+- **The pricing catalog is paginated server-side** — it was 828,927 B across
+  4,828 rows on a production deployment, 98.8% of the pricing payload, and the
+  page rendered every row, so the browser built 4,828 DOM nodes with no way to
+  page or filter. Against a real 4,873-row catalog the payload is now about
+  21,000 B for one page and 25 DOM rows.
+
+  `list_catalog` is unchanged and still returns the whole table, because the
+  pricing registry needs it to resolve model rates; paging is a separate
+  `list_catalog_page(limit, offset, search)` so the rate-lookup path is
+  untouched. Only the catalog is paged -- `builtin` (4,874 B) and `overrides`
+  (699 B) are small and still arrive whole. The section reuses the
+  `limit`/`offset`/`search` query parameters the state endpoint already accepts
+  and returns the same `meta.pagination` shape as request-logs, leaderboard and
+  inventory-keys. Search filters in SQL rather than the browser and resets the
+  offset so a filtered result starts at page one. (#111, #162)
 ## [3.16.0] - 2026-09-13
 ### Changed
 - **Dashboard state payloads no longer carry duplicated or unread sections** —
