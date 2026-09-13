@@ -1543,9 +1543,21 @@ async def _unpriced_models_context(request: Request, db_path: Path) -> list[dict
     return [row for row in candidates if registry.get(row["model"]) is None]
 
 
-async def _pricing_page_context(request: Request, db_path: Path) -> dict[str, Any]:
+async def _pricing_page_context(
+    request: Request,
+    db_path: Path,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+    search: str = "",
+) -> dict[str, Any]:
+    """Pricing page data.
+
+    When ``limit`` is given the catalog is returned one page at a time and the
+    caller also receives ``catalog_total``; it reached 4,828 rows in production.
+    """
     from janus.pricing.builtin import BUILTIN_PRICING
-    from janus.storage.pricing_catalog import list_catalog
+    from janus.storage.pricing_catalog import list_catalog, list_catalog_page
     from janus.storage.pricing_db import list_pricing_overrides
 
     overrides = await list_pricing_overrides(db_path)
@@ -1561,7 +1573,13 @@ async def _pricing_page_context(request: Request, db_path: Path) -> dict[str, An
     ]
 
     registry = request.app.state.pricing_registry
-    catalog_rows = await list_catalog(db_path)
+    if limit is None:
+        catalog_rows = await list_catalog(db_path)
+        catalog_total = len(catalog_rows)
+    else:
+        catalog_rows, catalog_total = await list_catalog_page(
+            db_path, limit=limit, offset=offset, search=search
+        )
     catalog_list = [
         {
             "model": row["model"],
@@ -1587,6 +1605,7 @@ async def _pricing_page_context(request: Request, db_path: Path) -> dict[str, An
         "catalog": catalog_list,
         "sync_status": _pricing_sync_status(last_sync_raw),
         "catalog_count": int(catalog_count_raw) if catalog_count_raw else 0,
+        "catalog_total": catalog_total,
         "unpriced": await _unpriced_models_context(request, db_path),
     }
     return context

@@ -32,6 +32,37 @@ async def get_catalog(db_path: str | Path) -> dict[str, dict[str, float]]:
     }
 
 
+async def list_catalog_page(
+    db_path: str | Path,
+    *,
+    limit: int,
+    offset: int,
+    search: str = "",
+) -> tuple[list[dict[str, Any]], int]:
+    """One page of the pricing catalog, plus the total matching the filter.
+
+    The catalog reached 4,828 rows on a production instance -- 828,927 B, 98.8%
+    of the pricing payload -- so the dashboard reads it a page at a time.
+    ``list_catalog`` still returns everything for the pricing registry, which
+    needs the whole table to resolve model rates.
+    """
+    where, params = "", []
+    if search.strip():
+        where = "WHERE model LIKE ?"
+        params.append(f"%{search.strip()}%")
+
+    async with get_connection(db_path) as db:
+        async with db.execute(f"SELECT COUNT(*) FROM pricing_catalog {where}", params) as cur:
+            row = await cur.fetchone()
+            total = int(row[0]) if row is not None else 0
+        async with db.execute(
+            f"SELECT * FROM pricing_catalog {where} ORDER BY model LIMIT ? OFFSET ?",
+            [*params, max(0, limit), max(0, offset)],
+        ) as cur:
+            rows = await cur.fetchall()
+    return [dict(r) for r in rows], total
+
+
 async def catalog_count(db_path: str | Path) -> int:
     async with get_connection(db_path) as db:
         async with db.execute("SELECT COUNT(*) FROM pricing_catalog") as cur:
