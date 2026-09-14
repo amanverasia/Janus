@@ -53,6 +53,7 @@ coverage.xml
 # IDEs
 .idea/
 .vscode/
+.zcode/
 *.swp
 *.swo
 *~
