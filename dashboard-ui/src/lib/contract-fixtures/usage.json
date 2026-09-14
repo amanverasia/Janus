@@ -1,0 +1,41 @@
+{
+  "section": "usage",
+  "alerts": [],
+  "data": {
+    "stats": {
+      "total_cost": 0.73,
+      "total_requests": 0,
+      "total_input_tokens": 2100,
+      "total_output_tokens": 460,
+      "total_cache_creation_tokens": 0,
+      "total_cache_read_tokens": 0,
+      "daily": [],
+      "by_model": [
+        {
+          "model": "openai/fixture-model-001",
+          "requests": 2,
+          "input_tokens": 1300,
+          "output_tokens": 350
+        },
+        {
+          "model": "anthropic/fixture-model-002",
+          "requests": 1,
+          "input_tokens": 800,
+          "output_tokens": 110
+        }
+      ],
+      "period_days": 30,
+      "reporting_timezone": "UTC"
+    }
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    },
+    "query": {
+      "days": 30
+    }
+  }
+}

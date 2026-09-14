@@ -1,0 +1,15 @@
+{
+  "section": "tools",
+  "alerts": [],
+  "data": {
+    "base_url": "http://test/v1",
+    "require_api_key": true
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    }
+  }
+}

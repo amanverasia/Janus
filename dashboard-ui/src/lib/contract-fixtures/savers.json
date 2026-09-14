@@ -1,0 +1,23 @@
+{
+  "section": "savers",
+  "alerts": [],
+  "data": {
+    "settings": {
+      "saver_rtk_enabled": "true",
+      "saver_caveman_enabled": "false",
+      "saver_caveman_level": "full",
+      "saver_ponytail_enabled": "false",
+      "saver_ponytail_level": "full",
+      "saver_headroom_enabled": "false",
+      "saver_headroom_url": "http://localhost:8787"
+    },
+    "saver_stats": {}
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    }
+  }
+}

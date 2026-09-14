@@ -1,0 +1,63 @@
+{
+  "section": "settings",
+  "alerts": [],
+  "data": {
+    "values": {
+      "server_request_log_retention": "500",
+      "combo_fusion_min_panel": "2",
+      "saver_caveman_enabled": "false",
+      "server_cooldowns_enabled": "true",
+      "saver_caveman_level": "full",
+      "saver_ponytail_level": "full",
+      "server_reporting_timezone": "UTC",
+      "saver_rtk_enabled": "true",
+      "server_request_logging": "false",
+      "server_sticky_limit": "3",
+      "server_account_strategy": "round_robin",
+      "server_require_api_key": "true",
+      "saver_headroom_enabled": "false",
+      "combo_fusion_hard_timeout_s": "90",
+      "combo_fusion_straggler_grace_s": "8",
+      "saver_ponytail_enabled": "false",
+      "server_gateway_rate_limit_rpm": "0",
+      "combo_fusion_judge": "",
+      "server_sticky_client_key_routing": "false",
+      "saver_headroom_url": "http://localhost:8787"
+    },
+    "dashboard_access": {
+      "mode": "api_key",
+      "keys_url": "/dashboard/ui/keys",
+      "localhost_requires_auth": true
+    },
+    "status": {
+      "require_api_key_enabled": true,
+      "cooldowns_enabled": true,
+      "sticky_client_key_routing_enabled": false,
+      "request_logging_enabled": false,
+      "request_log_retention": 500,
+      "account_strategy": "round_robin",
+      "sticky_limit": 3,
+      "gateway_rate_limit_rpm": 0,
+      "reporting_timezone": "UTC",
+      "combo_strategy": "fallback",
+      "combo_sticky_limit": 1,
+      "combo_fusion_judge": "",
+      "combo_fusion_min_panel": 2,
+      "combo_fusion_straggler_grace_s": 8.0,
+      "combo_fusion_hard_timeout_s": 90.0
+    },
+    "export": {
+      "available": true,
+      "method": "GET",
+      "url": "/dashboard/api/export",
+      "contains_credentials": true
+    }
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    }
+  }
+}

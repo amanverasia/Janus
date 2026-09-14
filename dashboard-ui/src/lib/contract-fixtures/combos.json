@@ -1,0 +1,64 @@
+{
+  "section": "combos",
+  "alerts": [],
+  "data": {
+    "combos": [
+      {
+        "id": 1,
+        "name": "fixture-combo",
+        "models": "[\"openai/fixture-model-001\", \"anthropic/fixture-model-002\"]",
+        "created_at": "2000-01-01T00:00:00Z",
+        "updated_at": "2000-01-01T00:00:00Z",
+        "models_list": [
+          "openai/fixture-model-001",
+          "anthropic/fixture-model-002"
+        ]
+      }
+    ],
+    "wired_providers": [
+      {
+        "prefix": "anthropic",
+        "models": [
+          "fixture-model-000",
+          "fixture-model-001",
+          "fixture-model-002",
+          "fixture-model-003",
+          "fixture-model-004",
+          "fixture-model-005",
+          "fixture-model-006",
+          "fixture-model-007",
+          "fixture-model-008",
+          "fixture-model-009",
+          "fixture-model-010",
+          "fixture-model-011"
+        ],
+        "accounts": 1
+      },
+      {
+        "prefix": "openai",
+        "models": [
+          "fixture-model-000",
+          "fixture-model-001",
+          "fixture-model-002",
+          "fixture-model-003",
+          "fixture-model-004",
+          "fixture-model-005",
+          "fixture-model-006",
+          "fixture-model-007",
+          "fixture-model-008",
+          "fixture-model-009",
+          "fixture-model-010",
+          "fixture-model-011"
+        ],
+        "accounts": 1
+      }
+    ]
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    }
+  }
+}

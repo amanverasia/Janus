@@ -1,0 +1,41 @@
+{
+  "section": "keys",
+  "alerts": [],
+  "data": {
+    "keys": [
+      {
+        "id": 1,
+        "name": "fixture dashboard key",
+        "prefix": "sk-janus-fixed0",
+        "is_active": 1,
+        "can_login": true,
+        "allowed_models": null,
+        "created_at": "2000-01-01T00:00:00Z",
+        "budget": {
+          "daily_limit": 5.0,
+          "today_spend": 0.0,
+          "remaining": 5.0,
+          "pct_used": 0.0,
+          "status": "ok",
+          "warn_pct": 80.0,
+          "reporting_timezone": "UTC",
+          "retry_after": 0,
+          "resets_at": "2000-01-01T00:00:00Z+00:00"
+        }
+      }
+    ],
+    "status": "active",
+    "counts": {
+      "active": 1,
+      "revoked": 0,
+      "all": 1
+    }
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    }
+  }
+}

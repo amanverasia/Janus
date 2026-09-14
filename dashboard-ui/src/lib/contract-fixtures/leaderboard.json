@@ -1,0 +1,30 @@
+{
+  "section": "leaderboard",
+  "alerts": [],
+  "data": {
+    "leaderboard": [
+      {
+        "rank": 1,
+        "key_name": "fixture dashboard key",
+        "requests": 0,
+        "tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost": 0.0,
+        "success_pct": 0.0
+      }
+    ]
+  },
+  "meta": {
+    "alert_summary": "ok",
+    "alert_counts": {
+      "critical": 0,
+      "warning": 0
+    },
+    "query": {
+      "days": 30,
+      "sort": "tokens",
+      "limit": 25
+    }
+  }
+}
