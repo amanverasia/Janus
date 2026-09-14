@@ -6,7 +6,16 @@
   console scripts: generated wrappers can retain a stale checkout/interpreter path after an
   environment move.
 - Install: `pip install -e ".[dev]"` (editable + dev extras: respx, ruff, mypy, mkdocs-material, build).
-- CI runs on push/PR via `.github/workflows/ci.yml` (ruff check + format + mypy + pytest).
+- CI runs on push/PR via `.github/workflows/ci.yml`, which calls the reusable
+  `.github/workflows/checks.yml` suite: lint (ruff check + format over `src/`,
+  `tests/`, and `scripts/`), mypy over `src/janus/` and `scripts/`, pytest with
+  coverage (`--cov-fail-under=80`), dashboard bundle check (`npm run check` +
+  build via `scripts/build_dashboard_ui.py --check`), docs build (strict), a
+  SQLite migration smoke (`scripts/migration_smoke.py`), and a package job that
+  builds distributions, validates metadata, and verifies the wheel ships the
+  dashboard bundle. `publish.yml` runs the same suite via `workflow_call` before
+  `twine check` gates the PyPI upload. `scripts/browser_smoke.py` is an opt-in
+  Playwright smoke (not in CI; needs `playwright` + a running server).
 - PyPI package name is `janus-ai`. Import name is `janus`. CLI binary is `janus`.
 
 ## Commands
@@ -94,6 +103,20 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 - `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions work without `@pytest.mark.asyncio`.
 - Provider tests mock httpx with `respx` (no real network calls).
 - Integration tests use FastAPI ASGI transport (`httpx.ASGITransport`) in-process.
+- **Dashboard state contracts.** Every `/dashboard/api/v2/state/*` section is pinned by
+  `tests/integration/test_dashboard_state_contracts.py`. Stable sections are byte-pinned
+  against JSON fixtures in `dashboard-ui/src/lib/contract-fixtures/`, which
+  `dashboard-ui/src/lib/contracts.ts` types and `contracts-check.ts` validates via
+  svelte-check during `scripts/build_dashboard_ui.py --check`; volatile sections actively
+  reshaped by payload-size work (models, routing, pricing, providers, inventory,
+  inventory-keys) are pinned by generated `.shape.json` key-path/type signatures instead.
+  Changing a backend field name requires regenerating fixtures/signatures
+  (`JANUS_REGEN_CONTRACT_FIXTURES=1 pytest tests/integration/test_dashboard_state_contracts.py`)
+  AND updating `contracts.ts` for byte-pinned sections in the same change — both gates fail
+  otherwise. Response-size budgets for the heavy sections live in
+  `tests/integration/test_dashboard_state_size.py`; extend them deliberately when a section
+  grows on purpose. State responses are gzip-compressed for JSON only
+  (`janus/compression.py`) — SSE and HTML pass through uncompressed.
 - Test fixtures (sample API payloads, usage seed helpers) live in `tests/fixtures/`.
 - **Dashboard routes do lazy `init_db` guard** because ASGITransport doesn't run the FastAPI lifespan handler. `_ensure_db()` (in `dashboard/routes.py`) now also triggers `seed_from_config()` + all reload functions, so tests that hit dashboard routes get a fully seeded + warmed app. If you add dashboard routes that touch the DB, call `_ensure_db(request)` first.
 - API route tests that need providers/combos must call `init_db()` + `seed_from_config()` + reload functions explicitly in their fixture (ASGITransport skips lifespan). See pattern in `tests/integration/test_api.py`.
