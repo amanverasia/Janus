@@ -10,12 +10,16 @@
   `.github/workflows/checks.yml` suite: lint (ruff check + format over `src/`,
   `tests/`, and `scripts/`), mypy over `src/janus/` and `scripts/`, pytest with
   coverage (`--cov-fail-under=80`), dashboard bundle check (`npm run check` +
-  build via `scripts/build_dashboard_ui.py --check`), docs build (strict), a
-  SQLite migration smoke (`scripts/migration_smoke.py`), and a package job that
-  builds distributions, validates metadata, and verifies the wheel ships the
-  dashboard bundle. `publish.yml` runs the same suite via `workflow_call` before
-  `twine check` gates the PyPI upload. `scripts/browser_smoke.py` is an opt-in
-  Playwright smoke (not in CI; needs `playwright` + a running server).
+  `npm run test` vitest component tests + build via
+  `scripts/build_dashboard_ui.py --check`), docs build (strict), a SQLite
+  migration smoke (`scripts/migration_smoke.py`), a browser regression job
+  (`scripts/browser_regression.py` — drives Chromium against a running server
+  for every route, navigation, filters, pagination, a CRUD mutation, and a
+  no-secret DOM scan; needs `playwright` + `playwright install chromium`), and
+  a package job that builds distributions, validates metadata, and verifies the
+  wheel ships the dashboard bundle. `publish.yml` runs the same suite via
+  `workflow_call` before `twine check` gates the PyPI upload.
+  `scripts/browser_smoke.py` remains a minimal opt-in smoke for manual checks.
 - PyPI package name is `janus-ai`. Import name is `janus`. CLI binary is `janus`.
 
 ## Commands
@@ -31,7 +35,8 @@ docker compose up -d                                         # Docker (persists 
 .venv/bin/mkdocs serve                                       # docs preview
 .venv/bin/mkdocs build --strict                              # docs verify
 .venv/bin/python -m build                                    # wheel + sdist
-scripts/build_dashboard_ui.py --check                         # dashboard build + committed-bundle check
+scripts/build_dashboard_ui.py --check                         # dashboard check (svelte-check + vitest + build + bundle)
+scripts/browser_regression.py                                 # browser suite (needs a running server + JANUS_SMOKE_API_KEY)
 ```
 
 ## Architecture constraint
@@ -110,6 +115,12 @@ Provider edit endpoint preserves the existing API key when the field is left bla
   svelte-check during `scripts/build_dashboard_ui.py --check`; volatile sections actively
   reshaped by payload-size work (models, routing, pricing, providers, inventory,
   inventory-keys) are pinned by generated `.shape.json` key-path/type signatures instead.
+- **Browser regression suite.** `scripts/browser_regression.py` (Playwright, Chromium,
+  CI job in `checks.yml`) signs in via the login form, visits every dashboard route, and
+  covers back/forward navigation, server-side filters, pagination, a reversible CRUD
+  mutation, and a no-secret DOM scan. `dashboard-ui` vitest component tests
+  (`Pagination.test.ts`) back the shared `Pagination.svelte` and run via
+  `npm run test` inside `scripts/build_dashboard_ui.py --check`.
   Changing a backend field name requires regenerating fixtures/signatures
   (`JANUS_REGEN_CONTRACT_FIXTURES=1 pytest tests/integration/test_dashboard_state_contracts.py`)
   AND updating `contracts.ts` for byte-pinned sections in the same change — both gates fail
