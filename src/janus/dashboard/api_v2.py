@@ -487,27 +487,54 @@ async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
     }
 
 
-async def _models_data(request: Request, db_path: Path) -> dict[str, Any]:
+async def _models_data(
+    request: Request,
+    db_path: Path,
+    *,
+    limit: int,
+    offset: int,
+    provider: str,
+    search: str,
+) -> dict[str, Any]:
     from janus.dashboard.catalog import get_catalog
     from janus.storage.providers_db import list_providers
 
     rows = list(request.app.state.provider_snapshot.model_catalog)
     catalog = get_catalog()
     providers: list[dict[str, Any]] = []
-    for provider in await list_providers(db_path):
-        catalog_id = _matching_catalog_id(provider, catalog)
+    for provider_row in await list_providers(db_path):
+        catalog_id = _matching_catalog_id(provider_row, catalog)
         providers.append(
             {
-                "id": str(provider["id"]),
+                "id": str(provider_row["id"]),
                 "catalog_id": catalog_id,
                 "name": catalog.get(catalog_id, {}).get("name") if catalog_id else None,
-                "prefix": str(provider["prefix"]),
-                "is_enabled": bool(provider.get("is_enabled", 1)),
+                "prefix": str(provider_row["prefix"]),
+                "is_enabled": bool(provider_row.get("is_enabled", 1)),
             }
         )
+    # The catalog reached ~4,828 rows in production. Page it server-side so the
+    # browser stops building and parsing the whole table on every request.
+    filtered = rows
+    if provider:
+        filtered = [r for r in filtered if str(r.get("prefix") or "") == provider]
+    needle = search.strip().lower()
+    if needle:
+        filtered = [
+            r
+            for r in filtered
+            if needle in str(r.get("id") or "").lower()
+            or needle in str(r.get("display_name") or "").lower()
+            or needle in str(r.get("namespaced") or "").lower()
+        ]
+    total = len(filtered)
+    page = filtered[offset : offset + limit] if limit else filtered
+    visible_total = sum(1 for r in filtered if not r.get("disabled"))
     return {
-        "models": rows,
+        "models": page,
         "providers": providers,
+        "model_total": total,
+        "visible_total": visible_total,
     }
 
 
@@ -520,10 +547,55 @@ async def _combos_data(request: Request, db_path: Path) -> dict[str, Any]:
     return {"combos": combos, "wired_providers": _wired_providers(request)}
 
 
-async def _routing_data(request: Request, db_path: Path) -> dict[str, Any]:
+async def _routing_data(
+    request: Request,
+    db_path: Path,
+    *,
+    limit: int,
+    offset: int,
+    search: str,
+) -> dict[str, Any]:
     settings = await get_all_settings(db_path)
+    overview = await get_routing_overview(db_path)
+    # Production builds ~347 routing accounts but the pool panel shows ten, so
+    # the full per-account lists must not cross the wire on every request.
+    # Flatten them here, ship a slim overview (provider counts + quota) plus one
+    # paginated pool page and the cooling-down subset.
+    flat: list[dict[str, Any]] = []
+    for provider in overview.get("providers", []):
+        for account in provider.get("accounts", []):
+            flat.append(
+                {
+                    **account,
+                    "provider_id": provider.get("id"),
+                    "prefix": provider.get("prefix"),
+                    "quota": provider.get("quota"),
+                }
+            )
+        provider["accounts"] = []
+    overview["total_accounts"] = len(flat)
+    overview["ready_accounts"] = sum(
+        1
+        for account in flat
+        if not account.get("cooldown_active") and not account.get("quota_deprioritized")
+    )
+    cooldowns = [account for account in flat if account.get("cooldown_active")]
+    needle = search.strip().lower()
+    if needle:
+        filtered = [
+            account
+            for account in flat
+            if needle in str(account.get("key_label") or "").lower()
+            or needle in str(account.get("key_masked") or "").lower()
+            or needle in str(account.get("prefix") or "").lower()
+            or needle in str(account.get("account_id") or "").lower()
+        ]
+    else:
+        filtered = flat
+    total = len(filtered)
+    page = filtered[offset : offset + limit] if limit else filtered
     return {
-        "overview": await get_routing_overview(db_path),
+        "overview": overview,
         "live": request.app.state.fallback_handler.routing_snapshot(),
         "settings": {
             "cooldowns_enabled": cooldowns_enabled(settings),
@@ -532,6 +604,9 @@ async def _routing_data(request: Request, db_path: Path) -> dict[str, Any]:
             "sticky_limit": resolve_sticky_limit(settings),
             "combo_strategy": resolve_combo_strategy(settings),
         },
+        "accounts": page,
+        "cooldowns": cooldowns,
+        "routing_total": total,
     }
 
 
@@ -718,7 +793,10 @@ async def _authorized_custom_target(
 @router.get("/api/v2/models")
 async def get_models(request: Request) -> JSONResponse:
     db_path = await _ensure_db(request)
-    return _no_store_json(await _models_data(request, db_path))
+    data = await _models_data(request, db_path, limit=0, offset=0, provider="", search="")
+    data.pop("model_total", None)
+    data.pop("visible_total", None)
+    return _no_store_json(data)
 
 
 @router.put("/api/v2/model-visibility")
@@ -1001,19 +1079,51 @@ async def get_dashboard_state(
         )
         return await _response(request, db_path, section, data, meta=meta)
     if section == "models":
+        models_data = await _models_data(
+            request, db_path, limit=limit, offset=offset, provider=provider, search=search
+        )
+        models_total = int(models_data.pop("model_total", 0))
         return await _response(
             request,
             db_path,
             section,
-            await _models_data(request, db_path),
-            meta={"query": {"provider": provider}},
+            models_data,
+            meta={
+                "pagination": {
+                    "total": models_total,
+                    "limit": limit,
+                    "offset": offset,
+                    "page": (offset // limit) + 1 if limit else 1,
+                    "total_pages": max(1, -(-models_total // limit)) if limit else 1,
+                },
+                "query": {"provider": provider, "search": search},
+            },
         )
     if section == "providers":
         return await _response(request, db_path, section, await _providers_data(request, db_path))
     if section == "combos":
         return await _response(request, db_path, section, await _combos_data(request, db_path))
     if section == "routing":
-        return await _response(request, db_path, section, await _routing_data(request, db_path))
+        routing_data = await _routing_data(
+            request, db_path, limit=limit, offset=offset, search=search
+        )
+        routing_total = int(routing_data.pop("routing_total", 0))
+        return await _response(
+            request,
+            db_path,
+            section,
+            routing_data,
+            meta={
+                "pagination": {
+                    "total": routing_total,
+                    "limit": limit,
+                    "offset": offset,
+                    "page": (offset // limit) + 1 if limit else 1,
+                    "total_pages": max(1, -(-routing_total // limit)) if limit else 1,
+                },
+                "query": {"search": search},
+            },
+        )
     if section == "savers":
         saver_context = await _savers_context(request, db_path)
         saver_context.pop("request", None)

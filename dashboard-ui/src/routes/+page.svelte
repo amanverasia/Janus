@@ -285,11 +285,11 @@
     {:else if active.section === 'providers'}
       <ProvidersPage {data} {action} {navigate} />
     {:else if active.section === 'models'}
-      <ModelsPage {data} {action} {navigate} />
+      <ModelsPage {data} {action} {navigate} {navigateQuery} />
     {:else if active.section === 'combos'}
       <CombosPage {data} {action} />
     {:else if active.section === 'routing'}
-      <RoutingPage {data} {action} />
+      <RoutingPage {data} {action} {navigateQuery} />
     {:else if active.section === 'savers'}
       <SaversPage {data} {action} />
     {:else if active.section === 'budgets'}

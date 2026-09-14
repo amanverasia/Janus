@@ -24,15 +24,19 @@ from janus.storage.providers_db import create_provider
 from janus.storage.upstream_keys import create_upstream_key
 from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard_auth
 
+# Models and routing are paged server-side (a page of ~25 rows); these budgets
+# are the backstop behind the dedicated pagination tests -- loose enough that
+# legitimate page/field growth does not flap CI, tight enough that an
+# un-pagination regression (~700 KB models / ~110 KB routing) fails here.
 RAW_BUDGETS: dict[str, int] = {
-    "models": 800_000,
-    "routing": 150_000,
+    "models": 80_000,
+    "routing": 100_000,
     "providers": 130_000,
     "pricing": 40_000,
 }
 GZIP_BUDGETS: dict[str, int] = {
-    "models": 90_000,
-    "routing": 30_000,
+    "models": 15_000,
+    "routing": 12_000,
     "providers": 35_000,
     "pricing": 12_000,
 }
@@ -182,6 +186,71 @@ async def test_pricing_catalog_is_paginated_and_searchable(sized_app: FastAPI) -
     payload = json.loads(gzip.decompress(raw))
     assert payload["meta"]["pagination"]["total"] == 1
     assert payload["data"]["catalog"][0]["model"].endswith("model-00042")
+
+
+async def test_models_state_is_paginated_and_searchable(sized_app: FastAPI) -> None:
+    expected_total = MODEL_ROWS_PER_PROVIDER * len(PROVIDER_PREFIXES)
+    _status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/models")
+    payload = json.loads(gzip.decompress(raw))
+    data = payload["data"]
+    pagination = payload["meta"]["pagination"]
+    assert len(data["models"]) == pagination["limit"]
+    assert pagination["total"] == expected_total
+    assert pagination["total_pages"] > 1
+    # The provider list stays whole (it drives the provider filter rail).
+    assert len(data["providers"]) == len(PROVIDER_PREFIXES)
+
+    _status, raw, _headers = await _raw_request(
+        sized_app, "/dashboard/api/v2/state/models?provider=openai&limit=200"
+    )
+    payload = json.loads(gzip.decompress(raw))
+    assert payload["meta"]["pagination"]["total"] == MODEL_ROWS_PER_PROVIDER
+
+    _status, raw, _headers = await _raw_request(
+        sized_app, "/dashboard/api/v2/state/models?search=fixture-model-0001"
+    )
+    payload = json.loads(gzip.decompress(raw))
+    narrowed = payload["meta"]["pagination"]["total"]
+    assert 0 < narrowed < expected_total
+
+
+async def test_routing_state_is_paginated_and_slim(sized_app: FastAPI) -> None:
+    _status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/routing")
+    payload = json.loads(gzip.decompress(raw))
+    data = payload["data"]
+    pagination = payload["meta"]["pagination"]
+    assert len(data["accounts"]) <= pagination["limit"]
+    assert 0 < pagination["total"] <= INVENTORY_KEY_COUNT
+    assert pagination["total_pages"] > 1
+    # The overview ships slim provider summaries -- per-account lists are
+    # stripped (they used to be the whole 350-account payload) and the
+    # aggregates the stat cards need travel as counts instead.
+    for provider in data["overview"]["providers"]:
+        assert provider["accounts"] == []
+    assert data["overview"]["total_accounts"] == pagination["total"]
+    assert isinstance(data["cooldowns"], list)
+
+
+async def test_state_response_time_budgets(sized_app: FastAPI) -> None:
+    """Warm response time for each heavy section stays bounded (#111).
+
+    Generous bounds catch catastrophic regressions (e.g. re-materializing the
+    full account pool) without flapping on runner variance; the byte-size
+    budgets above are the deterministic gate for serialize/parse cost.
+    """
+    import time
+
+    time_budget_ms = {"models": 1500, "routing": 1500, "providers": 1500, "pricing": 1500}
+    for section in sorted(time_budget_ms):
+        await _raw_request(sized_app, f"/dashboard/api/v2/state/{section}")  # warm
+        start = time.perf_counter()
+        _status, _raw, _headers = await _raw_request(
+            sized_app, f"/dashboard/api/v2/state/{section}"
+        )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        assert elapsed_ms < time_budget_ms[section], (
+            f"{section} warm state response took {elapsed_ms:.0f}ms"
+        )
 
 
 async def test_state_responses_stay_uncompressed_for_non_gzip_clients(sized_app: FastAPI) -> None:

@@ -85,7 +85,14 @@ async def test_management_catalog_is_safe_and_custom_models_have_first_class_cru
     ]
     assert "provider-secret" not in json.dumps(initial.json())
     assert state.status_code == 200
-    assert state.json()["data"] == initial.json()
+    # The state section is now a server-paginated page (with a `visible_total`
+    # aggregate) while the management endpoint returns the whole catalog, so
+    # compare the providers list and the state's page as a prefix of the full
+    # list rather than the entire envelope.
+    state_data = state.json()["data"]
+    assert state_data["providers"] == initial.json()["providers"]
+    assert state_data["models"] == initial.json()["models"][: len(state_data["models"])]
+    assert "provider-secret" not in json.dumps(state_data)
     assert presets.status_code == 200
     assert "provider-secret" not in json.dumps(presets.json())
     assert any(preset["id"] == "openai" for preset in presets.json()["presets"])
