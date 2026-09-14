@@ -58,6 +58,9 @@ jobs:
             --cov-report=xml \
             --cov-fail-under=${{ inputs.coverage-threshold }}
 
+      - name: SQLite migration smoke
+        run: python scripts/migration_smoke.py
+
       - name: Coverage summary
         if: always()
         run: |
