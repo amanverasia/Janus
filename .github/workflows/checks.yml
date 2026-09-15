@@ -85,6 +85,83 @@ jobs:
       - name: Docs build (strict)
         run: mkdocs build --strict
 
+  browser:
+    # Browser regression suite for the dashboard SPA (#110). Drives a real
+    # Chromium against a running Janus instance: every route renders, no
+    # secret lands in the DOM, back/forward navigation, filters, server-side
+    # pagination, and a reversible CRUD mutation.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install playwright
+
+      - name: Install Playwright browser
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run browser regression suite
+        run: |
+          python - <<'PY'
+          import pathlib, yaml
+          models = lambda p: [f"{p}-model-{i:03d}" for i in range(35)]
+          cfg = {
+              "server": {
+                  "host": "127.0.0.1",
+                  "port": 20131,
+                  "data_dir": "/tmp/janus-browser-test",
+                  "require_api_key": True,
+              },
+              "providers": [
+                  {
+                      "id": "openai",
+                      "prefix": "openai",
+                      "api_type": "openai_compat",
+                      "base_url": "https://api.openai.example/v1",
+                      "api_key": "sk-fake-openai-not-real",
+                      "models": models("openai"),
+                  },
+                  {
+                      "id": "anthropic",
+                      "prefix": "anthropic",
+                      "api_type": "openai_compat",
+                      "base_url": "https://api.anthropic.example/v1",
+                      "api_key": "sk-fake-anthropic-not-real",
+                      "models": models("anthropic"),
+                  },
+              ],
+          }
+          pathlib.Path("/tmp/janus-browser-test").mkdir(exist_ok=True)
+          pathlib.Path("/tmp/janus-browser-config.yaml").write_text(
+              yaml.safe_dump(cfg, default_flow_style=False)
+          )
+          print("config written")
+          PY
+
+          janus serve --port 20131 --config /tmp/janus-browser-config.yaml &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:20131/v1/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:20131/v1/health || { echo "server did not become healthy"; exit 1; }
+
+          KEY=$(janus keys create --name browser-test --config /tmp/janus-browser-config.yaml \
+            | grep -ioE 'sk-janus-[0-9a-f]+' | head -1)
+          test -n "$KEY" || { echo "failed to create dashboard key"; exit 1; }
+
+          JANUS_SMOKE_BASE_URL=http://127.0.0.1:20131 JANUS_SMOKE_API_KEY="$KEY" \
+            python scripts/browser_regression.py
+
   package:
     runs-on: ubuntu-latest
     steps:

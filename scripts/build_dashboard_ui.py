@@ -34,6 +34,7 @@ def _build() -> None:
     _run(["npm", "ci"])
     _run(["npm", "run", "format:check"])
     _run(["npm", "run", "check"])
+    _run(["npm", "run", "test"])
     _run(["npm", "run", "build"])
     if not (BUILD_ROOT / "index.html").is_file():
         raise RuntimeError("SvelteKit build did not produce build/index.html")
