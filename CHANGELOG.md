@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.18.0] - 2026-09-15
+### Changed
+- **Models and routing state responses are paginated server-side** —
+  compression (v3.15.0) and duplicate-removal (v3.16.0) shrank the transfer, but
+  the server still built and serialised the whole payload and the browser still
+  parsed it. The models section shipped the entire model catalog (~1,140 rows on
+  a production-like fixture, ~800 KB) and the routing section flattened ~347
+  routing accounts into the overview even though the pool panel renders ten.
+
+  Both now page server-side, following the pricing precedent: `limit`/`offset`/
+  `search` query params and the same `meta.pagination` shape. `_models_data`
+  slices the in-memory catalog (provider + model-id search) and returns
+  `visible_total`/`model_total` aggregates so the stat cards no longer need the
+  full list; `GET /api/v2/models` still ships the whole catalog for the
+  management endpoint. `_routing_data` flattens the per-provider account lists
+  server-side, strips them from the overview (slim provider summaries plus
+  `total_accounts`/`ready_accounts` aggregates), and ships one paginated pool
+  page plus the small cooling-down subset whole. A shared `Pagination.svelte` is
+  reused across the pricing, models, and routing pages.
+
+  Measured on a real-size fixture (1,140 models / 293 routable accounts): models
+  ~800 KB → ~17 KB raw, routing ~150 KB → ~37 KB raw. The dead `get_flow`
+  analytics helper (no application caller) is removed. (#111, #164)
+### Added
+- **Browser regression suite, CI gate, and component tests** — the dashboard
+  had an opt-in route smoke that was never in CI and covered only render +
+  API-key-leak, and no component tests. The state-contract suite already made a
+  backend field rename fail CI; this closes the remaining gap.
+
+  `scripts/browser_regression.py` drives a real Chromium against a running Janus
+  instance: every route renders, no secret (`sk-janus-{32hex}` / `AKIA{16}`)
+  lands in the DOM, back/forward navigation, server-side filters, pagination, a
+  reversible pricing-override CRUD mutation, and empty-state rendering. A
+  `browser` job in `.github/workflows/checks.yml` generates an isolated
+  two-provider / 70-model config, boots a server, creates a dashboard key, and
+  runs the suite on every push/PR.
+
+  `dashboard-ui` gains vitest + `@testing-library/svelte` + jsdom with a
+  `Pagination.svelte` component test; `npm test` runs inside
+  `scripts/build_dashboard_ui.py --check`. A separate `vitest.config.ts` forces
+  the Svelte 5 browser resolve condition for tests without leaking into the
+  production build. (#110, #165)
 ## [3.17.0] - 2026-09-13
 ### Changed
 - **The pricing catalog is paginated server-side** — it was 828,927 B across
