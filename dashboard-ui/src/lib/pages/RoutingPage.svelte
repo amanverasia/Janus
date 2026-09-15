@@ -2,29 +2,26 @@
   import EmptyState from '$lib/components/EmptyState.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
-  import { bool, compact, firstList, object, text } from '$lib/data';
+  import { bool, compact, firstList, number, object, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;
+  export let navigateQuery: (params: Record<string, string>) => void;
 
   $: overview = object(data.overview);
   $: live = object(data.routing_live ?? data.live);
   $: settings = object(data.settings);
   $: providers = firstList(overview, 'providers');
-  $: accounts = providers.flatMap((provider) =>
-    firstList(provider, 'accounts').map((account): JsonObject => ({
-      ...account,
-      provider_id: provider.id,
-      prefix: provider.prefix,
-      quota: provider.quota
-    }))
-  );
-  $: cooldowns = accounts.filter((account) => bool(account.cooldown_active));
-  $: readyAccounts = accounts.filter(
-    (account) => !bool(account.cooldown_active) && !bool(account.quota_deprioritized)
-  );
+  // The routing pool is paged server-side; the overview ships slim provider
+  // counts plus `total_accounts`/`ready_accounts` aggregates, and the
+  // cooling-down subset arrives whole (it is small).
+  $: accounts = firstList(data, 'accounts');
+  $: cooldowns = firstList(data, 'cooldowns');
+  $: totalAccounts = number(overview.total_accounts, accounts.length);
+  $: readyAccounts = number(overview.ready_accounts, accounts.length);
   $: strategy = text(settings.account_strategy ?? live.account_strategy, 'round_robin')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -63,13 +60,13 @@
   <StatCard label="Providers" value={compact(providers.length)} detail="Enabled routing groups" />
   <StatCard
     label="Ready accounts"
-    value={compact(readyAccounts.length)}
-    detail={`${accounts.length} configured`}
+    value={compact(readyAccounts)}
+    detail={`${compact(totalAccounts)} configured`}
     tone="teal"
   />
   <StatCard
     label="Cooling down"
-    value={compact(cooldowns.length || overview.cooldown_count)}
+    value={compact(cooldowns.length || number(overview.cooldown_count, 0))}
     tone="amber"
   />
   <StatCard label="Strategy" value={strategy} tone="violet" />
@@ -125,7 +122,7 @@
       </div>
     </div>
     <div class="panel-body account-list">
-      {#each accounts.slice(0, 10) as account}
+      {#each accounts as account}
         <article class="account-row">
           <span class="account-order">{text(account.order, '—')}</span>
           <div>
@@ -150,6 +147,7 @@
         />
       {/each}
     </div>
+    <Pagination {data} {navigateQuery} label="accounts" />
   </section>
 </div>
 

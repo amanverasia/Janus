@@ -460,7 +460,7 @@ async def test_models_state_echoes_provider_filter(app):
         )
 
     assert known.status_code == 200
-    assert known.json()["meta"]["query"] == {"provider": "test"}
+    assert known.json()["meta"]["query"] == {"provider": "test", "search": ""}
     assert known.json()["data"]["providers"][0]["prefix"] == "test"
     assert unknown.status_code == 200
-    assert unknown.json()["meta"]["query"] == {"provider": "missing"}
+    assert unknown.json()["meta"]["query"] == {"provider": "missing", "search": ""}

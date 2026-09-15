@@ -3,12 +3,14 @@
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
   import { bool, firstList, number, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;
   export let navigate: (href: string) => void;
+  export let navigateQuery: (params: Record<string, string>) => void;
 
   type ModelGroup = {
     key: string;
@@ -22,7 +24,8 @@
   const modalities = ['text', 'image', 'audio'];
   const reasoningEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
-  let search = '';
+  let searchInput = '';
+  let searchDirty = false;
   let selectedGroupKey = 'all';
   let appliedProviderKey: string | undefined;
   let collapsed: Record<string, boolean> = {};
@@ -42,16 +45,25 @@
   $: models = firstList(data, 'models', 'items');
   $: providers = firstList(data, 'providers');
   $: allGroups = buildGroups(models, providers);
-  $: searchedGroups = filterGroups(allGroups, search);
+  // The catalog is paged and filtered server-side (it reached ~4,828 rows in
+  // production); group the current page rather than rendering every row.
   $: groups =
     selectedGroupKey === 'all'
-      ? searchedGroups
-      : searchedGroups.filter((group) => group.key === selectedGroupKey);
-  $: visibleCount = models.filter(isVisible).length;
+      ? allGroups
+      : allGroups.filter((group) => group.key === selectedGroupKey);
+  $: catalogTotal = number(data.total, models.length);
+  $: visibleCount = number(data.visible_total, models.filter(isVisible).length);
+  $: appliedSearch = text(data.search, '');
   $: urlProvider = text(data.provider, '');
+  $: if (appliedSearch !== searchInput && !searchDirty) searchInput = appliedSearch;
   $: if (urlProvider !== appliedProviderKey) {
     appliedProviderKey = urlProvider;
     selectedGroupKey = providerGroupKey(urlProvider, allGroups);
+  }
+
+  function runSearch() {
+    searchDirty = false;
+    navigateQuery({ search: searchInput.trim(), offset: '' });
   }
 
   function providerGroupKey(prefix: string, groupRows: ModelGroup[]): string {
@@ -113,26 +125,6 @@
     );
   }
 
-  function filterGroups(groupRows: ModelGroup[], queryValue: string): ModelGroup[] {
-    const query = queryValue.trim().toLowerCase();
-    if (!query) return groupRows;
-    return groupRows
-      .map((group) => {
-        if ([group.label, group.prefix].some((value) => value.toLowerCase().includes(query))) {
-          return group;
-        }
-        return {
-          ...group,
-          rows: group.rows.filter((model) =>
-            [model.id, model.namespaced, model.display_name, model.source]
-              .map((value) => text(value, '').toLowerCase())
-              .some((value) => value.includes(query))
-          )
-        };
-      })
-      .filter((group) => group.rows.length > 0);
-  }
-
   function isVisible(model: JsonObject): boolean {
     return !bool(model.disabled);
   }
@@ -150,7 +142,7 @@
   }
 
   function isCollapsed(group: ModelGroup): boolean {
-    if (search.trim()) return false;
+    if (appliedSearch.trim()) return false;
     // The selected group defaults to open, but an explicit toggle still wins --
     // otherwise its header chevron did nothing and "Collapse all" left it open.
     const explicit = collapsed[group.key];
@@ -321,7 +313,7 @@
     >
       <span>
         <strong>All providers</strong>
-        <small>{visibleCount}/{models.length} visible</small>
+        <small>{visibleCount}/{catalogTotal} visible</small>
       </span>
       <Icon name="arrow" size={14} />
     </button>
@@ -357,7 +349,7 @@
       </div>
       <div>
         <span>Total catalog</span>
-        <strong>{models.length}</strong>
+        <strong>{catalogTotal}</strong>
       </div>
     </section>
 
@@ -365,8 +357,25 @@
       <label class="model-search">
         <Icon name="search" size={16} />
         <span class="sr-only">Search models</span>
-        <input bind:value={search} type="search" placeholder="Search model IDs…" />
+        <input
+          bind:value={searchInput}
+          type="search"
+          placeholder="Search model IDs…"
+          on:input={() => (searchDirty = true)}
+          on:keydown={(event) => event.key === 'Enter' && runSearch()}
+        />
       </label>
+      {#if appliedSearch}
+        <button
+          class="button ghost"
+          on:click={() => {
+            searchInput = '';
+            runSearch();
+          }}
+        >
+          Clear
+        </button>
+      {/if}
       <button class="button ghost" on:click={() => setAllCollapsed(true)}>Collapse all</button>
       <button class="button ghost" on:click={() => setAllCollapsed(false)}>Expand all</button>
     </div>
@@ -521,6 +530,7 @@
         />
       </section>
     {/if}
+    <Pagination {data} {navigateQuery} label="models" />
   </main>
 </div>
 

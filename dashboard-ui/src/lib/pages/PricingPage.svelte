@@ -3,6 +3,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import Pagination from '$lib/components/Pagination.svelte';
   import { compact, firstList, number, rate, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
@@ -19,13 +20,9 @@
 
   // The catalog is paged server-side; it reached 4,828 rows in production.
   // `builtin` and `overrides` are small and arrive whole.
-  $: catalogOffset = number(data.offset);
-  $: catalogLimit = number(data.limit, 100) || 100;
   $: catalogTotal = number(data.total, catalog.length);
   $: catalogSearch = text(data.search, '');
   $: onCatalogTab = tab === 'catalog';
-  $: catalogPage = Math.floor(catalogOffset / catalogLimit) + 1;
-  $: catalogPages = Math.max(1, Math.ceil(catalogTotal / catalogLimit));
 
   let searchInput = '';
   $: if (catalogSearch !== searchInput && !searchDirty) searchInput = catalogSearch;
@@ -34,13 +31,6 @@
   function runSearch() {
     searchDirty = false;
     navigateQuery({ search: searchInput.trim(), offset: '' });
-  }
-  function pageTo(nextOffset: number) {
-    navigateQuery({
-      offset: String(Math.max(0, nextOffset)),
-      limit: String(catalogLimit),
-      search: catalogSearch
-    });
   }
 
   const cols = [
@@ -135,29 +125,8 @@
         </button>{/if}
     </svelte:fragment>
   </DataTable>
-  {#if onCatalogTab && catalogTotal > catalogLimit}
-    <div
-      class="panel-body"
-      style="display:flex;align-items:center;justify-content:flex-end;gap:8px"
-    >
-      <span class="muted" style="margin-right:auto;font-size:11px">
-        Page {catalogPage} of {catalogPages}
-      </span>
-      <button
-        class="button"
-        disabled={catalogOffset <= 0}
-        on:click={() => pageTo(catalogOffset - catalogLimit)}
-      >
-        Previous
-      </button>
-      <button
-        class="button"
-        disabled={catalogOffset + catalogLimit >= catalogTotal}
-        on:click={() => pageTo(catalogOffset + catalogLimit)}
-      >
-        Next
-      </button>
-    </div>
+  {#if onCatalogTab}
+    <Pagination {data} {navigateQuery} label="models" />
   {/if}
 </section>
 <Modal {open} title="Add pricing override" on:close={() => (open = false)}>
