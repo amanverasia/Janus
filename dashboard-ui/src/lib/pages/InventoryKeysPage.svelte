@@ -517,7 +517,11 @@
                 {dateTime(row.last_checked_at)}
               </td>
               <td class="row-actions">
-                <button class="button compact-button" title="Inspect" on:click={() => openDetail(row)}>
+                <button
+                  class="button compact-button"
+                  title="Inspect"
+                  on:click={() => openDetail(row)}
+                >
                   <Icon name="eye" size={15} />Inspect
                 </button>
                 <button
