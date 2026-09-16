@@ -28,14 +28,16 @@ from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard
 # are the backstop behind the dedicated pagination tests -- loose enough that
 # legitimate page/field growth does not flap CI, tight enough that an
 # un-pagination regression (~700 KB models / ~110 KB routing) fails here.
+# Models pages expand to complete provider groups, so a single large provider
+# (the size fixture uses 190 models) can legitimately exceed a strict 25-row page.
 RAW_BUDGETS: dict[str, int] = {
-    "models": 80_000,
+    "models": 160_000,
     "routing": 100_000,
     "providers": 130_000,
     "pricing": 40_000,
 }
 GZIP_BUDGETS: dict[str, int] = {
-    "models": 15_000,
+    "models": 30_000,
     "routing": 12_000,
     "providers": 35_000,
     "pricing": 12_000,
