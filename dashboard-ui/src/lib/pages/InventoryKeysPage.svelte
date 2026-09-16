@@ -62,6 +62,10 @@
   ];
 
   onMount(() => {
+    syncQueryState();
+  });
+
+  function syncQueryState() {
     const query = new URLSearchParams(window.location.search);
     providerId = query.get('provider_id') ?? '';
     status = query.get('status') ?? '';
@@ -70,10 +74,20 @@
     direction = query.get('dir') ?? query.get('direction') ?? 'desc';
     limit = Math.max(1, number(query.get('limit'), 25));
     offset = Math.max(0, number(query.get('offset'), 0));
-  });
+  }
+
+  function providerOptionLabel(provider: JsonObject): string {
+    const name = text(provider.display_name ?? provider.name ?? provider.id);
+    const id = text(provider.id ?? provider.provider_id, '');
+    const collisions = providers.filter(
+      (peer) => text(peer.display_name ?? peer.name ?? peer.id) === name
+    ).length;
+    return collisions > 1 && id ? `${name} (${id})` : name;
+  }
 
   function applyFilters(nextOffset = 0) {
     selected = new Set();
+    offset = nextOffset;
     navigateQuery({
       provider_id: providerId,
       status,
@@ -357,7 +371,7 @@
       <select bind:value={providerId}>
         <option value="">All providers</option>
         {#each providers as provider}<option value={text(provider.id ?? provider.provider_id, '')}>
-            {text(provider.display_name ?? provider.name ?? provider.id)}
+            {providerOptionLabel(provider)}
           </option>{/each}
       </select>
     </label>
@@ -503,49 +517,53 @@
                 {dateTime(row.last_checked_at)}
               </td>
               <td class="row-actions">
-                <button class="icon-button" title="Inspect" on:click={() => openDetail(row)}>
-                  <Icon name="eye" size={15} />
+                <button
+                  class="button compact-button"
+                  title="Inspect"
+                  on:click={() => openDetail(row)}
+                >
+                  <Icon name="eye" size={15} />Inspect
                 </button>
                 <button
-                  class="icon-button"
+                  class="button compact-button"
                   class:spinning={testing === id}
                   title="Test"
                   disabled={testing === id}
                   on:click={() => testKey(row)}
                 >
-                  <Icon name="pulse" size={15} />
+                  <Icon name="pulse" size={15} />Test
                 </button>
                 <button
-                  class="icon-button"
+                  class="button compact-button"
                   title="Recheck"
                   on:click={() =>
                     action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/recheck`, {
                       success: 'Recheck started'
                     })}
                 >
-                  <Icon name="refresh" size={15} />
+                  <Icon name="refresh" size={15} />Recheck
                 </button>
                 {#if row.is_archived}<button
-                    class="icon-button restore-button"
+                    class="button compact-button restore-button"
                     title="Restore"
                     on:click={() =>
                       action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/restore`, {
                         success: 'Credential restored'
                       })}
                   >
-                    <Icon name="check" size={15} />
+                    <Icon name="check" size={15} />Restore
                   </button>{:else}<button
-                    class="icon-button archive-button"
+                    class="button compact-button archive-button"
                     title="Archive"
                     on:click={() =>
                       action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/archive`, {
                         success: 'Credential archived'
                       })}
                   >
-                    <Icon name="download" size={15} />
+                    <Icon name="archive" size={15} />Archive
                   </button>{/if}
                 <button
-                  class="icon-button delete-button"
+                  class="button compact-button delete-button"
                   title="Delete"
                   on:click={() =>
                     confirm('Delete this credential? This cannot be undone.') &&
@@ -554,7 +572,7 @@
                       success: 'Credential deleted'
                     })}
                 >
-                  <Icon name="trash" size={15} />
+                  <Icon name="trash" size={15} />Delete
                 </button>
               </td>
             </tr>
@@ -648,7 +666,7 @@
             : 'Reveal for 30s'}
       </button>
       <button class="button" disabled={!revealedDetail} on:click={copyRevealedDetail}>
-        <Icon name="download" size={15} />Copy
+        <Icon name="copy" size={15} />Copy
       </button>
       <a
         class="button"
@@ -966,7 +984,16 @@
     font-size: 11px;
   }
   .row-actions {
-    min-width: 184px;
+    min-width: 320px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .row-actions .compact-button {
+    padding: 4px 8px;
+    font-size: 11px;
+    gap: 4px;
   }
   .delete-button {
     color: var(--danger);

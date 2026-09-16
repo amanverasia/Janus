@@ -10,6 +10,17 @@
   let open = false;
   let editing: JsonObject | undefined;
   $: combos = firstList(data, 'combos', 'items');
+
+  function comboModelsPreview(combo: JsonObject): string {
+    const items = csv(combo.models_list ?? combo.models)
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!items.length) return 'No models configured';
+    if (items.length <= 2) return items.join(' → ');
+    return `${items.slice(0, 2).join(' → ')} → +${items.length - 2} more`;
+  }
+
   async function submit(e: SubmitEvent) {
     const f = e.currentTarget as HTMLFormElement;
     const id = editing ? idOf(editing) : '';
@@ -48,7 +59,9 @@
             {Array.isArray(combo.models_list) ? combo.models_list.length : 0} models
           </span>
         </header>
-        <p class="mono">{csv(combo.models_list ?? combo.models)}</p>
+        <p class="mono combo-models" title={csv(combo.models_list ?? combo.models)}>
+          {comboModelsPreview(combo)}
+        </p>
         <div class="card-actions">
           <button
             class="button"
@@ -117,3 +130,12 @@
     </div>
   </form>
 </Modal>
+
+<style>
+  .combo-models {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+</style>

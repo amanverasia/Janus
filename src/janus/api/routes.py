@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.requests import ClientDisconnect
 
 from janus.api.auth import key_allowed_models
 from janus.canonical.events import (
@@ -1844,27 +1845,48 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def _read_json_body(request: Request) -> dict[str, Any] | None:
+    """Parse JSON body; return None when the client disconnects mid-body."""
+    try:
+        body = await request.json()
+    except ClientDisconnect:
+        return None
+    return body  # type: ignore[no-any-return]
+
+
 @router.post("/chat/completions", dependencies=[Depends(require_gateway_rate_limit)])
 async def chat_completions(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     return await _handle("openai", body, request)
 
 
 @router.post("/responses", dependencies=[Depends(require_gateway_rate_limit)])
 async def responses(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     return await _handle("openai_responses", body, request)
 
 
 @router.post("/messages", dependencies=[Depends(require_gateway_rate_limit)])
 async def messages(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     return await _handle("anthropic", body, request)
 
 
-@router.post("/messages/count_tokens", dependencies=[Depends(require_gateway_rate_limit)])
-async def count_tokens(request: Request) -> dict[str, Any]:
-    body: dict[str, Any] = await request.json()
+@router.post(
+    "/messages/count_tokens",
+    dependencies=[Depends(require_gateway_rate_limit)],
+    response_model=None,
+)
+async def count_tokens(request: Request) -> dict[str, Any] | Response:
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     try:
         import tiktoken
 
@@ -1889,7 +1911,9 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
     model, action = model_action.rsplit(":", 1)
     if action not in ("generateContent", "streamGenerateContent"):
         raise HTTPException(status_code=404, detail=f"Unsupported action: {action}")
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     if "/" not in model:
         model = f"gemini/{model}"
     body["model"] = model
@@ -1990,13 +2014,17 @@ def _ollama_chat_ndjson_to_generate(line: str) -> str:
 
 @ollama_router.post("/api/chat", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_chat(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     return await _handle("ollama", body, request)
 
 
 @ollama_router.post("/api/generate", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_generate(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     if not body.get("model"):
         raise HTTPException(status_code=400, detail="model required")
     chat_body = _ollama_generate_to_chat(body)
@@ -2046,7 +2074,9 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
 
 @ollama_router.post("/api/show", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_show(request: Request) -> Response:
-    body: dict[str, Any] = await request.json()
+    body = await _read_json_body(request)
+    if body is None:
+        return Response(status_code=204)
     name = (body.get("name") or body.get("model") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="model name required")

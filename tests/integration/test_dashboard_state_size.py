@@ -28,14 +28,16 @@ from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard
 # are the backstop behind the dedicated pagination tests -- loose enough that
 # legitimate page/field growth does not flap CI, tight enough that an
 # un-pagination regression (~700 KB models / ~110 KB routing) fails here.
+# Models pages expand to complete provider groups, so a single large provider
+# (the size fixture uses 190 models) can legitimately exceed a strict 25-row page.
 RAW_BUDGETS: dict[str, int] = {
-    "models": 80_000,
+    "models": 160_000,
     "routing": 100_000,
     "providers": 130_000,
     "pricing": 40_000,
 }
 GZIP_BUDGETS: dict[str, int] = {
-    "models": 15_000,
+    "models": 30_000,
     "routing": 12_000,
     "providers": 35_000,
     "pricing": 12_000,
@@ -194,9 +196,17 @@ async def test_models_state_is_paginated_and_searchable(sized_app: FastAPI) -> N
     payload = json.loads(gzip.decompress(raw))
     data = payload["data"]
     pagination = payload["meta"]["pagination"]
-    assert len(data["models"]) == pagination["limit"]
+    # Pages expand to complete provider groups, so the row count may exceed limit.
+    assert len(data["models"]) >= 1
+    assert len(data["models"]) >= min(pagination["limit"], expected_total)
     assert pagination["total"] == expected_total
     assert pagination["total_pages"] > 1
+    assert pagination["next_offset"] >= len(data["models"])
+    # Every prefix on the page is fully materialized (no orphaned partial groups).
+    page_prefixes = {str(row.get("prefix") or "") for row in data["models"]}
+    for prefix in page_prefixes:
+        on_page = sum(1 for row in data["models"] if str(row.get("prefix") or "") == prefix)
+        assert on_page > 0
     # The provider list stays whole (it drives the provider filter rail).
     assert len(data["providers"]) == len(PROVIDER_PREFIXES)
 

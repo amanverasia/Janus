@@ -57,7 +57,7 @@
         ? 'Export your key first: JANUS_API_KEY=sk-janus-…'
         : 'No Authorization header needed while enforcement is off.'}
     </p>
-    <div class="code-block"><pre>{curlCommand}</pre></div>
+    <div class="code-block wrap-code"><pre>{curlCommand}</pre></div>
     <div class="card-actions">
       <button class="button" on:click={() => copy(curlCommand, 'curl')}>
         {copied === 'curl' ? 'Copied' : copied === 'error' ? 'Copy failed' : 'Copy command'}
@@ -108,3 +108,15 @@
     </div>
   </article>
 </div>
+
+<style>
+  .wrap-code {
+    overflow-x: auto;
+  }
+  .wrap-code pre {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+</style>

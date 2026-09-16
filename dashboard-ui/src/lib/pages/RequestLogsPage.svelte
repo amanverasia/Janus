@@ -14,6 +14,7 @@
   let detail: JsonObject | undefined;
   let detailOpen = false;
   let detailError = '';
+  let showBodies = false;
   // Rapid clicks resolved out of order and showed the wrong row's detail.
   let detailRequest: AbortController | undefined;
 
@@ -22,13 +23,20 @@
   $: limit = Number(data.limit ?? 100);
   $: total = Number(data.total ?? rows.length);
 
+  function providerLabel(value: unknown, row: JsonObject): string {
+    const raw = text(value ?? row.provider, '');
+    if (!raw) return '—';
+    const short = raw.includes('::') ? raw.split('::')[0] : raw;
+    return short.length > 28 ? `${short.slice(0, 25)}…` : short;
+  }
+
   const columns = [
     { key: 'timestamp', label: 'Time', format: dateTime },
     { key: 'model', label: 'Model' },
     {
       key: 'provider_id',
       label: 'Provider',
-      format: (value: unknown, row: JsonObject) => text(value ?? row.provider)
+      format: (value: unknown, row: JsonObject) => providerLabel(value, row)
     },
     { key: 'status', label: 'Status', format: (value: unknown) => text(value) },
     { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` }
@@ -40,6 +48,7 @@
     detailRequest = controller;
     detailError = '';
     detail = undefined;
+    showBodies = false;
     detailOpen = true;
     try {
       const response = await dashboardFetch(
@@ -61,6 +70,32 @@
       detailError = error instanceof Error ? error.message : 'Request details could not be loaded.';
     }
   }
+
+  function detailField(label: string, value: unknown): { label: string; value: string } {
+    return { label, value: text(value, '—') };
+  }
+
+  $: detailFields = detail
+    ? [
+        detailField('Time', detail.timestamp ?? detail.created_at),
+        detailField('Model', detail.model),
+        detailField('Provider', providerLabel(detail.provider_id ?? detail.provider, detail)),
+        detailField('Status', detail.status),
+        detailField(
+          'Latency',
+          detail.duration_ms != null ? `${compact(detail.duration_ms)} ms` : '—'
+        ),
+        detailField('Stream', detail.stream ?? detail.is_stream),
+        detailField('Error', detail.error ?? detail.error_message)
+      ]
+    : [];
+
+  $: hasBodies =
+    !!detail &&
+    (detail.request_body != null ||
+      detail.response_body != null ||
+      detail.body != null ||
+      detail.request != null);
 
   async function clearLogs() {
     const confirmed = window.confirm(
@@ -124,9 +159,53 @@
   {#if detailError}<div class="alert-strip error" role="alert">
       <Icon name="warning" size={17} />
       <div><span>{detailError}</span></div>
-    </div>{:else if detail}<pre class="code-block">{JSON.stringify(
-        detail,
-        null,
-        2
-      )}</pre>{:else}<div class="loading-state">Loading request detail…</div>{/if}
+    </div>{:else if detail}
+    <div class="detail-grid">
+      {#each detailFields as field}
+        <div>
+          <span>{field.label}</span>
+          <strong title={field.value}>{field.value}</strong>
+        </div>
+      {/each}
+    </div>
+    {#if hasBodies}
+      <div class="detail-body-controls">
+        <button class="button" on:click={() => (showBodies = !showBodies)}>
+          {showBodies ? 'Hide bodies' : 'Show bodies'}
+        </button>
+      </div>
+      {#if showBodies}
+        <pre class="code-block">{JSON.stringify(
+            {
+              request_body: detail.request_body ?? detail.request ?? detail.body,
+              response_body: detail.response_body ?? detail.response
+            },
+            null,
+            2
+          )}</pre>
+      {/if}
+    {/if}
+  {:else}<div class="loading-state">Loading request detail…</div>{/if}
 </Modal>
+
+<style>
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .detail-grid span {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .detail-grid strong {
+    display: block;
+    word-break: break-word;
+    font-size: 13px;
+  }
+  .detail-body-controls {
+    margin: 16px 0 10px;
+  }
+</style>

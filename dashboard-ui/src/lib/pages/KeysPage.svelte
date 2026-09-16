@@ -20,6 +20,16 @@
   $: status = text(data.status, 'active');
   $: counts = object(data.counts);
 
+  function formatAllowlist(value: unknown): string {
+    const items = csv(value)
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!items.length) return 'All models';
+    if (items.length <= 2) return items.join(', ');
+    return `${items.slice(0, 2).join(', ')} +${items.length - 2} more`;
+  }
+
   const cols = [
     { key: 'name', label: 'Name' },
     {
@@ -31,7 +41,7 @@
     {
       key: 'allowed_models',
       label: 'Models',
-      format: (value: unknown) => csv(value) || 'All models'
+      format: (value: unknown) => formatAllowlist(value)
     },
     { key: 'created_at', label: 'Created', format: dateTime }
   ];

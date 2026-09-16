@@ -24,6 +24,15 @@
 
   $: fallbackProviders = firstList(data, 'provider_cards', 'providers');
   $: providers = catalogProviders.length ? catalogProviders : fallbackProviders;
+
+  function providerOptionLabel(provider: JsonObject): string {
+    const name = text(provider.display_name ?? provider.name ?? provider.id);
+    const id = text(provider.id ?? provider.provider_id, '');
+    const collisions = providers.filter(
+      (peer) => text(peer.display_name ?? peer.name ?? peer.id) === name
+    ).length;
+    return collisions > 1 && id ? `${name} (${id})` : name;
+  }
   $: keyCount = keysText
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -202,7 +211,7 @@
             {#each providers as provider}<option
                 value={text(provider.id ?? provider.provider_id, '')}
               >
-                {text(provider.display_name ?? provider.name ?? provider.id)}
+                {providerOptionLabel(provider)}
               </option>{/each}
           </select>
           <small>

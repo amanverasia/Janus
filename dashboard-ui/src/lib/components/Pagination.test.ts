@@ -59,4 +59,21 @@ describe('Pagination', () => {
       limit: '25'
     });
   });
+
+  it('prefers next_offset when group-complete pages expand past limit', async () => {
+    const navigateQuery = vi.fn();
+    const { getByRole } = render(Pagination, {
+      props: {
+        data: { offset: 0, limit: 25, total: 70, next_offset: 40 },
+        navigateQuery,
+        label: 'models'
+      }
+    });
+    const { fireEvent } = await import('@testing-library/svelte');
+    await fireEvent.click(getByRole('button', { name: 'Next' }));
+    expect(navigateQuery).toHaveBeenCalledWith({
+      offset: '40',
+      limit: '25'
+    });
+  });
 });

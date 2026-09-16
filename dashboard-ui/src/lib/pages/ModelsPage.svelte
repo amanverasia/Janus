@@ -45,11 +45,11 @@
   $: models = firstList(data, 'models', 'items');
   $: providers = firstList(data, 'providers');
   $: allGroups = buildGroups(models, providers);
-  // The catalog is paged and filtered server-side (it reached ~4,828 rows in
-  // production); group the current page rather than rendering every row.
+  // Paginated "all providers" views only materialize groups present on this page.
+  // Empty seeded providers would otherwise render as "No models cached yet".
   $: groups =
     selectedGroupKey === 'all'
-      ? allGroups
+      ? allGroups.filter((group) => group.rows.length > 0)
       : allGroups.filter((group) => group.key === selectedGroupKey);
   $: catalogTotal = number(data.total, models.length);
   $: visibleCount = number(data.visible_total, models.filter(isVisible).length);
@@ -317,7 +317,7 @@
       </span>
       <Icon name="arrow" size={14} />
     </button>
-    {#each allGroups as group}
+    {#each selectedGroupKey === 'all' ? groups : allGroups as group}
       <button
         type="button"
         class:active={selectedGroupKey === group.key}
@@ -326,7 +326,11 @@
         <span class="provider-mark">{group.label.slice(0, 1).toUpperCase()}</span>
         <span>
           <strong>{group.label}</strong>
-          <small>{groupVisibleCount(group)}/{group.rows.length} visible</small>
+          <small>
+            {group.rows.length
+              ? `${groupVisibleCount(group)}/${group.rows.length} visible`
+              : 'Open to browse'}
+          </small>
         </span>
         <span
           class:active={groupEnabled(group)}
