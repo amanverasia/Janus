@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.18.1] - 2026-09-16
+### Fixed
+- **Quiet mid-body client disconnects on gateway JSON entry points** — hanging
+  up while the request body was still being read raised `ClientDisconnect` from
+  `request.json()` and uvicorn logged a full ASGI ERROR traceback on every
+  abort. Format entry points now treat that as a quiet `204` client abort.
+  (#166, #178)
+- **Models catalog pagination no longer orphans provider groups** — pages
+  expand to complete provider prefixes and the UI stops rendering empty
+  "No models cached yet" cards for providers that simply land on another page.
+  (#167, #178)
+- **Global dashboard alerts collapse and can be dismissed for the session** —
+  production-size databases stacked four full banners on every route; the strip
+  now collapses to an "N alerts" summary with per-alert session dismiss.
+  (#168, #178)
+- **Inventory encryption banner no longer contradicts itself** when credentials
+  exist but none are encrypted yet. (#169, #178)
+- **Routing pool masks email-shaped account labels** instead of printing raw
+  inventory `key_label` values on the high-traffic Routing page. (#170, #178)
+- **Browser regression suite works against production-size databases** — search
+  derives a live catalog model id, pricing CRUD polls and always cleans up
+  `regression-override-delete-me`, and pagination waits for SPA hydration.
+  (#171, #178)
+- **Inventory All keys Apply no longer collapses the table to one row**, and the
+  pager footer stays in sync after Next — `number()` treats missing query
+  params as the fallback, and local `offset` updates on navigate. (#173, #177,
+  #178)
+- **Inventory credential Copy uses the clipboard icon** (Archive gets an archive
+  glyph). (#174, #178)
+- **Inventory provider filter no longer lists identical Ollama Cloud options
+  twice** — colliding display names are disambiguated, and gateway-only catalog
+  synthesis skips duplicate base URLs. (#175, #178)
+- **Request log Inspect shows structured fields** with request/response bodies
+  behind an explicit "Show bodies" control instead of dumping the full JSON
+  envelope. (#176, #178)
+### Changed
+- **Dashboard visual polish for production-size data** — truncated provider /
+  allowlist / combo overflow, wrapping Tools curl snippets, an Unpriced pricing
+  tab, human-readable Settings descriptions, labeled inventory row actions, and
+  hiding the empty Providers "Needs attention" card. (#172, #178)
 ## [3.18.0] - 2026-09-15
 ### Changed
 - **Models and routing state responses are paginated server-side** —
