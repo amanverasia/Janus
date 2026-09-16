@@ -6,11 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.18.2] - 2026-09-16
 ### Fixed
 - **Models pages stay fixed-size again** — group-complete pagination could put an
   entire large provider on one page (hundreds of models). Pages are back to a
   flat model slice; the UI still hides empty off-page provider cards so the
-  "No models cached yet" orphan from #167 does not return.
+  "No models cached yet" orphan from #167 does not return. (#179)
 ## [3.18.1] - 2026-09-16
 ### Fixed
 - **Quiet mid-body client disconnects on gateway JSON entry points** — hanging
