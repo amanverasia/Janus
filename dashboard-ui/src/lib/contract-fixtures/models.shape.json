@@ -46,7 +46,6 @@
   "meta.alert_summary string",
   "meta.pagination object",
   "meta.pagination.limit number",
-  "meta.pagination.next_offset number",
   "meta.pagination.offset number",
   "meta.pagination.page number",
   "meta.pagination.total number",

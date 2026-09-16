@@ -515,6 +515,10 @@ async def _models_data(
         )
     # The catalog reached ~4,828 rows in production. Page it server-side so the
     # browser stops building and parsing the whole table on every request.
+    # Pagination is over models (fixed page size), not whole provider groups —
+    # a large prefix must not consume an entire page by itself. The Models UI
+    # only renders groups that have rows on the current page, so empty
+    # "No models cached yet" orphans do not appear for off-page providers.
     filtered = rows
     if provider:
         filtered = [r for r in filtered if str(r.get("prefix") or "") == provider]
@@ -527,8 +531,6 @@ async def _models_data(
             or needle in str(r.get("display_name") or "").lower()
             or needle in str(r.get("namespaced") or "").lower()
         ]
-    # Keep provider groups intact across pages: sort by prefix, align the offset
-    # to a group boundary, then take whole groups until the soft limit is met.
     filtered = sorted(
         filtered,
         key=lambda row: (
@@ -537,52 +539,14 @@ async def _models_data(
         ),
     )
     total = len(filtered)
-    page, aligned_offset, next_offset = _page_complete_prefix_groups(
-        filtered, limit=limit, offset=offset
-    )
+    page = filtered[offset : offset + limit] if limit else filtered
     visible_total = sum(1 for r in filtered if not r.get("disabled"))
     return {
         "models": page,
         "providers": providers,
         "model_total": total,
         "visible_total": visible_total,
-        "page_offset": aligned_offset,
-        "next_offset": next_offset,
     }
-
-
-def _page_complete_prefix_groups(
-    rows: list[dict[str, Any]],
-    *,
-    limit: int,
-    offset: int,
-) -> tuple[list[dict[str, Any]], int, int]:
-    """Return a page of models that never splits a provider prefix mid-group."""
-    if not rows:
-        return [], 0, 0
-    if not limit:
-        return rows, 0, len(rows)
-    if offset >= len(rows):
-        return [], offset, offset
-
-    start = max(0, offset)
-    if start > 0:
-        prefix_at = str(rows[start].get("prefix") or "")
-        while start > 0 and str(rows[start - 1].get("prefix") or "") == prefix_at:
-            start -= 1
-
-    page: list[dict[str, Any]] = []
-    index = start
-    while index < len(rows):
-        prefix = str(rows[index].get("prefix") or "")
-        end = index + 1
-        while end < len(rows) and str(rows[end].get("prefix") or "") == prefix:
-            end += 1
-        if page and len(page) >= limit:
-            break
-        page.extend(rows[index:end])
-        index = end
-    return page, start, index
 
 
 async def _combos_data(request: Request, db_path: Path) -> dict[str, Any]:
@@ -1130,8 +1094,6 @@ async def get_dashboard_state(
             request, db_path, limit=limit, offset=offset, provider=provider, search=search
         )
         models_total = int(models_data.pop("model_total", 0))
-        page_offset = int(models_data.pop("page_offset", offset))
-        next_offset = int(models_data.pop("next_offset", page_offset + limit))
         return await _response(
             request,
             db_path,
@@ -1141,9 +1103,8 @@ async def get_dashboard_state(
                 "pagination": {
                     "total": models_total,
                     "limit": limit,
-                    "offset": page_offset,
-                    "next_offset": next_offset,
-                    "page": (page_offset // limit) + 1 if limit else 1,
+                    "offset": offset,
+                    "page": (offset // limit) + 1 if limit else 1,
                     "total_pages": max(1, -(-models_total // limit)) if limit else 1,
                 },
                 "query": {"provider": provider, "search": search},
