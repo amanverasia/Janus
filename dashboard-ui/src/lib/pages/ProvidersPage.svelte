@@ -1041,9 +1041,9 @@
 
       {#if providers.length}
         <div class="provider-overview-columns">
-          <section class="workspace-section">
-            <header><h3>Needs attention</h3></header>
-            {#if providerGroups.some((group) => providerGroupStatus(group) === 'Needs setup')}
+          {#if providerGroups.some((group) => providerGroupStatus(group) === 'Needs setup')}
+            <section class="workspace-section">
+              <header><h3>Needs attention</h3></header>
               <div class="workspace-row-list">
                 {#each providerGroups.filter((group) => providerGroupStatus(group) === 'Needs setup') as group}
                   {@const provider = group.representative}
@@ -1061,10 +1061,8 @@
                   </button>
                 {/each}
               </div>
-            {:else}
-              <p class="workspace-empty-copy">All enabled providers are ready.</p>
-            {/if}
-          </section>
+            </section>
+          {/if}
           <section class="workspace-section">
             <header><h3>Catalog coverage</h3></header>
             <div class="workspace-row-list">

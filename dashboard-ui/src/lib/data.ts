@@ -21,6 +21,9 @@ export const text = (value: unknown, fallback = '—'): string => {
 };
 
 export const number = (value: unknown, fallback = 0): number => {
+  // Number(null) and Number('') are 0 — treat missing/blank as "use fallback"
+  // so query parsers like `number(params.get('limit'), 25)` keep their defaults.
+  if (value === null || value === undefined || value === '') return fallback;
   const result = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(result) ? result : fallback;
 };

@@ -182,6 +182,20 @@ async def test_health(app):
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_chat_completions_client_disconnect_returns_204(app, monkeypatch):
+    async def _gone(_request):
+        return None
+
+    monkeypatch.setattr("janus.api.routes._read_json_body", _gone)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(
+            "/v1/chat/completions",
+            json={"model": "test/test-m1", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert r.status_code == 204
+
+
 @pytest.mark.parametrize(
     "payload",
     [

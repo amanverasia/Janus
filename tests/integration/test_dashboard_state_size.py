@@ -194,9 +194,17 @@ async def test_models_state_is_paginated_and_searchable(sized_app: FastAPI) -> N
     payload = json.loads(gzip.decompress(raw))
     data = payload["data"]
     pagination = payload["meta"]["pagination"]
-    assert len(data["models"]) == pagination["limit"]
+    # Pages expand to complete provider groups, so the row count may exceed limit.
+    assert len(data["models"]) >= 1
+    assert len(data["models"]) >= min(pagination["limit"], expected_total)
     assert pagination["total"] == expected_total
     assert pagination["total_pages"] > 1
+    assert pagination["next_offset"] >= len(data["models"])
+    # Every prefix on the page is fully materialized (no orphaned partial groups).
+    page_prefixes = {str(row.get("prefix") or "") for row in data["models"]}
+    for prefix in page_prefixes:
+        on_page = sum(1 for row in data["models"] if str(row.get("prefix") or "") == prefix)
+        assert on_page > 0
     # The provider list stays whole (it drives the provider filter rail).
     assert len(data["providers"]) == len(PROVIDER_PREFIXES)
 

@@ -148,9 +148,13 @@
         : 'Stored credentials are protected'}
     </strong>
     <p>
-      {encryptedCount > 0
-        ? `${compact(encryptedCount)} encrypted values across inventory and provider storage.`
-        : 'Encryption status will appear after the first credential is stored.'}
+      {#if encryptedCount > 0}
+        {compact(encryptedCount)} encrypted values across inventory and provider storage.
+      {:else if plaintextCount > 0}
+        Set an encryption key to protect {compact(plaintextCount)} stored credentials.
+      {:else}
+        Encryption status will appear after the first credential is stored.
+      {/if}
     </p>
   </div>
   {#if plaintextCount > 0 && data.encryption_enabled}

@@ -1675,6 +1675,11 @@ def inventory_entries() -> dict[str, dict[str, Any]]:
 
 def inventory_catalog_entries() -> dict[str, dict[str, Any]]:
     result = inventory_entries()
+    existing_base_urls = {
+        str(entry.get("base_url") or "").rstrip("/")
+        for entry in result.values()
+        if entry.get("base_url")
+    }
     for provider_id, entry in PROVIDERS.items():
         gateway = entry.get("gateway")
         if (
@@ -1682,6 +1687,11 @@ def inventory_catalog_entries() -> dict[str, dict[str, Any]]:
             or not isinstance(gateway, dict)
             or gateway.get("api_type") != "openai_compat"
         ):
+            continue
+        base_url = str(gateway.get("base_url") or "").rstrip("/")
+        # Avoid duplicate inventory rows that share a display name/base URL with an
+        # already-seeded inventory provider (e.g. ollama vs ollama-cloud).
+        if base_url and base_url in existing_base_urls:
             continue
         result[provider_id] = {
             "id": provider_id,
@@ -1701,6 +1711,8 @@ def inventory_catalog_entries() -> dict[str, dict[str, Any]]:
             "model_format": "openai",
             "allow_private_network": bool(gateway.get("allow_private_network")),
         }
+        if base_url:
+            existing_base_urls.add(base_url)
     return result
 
 

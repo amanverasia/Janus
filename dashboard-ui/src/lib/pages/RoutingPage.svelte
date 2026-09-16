@@ -26,9 +26,21 @@
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+  function maskAccountLabel(label: unknown): string {
+    const value = text(label, '');
+    if (!value) return '';
+    const match = value.match(/^([^@\s]+)@([^@\s]+\.[^@\s]+)$/);
+    if (!match) return value;
+    const local = match[1];
+    const domain = match[2];
+    const visible = local.slice(0, 1);
+    return `${visible}***@${domain}`;
+  }
+
   function accountName(account: JsonObject): string {
+    const labeled = maskAccountLabel(account.key_label);
     return text(
-      account.key_label ?? account.key_masked ?? account.config_id ?? account.account_id,
+      labeled || account.key_masked || account.config_id || account.account_id,
       'Unnamed account'
     );
   }

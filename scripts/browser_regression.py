@@ -141,6 +141,29 @@ def scenario_back_forward_navigation(page: Page) -> list[str]:
     return failures
 
 
+def _wait_for_text(page: Page, needle: str, *, timeout_ms: int = ROUTE_WAIT_MS) -> bool:
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        if needle in page.inner_text("body"):
+            return True
+        page.wait_for_timeout(200)
+    return False
+
+
+def _first_catalog_model_id(page: Page) -> str:
+    """Pick a real model id from the live Models catalog for search assertions."""
+    _visit(page, "/dashboard/ui/models")
+    page.wait_for_selector("main", state="visible", timeout=ROUTE_WAIT_MS)
+    page.wait_for_timeout(500)
+    body = page.inner_text("body")
+    # Prefer a namespaced id like provider/model when present.
+    match = re.search(r"\b([a-z0-9][\w.-]*/[A-Za-z0-9][\w.+:-]*)\b", body)
+    if match:
+        return match.group(1)
+    match = re.search(r"\b([A-Za-z0-9][\w.+:-]{2,})\b", body)
+    return match.group(1) if match else "gpt"
+
+
 def scenario_filter_and_empty_state(page: Page) -> list[str]:
     """A server-side filter narrows results; a no-match query renders cleanly.
 
@@ -155,8 +178,10 @@ def scenario_filter_and_empty_state(page: Page) -> list[str]:
             failures.append("models no-match search did not preserve the URL query")
         if "Couldn’t load" in page.inner_text("body"):
             failures.append("models no-match query rendered an error state")
-        _visit(page, "/dashboard/ui/models?search=openai-model-000")
-        if "openai-model-000" not in page.inner_text("body"):
+        sample = _first_catalog_model_id(page)
+        token = sample.split("/")[-1][:24] if "/" in sample else sample[:24]
+        _visit(page, f"/dashboard/ui/models?search={token}")
+        if token not in page.inner_text("body"):
             failures.append("models matching query did not surface the model")
         _visit(page, "/dashboard/ui/models")
         if not failures:
@@ -172,7 +197,10 @@ def scenario_pagination(page: Page) -> list[str]:
     for path, name in [("/dashboard/ui/pricing", "pricing"), ("/dashboard/ui/models", "models")]:
         try:
             _visit(page, path)
-            next_btn = page.locator("button:has-text('Next')")
+            page.wait_for_selector("main", state="visible", timeout=ROUTE_WAIT_MS)
+            # Wait for SPA hydration so Next is present on production-size catalogs.
+            page.wait_for_timeout(800)
+            next_btn = page.get_by_role("button", name="Next")
             if next_btn.count() == 0 or not next_btn.first.is_enabled():
                 print(f"  pagination {name}: skipped (fewer rows than a page)")
                 continue
@@ -185,7 +213,7 @@ def scenario_pagination(page: Page) -> list[str]:
                 continue
             if page.url == before_url:
                 failures.append(f"{name}: Next did not advance the URL")
-            prev_btn = page.locator("button:has-text('Previous')")
+            prev_btn = page.get_by_role("button", name="Previous")
             if prev_btn.count() and prev_btn.first.is_enabled():
                 prev_btn.first.click()
                 page.wait_for_selector("main", state="visible", timeout=ROUTE_WAIT_MS)
@@ -208,22 +236,31 @@ def scenario_pricing_override_crud(page: Page) -> list[str]:
         page.fill("input[name='input_per_mtok']", "1")
         page.fill("input[name='output_per_mtok']", "2")
         page.locator("button:has-text('Save override')").first.click()
-        page.wait_for_timeout(600)
-        if model_id not in page.inner_text("body"):
+        appeared = _wait_for_text(page, model_id, timeout_ms=ROUTE_WAIT_MS)
+        if not appeared:
             failures.append("pricing override did not appear after save")
-            return failures
-        # Clean up: delete the row we just created.
-        row = page.locator(f"tr:has-text('{model_id}')")
-        row.locator("button[title='Delete override']").click()
-        # confirm() dialog — Playwright auto-accepts the JS confirm by default
-        # only when a page.on('dialog') handler is registered.
-        page.wait_for_timeout(600)
-        if model_id in page.inner_text("body"):
-            failures.append("pricing override was not deleted")
         else:
-            print("  pricing override create + delete OK")
+            row = page.locator(f"tr:has-text('{model_id}')")
+            row.locator("button[title='Delete override']").click()
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and model_id in page.inner_text("body"):
+                page.wait_for_timeout(200)
+            if model_id in page.inner_text("body"):
+                failures.append("pricing override was not deleted")
+            else:
+                print("  pricing override create + delete OK")
     except Exception as exc:  # noqa: BLE001
         failures.append(f"pricing override CRUD: {type(exc).__name__}: {exc}")
+    finally:
+        # Never leave the regression override behind on a production-size DB.
+        try:
+            if model_id in page.inner_text("body"):
+                row = page.locator(f"tr:has-text('{model_id}')")
+                if row.count():
+                    row.first.locator("button[title='Delete override']").click()
+                    page.wait_for_timeout(800)
+        except Exception:  # noqa: BLE001
+            pass
     return failures
 
 

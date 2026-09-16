@@ -13,12 +13,13 @@
   $: offset = number(data.offset);
   $: limit = number(data.limit, 25) || 25;
   $: total = number(data.total);
+  $: nextOffset = number(data.next_offset, offset + limit);
   $: page = Math.floor(offset / limit) + 1;
   $: pages = Math.max(1, Math.ceil(total / limit));
 
-  function pageTo(nextOffset: number) {
+  function pageTo(next: number) {
     navigateQuery({
-      offset: String(Math.max(0, nextOffset)),
+      offset: String(Math.max(0, next)),
       limit: String(limit)
     });
   }
@@ -34,11 +35,7 @@
       <button class="button" disabled={offset <= 0} on:click={() => pageTo(offset - limit)}>
         Previous
       </button>
-      <button
-        class="button"
-        disabled={offset + limit >= total}
-        on:click={() => pageTo(offset + limit)}
-      >
+      <button class="button" disabled={nextOffset >= total} on:click={() => pageTo(nextOffset)}>
         Next
       </button>
     </span>

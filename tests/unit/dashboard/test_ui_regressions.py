@@ -158,6 +158,9 @@ def test_alert_links_navigate_without_a_full_page_reload() -> None:
     """`<a href>` bypassed the SPA router and reloaded the whole bundle."""
     source = _read("lib/components/AlertStrip.svelte")
     assert "preventDefault" in source
+    assert "alerts" in source
+    assert "Hide alerts" in source or "Show" in source
+    assert "janus-dismissed-alerts" in source
 
 
 def test_command_palette_keeps_keyboard_control_when_a_result_has_focus() -> None:

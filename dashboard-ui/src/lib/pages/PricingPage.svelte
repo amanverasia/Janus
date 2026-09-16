@@ -16,7 +16,15 @@
   $: overrides = firstList(data, 'overrides');
   $: builtin = firstList(data, 'builtin');
   $: catalog = firstList(data, 'catalog');
-  $: rows = tab === 'builtin' ? builtin : tab === 'catalog' ? catalog : overrides;
+  $: unpriced = firstList(data, 'unpriced');
+  $: rows =
+    tab === 'builtin'
+      ? builtin
+      : tab === 'catalog'
+        ? catalog
+        : tab === 'unpriced'
+          ? unpriced
+          : overrides;
 
   // The catalog is paged server-side; it reached 4,828 rows in production.
   // `builtin` and `overrides` are small and arrive whole.
@@ -39,6 +47,19 @@
     { key: 'output_per_mtok', label: 'Output / MTok', format: rate },
     { key: 'cache_read_per_mtok', label: 'Cache read', format: rate }
   ];
+
+  const unpricedCols = [
+    { key: 'model', label: 'Model' },
+    { key: 'requests', label: 'Requests', format: (value: unknown) => compact(value) },
+    {
+      key: 'input_tokens',
+      label: 'Tokens',
+      format: (value: unknown, row: JsonObject) =>
+        compact(number(value) + number(row.output_tokens))
+    }
+  ];
+
+  $: activeCols = tab === 'unpriced' ? unpricedCols : cols;
 
   async function submit(event: SubmitEvent) {
     try {
@@ -74,11 +95,11 @@
       <p>{text(data.catalog_count, '0')} synchronized catalog entries</p>
     </div>
     <div class="tabs">
-      {#each ['overrides', 'builtin', 'catalog'] as item}<button
+      {#each ['overrides', 'unpriced', 'builtin', 'catalog'] as item}<button
           class:active={tab === item}
           on:click={() => (tab = item)}
         >
-          {item}
+          {item}{item === 'unpriced' && unpriced.length ? ` (${unpriced.length})` : ''}
         </button>{/each}
     </div>
   </div>
@@ -109,7 +130,7 @@
       </span>
     </div>
   {/if}
-  <DataTable {rows} columns={cols} emptyTitle={`No ${tab} pricing`}>
+  <DataTable {rows} columns={activeCols} emptyTitle={`No ${tab} pricing`}>
     <svelte:fragment slot="actions" let:row>
       {#if tab === 'overrides'}<button
           class="icon-button"

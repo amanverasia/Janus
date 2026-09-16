@@ -17,15 +17,31 @@
   $: status = object(data.status);
   $: comboStrategy = text(values.combo_strategy ?? status.combo_strategy, 'fallback');
 
-  const toggles = [
-    ['server_require_api_key', 'require_api_key_enabled', 'Require API key'],
-    ['server_cooldowns_enabled', 'cooldowns_enabled', 'Enable account cooldowns'],
+  const toggles: [string, string, string, string][] = [
+    [
+      'server_require_api_key',
+      'require_api_key_enabled',
+      'Require API key',
+      'Reject gateway requests that omit a valid Janus API key.'
+    ],
+    [
+      'server_cooldowns_enabled',
+      'cooldowns_enabled',
+      'Enable account cooldowns',
+      'Temporarily skip accounts after rate limits, auth failures, or upstream errors.'
+    ],
     [
       'server_sticky_client_key_routing',
       'sticky_client_key_routing_enabled',
-      'Sticky client routing'
+      'Sticky client routing',
+      'Prefer the same upstream account for a given client API key when possible.'
     ],
-    ['server_request_logging', 'request_logging_enabled', 'Record request metadata']
+    [
+      'server_request_logging',
+      'request_logging_enabled',
+      'Record request metadata',
+      'Store recent gateway request metadata for the Request logs page.'
+    ]
   ];
 
   async function save(key: string, value: string) {
@@ -133,7 +149,7 @@
         <label class="item-card setting-toggle">
           <span>
             <strong>{setting[2]}</strong>
-            <small class="muted" style="display:block;margin-top:4px">{setting[0]}</small>
+            <small class="muted" style="display:block;margin-top:4px">{setting[3]}</small>
           </span>
           <input
             class="switch"
