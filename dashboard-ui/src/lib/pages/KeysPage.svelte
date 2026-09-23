@@ -4,7 +4,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import { bool, csv, dateTime, firstList, idOf, number, object, text } from '$lib/data';
+  import { bool, csv, dateTime, firstList, idOf, money, number, object, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
   export let data: JsonObject;
@@ -43,6 +43,20 @@
       label: 'Models',
       format: (value: unknown) => formatAllowlist(value)
     },
+    {
+      key: 'daily_budget',
+      label: 'Daily budget',
+      format: (_: unknown, row: JsonObject) =>
+        object(row.budget).daily_limit == null ? 'No limit' : money(object(row.budget).daily_limit)
+    },
+    {
+      key: 'absolute_budget',
+      label: 'Absolute budget',
+      format: (_: unknown, row: JsonObject) =>
+        object(row.budget).absolute_limit == null
+          ? 'No limit'
+          : money(object(row.budget).absolute_limit)
+    },
     { key: 'created_at', label: 'Created', format: dateTime }
   ];
 
@@ -50,7 +64,10 @@
     const form = event.currentTarget as HTMLFormElement;
     const formData = new FormData(form);
     formData.set('login_field', '1');
-    if (editing) formData.set('models_field', '1');
+    if (editing) {
+      formData.set('models_field', '1');
+      formData.set('budget_fields', '1');
+    }
     try {
       const result = await action(
         editing ? `/dashboard/api/keys/${idOf(editing)}` : '/dashboard/api/v2/keys',
@@ -188,16 +205,31 @@
         />
       </label>
       <label class="field">
-        <span>Daily budget</span>
+        <span>Daily budget (USD)</span>
         <input
           name="daily_budget"
           type="number"
-          min="0"
+          min="0.01"
           step="0.01"
-          value={editing?.daily_budget == null ? '' : text(editing.daily_budget, '')}
-          placeholder="Optional"
+          value={text(object(editing?.budget).daily_limit, '')}
+          placeholder="No limit"
         />
       </label>
+      <label class="field">
+        <span>Absolute budget (USD)</span>
+        <input
+          name="absolute_budget"
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={text(object(editing?.budget).absolute_limit, '')}
+          placeholder="No limit"
+        />
+      </label>
+      <p class="field full muted">
+        Absolute budgets count all recorded spending for this key, including past usage, and never
+        reset. If both limits are set, either can block requests. Leave a budget blank for no limit.
+      </p>
       <label class="check-field">
         <input
           name="can_login"
@@ -206,7 +238,7 @@
         />
         <span>Allow dashboard login</span>
       </label>
-      {#if editing}<label class="check-field field full">
+      {#if editing}<label class="check-field full">
           <input name="clear_models" type="checkbox" />
           <span>Clear model restrictions</span>
         </label>{/if}

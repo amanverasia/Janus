@@ -40,6 +40,18 @@ CREATE TABLE api_keys (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key_id INTEGER,
+    daily_limit REAL NOT NULL,
+    warn_pct REAL DEFAULT 80,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (key_id) REFERENCES api_keys(id)
+);
+
+INSERT INTO budgets (id, daily_limit, warn_pct) VALUES (7, 10, 75);
+
 INSERT INTO providers (id, prefix, api_type, base_url, api_key, models)
 VALUES ('legacy-openai', 'openai', 'openai_compat', 'https://api.example/v1', 'sk-legacy',
         '["gpt-test"]');
@@ -115,6 +127,12 @@ async def main() -> int:
             "SELECT prefix, api_type FROM providers WHERE id = 'legacy-openai'"
         ).fetchone()
         assert row == ("openai", "openai_compat"), f"legacy provider row damaged: {row}"
+        budget = conn.execute(
+            "SELECT id, daily_limit, absolute_limit, warn_pct FROM budgets"
+        ).fetchone()
+        assert budget == (7, 10.0, None, 75.0), f"legacy budget row damaged: {budget}"
+        budget_columns = conn.execute("PRAGMA table_info(budgets)").fetchall()
+        assert next(col for col in budget_columns if col[1] == "daily_limit")[3] == 0
         legacy_settings = [
             "dashboard_username",
             "dashboard_password_hash",

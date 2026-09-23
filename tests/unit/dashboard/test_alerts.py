@@ -62,6 +62,28 @@ async def test_budget_warning_alert(db: Path) -> None:
     assert result["summary"] in ("warning", "critical")
 
 
+@pytest.mark.parametrize(("cost", "severity"), [(8.5, "warning"), (10, "critical")])
+async def test_absolute_budget_alert_labels_lifetime_spend(db: Path, cost, severity) -> None:
+    from janus.storage.api_keys import create_key
+
+    _, key = await create_key(db, "limited-key")
+    await create_or_update_budget(db, key_id=key["id"], daily_limit=5, absolute_limit=10)
+    async with get_connection(db) as conn:
+        await conn.execute(
+            "INSERT INTO usage (timestamp, cost, status, client_key_id) "
+            "VALUES ('2025-01-01 00:00:00', ?, 200, ?)",
+            (cost, key["id"]),
+        )
+        await conn.commit()
+    result = await collect_dashboard_alerts(db, _fake_request())
+    alert = next(a for a in result["alerts"] if a.id == f"budget:key:{key['id']}")
+    assert alert.severity == severity
+    assert "absolute lifetime limit" in alert.detail
+    assert "does not reset" in alert.detail
+    assert f"${cost:.2f} / $10.00" in alert.detail
+    assert "daily" not in alert.detail
+
+
 @pytest.mark.asyncio
 async def test_no_providers_critical(db: Path) -> None:
     async with get_connection(db) as conn:

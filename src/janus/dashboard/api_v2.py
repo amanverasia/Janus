@@ -20,6 +20,7 @@ from janus.dashboard.routes import (
     _enrich_providers,
     _ensure_db,
     _get_usage_stats_safe,
+    _parse_budget_limit,
     _pricing_page_context,
     _request_logs_context,
     _savers_context,
@@ -970,6 +971,7 @@ async def create_dashboard_api_key(
     login_field: str = Form(""),
     allowed_models: str = Form(""),
     daily_budget: str = Form(""),
+    absolute_budget: str = Form(""),
 ) -> JSONResponse:
     db_path = await _ensure_db(request)
     key_name = name.strip()
@@ -978,18 +980,11 @@ async def create_dashboard_api_key(
     if len(key_name) > 200:
         raise HTTPException(status_code=422, detail="API key name must be 200 characters or fewer")
 
-    budget_limit: float | None = None
-    budget_text = daily_budget.strip()
-    if budget_text:
-        try:
-            budget_limit = float(budget_text)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail="Daily budget must be a number") from exc
-        if not math.isfinite(budget_limit) or budget_limit < 0:
-            raise HTTPException(
-                status_code=422,
-                detail="Daily budget must be a finite non-negative number",
-            )
+    try:
+        daily_limit = _parse_budget_limit(daily_budget, "Daily budget")
+        absolute_limit = _parse_budget_limit(absolute_budget, "Absolute budget")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     login_ok = can_login.lower() in {"on", "1", "true", "yes"} if login_field else True
     plaintext, record = await create_key(
@@ -998,11 +993,12 @@ async def create_dashboard_api_key(
         can_login=login_ok,
         allowed_models=parse_models_input(allowed_models),
     )
-    if budget_limit is not None and budget_limit > 0:
+    if daily_limit is not None or absolute_limit is not None:
         await create_or_update_budget(
             db_path,
             key_id=int(record["id"]),
-            daily_limit=budget_limit,
+            daily_limit=daily_limit,
+            absolute_limit=absolute_limit,
         )
 
     return JSONResponse(

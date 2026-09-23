@@ -393,11 +393,24 @@ async def api_clear_request_logs(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+def _parse_budget_limit(value: str, label: str) -> float | None:
+    if not value.strip():
+        return None
+    try:
+        limit = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a number greater than zero.") from exc
+    if not math.isfinite(limit) or limit <= 0:
+        raise ValueError(f"{label} must be a number greater than zero.")
+    return limit
+
+
 @router.post("/api/budgets")
 async def create_budget(
     request: Request,
     key_select: str = Form(""),
     daily_limit: str = Form(""),
+    absolute_limit: str = Form(""),
     warn_pct: str = Form("80"),
 ) -> Response:
     db_path = await _ensure_db(request)
@@ -411,28 +424,41 @@ async def create_budget(
         if not any(key["id"] == key_id for key in keys):
             return _budget_validation_error("The selected API key does not exist.")
     try:
-        parsed_daily_limit = float(daily_limit)
-    except ValueError:
-        return _budget_validation_error("Daily limit must be a number greater than zero.")
-    if not math.isfinite(parsed_daily_limit) or parsed_daily_limit <= 0:
-        return _budget_validation_error("Daily limit must be a number greater than zero.")
+        parsed_daily_limit = _parse_budget_limit(daily_limit, "Daily limit")
+        parsed_absolute_limit = _parse_budget_limit(absolute_limit, "Absolute limit")
+    except ValueError as exc:
+        return _budget_validation_error(str(exc))
+    if parsed_absolute_limit is not None and key_id is None:
+        return _budget_validation_error("Absolute budgets require a specific API key.")
     try:
         parsed_warn_pct = float(warn_pct)
     except ValueError:
         return _budget_validation_error("Warning percentage must be between 1 and 100.")
     if not math.isfinite(parsed_warn_pct) or not 1 <= parsed_warn_pct <= 100:
         return _budget_validation_error("Warning percentage must be between 1 and 100.")
+    form = await request.form()
+    limits: dict[str, Any] = {}
+    if "daily_limit" in form:
+        limits["daily_limit"] = parsed_daily_limit
+    if "absolute_limit" in form:
+        limits["absolute_limit"] = parsed_absolute_limit
+    existing = next((b for b in await get_budgets(db_path) if b["key_id"] == key_id), {})
+    if all(
+        limits.get(field, existing.get(field)) is None
+        for field in ("daily_limit", "absolute_limit")
+    ):
+        return _budget_validation_error("Set a daily or absolute limit.")
     await create_or_update_budget(
         db_path,
         key_id=key_id,
-        daily_limit=parsed_daily_limit,
         warn_pct=parsed_warn_pct,
+        **limits,
     )
     return JSONResponse({"ok": True})
 
 
-def _budget_validation_error(message: str) -> HTMLResponse:
-    return HTMLResponse(content=message, status_code=422)
+def _budget_validation_error(message: str) -> JSONResponse:
+    return JSONResponse({"detail": message}, status_code=422)
 
 
 @router.delete("/api/budgets/{budget_id}")
@@ -474,8 +500,23 @@ async def update_api_key(
     models_field: str = Form(""),
     clear_models: str = Form(""),
     daily_budget: str = Form(""),
+    absolute_budget: str = Form(""),
+    budget_fields: str = Form(""),
 ) -> JSONResponse:
     db_path = await _ensure_db(request)
+    keys = await list_keys(db_path)
+    if not any(key["id"] == key_id for key in keys):
+        return JSONResponse({"detail": "API key not found"}, status_code=404)
+    limits: dict[str, Any] = {}
+    try:
+        for field, value, label in (
+            ("daily_limit", daily_budget, "Daily budget"),
+            ("absolute_limit", absolute_budget, "Absolute budget"),
+        ):
+            if value.strip() or budget_fields:
+                limits[field] = _parse_budget_limit(value, label)
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=422)
     kwargs: dict[str, Any] = {}
     if name.strip():
         kwargs["name"] = name.strip()
@@ -485,18 +526,10 @@ async def update_api_key(
         kwargs["allowed_models"] = None
     elif models_field and allowed_models.strip():
         kwargs["allowed_models"] = parse_models_input(allowed_models)
+    if limits:
+        await create_or_update_budget(db_path, key_id=key_id, **limits)
     if kwargs:
         await update_key(db_path, key_id, **kwargs)
-    budget_text = daily_budget.strip()
-    if budget_text:
-        try:
-            limit = float(budget_text)
-        except ValueError:
-            limit = None
-        if limit is not None and limit > 0:
-            from janus.storage.budgets import create_or_update_budget
-
-            await create_or_update_budget(db_path, key_id=key_id, daily_limit=limit)
     return JSONResponse({"ok": True})
 
 

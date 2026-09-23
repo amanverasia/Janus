@@ -1,120 +1,164 @@
 # Budgets
 
-Budgets are daily spending limits that cap how much can be spent per API key or
-globally. They reset at midnight local time. Budgets are enforced before routing
-— if a budget is exceeded, the request never reaches a provider.
+Janus supports **daily spending limits** and **absolute per-key spending limits**,
+measured in USD. Budgets are checked before routing: once a limit is reached,
+subsequent requests are rejected before reaching a provider.
 
-Budgets are **not** defined in YAML. They are managed at runtime via the CLI or
-the dashboard. You can also attach a per-key daily limit when creating or
-updating an API key (`janus keys create --daily-budget 5` or the Keys page
-form); that uses the same `budgets` table.
+- **Daily:** spending during the current calendar day. Resets at midnight in the
+  configured reporting timezone (`server_reporting_timezone`, UTC by default).
+- **Absolute:** all recorded spending for a specific Janus API key. Never resets,
+  including across midnight, restarts, or budget edits. Spending from before the
+  limit was configured also counts.
 
-## Per-key vs global
+An API key can have either limit or both. A global daily budget can additionally
+limit spending across all keys. **Reaching any applicable limit blocks requests.**
 
-| Scope | Config | Behavior |
-|---|---|---|
-| **Per-key** | `key_id` set to a specific key | Applies to requests authenticated with that key |
-| **Global** | `key_id = NULL` | Applies to **all** requests, regardless of key |
+Budgets are stored in SQLite, not YAML. Manage them with the CLI or the dashboard;
+changes take effect without a server restart.
 
-When both a per-key and a global budget exist, **the most restrictive one wins**
-— if either is exceeded, the request is blocked.
+## Set an absolute budget
 
-## Thresholds
+Give an existing key named `dev-key` a $25 total allowance:
+
+```bash
+janus budgets set --key "dev-key" --absolute 25
+```
+
+Or create a key with a lifetime cap, with or without a daily cap:
+
+```bash
+janus keys create --name "trial-key" --absolute-budget 25
+janus keys create --name "limited-app" --daily-budget 5 --absolute-budget 25
+```
+
+For an existing key identified by its numeric ID:
+
+```bash
+janus keys update 3 --absolute-budget 25
+```
+
+If the key has already spent $8, setting an absolute limit of $25 leaves $17.
+Setting a limit below its recorded spend blocks new requests immediately; it does
+not grant a new allowance. To give that key $10 more after spending $25, increase
+the limit to $35.
+
+Absolute budgets apply to **SQLite-managed Janus client keys**, not provider or
+inventory credentials. Static keys in YAML do not have individual database key
+identities and cannot receive per-key budgets. Global daily budgets still apply
+to their requests.
+
+## Thresholds and enforcement
 
 | Threshold | Default | What happens |
 |---|---|---|
-| **Warn** | 80% | Request proceeds normally. Dashboard shows an amber warning. |
-| **Hard** | 100% | Request rejected with `HTTP 429` + `Retry-After` header. |
+| Warning | 80% | Requests proceed. The dashboard shows a warning. |
+| Reached | 100% | New requests are rejected with HTTP 429. |
 
-The `Retry-After` header is set to the number of seconds until midnight, so
-clients know exactly when spending resets.
+The warning threshold applies to both limits on the key. A daily rejection
+includes `Retry-After`, the number of seconds until the next reporting-day boundary.
+An absolute rejection has **no `Retry-After`** because waiting does not replenish
+it. Increase or remove the absolute limit to allow more requests.
 
-### Rejection response
+### Absolute rejection response
 
 ```json
 {
   "error": {
-    "message": "Daily budget exceeded. Spent $9.87 of $10.00 limit. Resets at midnight.",
+    "message": "Absolute budget exceeded. Spent $25.00 of $25.00 lifetime limit. This budget does not reset; increase or remove it to allow more requests.",
     "type": "budget_exceeded",
-    "today_spend": 9.87,
-    "daily_limit": 10.00
+    "budget_period": "absolute",
+    "total_spend": 25.0,
+    "absolute_limit": 25.0,
+    "resets_at": null
   }
 }
 ```
 
-### Fail-safe
+Daily rejections retain `type: "budget_exceeded"`, `today_spend`, and `daily_limit`,
+and explain the reporting timezone's midnight reset. If both limits are reached,
+the absolute rejection takes precedence because a daily reset cannot restore access.
 
-Database errors **never block requests**. If the budget check fails (e.g.
-database is locked, schema error), the request proceeds as if no budget exists.
+### Accounting limits
 
-## Budget status values
+Budget amounts use Janus's **recorded costs**, based on configured model prices,
+not a live upstream billing balance. Unknown or intentionally unpriced models
+record $0 and therefore do not consume the budget. Configure prices for models
+you want to meter. Explicit pricing backfills can change historical costs and
+therefore change the measured lifetime total.
 
-| Status | Condition |
-|---|---|
-| `ok` | Spend below the warn threshold |
-| `warning` | Spend at or above the warn threshold but below 100% |
-| `exceeded` | Spend at or above 100% of the daily limit |
+Like daily budgets, absolute budgets are admission checks, not prepaid balance
+reservations. An accepted request or concurrent in-flight requests can take the
+final recorded total above the cap. Requests already streaming are not interrupted.
+Usage recording and budget checks retain Janus's existing fail-safe behavior:
+database failures do not block requests.
+
+Lifetime totals use the persistent `usage` history; clearing request logs does
+not clear spending. Removing and re-adding a budget does not reset its total.
+Deleting or altering usage records changes the accounting history, so retain that
+history when relying on lifetime budgets.
 
 ## CLI management
 
-### List all budgets
+### List budgets
 
 ```bash
 janus budgets list
 ```
 
-```
-    1  Global            $10.00   spent:     $8.20      82%  warning
-    2  Key #3             $5.00   spent:     $1.10      22%  ok
-```
+The output distinguishes daily limits and today's spend from absolute limits and
+total spend. Budget status is `ok`, `warning`, or `exceeded`; when both limits
+exist, it reflects whichever is more restrictive.
 
-### Create or update a budget
-
-```bash
-# Global budget: $10/day, warn at 80%
-janus budgets set --daily 10.00 --key global
-
-# Per-key budget: $5/day for key named "dev-key", warn at 70%
-janus budgets set --daily 5.00 --key "dev-key" --warn 70
-```
-
-```
-Budget 1 set: global daily limit = $10.00, warn at 80%
-```
-
-| Option | Default | Description |
-|---|---|---|
-| `--daily` / `-d` | *(required)* | Daily limit in USD (float) |
-| `--key` / `-k` | `global` | `global` or a key name |
-| `--warn` / `-w` | `80` | Warn threshold percentage |
-
-If a budget already exists for the given scope, it is updated in place.
-
-### Delete a budget
+### Set or change limits
 
 ```bash
-janus budgets delete 2
+janus budgets set --key global --daily 10
+janus budgets set --key "dev-key" --daily 5 --absolute 25 --warn 70
+janus budgets set --key "dev-key" --absolute 35
 ```
 
+Omitted limits stay unchanged. An omitted warning threshold keeps its existing
+value, or defaults to 80% for a new budget.
+
+| Option | Description |
+|---|---|
+| `--daily` / `-d` | Positive, finite daily limit in USD |
+| `--absolute` | Positive, finite lifetime limit in USD; requires a specific key |
+| `--key` / `-k` | Key name, or `global` for a daily gateway-wide limit |
+| `--warn` / `-w` | Warning threshold from 1 to 100 percent |
+| `--clear-daily` | Remove the daily limit without changing the absolute limit |
+| `--clear-absolute` | Remove the absolute limit without changing the daily limit |
+
+Provide at least one limit or clear option. You cannot set and clear the same
+limit in one command.
+
+### Remove limits
+
+```bash
+janus budgets set --key "dev-key" --clear-absolute
+janus keys update 3 --clear-absolute-budget
+janus keys update 3 --clear-daily-budget
 ```
-Deleted budget 2
-```
+
+Clearing both limits removes the budget. To delete the entire budget by its budget
+ID, use `janus budgets delete 2`; this removes both limits, not the API key or usage.
 
 ## Dashboard management
 
-The **Budgets** page at `/dashboard/ui/budgets` provides a live view of all budgets
-with their current status (ok / warning / exceeded), spent amount, and
-percentage bar.
-
-- **Create** budgets in Cloudline by selecting the key scope, daily limit, and
-  warn percentage.
-- **Delete** budgets via the revoke button on each row.
-
-Changes take effect immediately — no server restart needed.
+- On **API keys**, create or edit a key and set **Daily budget (USD)**,
+  **Absolute budget (USD)**, or both. The edit form displays the current values.
+  A blank field means no limit; clearing it removes that limit.
+- On **Budgets**, select **Set budget** and choose a specific key to configure an
+  absolute limit. Global scope supports daily limits only. Existing values load
+  when selecting a scope or editing a row.
+- **Spent today** uses the reporting timezone's calendar day. **Spent total**
+  shows lifetime spending when an absolute limit is configured. Blank total values
+  for daily-only budgets are displayed as an em dash, not as zero lifetime spend.
+- At least one limit is required on the Budgets form. Use the row's delete button
+  or clear both fields on the API-key edit form to remove the whole budget.
 
 ## See also
 
-- [CLI reference](cli.md#budgets) — full `janus budgets` command details
-- [Dashboard](dashboard.md#budgets) — the budgets page
-- [Configuration](configuration.md) — YAML config reference (budgets are
-  runtime-only, not in YAML)
+- [CLI reference](cli.md#budgets)
+- [Dashboard](dashboard.md#budgets)
+- [Configuration](configuration.md)

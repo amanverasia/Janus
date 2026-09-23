@@ -148,17 +148,24 @@ export interface BudgetStatus extends JsonObject {
   today_spend: number;
   remaining: number | null;
   pct_used: number;
+  daily_status: string | null;
+  absolute_limit: number | null;
+  total_spend: number | null;
+  absolute_remaining: number | null;
+  absolute_pct_used: number | null;
+  absolute_status: string | null;
   status: string;
   warn_pct: number;
   reporting_timezone: string;
-  retry_after: number;
+  retry_after: number | null;
   resets_at: string | null;
 }
 
 export interface BudgetRow extends JsonObject {
   id: number;
   key_id: number | null;
-  daily_limit: number;
+  daily_limit: number | null;
+  absolute_limit: number | null;
   warn_pct: number;
   is_active: number;
   created_at: string;
