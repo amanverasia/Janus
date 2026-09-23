@@ -121,7 +121,7 @@
           on:change={(event) => loadScope(event.currentTarget.value)}
           required
         >
-          <option value="global">Global gateway</option>
+          <option value="global">Global gateway (daily only)</option>
           {#each keys as key}<option value={idOf(key)}>
               {text(key.name ?? key.key_name)}
             </option>{/each}
@@ -139,24 +139,33 @@
           required={scope === 'global' || absoluteLimit == null}
         />
       </label>
-      {#if scope !== 'global'}
-        <label class="field">
-          <span>Absolute limit (USD)</span>
-          <input
-            name="absolute_limit"
-            type="number"
-            min="0.01"
-            step="0.01"
-            bind:value={absoluteLimit}
-            placeholder="No limit"
-            required={dailyLimit == null}
-          />
-        </label>
-        <p class="field full muted">
+      <label class="field">
+        <span>Absolute limit (USD)</span>
+        <input
+          name="absolute_limit"
+          type="number"
+          min="0.01"
+          step="0.01"
+          bind:value={absoluteLimit}
+          placeholder={scope === 'global' ? 'Select an API key first' : 'No limit'}
+          disabled={scope === 'global'}
+          required={scope !== 'global' && dailyLimit == null}
+          aria-describedby="absolute-budget-help"
+        />
+      </label>
+      <p id="absolute-budget-help" class="field full muted">
+        {#if scope === 'global'}
+          Absolute budgets require a specific API key.
+          {#if keys.length}
+            To set an absolute limit, select an API key in Scope above.
+          {:else}
+            <a href="/dashboard/ui/keys">Create an API key</a>
+          {/if}
+        {:else}
           The absolute limit counts all recorded spending for this key, including past usage, and
           never resets. Use either limit or both. Leave a limit blank to remove it.
-        </p>
-      {/if}
+        {/if}
+      </p>
       <label class="field">
         <span>Warn at (%)</span>
         <input name="warn_pct" type="number" min="1" max="100" bind:value={warnPct} required />
