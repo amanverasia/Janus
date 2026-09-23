@@ -123,22 +123,66 @@ describe('Budgets page', () => {
     expect(bodyOf(action).get('absolute_limit')).toBe('25');
   });
 
-  it('supports a new absolute-only budget and hides lifetime input for global scope', async () => {
+  it('shows the absolute option immediately and enables it after selecting an API key', async () => {
     const action = makeAction();
     const page = render(BudgetsPage, { props: { data: { keys: [key], budgets: [] }, action } });
     await fireEvent.click(page.getByRole('button', { name: 'Set budget' }));
     const dialog = within(page.getByRole('dialog', { name: 'Set budget' }));
-    expect(dialog.queryByLabelText('Absolute limit (USD)')).toBeNull();
+    const absolute = dialog.getByRole('spinbutton', {
+      name: 'Absolute limit (USD)'
+    }) as HTMLInputElement;
+    expect(absolute.disabled).toBe(true);
+    expect(absolute.required).toBe(false);
+    expect(dialog.getByText(/select an API key in Scope above/)).toBeTruthy();
+    expect(dialog.getByRole('option', { name: 'Global gateway (daily only)' })).toBeTruthy();
     await fireEvent.change(dialog.getByLabelText('Scope'), { target: { value: '1' } });
-    await fireEvent.input(dialog.getByLabelText('Absolute limit (USD)'), {
-      target: { value: '10' }
-    });
+    expect(absolute.disabled).toBe(false);
+    expect(absolute.required).toBe(true);
+    await fireEvent.input(absolute, { target: { value: '10' } });
     expect((dialog.getByLabelText('Daily limit (USD)') as HTMLInputElement).required).toBe(false);
     await fireEvent.click(dialog.getByRole('button', { name: 'Save budget' }));
     await waitFor(() => expect(action).toHaveBeenCalledOnce());
     expect(bodyOf(action).get('key_select')).toBe('1');
     expect(bodyOf(action).get('daily_limit')).toBe('');
     expect(bodyOf(action).get('absolute_limit')).toBe('10');
+  });
+
+  it('clears and disables the absolute input when switching back to a global budget', async () => {
+    const action = makeAction();
+    const page = render(BudgetsPage, { props: { data, action } });
+    await fireEvent.click(page.getByRole('button', { name: 'Set budget' }));
+    const dialog = within(page.getByRole('dialog', { name: 'Set budget' }));
+    await fireEvent.change(dialog.getByLabelText('Scope'), { target: { value: '1' } });
+    expect((dialog.getByLabelText('Absolute limit (USD)') as HTMLInputElement).value).toBe('25');
+    await fireEvent.change(dialog.getByLabelText('Scope'), { target: { value: 'global' } });
+    const absolute = dialog.getByRole('spinbutton', {
+      name: 'Absolute limit (USD)'
+    }) as HTMLInputElement;
+    expect(absolute.disabled).toBe(true);
+    expect(absolute.value).toBe('');
+    expect(absolute.required).toBe(false);
+    expect((dialog.getByLabelText('Daily limit (USD)') as HTMLInputElement).required).toBe(true);
+    await fireEvent.input(dialog.getByLabelText('Daily limit (USD)'), { target: { value: '5' } });
+    await fireEvent.click(dialog.getByRole('button', { name: 'Save budget' }));
+    await waitFor(() => expect(action).toHaveBeenCalledOnce());
+    expect(bodyOf(action).get('key_select')).toBe('global');
+    expect(bodyOf(action).get('daily_limit')).toBe('5');
+    expect(bodyOf(action).has('absolute_limit')).toBe(false);
+  });
+
+  it('explains how to enable absolute budgets when no API keys exist', async () => {
+    const action = makeAction();
+    const page = render(BudgetsPage, { props: { data: { keys: [], budgets: [] }, action } });
+    await fireEvent.click(page.getByRole('button', { name: 'Set budget' }));
+    const dialog = within(page.getByRole('dialog', { name: 'Set budget' }));
+    const absolute = dialog.getByRole('spinbutton', {
+      name: 'Absolute limit (USD)'
+    }) as HTMLInputElement;
+    expect(absolute.disabled).toBe(true);
+    expect(dialog.getByText(/Absolute budgets require a specific API key/)).toBeTruthy();
+    expect(dialog.getByRole('link', { name: 'Create an API key' }).getAttribute('href')).toBe(
+      '/dashboard/ui/keys'
+    );
   });
 
   it('keeps the budget form open when saving fails', async () => {
