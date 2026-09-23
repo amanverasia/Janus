@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.19.0] - 2026-09-23
+### Added
+- **Absolute budgets for individual Janus API keys** — set a lifetime USD spending
+  limit that never resets and includes all previously recorded spending. Use it
+  on its own or alongside a daily budget; reaching either limit blocks new
+  requests. Absolute-limit rejections return HTTP 429 without a misleading
+  `Retry-After` reset time.
+- **CLI and dashboard budget management** — `janus keys create/update
+  --absolute-budget` and `janus budgets set --absolute` configure lifetime caps.
+  Independent clear options remove one cap without changing the other. The Keys
+  and Budgets pages expose both limits, lifetime spending, edit controls, and
+  warning/exceeded status.
+- **Backward-compatible budget migration and regression coverage** — existing
+  daily budgets, row IDs, timestamps, and usage history are preserved. Tests
+  cover historical usage, restarts, independent keys, concurrent edits,
+  streaming/non-streaming metering, validation, CLI behavior, and dashboard forms.
+### Fixed
+- **API-key budget editing** now loads existing limits from the typed budget
+  state, validates amounts before mutating keys, and supports explicitly clearing
+  limits. Budget validation returns structured errors instead of HTML fragments.
+- **Key editor checkbox layout** no longer applies text-field sizing to the
+  "Clear model restrictions" checkbox.
+
 ## [3.18.2] - 2026-09-16
 ### Fixed
 - **Models pages stay fixed-size again** — group-complete pagination could put an
