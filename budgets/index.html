@@ -1530,8 +1530,10 @@ ID, use <code>janus budgets delete 2</code>; this removes both limits, not the A
 <li>On <strong>API keys</strong>, create or edit a key and set <strong>Daily budget (USD)</strong>,
   <strong>Absolute budget (USD)</strong>, or both. The edit form displays the current values.
   A blank field means no limit; clearing it removes that limit.</li>
-<li>On <strong>Budgets</strong>, select <strong>Set budget</strong> and choose a specific key to configure an
-  absolute limit. Global scope supports daily limits only. Existing values load
+<li>On <strong>Budgets</strong>, select <strong>Set budget</strong>. Both daily and absolute limit fields are
+  visible immediately. Choose a specific API key under <strong>Scope</strong> to enable the
+  absolute limit; <strong>Global gateway (daily only)</strong> does not support lifetime caps.
+  If no keys exist, the dialog links to API-key creation. Existing limits load
   when selecting a scope or editing a row.</li>
 <li><strong>Spent today</strong> uses the reporting timezone's calendar day. <strong>Spent total</strong>
   shows lifetime spending when an absolute limit is configured. Blank total values
