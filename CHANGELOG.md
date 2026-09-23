@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.19.1] - 2026-09-23
+### Fixed
+- **Set budget always shows the absolute-limit option** — the Budgets dialog
+  previously hid it behind the default global scope. The field is now visible
+  immediately, with guidance to select a specific API key to enable it. Global
+  scope is labeled "Global gateway (daily only)", and an empty key list provides
+  a link to create an API key.
+- **Budget scope-switch regression coverage** verifies that per-key absolute
+  limits can be saved, while switching back to global scope clears and disables
+  the lifetime input and excludes it from the global-budget submission.
+
 ## [3.19.0] - 2026-09-23
 ### Added
 - **Absolute budgets for individual Janus API keys** — set a lifetime USD spending
