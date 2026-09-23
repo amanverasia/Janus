@@ -175,16 +175,17 @@ Settings are stored in the DB and take effect immediately.
 ### Budgets — `/dashboard/ui/budgets`
 
 - **Budget list** — scope (global or key name), daily limit, spent today,
-  percentage, status badge (`ok` / `warning` / `exceeded`)
-- **Create** — select key scope, enter daily limit and warn percentage
-- **Delete** — remove budget
+  absolute lifetime limit, spent total, warning threshold, and status (`ok` / `warning` / `exceeded`)
+- **Create/edit** — select a scope, enter a daily limit, an absolute limit for a specific
+  key, or both, and choose a warning percentage. Absolute limits never reset and include past usage.
+- **Delete** — remove both limits without deleting the key or its spending history
 
 ### API Keys — `/dashboard/ui/keys`
 
 - **Key list** — ID, prefix, name, login permission, model allowlist, status (active/revoked)
 - **Create** — modal with **Allow dashboard login**, allowed models (`exact` or
-  `prefix/*`), and daily budget; full `sk-janus-...` key shown **once**
-- **Edit** — update name, dashboard access, models, or daily budget
+  `prefix/*`), and daily/absolute budgets; full `sk-janus-...` key shown **once**
+- **Edit** — update name, dashboard access, models, or either budget; blank budget fields remove their limits
 - **Revoke** — deactivate key
 
 ### Tools — `/dashboard/ui/tools`
@@ -260,7 +261,7 @@ prefer the [CLI](cli.md).
 | Method | Path | Action |
 |---|---|---|
 | `POST` | `/dashboard/api/v2/keys` | Create an API key and return its plaintext value once |
-| `POST` | `/dashboard/api/keys/{id}` | Update key scopes and optional daily budget |
+| `POST` | `/dashboard/api/keys/{id}` | Update key scopes and optional daily/absolute budgets |
 | `DELETE` | `/dashboard/api/keys/{id}` | Revoke an API key |
 
 ### Budgets
@@ -269,6 +270,17 @@ prefer the [CLI](cli.md).
 |---|---|---|
 | `POST` | `/dashboard/api/budgets` | Create or update a budget |
 | `DELETE` | `/dashboard/api/budgets/{id}` | Delete a budget |
+
+Budget forms accept `key_select` (a key ID or `global`), `daily_limit`,
+`absolute_limit`, and `warn_pct`. Absolute limits require a specific key and count
+its all-time recorded spending; they never reset. Either or both limits may be set.
+An omitted limit preserves its existing value; a submitted blank limit removes it.
+At least one limit must remain, or delete the budget instead.
+
+Key create/edit forms use `daily_budget` and `absolute_budget`. On key edit,
+`budget_fields=1` marks both budget fields as intentional: blanks clear their limits.
+Without that marker, omitted or blank values leave existing budgets unchanged.
+See [Budgets](budgets.md) for setup examples and enforcement details.
 
 ### Providers
 

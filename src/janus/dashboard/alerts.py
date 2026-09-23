@@ -175,22 +175,29 @@ async def _budget_alerts(db_path: Path, request: Request) -> list[DashboardAlert
         budget_status = status["status"]
         if budget_status not in ("warning", "exceeded"):
             continue
-        pct_used = status["pct_used"]
+        absolute = status["absolute_status"] == "exceeded" or (
+            status["daily_status"] != "exceeded" and status["absolute_status"] == "warning"
+        )
+        pct_used = status["absolute_pct_used"] if absolute else status["pct_used"]
+        spent = status["total_spend"] if absolute else status["today_spend"]
+        limit = status["absolute_limit"] if absolute else status["daily_limit"]
+        period = "absolute lifetime" if absolute else "daily"
         if key_id is None:
             alert_id = "budget:global"
             title = "Global daily budget"
             detail = (
-                f"Spend is at {pct_used:.0f}% of the daily limit "
-                f"(${status['today_spend']:.2f} / ${status['daily_limit']:.2f})."
+                f"Spend is at {pct_used:.0f}% of the daily limit (${spent:.2f} / ${limit:.2f})."
             )
         else:
             key_name = key_names.get(int(key_id), f"Key #{key_id}")
             alert_id = f"budget:key:{key_id}"
             title = f"Budget for {key_name}"
             detail = (
-                f"{key_name} is at {pct_used:.0f}% of its daily limit "
-                f"(${status['today_spend']:.2f} / ${status['daily_limit']:.2f})."
+                f"{key_name} is at {pct_used:.0f}% of its {period} limit "
+                f"(${spent:.2f} / ${limit:.2f})."
             )
+            if absolute:
+                detail += " This budget does not reset."
         severity: Severity = "critical" if budget_status == "exceeded" else "warning"
         alerts.append(
             DashboardAlert(

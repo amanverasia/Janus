@@ -65,7 +65,41 @@ ID: 1  Name: default
 | Option | Default | Description |
 |---|---|---|
 | `--name` / `-n` | `default` | Name for this key |
+| `--no-login` | off | Disallow dashboard login |
+| `--models` / `-m` | all | Comma-separated allowed model IDs or `prefix/*` patterns |
+| `--daily-budget` | none | Daily spending limit in USD |
+| `--absolute-budget` | none | Lifetime spending limit in USD; never resets |
 | `--config` / `-c` | `~/.janus/config.yaml` | Path to config file |
+
+```bash
+janus keys create --name "trial-key" --absolute-budget 25
+janus keys create --name "limited-app" --daily-budget 5 --absolute-budget 25
+```
+
+### `janus keys update`
+
+Update a key by numeric ID. Omitted budget options leave the existing limits unchanged.
+
+```bash
+janus keys update 3 --absolute-budget 50
+janus keys update 3 --daily-budget 5 --absolute-budget 25
+janus keys update 3 --clear-absolute-budget
+```
+
+| Option | Description |
+|---|---|
+| `--name` / `-n` | Rename the key |
+| `--login` / `--no-login` | Allow or disallow dashboard login |
+| `--models` / `-m` | Set allowed model IDs or `prefix/*` patterns |
+| `--clear-models` | Remove the model allowlist |
+| `--daily-budget` | Set a positive daily limit in USD |
+| `--absolute-budget` | Set a positive lifetime limit in USD |
+| `--clear-daily-budget` | Remove only the daily limit |
+| `--clear-absolute-budget` | Remove only the lifetime limit |
+| `--config` / `-c` | Path to config file |
+
+Absolute limits include the key's existing recorded spending; editing the limit
+does not reset the total. See [Budgets](budgets.md) for accounting and enforcement details.
 
 ### `janus keys list`
 
@@ -185,8 +219,11 @@ janus budgets list
 ```
 
 ```
-    1  Global            $10.00   spent:     $8.20      82%  warning
-    2  Key #3             $5.00   spent:     $1.10      22%  ok
+    1  Global           warning
+       Daily: $10.00  spent today: $8.20  82%
+    2  Key #3           ok
+       Daily: $5.00  spent today: $1.10  22%
+       Absolute: $25.00  spent total: $8.00  32%  (never resets)
 ```
 
 | Option | Default | Description |
@@ -195,8 +232,8 @@ janus budgets list
 
 ### `janus budgets set`
 
-Create or update a budget. If a budget already exists for the given scope, it is
-updated in place.
+Create or update a budget. Existing limits are preserved unless explicitly changed
+or cleared. Daily limits can be global or per-key; absolute limits require a specific key.
 
 ```bash
 # Global budget: $10/day
@@ -205,13 +242,22 @@ janus budgets set --daily 10.00 --key global
 
 # Per-key budget for key named "dev-key": $5/day, warn at 70%
 janus budgets set --daily 5.00 --key "dev-key" --warn 70
+
+# Lifetime cap; retains any existing daily limit
+janus budgets set --absolute 25.00 --key "dev-key"
+
+# Remove only the lifetime cap
+janus budgets set --clear-absolute --key "dev-key"
 ```
 
 | Option | Default | Description |
 |---|---|---|
-| `--daily` / `-d` | *(required)* | Daily limit in USD (float) |
+| `--daily` / `-d` | unchanged | Daily limit in USD |
+| `--absolute` | unchanged | Lifetime limit in USD; never resets |
+| `--clear-daily` | off | Remove the daily limit |
+| `--clear-absolute` | off | Remove the lifetime limit |
 | `--key` / `-k` | `global` | `global` or a key name |
-| `--warn` / `-w` | `80` | Warn threshold percentage |
+| `--warn` / `-w` | existing or `80` | Warn threshold percentage (1–100) |
 | `--config` / `-c` | `~/.janus/config.yaml` | Path to config file |
 
 !!! note "Key matching"

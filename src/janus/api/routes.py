@@ -158,7 +158,27 @@ async def _check_budgets(
         if global_status is not None:
             statuses.append(global_status)
         for s in statuses:
-            if s["status"] == "exceeded":
+            if s["absolute_status"] == "exceeded":
+                return JSONResponse(
+                    content={
+                        "error": {
+                            "message": (
+                                "Absolute budget exceeded. "
+                                f"Spent ${s['total_spend']:.2f} of ${s['absolute_limit']:.2f} "
+                                "lifetime limit. This budget does not reset; "
+                                "increase or remove it to allow more requests."
+                            ),
+                            "type": "budget_exceeded",
+                            "budget_period": "absolute",
+                            "total_spend": round(s["total_spend"], 4),
+                            "absolute_limit": s["absolute_limit"],
+                            "resets_at": None,
+                        }
+                    },
+                    status_code=429,
+                )
+        for s in statuses:
+            if s["daily_status"] == "exceeded":
                 retry_after = int(s["retry_after"])
                 error_body: dict[str, Any] = {
                     "error": {

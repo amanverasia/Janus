@@ -220,7 +220,7 @@ async def _seed_contract_app(app: FastAPI) -> None:
         cost=0.0,
     )
     await create_key(db_path, "fixture dashboard key")
-    await create_or_update_budget(db_path, key_id=1, daily_limit=5.0)
+    await create_or_update_budget(db_path, key_id=1, daily_limit=5.0, absolute_limit=25.0)
     await create_combo(
         db_path,
         {

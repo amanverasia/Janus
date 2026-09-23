@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import typer
@@ -160,6 +161,32 @@ def db_backup_prune(
     typer.echo(f"{action.lower()} {len(removable)} snapshot file(s) (kept {keep}).")
 
 
+def _budget_changes(
+    daily: float | None,
+    absolute: float | None,
+    *,
+    clear_daily: bool = False,
+    clear_absolute: bool = False,
+) -> dict[str, float | None]:
+    limits: dict[str, float | None] = {}
+    for field, value, clear in (
+        ("daily_limit", daily, clear_daily),
+        ("absolute_limit", absolute, clear_absolute),
+    ):
+        label = "Daily" if field == "daily_limit" else "Absolute"
+        if value is not None and clear:
+            raise typer.BadParameter(f"Cannot set and clear the {label.lower()} budget together.")
+        if value is not None:
+            if not math.isfinite(value) or value <= 0:
+                raise typer.BadParameter(
+                    f"{label} budget must be a finite number greater than zero."
+                )
+            limits[field] = value
+        elif clear:
+            limits[field] = None
+    return limits
+
+
 @keys_app.command("create")
 def keys_create(
     name: str = typer.Option("default", "--name", "-n", help="Name for this key"),
@@ -175,6 +202,11 @@ def keys_create(
         "--daily-budget",
         help="Optional daily spend limit in USD for this key",
     ),
+    absolute_budget: float | None = typer.Option(
+        None,
+        "--absolute-budget",
+        help="Optional lifetime spend limit in USD for this key; never resets",
+    ),
     config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
 ) -> None:
     """Create a new API key."""
@@ -184,6 +216,7 @@ def keys_create(
     from janus.storage.database import init_db
     from janus.storage.key_access import parse_models_input
 
+    limits = _budget_changes(daily_budget, absolute_budget)
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
     allowed = parse_models_input(models) if models else None
@@ -195,12 +228,10 @@ def keys_create(
             allowed_models=allowed,
         )
     )
-    if daily_budget is not None and daily_budget > 0:
+    if limits:
         from janus.storage.budgets import create_or_update_budget
 
-        asyncio.run(
-            create_or_update_budget(db_path, key_id=int(record["id"]), daily_limit=daily_budget)
-        )
+        asyncio.run(create_or_update_budget(db_path, key_id=int(record["id"]), **limits))
     typer.echo(f"API Key (save this — shown once): {key}")
     typer.echo(f"ID: {record['id']}  Name: {record['name']}")
     typer.echo(f"Login: {'yes' if record['can_login'] else 'no'}")
@@ -260,17 +291,37 @@ def keys_update(
         "--daily-budget",
         help="Set daily spend limit in USD for this key",
     ),
+    absolute_budget: float | None = typer.Option(
+        None,
+        "--absolute-budget",
+        help="Set lifetime spend limit in USD for this key; never resets",
+    ),
+    clear_daily_budget: bool = typer.Option(
+        False, "--clear-daily-budget", help="Remove the daily spend limit"
+    ),
+    clear_absolute_budget: bool = typer.Option(
+        False, "--clear-absolute-budget", help="Remove the lifetime spend limit"
+    ),
     config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
 ) -> None:
-    """Update an API key's name, login permission, models, or daily budget."""
+    """Update an API key's name, login permission, models, or budgets."""
     import asyncio
 
-    from janus.storage.api_keys import update_key
+    from janus.storage.api_keys import get_key_name, update_key
     from janus.storage.database import init_db
     from janus.storage.key_access import parse_models_input
 
+    limits = _budget_changes(
+        daily_budget,
+        absolute_budget,
+        clear_daily=clear_daily_budget,
+        clear_absolute=clear_absolute_budget,
+    )
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
+    if asyncio.run(get_key_name(db_path, key_id)) is None:
+        typer.echo(f"Key {key_id} not found.", err=True)
+        raise typer.Exit(1)
     kwargs: dict[str, object] = {}
     if name is not None:
         kwargs["name"] = name
@@ -285,10 +336,10 @@ def keys_update(
         if not updated:
             typer.echo(f"No changes applied for key {key_id}", err=True)
             raise typer.Exit(1)
-    if daily_budget is not None and daily_budget > 0:
+    if limits:
         from janus.storage.budgets import create_or_update_budget
 
-        asyncio.run(create_or_update_budget(db_path, key_id=key_id, daily_limit=daily_budget))
+        asyncio.run(create_or_update_budget(db_path, key_id=key_id, **limits))
     typer.echo(f"Updated key {key_id}")
 
 
@@ -437,30 +488,53 @@ def budgets_list(
     for b in budgets:
         status = asyncio.run(get_budget_status(db_path, key_id=b["key_id"]))
         scope = f"Key #{b['key_id']}" if b["key_id"] else "Global"
-        spend_str = f"${status['today_spend']:.2f}" if status else "—"
-        limit_str = f"${b['daily_limit']:.2f}"
-        pct_str = f"{status['pct_used']:.0f}%" if status else "—"
         st = status["status"] if status else "—"
-        typer.echo(
-            f"  {b['id']:>3}  {scope:<15}  {limit_str:>10}  "
-            f"spent: {spend_str:>10}  {pct_str:>6}  {st}"
-        )
+        typer.echo(f"  {b['id']:>3}  {scope:<15}  {st}")
+        if b["daily_limit"] is not None:
+            spend_str = f"${status['today_spend']:.2f}" if status else "—"
+            pct_str = f"{status['pct_used']:.0f}%" if status else "—"
+            typer.echo(
+                f"       Daily: ${b['daily_limit']:.2f}  spent today: {spend_str}  {pct_str}"
+            )
+        if b["absolute_limit"] is not None:
+            spend_str = f"${status['total_spend']:.2f}" if status else "—"
+            pct_str = f"{status['absolute_pct_used']:.0f}%" if status else "—"
+            typer.echo(
+                f"       Absolute: ${b['absolute_limit']:.2f}  spent total: {spend_str}  "
+                f"{pct_str}  (never resets)"
+            )
 
 
 @budgets_app.command("set")
 def budgets_set(
-    daily: float = typer.Option(..., "--daily", "-d", help="Daily limit in USD"),
+    daily: float | None = typer.Option(None, "--daily", "-d", help="Daily limit in USD"),
+    absolute: float | None = typer.Option(
+        None, "--absolute", help="Lifetime limit in USD for a specific key; never resets"
+    ),
     key: str = typer.Option("global", "--key", "-k", help="Key name or 'global'"),
-    warn: float = typer.Option(80, "--warn", "-w", help="Warn threshold percentage"),
+    warn: float | None = typer.Option(None, "--warn", "-w", help="Warn percentage (default 80)"),
+    clear_daily: bool = typer.Option(False, "--clear-daily", help="Remove the daily limit"),
+    clear_absolute: bool = typer.Option(
+        False, "--clear-absolute", help="Remove the lifetime limit"
+    ),
     config: str = typer.Option("~/.janus/config.yaml", "--config", "-c"),
 ) -> None:
-    """Create or update a budget."""
+    """Create or update a budget; omitted limits stay unchanged."""
     import asyncio
 
     from janus.storage.api_keys import list_keys
-    from janus.storage.budgets import create_or_update_budget
+    from janus.storage.budgets import create_or_update_budget, get_budget_status
     from janus.storage.database import init_db
 
+    limits = _budget_changes(
+        daily, absolute, clear_daily=clear_daily, clear_absolute=clear_absolute
+    )
+    if not limits:
+        raise typer.BadParameter("Specify --daily, --absolute, --clear-daily, or --clear-absolute.")
+    if key == "global" and absolute is not None:
+        raise typer.BadParameter("Absolute budgets require --key with a specific API key name.")
+    if warn is not None and (not math.isfinite(warn) or not 1 <= warn <= 100):
+        raise typer.BadParameter("Warning percentage must be between 1 and 100.")
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
 
@@ -474,10 +548,23 @@ def budgets_set(
         key_id = match["id"]
 
     budget_id = asyncio.run(
-        create_or_update_budget(db_path, key_id=key_id, daily_limit=daily, warn_pct=warn)
+        create_or_update_budget(db_path, key_id=key_id, warn_pct=warn, **limits)
     )
     scope = key if key == "global" else f"key '{key}'"
-    typer.echo(f"Budget {budget_id} set: {scope} daily limit = ${daily:.2f}, warn at {warn:.0f}%")
+    if budget_id is None:
+        typer.echo(f"Budget removed: {scope}")
+        return
+    status = asyncio.run(get_budget_status(db_path, key_id=key_id))
+    assert status is not None
+    descriptions = []
+    if status["daily_limit"] is not None:
+        descriptions.append(f"daily limit = ${status['daily_limit']:.2f}")
+    if status["absolute_limit"] is not None:
+        descriptions.append(f"absolute limit = ${status['absolute_limit']:.2f} (never resets)")
+    typer.echo(
+        f"Budget {budget_id} set: {scope} {', '.join(descriptions)}, "
+        f"warn at {status['warn_pct']:.0f}%"
+    )
 
 
 @budgets_app.command("delete")

@@ -34,7 +34,7 @@ DB keys support scopes:
 
 - **Dashboard login** — `can_login` (default on). API-only keys authenticate for `/v1/*` but cannot open the dashboard.
 - **Model allowlist** — exact IDs (`openai/gpt-4o`) and prefix wildcards (`openai/*`). Empty/unset means all models. Disallowed models return `403` with `error.type = "model_not_allowed"`. `GET /v1/models` is filtered the same way. Bare provider/default aliases are authorized against the resolved namespaced model, so allowing `openai/gpt-4o` permits an `openai` alias whose default is `gpt-4o`; allowing the bare word `openai` does not. Explicit provider aliases accept either the alias or canonical scope, so `xiaomi/*` authorizes `mimo/mimo-v2.5`. Native model IDs that contain a slash are also treated as bare when their leading segment is not a registered provider prefix, such as `openai/gpt-4o` resolving to `openrouter/openai/gpt-4o`. A combo's exact allowlist entry intentionally grants its curated members without requiring every member to be listed separately.
-- **Daily budget** — optional per-key spend limit (see [Budgets](budgets.md)).
+- **Budgets** — optional daily and/or absolute lifetime per-key spending limits. Absolute limits never reset and include past recorded usage (see [Budgets](budgets.md)).
 
 When `require_api_key` is `false`, no authentication is required (suitable for
 local single-user setups).
@@ -471,7 +471,7 @@ curl http://localhost:20128/v1/health
 |--------|------|---------|
 | `401` | Invalid API key | Returned when `require_api_key` is on and the key is missing or unrecognized |
 | `402` → fallback | Upstream payment error | Classified as a payment error, fallback-eligible, cools the account for 300s (5 minutes) |
-| `429` | Budget exceeded | Daily spend limit reached. Includes a `Retry-After` header (seconds until midnight reset) |
+| `429` | Budget exceeded | Daily or absolute spend limit reached. Daily rejections include `Retry-After` until midnight; absolute rejections never reset and omit it |
 | `503` | All accounts cooling down | Every account for the requested model is currently in cooldown (none exhausted, all just waiting). Includes a `Retry-After` header — seconds until the **earliest** cooldown expiry across those accounts |
 | `503` | All providers exhausted | Every account in the fallback chain was tried in this request and failed. `detail` contains the last error |
 
@@ -520,6 +520,14 @@ the next account — the client never sees the disguised error.
 ```
 
 With header: `Retry-After: 34567`
+
+An absolute budget rejection instead returns `budget_period: "absolute"`,
+`total_spend`, `absolute_limit`, and `resets_at: null` alongside the same
+`type: "budget_exceeded"`. It has no `Retry-After` header: the lifetime cap must be
+increased or removed before the key can make more requests. When both daily and
+absolute limits are reached, the absolute rejection takes precedence. See
+[Budgets](budgets.md#absolute-rejection-response) for the full response and
+accounting limitations.
 
 ### 503 — All Providers Exhausted
 

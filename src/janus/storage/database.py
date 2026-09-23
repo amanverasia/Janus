@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS usage (
 CREATE TABLE IF NOT EXISTS budgets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key_id INTEGER,
-    daily_limit REAL NOT NULL,
+    daily_limit REAL,
+    absolute_limit REAL,
     warn_pct REAL DEFAULT 80,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -547,6 +548,43 @@ async def _migrate_usage_columns(db: aiosqlite.Connection) -> None:
     await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_usage_key_ts ON usage(client_key_id, timestamp)"
     )
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_usage_key_cost ON usage(client_key_id, cost)")
+
+
+async def _migrate_budget_columns(db: aiosqlite.Connection) -> None:
+    async with db.execute("PRAGMA table_info(budgets)") as cur:
+        columns = {row[1]: row for row in await cur.fetchall()}
+    if "absolute_limit" not in columns:
+        await db.execute("ALTER TABLE budgets ADD COLUMN absolute_limit REAL")
+    if not columns["daily_limit"][3]:
+        return
+    await db.execute("SAVEPOINT migrate_budgets")
+    async with db.execute("SELECT seq FROM sqlite_sequence WHERE name = 'budgets'") as cur:
+        sequence = await cur.fetchone()
+    await db.execute(
+        """CREATE TABLE budgets_migrated (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_id INTEGER,
+            daily_limit REAL,
+            absolute_limit REAL,
+            warn_pct REAL DEFAULT 80,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (key_id) REFERENCES api_keys(id)
+        )"""
+    )
+    await db.execute(
+        "INSERT INTO budgets_migrated "
+        "(id, key_id, daily_limit, absolute_limit, warn_pct, is_active, created_at) "
+        "SELECT id, key_id, daily_limit, absolute_limit, warn_pct, is_active, created_at "
+        "FROM budgets"
+    )
+    await db.execute("DROP TABLE budgets")
+    await db.execute("ALTER TABLE budgets_migrated RENAME TO budgets")
+    if sequence is not None:
+        await db.execute("DELETE FROM sqlite_sequence WHERE name = 'budgets'")
+        await db.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('budgets', ?)", sequence)
+    await db.execute("RELEASE SAVEPOINT migrate_budgets")
 
 
 async def _migrate_request_log_columns(db: aiosqlite.Connection) -> None:
@@ -639,6 +677,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_request_log_columns(db)
         await _migrate_cooldowns_per_model(db)
         await _migrate_api_key_columns(db)
+        await _migrate_budget_columns(db)
         await _backfill_request_outcomes(db)
         await db.execute(
             "DELETE FROM settings WHERE key IN (?, ?, ?)",
