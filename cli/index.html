@@ -1001,6 +1001,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#janus-keys-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys update
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#janus-keys-list" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1488,6 +1499,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#janus-keys-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus keys update
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#janus-keys-list" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1826,12 +1848,89 @@ ID: 1  Name: default
 <td>Name for this key</td>
 </tr>
 <tr>
+<td><code>--no-login</code></td>
+<td>off</td>
+<td>Disallow dashboard login</td>
+</tr>
+<tr>
+<td><code>--models</code> / <code>-m</code></td>
+<td>all</td>
+<td>Comma-separated allowed model IDs or <code>prefix/*</code> patterns</td>
+</tr>
+<tr>
+<td><code>--daily-budget</code></td>
+<td>none</td>
+<td>Daily spending limit in USD</td>
+</tr>
+<tr>
+<td><code>--absolute-budget</code></td>
+<td>none</td>
+<td>Lifetime spending limit in USD; never resets</td>
+</tr>
+<tr>
 <td><code>--config</code> / <code>-c</code></td>
 <td><code>~/.janus/config.yaml</code></td>
 <td>Path to config file</td>
 </tr>
 </tbody>
 </table>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">"trial-key"</span><span class="w"> </span>--absolute-budget<span class="w"> </span><span class="m">25</span>
+janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span><span class="s2">"limited-app"</span><span class="w"> </span>--daily-budget<span class="w"> </span><span class="m">5</span><span class="w"> </span>--absolute-budget<span class="w"> </span><span class="m">25</span>
+</code></pre></div>
+<h3 id="janus-keys-update"><code>janus keys update</code><a class="headerlink" href="#janus-keys-update" title="Permanent link">&para;</a></h3>
+<p>Update a key by numeric ID. Omitted budget options leave the existing limits unchanged.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>update<span class="w"> </span><span class="m">3</span><span class="w"> </span>--absolute-budget<span class="w"> </span><span class="m">50</span>
+janus<span class="w"> </span>keys<span class="w"> </span>update<span class="w"> </span><span class="m">3</span><span class="w"> </span>--daily-budget<span class="w"> </span><span class="m">5</span><span class="w"> </span>--absolute-budget<span class="w"> </span><span class="m">25</span>
+janus<span class="w"> </span>keys<span class="w"> </span>update<span class="w"> </span><span class="m">3</span><span class="w"> </span>--clear-absolute-budget
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--name</code> / <code>-n</code></td>
+<td>Rename the key</td>
+</tr>
+<tr>
+<td><code>--login</code> / <code>--no-login</code></td>
+<td>Allow or disallow dashboard login</td>
+</tr>
+<tr>
+<td><code>--models</code> / <code>-m</code></td>
+<td>Set allowed model IDs or <code>prefix/*</code> patterns</td>
+</tr>
+<tr>
+<td><code>--clear-models</code></td>
+<td>Remove the model allowlist</td>
+</tr>
+<tr>
+<td><code>--daily-budget</code></td>
+<td>Set a positive daily limit in USD</td>
+</tr>
+<tr>
+<td><code>--absolute-budget</code></td>
+<td>Set a positive lifetime limit in USD</td>
+</tr>
+<tr>
+<td><code>--clear-daily-budget</code></td>
+<td>Remove only the daily limit</td>
+</tr>
+<tr>
+<td><code>--clear-absolute-budget</code></td>
+<td>Remove only the lifetime limit</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<p>Absolute limits include the key's existing recorded spending; editing the limit
+does not reset the total. See <a href="../budgets/">Budgets</a> for accounting and enforcement details.</p>
 <h3 id="janus-keys-list"><code>janus keys list</code><a class="headerlink" href="#janus-keys-list" title="Permanent link">&para;</a></h3>
 <p>List all API keys.</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>list
@@ -1991,8 +2090,11 @@ Key                                  Requests         Cost
 <p>List all active budgets.</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>budgets<span class="w"> </span>list
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>    1  Global            $10.00   spent:     $8.20      82%  warning
-    2  Key #3             $5.00   spent:     $1.10      22%  ok
+<div class="highlight"><pre><span></span><code>    1  Global           warning
+       Daily: $10.00  spent today: $8.20  82%
+    2  Key #3           ok
+       Daily: $5.00  spent today: $1.10  22%
+       Absolute: $25.00  spent total: $8.00  32%  (never resets)
 </code></pre></div>
 <table>
 <thead>
@@ -2011,14 +2113,20 @@ Key                                  Requests         Cost
 </tbody>
 </table>
 <h3 id="janus-budgets-set"><code>janus budgets set</code><a class="headerlink" href="#janus-budgets-set" title="Permanent link">&para;</a></h3>
-<p>Create or update a budget. If a budget already exists for the given scope, it is
-updated in place.</p>
+<p>Create or update a budget. Existing limits are preserved unless explicitly changed
+or cleared. Daily limits can be global or per-key; absolute limits require a specific key.</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Global budget: $10/day</span>
 janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">10</span>.00<span class="w"> </span>--key<span class="w"> </span>global
 <span class="c1"># Budget 1 set: global daily limit = $10.00, warn at 80%</span>
 
 <span class="c1"># Per-key budget for key named "dev-key": $5/day, warn at 70%</span>
 janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--daily<span class="w"> </span><span class="m">5</span>.00<span class="w"> </span>--key<span class="w"> </span><span class="s2">"dev-key"</span><span class="w"> </span>--warn<span class="w"> </span><span class="m">70</span>
+
+<span class="c1"># Lifetime cap; retains any existing daily limit</span>
+janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--absolute<span class="w"> </span><span class="m">25</span>.00<span class="w"> </span>--key<span class="w"> </span><span class="s2">"dev-key"</span>
+
+<span class="c1"># Remove only the lifetime cap</span>
+janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--clear-absolute<span class="w"> </span>--key<span class="w"> </span><span class="s2">"dev-key"</span>
 </code></pre></div>
 <table>
 <thead>
@@ -2031,8 +2139,23 @@ janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set
 <tbody>
 <tr>
 <td><code>--daily</code> / <code>-d</code></td>
-<td><em>(required)</em></td>
-<td>Daily limit in USD (float)</td>
+<td>unchanged</td>
+<td>Daily limit in USD</td>
+</tr>
+<tr>
+<td><code>--absolute</code></td>
+<td>unchanged</td>
+<td>Lifetime limit in USD; never resets</td>
+</tr>
+<tr>
+<td><code>--clear-daily</code></td>
+<td>off</td>
+<td>Remove the daily limit</td>
+</tr>
+<tr>
+<td><code>--clear-absolute</code></td>
+<td>off</td>
+<td>Remove the lifetime limit</td>
 </tr>
 <tr>
 <td><code>--key</code> / <code>-k</code></td>
@@ -2041,8 +2164,8 @@ janus<span class="w"> </span>budgets<span class="w"> </span><span class="nb">set
 </tr>
 <tr>
 <td><code>--warn</code> / <code>-w</code></td>
-<td><code>80</code></td>
-<td>Warn threshold percentage</td>
+<td>existing or <code>80</code></td>
+<td>Warn threshold percentage (1–100)</td>
 </tr>
 <tr>
 <td><code>--config</code> / <code>-c</code></td>

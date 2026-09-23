@@ -1962,16 +1962,17 @@ does not silently remove models that another same-prefix connection can serve.</
 <h3 id="budgets-dashboarduibudgets">Budgets — <code>/dashboard/ui/budgets</code><a class="headerlink" href="#budgets-dashboarduibudgets" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Budget list</strong> — scope (global or key name), daily limit, spent today,
-  percentage, status badge (<code>ok</code> / <code>warning</code> / <code>exceeded</code>)</li>
-<li><strong>Create</strong> — select key scope, enter daily limit and warn percentage</li>
-<li><strong>Delete</strong> — remove budget</li>
+  absolute lifetime limit, spent total, warning threshold, and status (<code>ok</code> / <code>warning</code> / <code>exceeded</code>)</li>
+<li><strong>Create/edit</strong> — select a scope, enter a daily limit, an absolute limit for a specific
+  key, or both, and choose a warning percentage. Absolute limits never reset and include past usage.</li>
+<li><strong>Delete</strong> — remove both limits without deleting the key or its spending history</li>
 </ul>
 <h3 id="api-keys-dashboarduikeys">API Keys — <code>/dashboard/ui/keys</code><a class="headerlink" href="#api-keys-dashboarduikeys" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Key list</strong> — ID, prefix, name, login permission, model allowlist, status (active/revoked)</li>
 <li><strong>Create</strong> — modal with <strong>Allow dashboard login</strong>, allowed models (<code>exact</code> or
-  <code>prefix/*</code>), and daily budget; full <code>sk-janus-...</code> key shown <strong>once</strong></li>
-<li><strong>Edit</strong> — update name, dashboard access, models, or daily budget</li>
+  <code>prefix/*</code>), and daily/absolute budgets; full <code>sk-janus-...</code> key shown <strong>once</strong></li>
+<li><strong>Edit</strong> — update name, dashboard access, models, or either budget; blank budget fields remove their limits</li>
 <li><strong>Revoke</strong> — deactivate key</li>
 </ul>
 <h3 id="tools-dashboarduitools">Tools — <code>/dashboard/ui/tools</code><a class="headerlink" href="#tools-dashboarduitools" title="Permanent link">&para;</a></h3>
@@ -2066,7 +2067,7 @@ prefer the <a href="../cli/">CLI</a>.</p>
 <tr>
 <td><code>POST</code></td>
 <td><code>/dashboard/api/keys/{id}</code></td>
-<td>Update key scopes and optional daily budget</td>
+<td>Update key scopes and optional daily/absolute budgets</td>
 </tr>
 <tr>
 <td><code>DELETE</code></td>
@@ -2097,6 +2098,15 @@ prefer the <a href="../cli/">CLI</a>.</p>
 </tr>
 </tbody>
 </table>
+<p>Budget forms accept <code>key_select</code> (a key ID or <code>global</code>), <code>daily_limit</code>,
+<code>absolute_limit</code>, and <code>warn_pct</code>. Absolute limits require a specific key and count
+its all-time recorded spending; they never reset. Either or both limits may be set.
+An omitted limit preserves its existing value; a submitted blank limit removes it.
+At least one limit must remain, or delete the budget instead.</p>
+<p>Key create/edit forms use <code>daily_budget</code> and <code>absolute_budget</code>. On key edit,
+<code>budget_fields=1</code> marks both budget fields as intentional: blanks clear their limits.
+Without that marker, omitted or blank values leave existing budgets unchanged.
+See <a href="../budgets/">Budgets</a> for setup examples and enforcement details.</p>
 <h3 id="providers">Providers<a class="headerlink" href="#providers" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
