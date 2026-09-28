@@ -40,6 +40,7 @@ from janus.canonical.models import (
     Usage,
     tool_result_text,
 )
+from janus.canonical.params import log_unsupported_sampling_params
 
 _TEXT_PART_TYPES = ("input_text", "output_text", "text", "summary_text")
 
@@ -655,6 +656,9 @@ class OpenAIResponsesAdapter:
     # ---- upstream request building ----
 
     def build_upstream_request(self, req: CanonicalRequest, model: str) -> dict[str, Any]:
+        log_unsupported_sampling_params(
+            req, "openai_responses", supported=frozenset({"parallel_tool_calls"})
+        )
         items: list[dict[str, Any]] = []
         for msg in req.messages:
             items.extend(self._build_input_items(msg))
@@ -670,6 +674,8 @@ class OpenAIResponsesAdapter:
             payload["temperature"] = req.temperature
         if req.top_p is not None:
             payload["top_p"] = req.top_p
+        if req.parallel_tool_calls is not None:
+            payload["parallel_tool_calls"] = req.parallel_tool_calls
         if req.tools:
             payload["tools"] = [
                 {

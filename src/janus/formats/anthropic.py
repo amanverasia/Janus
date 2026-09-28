@@ -39,6 +39,7 @@ from janus.canonical.models import (
     ToolUse,
     Usage,
 )
+from janus.canonical.params import log_unsupported_sampling_params
 from janus.streaming.sse import encode_sse
 
 
@@ -440,6 +441,7 @@ class AnthropicAdapter:
     # ---- upstream request building ----
 
     def build_upstream_request(self, req: CanonicalRequest, model: str) -> dict[str, Any]:
+        log_unsupported_sampling_params(req, "anthropic")
         system: list[dict[str, Any]] = [{"type": "text", "text": b.text} for b in req.system]
         messages: list[dict[str, Any]] = [self._build_message(m) for m in req.messages]
 
