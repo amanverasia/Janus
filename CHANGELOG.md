@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.20.0] - 2026-09-28
+### Added
+- **Per-provider account-value probes** — a dedicated probe layer now queries each
+  provider's own billing/usage endpoint and normalizes the result into credits
+  (USD-converted) and usage windows with reset times. Supported: OpenRouter
+  (`/key`), Zhipu/Z.AI + BigModel coding-plan quota, DeepSeek and Moonshot
+  balances, MiniMax coding-plan remains, and Venice billing. Results persist on
+  each upstream key with fetch/check timestamps, a 600-second TTL, per-key
+  single-flight refresh, and last-good preservation on transient failures.
+- **Dashboard usage surfacing** — the Inventory keys table renders per-key
+  quota-window bars (danger-tinted at ≥90%), the key detail modal gains an
+  "Account usage" section with a Refresh usage action, the Inventory overview
+  credit pools show each provider's worst usage window, and a new
+  `inventory:quota_exhausted` alert fires when any active account crosses 90%
+  of a usage window.
+- **`POST /dashboard/api/inventory/keys/{id}/account-value/refresh`** —
+  authenticated on-demand probe endpoint; probes also run automatically after
+  every successful key validation (manual test or scheduled recheck).
+- **`janus dashboard` CLI command** — prints the Cloudline URL and opens it in
+  the browser.
+### Changed
+- **Dashboard-first positioning** — the README and docs now present the
+  Cloudline dashboard as the primary interface for operating Janus, with the
+  CLI documented as the scripting surface. Credit fetching inside key
+  validation was replaced by the probe layer (the `credit_check_endpoint`
+  catalog field is no longer consulted).
+### Fixed
+- Key validation no longer fails or slows when a provider's billing endpoint
+  is unavailable; probe errors are recorded on the key and surfaced in the
+  dashboard without affecting routability.
+
 ## [3.19.1] - 2026-09-23
 ### Fixed
 - **Set budget always shows the absolute-limit option** — the Budgets dialog
