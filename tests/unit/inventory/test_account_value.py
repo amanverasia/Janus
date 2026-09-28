@@ -264,6 +264,185 @@ async def test_venice_epoch_window() -> None:
     assert value.windows[0].used_percent == 25.0
 
 
+@respx.mock
+async def test_kimi_probe_parses_windows_with_envelope() -> None:
+    respx.get("https://api.kimi.com/coding/v1/usages").mock(
+        return_value=_ok(
+            {
+                "data": {
+                    "limits": [
+                        {
+                            "name": "5-Hour Limit",
+                            "detail": {"limit": 100, "used": 20, "resetAt": 1750000000000},
+                            "window": {"duration": 5, "timeUnit": "hour"},
+                        },
+                        {
+                            "name": "Weekly Limit",
+                            "detail": {"limit": 500, "remaining": 250},
+                            "window": {"duration": 7, "timeUnit": "day"},
+                        },
+                    ],
+                    "usage": {"limit": 1000, "used": 100, "resetAt": 1750086400000},
+                    "totalQuota": {"limit": 2000, "used": 400},
+                }
+            }
+        )
+    )
+    value = await probe_account_value(
+        "kimi_coding", "sk-kimi", "https://api.kimi.com/coding/v1", None
+    )
+    assert value.status is AccountValueStatus.OK
+    assert value.source == "kimi_coding:usages"
+    assert [w.label for w in value.windows] == ["5h", "weekly", "Total subscription credits"]
+    assert value.windows[0].used_percent == 20.0
+    assert value.windows[0].reset_at is not None
+    assert value.windows[1].used_percent == 10.0
+    assert value.windows[2].used_percent == 20.0
+
+
+@respx.mock
+async def test_kimi_probe_label_fallback_and_direct_percent() -> None:
+    respx.get("https://api.kimi.com/coding/v1/usages").mock(
+        return_value=_ok(
+            {
+                "limits": [
+                    {"name": "Weekly limit", "detail": {"limit": 100, "used": 30}},
+                    {"title": "5 hour", "detail": {"utilization": 12.5}},
+                ]
+            }
+        )
+    )
+    value = await probe_account_value(
+        "kimi_coding", "sk-kimi", "https://api.kimi.com/coding/v1", None
+    )
+    assert [w.label for w in value.windows] == ["5h", "weekly"]
+    assert value.windows[0].used_percent == 12.5
+    assert value.windows[1].used_percent == 30.0
+
+
+@respx.mock
+async def test_kimi_probe_rejects_unrecognized_payload() -> None:
+    respx.get("https://api.kimi.com/coding/v1/usages").mock(return_value=_ok({"data": {}}))
+    with pytest.raises(ProbeError) as excinfo:
+        await probe_account_value("kimi_coding", "sk", "https://api.kimi.com/coding/v1", None)
+    assert excinfo.value.transient is True
+
+
+@respx.mock
+async def test_synthetic_probe_parses_quota_lanes() -> None:
+    respx.get("https://api.synthetic.new/v2/quotas").mock(
+        return_value=_ok(
+            {
+                "data": {
+                    "rollingFiveHourLimit": 20.0,
+                    "weeklyTokenLimit": 80.0,
+                    "search": {"hourly": 50.0},
+                }
+            }
+        )
+    )
+    value = await probe_account_value(
+        "synthetic", "syn", "https://api.synthetic.new/openai/v1", None
+    )
+    assert value.source == "synthetic:quotas"
+    assert [w.label for w in value.windows] == ["5h", "weekly", "Search hourly"]
+    assert [w.used_percent for w in value.windows] == [20.0, 80.0, 50.0]
+
+
+@respx.mock
+async def test_synthetic_probe_nested_quota_fallback() -> None:
+    respx.get("https://api.synthetic.new/v2/quotas").mock(
+        return_value=_ok({"quota": {"rollingFiveHourLimit": 40}})
+    )
+    value = await probe_account_value(
+        "synthetic", "syn", "https://api.synthetic.new/openai/v1", None
+    )
+    assert [w.label for w in value.windows] == ["5h"]
+    assert value.windows[0].used_percent == 40.0
+
+
+@respx.mock
+async def test_synthetic_terminal_auth_failure_is_not_transient() -> None:
+    respx.get("https://api.synthetic.new/v2/quotas").mock(return_value=Response(401))
+    with pytest.raises(ProbeError) as excinfo:
+        await probe_account_value("synthetic", "syn", "https://api.synthetic.new/openai/v1", None)
+    assert excinfo.value.transient is False
+
+
+@respx.mock
+async def test_ollama_probe_normalizes_fractions() -> None:
+    respx.get("https://ollama.com/api/usage").mock(
+        return_value=_ok(
+            {
+                "limits": {
+                    "session": {"usage": 0.25},
+                    "weekly": {"usage": 0.5},
+                    "monthly": {"usage": 1.5},
+                }
+            }
+        )
+    )
+    value = await probe_account_value("ollama", "sk-ollama", "https://ollama.com/v1", None)
+    assert value.source == "ollama:usage"
+    assert [w.label for w in value.windows] == ["5h", "weekly", "monthly"]
+    assert [w.used_percent for w in value.windows] == [25.0, 50.0, 100.0]
+
+
+@respx.mock
+async def test_ollama_probe_partial_windows() -> None:
+    respx.get("https://ollama.com/api/usage").mock(
+        return_value=_ok({"limits": {"session": {"usage": 0.1}}})
+    )
+    value = await probe_account_value("ollama", "sk-ollama", "https://ollama.com/v1", None)
+    assert [w.label for w in value.windows] == ["5h"]
+
+
+@respx.mock
+async def test_ollama_probe_404_returns_ok_without_windows() -> None:
+    respx.get("https://ollama.com/api/usage").mock(return_value=Response(404))
+    value = await probe_account_value("ollama", "sk-ollama", "https://ollama.com/v1", None)
+    assert value.status is AccountValueStatus.OK
+    assert value.windows == []
+
+
+@respx.mock
+async def test_cline_probe_parses_plan_limits() -> None:
+    respx.get("https://api.cline.bot/api/v1/users/me/plan/usage-limits").mock(
+        return_value=_ok(
+            {
+                "data": {
+                    "limits": [
+                        {"type": "five_hour", "percentUsed": 30.5, "resetsAt": 1750000000},
+                        {"type": "weekly", "percentUsed": 60},
+                        {
+                            "type": "monthly",
+                            "percentUsed": 10,
+                            "resetsAt": "2026-10-01T00:00:00+00:00",
+                        },
+                        {"type": "unknown", "percentUsed": 99},
+                    ]
+                }
+            }
+        )
+    )
+    value = await probe_account_value("cline", "sk-cline", "https://api.cline.bot/api/v1", None)
+    assert value.source == "cline:plan-usage-limits"
+    assert [w.label for w in value.windows] == ["5h", "weekly", "monthly"]
+    assert [w.used_percent for w in value.windows] == [30.5, 60.0, 10.0]
+    assert value.windows[0].reset_at is not None
+    assert value.windows[2].reset_at == "2026-10-01T00:00:00+00:00"
+
+
+@respx.mock
+async def test_cline_probe_404_returns_ok_without_windows() -> None:
+    respx.get("https://api.cline.bot/api/v1/users/me/plan/usage-limits").mock(
+        return_value=Response(404)
+    )
+    value = await probe_account_value("cline", "sk-cline", "https://api.cline.bot/api/v1", None)
+    assert value.status is AccountValueStatus.OK
+    assert value.windows == []
+
+
 async def test_unsupported_provider() -> None:
     value = await probe_account_value("openai", "sk", "https://api.openai.com/v1", None)
     assert value.status is AccountValueStatus.UNSUPPORTED

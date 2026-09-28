@@ -284,7 +284,7 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Cloudline dashboard** — responsive SvelteKit 2 + Svelte 5 + TypeScript SPA at `/dashboard/ui`, with light/dark/system themes, a command palette, live usage, analytics, routing visibility, and modular management screens
 - **Single self-hosted dashboard** — the versioned Cloudline bundle ships with Janus; production rendering has no runtime CDN or Node.js dependency. `/dashboard` and former page URLs are compatibility redirects to `/dashboard/ui`
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/ui/inventory`)
-- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot balances, MiniMax/Venice plans) surfaced in the inventory dashboard with low-quota alerts
+- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax/Venice plans, Synthetic/Ollama Cloud/Cline usage) surfaced in the inventory dashboard with low-quota alerts
 
 ## Upstream Key Inventory
 
@@ -300,10 +300,10 @@ usage-window tracking, and automatic routing through the best available key.
 - History shows real status transitions and credit snapshots without no-op transition noise
 - Detected rate limits (RPM/RPD) deprioritize near-quota keys during routing
 - Account-value probes query each provider's own billing/usage endpoint — OpenRouter
-  `/key`, Z.AI & BigModel coding-plan quota, DeepSeek/Moonshot balances, MiniMax
-  coding-plan remains, Venice billing — and render usage windows (5h/weekly) with
-  reset times; results are cached for 10 minutes and refreshed on every validation
-  or via **Refresh usage** on a key
+  `/key`, Z.AI & BigModel coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax
+  coding-plan remains, Venice billing, Synthetic/Ollama Cloud/Cline usage windows —
+  and render usage windows (5h/weekly) with reset times; results are cached for 10
+  minutes and refreshed on every validation or via **Refresh usage** on a key
 - Near-exhausted windows (≥90%) raise a dashboard alert
 - Background recheck scheduler (twice daily by default)
 
