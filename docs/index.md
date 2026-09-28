@@ -51,7 +51,7 @@ Named ordered model sequences. A client sends `"model": "best-effort"` and Janus
 
 ### Key Inventory
 
-Store, validate, and route with many upstream API keys across 27+ providers. Keys are auto-detected, rechecked on a schedule, and wired into gateway routing as multi-account pools. Per-account value — credit balances and provider usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot balances, MiniMax/Venice plans) — is probed from each provider's billing endpoint, rendered with usage bars and reset times, and raises alerts near exhaustion. See [Key Inventory](inventory.md).
+Store, validate, and route with many upstream API keys across 27+ providers. Keys are auto-detected, rechecked on a schedule, and wired into gateway routing as multi-account pools. Per-account value — credit balances and provider usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax/Venice plans, Synthetic/Ollama Cloud/Cline usage) — is probed from each provider's billing endpoint, rendered with usage bars and reset times, and raises alerts near exhaustion. See [Key Inventory](inventory.md).
 
 ### Token Savers
 

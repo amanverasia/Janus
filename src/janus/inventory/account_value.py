@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -26,6 +27,10 @@ _ZAI_CN_ORIGIN = "https://open.bigmodel.cn"
 _ZAI_QUOTA_PATH = "/api/monitor/usage/quota/limit"
 _ZAI_INTL_QUOTA_ORIGIN = f"{_ZAI_INTL_ORIGIN}/api/monitor"
 _MINIMAX_REMAINS_PATH = "/v1/api/openplatform/coding_plan/remains"
+_SYNTHETIC_QUOTA_PATH = "/v2/quotas"
+_OLLAMA_USAGE_PATH = "/api/usage"
+_CLINE_PLAN_LIMITS_PATH = "/users/me/plan/usage-limits"
+_KIMI_DEFAULT_BASE = "https://api.kimi.com/coding/v1"
 
 
 class AccountValueStatus(StrEnum):
@@ -157,6 +162,13 @@ def _percent(value: Any) -> float | None:
 
 
 def _reset_at(value: Any) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            try:
+                return datetime.fromisoformat(text).isoformat()
+            except ValueError:
+                pass
     number = _finite(value)
     if number is None or number <= 0:
         return None
@@ -207,6 +219,20 @@ async def _fetch_json(url: str, *, headers: dict[str, str]) -> dict[str, Any]:
         raise
     except HTTPError as exc:
         raise ProbeError(f"quota fetch failed: {exc}", transient=True) from exc
+    if response.status_code != 200:
+        raise _http_error(response.status_code)
+    return _json_object(response)
+
+
+async def _fetch_json_optional(url: str, *, headers: dict[str, str]) -> dict[str, Any] | None:
+    try:
+        response = await safe_fetch(url, headers=headers, timeout=PROBE_TIMEOUT_SECONDS)
+    except BlockedUrlError:
+        raise
+    except HTTPError as exc:
+        raise ProbeError(f"quota fetch failed: {exc}", transient=True) from exc
+    if response.status_code == 404:
+        return None
     if response.status_code != 200:
         raise _http_error(response.status_code)
     return _json_object(response)
@@ -519,6 +545,262 @@ async def _probe_venice(
     )
 
 
+def _kimi_reset(row: Any) -> str | None:
+    if not isinstance(row, dict):
+        return None
+    for key in ("resetAt", "reset_at", "nextResetTime"):
+        reset = _reset_at(row.get(key))
+        if reset is not None:
+            return reset
+    return None
+
+
+def _kimi_row(row: Any, reset_fallback: Any = None) -> tuple[float, str | None] | None:
+    if not isinstance(row, dict):
+        return None
+    reset = _kimi_reset(row) or _kimi_reset(reset_fallback)
+    limit = _finite(row.get("limit"))
+    if limit is not None and limit > 0:
+        used = _finite(row.get("used"))
+        if used is None:
+            remaining = _finite(row.get("remaining"))
+            if remaining is not None:
+                used = limit - remaining
+        if used is not None:
+            percent = min(100.0, max(0.0, used / limit * 100))
+            return percent, reset
+    for key in ("utilization", "percent", "usedPercent", "used_percent"):
+        direct = _percent(row.get(key))
+        if direct is not None:
+            return direct, reset
+    return None
+
+
+def _kimi_label_text(item: dict[str, Any], detail: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for source in (item, detail):
+        for key in ("name", "title", "scope"):
+            value = source.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    return " ".join(parts).lower()
+
+
+def _kimi_duration(
+    item: dict[str, Any], detail: dict[str, Any], window: dict[str, Any]
+) -> float | None:
+    for source in (window, item, detail):
+        duration = _finite(source.get("duration"))
+        if duration is not None:
+            return duration
+    return None
+
+
+def _kimi_time_unit(item: dict[str, Any], detail: dict[str, Any], window: dict[str, Any]) -> str:
+    for source in (window, item, detail):
+        unit = source.get("timeUnit")
+        if isinstance(unit, str) and unit:
+            return unit.upper()
+    return ""
+
+
+def _kimi_is_five_hour(
+    item: dict[str, Any], detail: dict[str, Any], window: dict[str, Any]
+) -> bool:
+    duration = _kimi_duration(item, detail, window)
+    unit = _kimi_time_unit(item, detail, window)
+    if ("MINUTE" in unit and duration == 300) or ("HOUR" in unit and duration == 5):
+        return True
+    return re.search(r"(^|\b)5\s*(?:h|hour)", _kimi_label_text(item, detail)) is not None
+
+
+def _kimi_is_weekly(item: dict[str, Any], detail: dict[str, Any], window: dict[str, Any]) -> bool:
+    duration = _kimi_duration(item, detail, window)
+    unit = _kimi_time_unit(item, detail, window)
+    if ("DAY" in unit and duration == 7) or ("HOUR" in unit and duration == 168):
+        return True
+    return re.search(r"weekly|7\s*(?:d|day)", _kimi_label_text(item, detail)) is not None
+
+
+def _unwrap_kimi_envelope(body: dict[str, Any]) -> dict[str, Any]:
+    nested = _child(body, "data")
+    if not nested:
+        return body
+
+    def usable(data: dict[str, Any]) -> bool:
+        return any(data.get(key) is not None for key in ("usage", "limits", "totalQuota"))
+
+    return nested if not usable(body) and usable(nested) else body
+
+
+async def _probe_kimi(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    base = _effective_base_url(base_url, custom_base_url) or _KIMI_DEFAULT_BASE
+    body = await _fetch_json(
+        f"{base.rstrip('/')}/usages",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {key_value}"},
+    )
+    data = _unwrap_kimi_envelope(body)
+    weekly = _kimi_row(data.get("usage"))
+    five_hour: tuple[float, str | None] | None = None
+    limits = data.get("limits")
+    if isinstance(limits, list):
+        for raw in limits:
+            item = raw if isinstance(raw, dict) else {}
+            raw_detail = item.get("detail")
+            detail = raw_detail if isinstance(raw_detail, dict) else item
+            raw_window = item.get("window")
+            window = raw_window if isinstance(raw_window, dict) else {}
+            if five_hour is None and _kimi_is_five_hour(item, detail, window):
+                five_hour = _kimi_row(detail, window)
+            if weekly is None and _kimi_is_weekly(item, detail, window):
+                weekly = _kimi_row(detail, window)
+            if five_hour is not None and weekly is not None:
+                break
+    windows: list[UsageWindow] = []
+    if five_hour is not None:
+        windows.append(UsageWindow(label="5h", used_percent=five_hour[0], reset_at=five_hour[1]))
+    if weekly is not None:
+        windows.append(UsageWindow(label="weekly", used_percent=weekly[0], reset_at=weekly[1]))
+    total = _kimi_row(data.get("totalQuota"))
+    if total is not None:
+        windows.append(
+            UsageWindow(
+                label="Total subscription credits",
+                used_percent=total[0],
+                reset_at=total[1],
+            )
+        )
+    if not windows:
+        raise ProbeError("kimi quota response had no recognized windows", transient=True)
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("kimi_coding", "usages"),
+        fetched_at=_now_iso(),
+        windows=windows,
+    )
+
+
+async def _probe_synthetic(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    base = _effective_base_url(base_url, custom_base_url) or "https://api.synthetic.new/openai/v1"
+    body = await _fetch_json(
+        f"{_origin(base)}{_SYNTHETIC_QUOTA_PATH}",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {key_value}"},
+    )
+    data = _child(body, "data") or body
+    nested = _child(data, "quota") or _child(data, "quotas")
+
+    def percent_at(key: str) -> float | None:
+        percent = _percent(data.get(key))
+        if percent is not None:
+            return percent
+        return _percent(nested.get(key))
+
+    windows: list[UsageWindow] = []
+    five_hour = percent_at("rollingFiveHourLimit")
+    if five_hour is not None:
+        windows.append(UsageWindow(label="5h", used_percent=five_hour))
+    weekly = percent_at("weeklyTokenLimit")
+    if weekly is not None:
+        windows.append(UsageWindow(label="weekly", used_percent=weekly))
+    hourly = _percent(_child(data, "search").get("hourly"))
+    if hourly is not None:
+        windows.append(UsageWindow(label="Search hourly", used_percent=hourly))
+    if not windows:
+        raise ProbeError("synthetic quota response had no recognized windows", transient=True)
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("synthetic", "quotas"),
+        fetched_at=_now_iso(),
+        windows=windows,
+    )
+
+
+def _ollama_percent(value: Any) -> float | None:
+    fraction = _finite(value)
+    if fraction is None or fraction < 0:
+        return None
+    return _percent(round(fraction * 10000) / 100)
+
+
+async def _probe_ollama_cloud(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    base = _effective_base_url(base_url, custom_base_url) or "https://ollama.com/v1"
+    body = await _fetch_json_optional(
+        f"{_origin(base)}{_OLLAMA_USAGE_PATH}",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {key_value}"},
+    )
+    if body is None:
+        return AccountValue(
+            status=AccountValueStatus.OK,
+            source=_probe_source("ollama", "usage"),
+            fetched_at=_now_iso(),
+        )
+    limits = _child(body, "limits")
+    windows: list[UsageWindow] = []
+    for key, label in (("session", "5h"), ("weekly", "weekly"), ("monthly", "monthly")):
+        percent = _ollama_percent(_child(limits, key).get("usage"))
+        if percent is not None:
+            windows.append(UsageWindow(label=label, used_percent=percent))
+    if not windows:
+        raise ProbeError("ollama usage response had no recognized windows", transient=True)
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("ollama", "usage"),
+        fetched_at=_now_iso(),
+        windows=windows,
+    )
+
+
+async def _probe_cline(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    base = _effective_base_url(base_url, custom_base_url) or "https://api.cline.bot/api/v1"
+    body = await _fetch_json_optional(
+        f"{base.rstrip('/')}{_CLINE_PLAN_LIMITS_PATH}",
+        headers={"Accept": "application/json", "Authorization": f"Bearer {key_value}"},
+    )
+    if body is None:
+        return AccountValue(
+            status=AccountValueStatus.OK,
+            source=_probe_source("cline", "plan-usage-limits"),
+            fetched_at=_now_iso(),
+        )
+    data = _child(body, "data") or body
+    limits = data.get("limits")
+    labels = {"five_hour": "5h", "weekly": "weekly", "monthly": "monthly"}
+    windows: list[UsageWindow] = []
+    for raw in limits if isinstance(limits, list) else []:
+        row = raw if isinstance(raw, dict) else {}
+        percent = _percent(row.get("percentUsed"))
+        label = labels.get(str(row.get("type") or ""))
+        if percent is None or label is None:
+            continue
+        windows.append(
+            UsageWindow(label=label, used_percent=percent, reset_at=_reset_at(row.get("resetsAt")))
+        )
+    if not windows:
+        raise ProbeError("cline quota response had no recognized windows", transient=True)
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("cline", "plan-usage-limits"),
+        fetched_at=_now_iso(),
+        windows=windows,
+    )
+
+
 AccountValueProbe = Callable[..., Awaitable[AccountValue]]
 
 ACCOUNT_VALUE_PROBES: dict[str, AccountValueProbe] = {
@@ -528,6 +810,10 @@ ACCOUNT_VALUE_PROBES: dict[str, AccountValueProbe] = {
     "zhipu": _probe_zhipu,
     "minimax": _probe_minimax,
     "venice": _probe_venice,
+    "kimi_coding": _probe_kimi,
+    "synthetic": _probe_synthetic,
+    "ollama": _probe_ollama_cloud,
+    "cline": _probe_cline,
 }
 
 
