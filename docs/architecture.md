@@ -238,6 +238,14 @@ created per key. Otherwise the gateway provider's static `api_key` is used.
 Cooldown state is stored in the `cooldowns` SQLite table and **persists across
 server restarts**. Cooldowns are loaded on startup and after provider reload.
 
+**Try-order soft headroom.** After the cooldown filter, `resolve_attempts`
+demotes (never blocks) accounts without RPM/RPD or subscription-quota headroom,
+then accounts whose **probed account-value windows** (see Inventory) show
+>=90% worst-window usage — exhausted windows (100%) are tried last as
+last-resort. Probed demotion only uses probe data inside its freshness TTL
+(600s); stale or absent data is neutral. The 503 attempt trail annotates
+failures on probe-demoted accounts with `(probed window N% used)`.
+
 ## Provider lifecycle
 
 `create_app()` initializes an empty `app.state.providers = {}`. Providers are

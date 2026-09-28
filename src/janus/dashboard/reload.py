@@ -212,6 +212,7 @@ async def _reload_providers_locked(app: FastAPI) -> None:
         await handler.load_cooldowns()
         await handler.load_request_counts()
         await handler.load_quota_usage()
+        await handler.load_probed_headroom()
         model_catalog = await list_catalog_models(db_path, include_disabled=True)
     except Exception:
         await asyncio.gather(
