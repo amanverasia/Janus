@@ -9,8 +9,11 @@ Codex, Cursor, Cline, ...) talk to, then translates and routes each request to
 any of 29 built-in AI providers — or any OpenAI-compatible endpoint — without
 either side needing to know the other exists.
 
-Janus 3 includes **Cloudline**, a responsive Svelte dashboard for monitoring and
-operating the gateway.
+**Janus is dashboard-first.** Cloudline, the bundled web dashboard, is the primary
+way to install, monitor, and operate the gateway: providers, keys, combos, budgets,
+pricing, live usage, and per-account credit/usage tracking all live there. The CLI
+remains available for scripting and automation, but everything it can do — and
+more — is a dashboard screen away.
 
 ## First-time setup
 
@@ -42,15 +45,10 @@ pip install -e ".[dev]"
 janus config-init
 ```
 
-This writes `~/.janus/config.yaml`. Open it and add at least one provider with
-your API keys. Environment variables in `${VAR}` form are resolved at startup:
-
-```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Example provider block:
+This writes a minimal seed `~/.janus/config.yaml`. It only needs to exist — the
+easiest way to add providers and keys is the dashboard (step 5), and the seed is
+imported into SQLite once on first startup. If you prefer file-based bootstrap,
+add provider blocks to the YAML:
 
 ```yaml
 providers:
@@ -61,8 +59,6 @@ providers:
     api_key: ${OPENAI_API_KEY}
     models: [gpt-4o, gpt-4o-mini]
 ```
-
-You can also add providers later from the dashboard — no restart required.
 
 ### 3. Start the server
 
@@ -79,14 +75,9 @@ janus serve --host 0.0.0.0 --port 20128
 Janus serves **plain HTTP** only. Use `http://`, not `https://`, unless you put
 a reverse proxy with TLS in front.
 
-### 4. Verify
+### 4. Open the dashboard
 
-```bash
-curl http://localhost:20128/v1/health
-# {"status":"ok"}
-```
-
-Open Cloudline at
+Run `janus dashboard` (prints the URL and opens your browser), or visit
 [http://localhost:20128/dashboard/ui](http://localhost:20128/dashboard/ui).
 `/` and the former `/dashboard` page route both redirect there. Dashboard access
 always requires a Janus API key, including from localhost.
@@ -293,10 +284,12 @@ export OPENAI_API_KEY=sk-janus-yourkey  # if require_api_key is on
 - **Cloudline dashboard** — responsive SvelteKit 2 + Svelte 5 + TypeScript SPA at `/dashboard/ui`, with light/dark/system themes, a command palette, live usage, analytics, routing visibility, and modular management screens
 - **Single self-hosted dashboard** — the versioned Cloudline bundle ships with Janus; production rendering has no runtime CDN or Node.js dependency. `/dashboard` and former page URLs are compatibility redirects to `/dashboard/ui`
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/ui/inventory`)
+- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot balances, MiniMax/Venice plans) surfaced in the inventory dashboard with low-quota alerts
 
 ## Upstream Key Inventory
 
-Built-in dashboard for upstream provider API keys: health checks, credit tracking, and automatic routing through the best available key.
+Built-in dashboard for upstream provider API keys: health checks, credit and
+usage-window tracking, and automatic routing through the best available key.
 
 **Dashboard:** `http://127.0.0.1:20128/dashboard/ui/inventory`
 
@@ -306,6 +299,12 @@ Built-in dashboard for upstream provider API keys: health checks, credit trackin
 - Credentials masked by default; authenticated Reveal/Copy actions clear the value after 30 seconds
 - History shows real status transitions and credit snapshots without no-op transition noise
 - Detected rate limits (RPM/RPD) deprioritize near-quota keys during routing
+- Account-value probes query each provider's own billing/usage endpoint — OpenRouter
+  `/key`, Z.AI & BigModel coding-plan quota, DeepSeek/Moonshot balances, MiniMax
+  coding-plan remains, Venice billing — and render usage windows (5h/weekly) with
+  reset times; results are cached for 10 minutes and refreshed on every validation
+  or via **Refresh usage** on a key
+- Near-exhausted windows (≥90%) raise a dashboard alert
 - Background recheck scheduler (twice daily by default)
 
 | Variable | Purpose |
@@ -324,8 +323,11 @@ janus inventory encrypt-keys                       # encrypt plaintext keys in D
 
 ## CLI Reference
 
+The CLI is the scripting surface; day-to-day operation happens in the dashboard.
+
 | Command | Description |
 |---|---|
+| `janus dashboard` | Open the Cloudline dashboard in your browser |
 | `janus serve` | Start the gateway server |
 | `janus config-init` | Generate default config YAML |
 | `janus config-path` | Print config file path |

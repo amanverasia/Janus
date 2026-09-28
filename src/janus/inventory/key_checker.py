@@ -12,9 +12,9 @@ from urllib.parse import quote
 
 import httpx
 
+from janus.inventory.account_value import ACCOUNT_VALUE_PROBES, refresh_account_value
 from janus.inventory.antigravity_credentials import normalize_antigravity_credential
 from janus.inventory.catalog import get_inventory_provider
-from janus.inventory.currency import normalize_credits_to_usd
 from janus.inventory.model_catalog import enrich_model_with_catalog
 from janus.inventory.url_guard import BlockedUrlError, safe_fetch
 from janus.inventory.xiaomi_tokenplan import (
@@ -422,82 +422,6 @@ def _get_check_url(provider: dict[str, Any], key: str, metadata: dict[str, Any] 
     if provider["id"] == "huggingface":
         return "https://huggingface.co/api/whoami-v2"
     return f"{base_url}{endpoint}"
-
-
-def _parse_credit_check_response(
-    provider_id: str,
-    body: Any,
-    result: dict[str, Any],
-) -> None:
-    if provider_id == "openrouter" and isinstance(body, dict):
-        data_raw = body.get("data")
-        data: dict[str, Any] = data_raw if isinstance(data_raw, dict) else body
-        if data.get("limit") is not None:
-            result["credits_total"] = float(data["limit"])
-        if data.get("limit_remaining") is not None:
-            result["credits_remaining"] = float(data["limit_remaining"])
-        if data.get("usage") is not None:
-            result["credits_used"] = float(data["usage"])
-        meta: dict[str, Any] = {}
-        for field in (
-            "is_free_tier",
-            "usage_daily",
-            "usage_weekly",
-            "usage_monthly",
-            "limit_reset",
-        ):
-            if data.get(field) is not None:
-                meta[field] = data[field]
-        if meta:
-            result["metadata"] = meta
-
-    if provider_id == "deepseek" and isinstance(body, dict):
-        infos = body.get("balance_infos")
-        if isinstance(infos, list):
-            usd = next((item for item in infos if item.get("currency") == "USD"), None)
-            info = usd or (infos[0] if infos else None)
-            if isinstance(info, dict):
-                currency = str(info.get("currency") or "USD")
-                total = float(str(info.get("total_balance") or "0"))
-                granted = float(str(info.get("granted_balance") or "0"))
-                topped = float(str(info.get("topped_up_balance") or "0"))
-                raw_total = granted + topped
-                raw_used = max(0.0, raw_total - total)
-                remaining_usd, total_usd, used_usd, fx_meta = normalize_credits_to_usd(
-                    total, raw_total, raw_used, currency
-                )
-                result["credits_remaining"] = remaining_usd
-                result["credits_total"] = total_usd
-                result["credits_used"] = used_usd
-                if fx_meta:
-                    existing = result.get("metadata")
-                    merged = {**(existing if isinstance(existing, dict) else {}), **fx_meta}
-                    result["metadata"] = merged
-
-    if provider_id == "moonshot" and isinstance(body, dict):
-        if body.get("code") not in (None, 0):
-            return
-        moonshot_data = body.get("data")
-        if isinstance(moonshot_data, dict) and moonshot_data.get("available_balance") is not None:
-            remaining = float(moonshot_data["available_balance"])
-            cash = float(moonshot_data.get("cash_balance") or 0)
-            voucher = float(moonshot_data.get("voucher_balance") or 0)
-            raw_total = cash + voucher
-            raw_used = max(0.0, raw_total - remaining)
-            remaining_usd, total_usd, used_usd, fx_meta = normalize_credits_to_usd(
-                remaining, raw_total, raw_used, "CNY"
-            )
-            result["credits_remaining"] = remaining_usd
-            result["credits_total"] = total_usd
-            result["credits_used"] = used_usd
-            meta = {}
-            if cash or voucher:
-                meta["cash_balance"] = cash
-                meta["voucher_balance"] = voucher
-            if fx_meta:
-                meta.update(fx_meta)
-            if meta:
-                result["metadata"] = meta
 
 
 def _model_ids_from_result(models: list[dict[str, Any]] | None) -> list[str]:
@@ -1392,44 +1316,6 @@ async def validate_key(
                 if models or provider.get("models_endpoint"):
                     check_result["models"] = models
 
-            credit_endpoint = provider.get("credit_check_endpoint")
-            if credit_endpoint:
-                try:
-                    credit_base = _get_base_url(provider, metadata)
-                    if provider_id == "deepseek":
-                        credit_base = re.sub(r"/v1/?$", "", credit_base)
-                    credit_url = f"{credit_base}{credit_endpoint}"
-                    credit_result = await _fetch_with_headers(
-                        credit_url,
-                        headers=headers,
-                        allow_private_network=bool(provider.get("allow_private_network")),
-                    )
-                    if credit_result["status"] == 200 and credit_result["body"] is not None:
-                        _parse_credit_check_response(
-                            provider_id,
-                            credit_result["body"],
-                            check_result,
-                        )
-                    elif provider_id == "openrouter" and credit_result["status"] in {401, 403}:
-                        return {
-                            "is_valid": False,
-                            "error": f"Auth failed ({credit_result['status']})",
-                        }
-                    else:
-                        logger.warning(
-                            "%s credit check returned HTTP %s; credits left unknown.",
-                            provider_id,
-                            credit_result["status"],
-                        )
-                except BlockedUrlError:
-                    raise
-                except Exception as exc:
-                    logger.warning(
-                        "%s credit check failed: %s; credits left unknown.",
-                        provider_id,
-                        exc,
-                    )
-
             compute_health_status(check_result)
 
             if USABILITY_PROBE_ENABLED and not skip_probe:
@@ -1613,6 +1499,12 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                     key_id,
                     {"models_discovered_at": _now()},
                 )
+
+            if ACCOUNT_VALUE_PROBES.get(str(key["provider_id"])) is not None:
+                try:
+                    await refresh_account_value(db_path, key_id, force=True)
+                except Exception as exc:
+                    logger.warning("account-value refresh failed for %s: %s", key_id, exc)
         else:
             error = result.get("error") or "Unknown error"
             failure_count = int(key.get("consecutive_failures") or 0) + 1

@@ -30,7 +30,8 @@ janus config-init
 janus serve --port 20128
 ```
 
-Point your coding tool at `http://localhost:20128/v1` and start routing.
+Run `janus dashboard` to open the Cloudline UI, add your providers and keys there,
+then point your coding tool at `http://localhost:20128/v1` and start routing.
 
 !!! tip "What next?"
     - [Getting Started](getting-started.md) — full install and first-request walkthrough
@@ -50,7 +51,7 @@ Named ordered model sequences. A client sends `"model": "best-effort"` and Janus
 
 ### Key Inventory
 
-Store, validate, and route with many upstream API keys across 27+ providers. Keys are auto-detected, rechecked on a schedule, and wired into gateway routing as multi-account pools. See [Key Inventory](inventory.md).
+Store, validate, and route with many upstream API keys across 27+ providers. Keys are auto-detected, rechecked on a schedule, and wired into gateway routing as multi-account pools. Per-account value — credit balances and provider usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot balances, MiniMax/Venice plans) — is probed from each provider's billing endpoint, rendered with usage bars and reset times, and raises alerts near exhaustion. See [Key Inventory](inventory.md).
 
 ### Token Savers
 
@@ -73,11 +74,14 @@ Cost tracking, spend trends, success rates, and breakdowns by model, provider, a
 
 ### Dashboard
 
-Cloudline is the single dashboard UI: a responsive Svelte control plane at
-`/dashboard/ui` with light/dark/system themes, deep links, and a command palette.
-It provides monitoring, provider and model routing, key inventory, budgets, API
-keys, pricing, and settings. Changes hot-reload without a server restart.
-`/dashboard` and former page URLs are compatibility redirects to Cloudline.
+Cloudline is the single dashboard UI — and the primary interface for operating
+Janus. It is a responsive Svelte control plane at `/dashboard/ui` (open it with
+`janus dashboard`) with light/dark/system themes, deep links, and a command
+palette. It provides monitoring, provider and model routing, key inventory with
+per-account usage tracking, budgets, API keys, pricing, and settings. Changes
+hot-reload without a server restart. The CLI remains for scripting and
+automation. `/dashboard` and former page URLs are compatibility redirects to
+Cloudline.
 
 ## Tech Stack
 

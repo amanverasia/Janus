@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +116,7 @@ async def get_credit_summary(db_path: str | Path) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT
+                 p.id,
                  p.display_name,
                  p.name,
                  p.billing_model,
@@ -131,7 +133,44 @@ async def get_credit_summary(db_path: str | Path) -> list[dict[str, Any]]:
                ORDER BY total_remaining DESC"""
         ) as cur:
             rows = await cur.fetchall()
-    return [dict(row) for row in rows]
+    summary = [dict(row) for row in rows]
+    worst_windows = await get_worst_usage_by_provider(db_path)
+    for row in summary:
+        row["worst_usage_percent"] = worst_windows.get(str(row["id"]))
+    return summary
+
+
+async def get_worst_usage_by_provider(db_path: str | Path) -> dict[str, float]:
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT k.provider_id, k.account_value
+               FROM upstream_keys k
+               JOIN inventory_providers p ON k.provider_id = p.id
+               WHERE p.is_active = 1 AND k.status = 'active' AND k.is_valid = 1
+                 AND k.account_value IS NOT NULL"""
+        ) as cur:
+            rows = await cur.fetchall()
+    worst: dict[str, float] = {}
+    for row in rows:
+        value = row["account_value"]
+        if not isinstance(value, str) or not value:
+            continue
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            continue
+        windows = parsed.get("windows") if isinstance(parsed, dict) else None
+        if not isinstance(windows, list):
+            continue
+        for window in windows:
+            if not isinstance(window, dict):
+                continue
+            percent = window.get("used_percent")
+            if not isinstance(percent, (int, float)):
+                continue
+            provider_id = str(row["provider_id"])
+            worst[provider_id] = max(worst.get(provider_id, 0.0), float(percent))
+    return worst
 
 
 async def get_best_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:

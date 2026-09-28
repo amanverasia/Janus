@@ -39,6 +39,13 @@ def _prepare_key_storage(key_value: str) -> tuple[str, str, str]:
 
 def _decode_upstream_row(row: Any, *, include_secret: bool = True) -> dict[str, Any]:
     item = dict(row)
+    account_value = item.get("account_value")
+    if isinstance(account_value, str) and account_value:
+        try:
+            parsed = json.loads(account_value)
+            item["account_value"] = parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            item["account_value"] = None
     if not include_secret:
         item.pop("key_value", None)
         return item
@@ -380,6 +387,11 @@ async def update_upstream_key(
         "daily_credit_used",
         "daily_credit_date",
         "is_daily_limited",
+        "account_value",
+        "account_value_status",
+        "account_value_error",
+        "account_value_fetched_at",
+        "account_value_checked_at",
         "priority",
         "metadata",
         "source_node",

@@ -43,6 +43,25 @@ def serve(
     uvicorn.run(app_obj, host=host, port=port, reload=reload, log_level="info")
 
 
+@app.command(name="dashboard")
+def dashboard(
+    port: int = typer.Option(20128, "--port", "-p", help="Port the gateway listens on"),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host the gateway binds to"),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the dashboard in your browser"
+    ),
+) -> None:
+    """Open the Janus dashboard (the primary way to operate the gateway)."""
+    import webbrowser
+
+    display_host = "localhost" if host in ("0.0.0.0", "::") else host
+    url = f"http://{display_host}:{port}/dashboard/ui"
+    typer.echo(f"Janus dashboard: {url}")
+    typer.echo("Sign in with one of your Janus API keys (sk-janus-...).")
+    if open_browser:
+        webbrowser.open(url)
+
+
 @app.command(name="config-init")
 def config_init(
     path: str = typer.Option("~/.janus/config.yaml", "--path", "-p", help="Where to create config"),
