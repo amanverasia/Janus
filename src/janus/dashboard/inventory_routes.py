@@ -14,6 +14,7 @@ from starlette.responses import Response
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
+from janus.inventory.account_value import refresh_account_value
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
 from janus.inventory.key_checker import check_all_upstream_keys, check_upstream_key
@@ -454,6 +455,22 @@ async def api_test_upstream_key(request: Request, key_id: str) -> JSONResponse:
     if result.get("credits_remaining") is not None:
         payload["credits_remaining"] = result["credits_remaining"]
     return JSONResponse(payload)
+
+
+@router.post("/api/inventory/keys/{key_id}/account-value/refresh")
+async def api_refresh_account_value(request: Request, key_id: str) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    if await get_upstream_key(db_path, key_id) is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    from janus.dashboard.alerts import invalidate_dashboard_alerts
+
+    state = await refresh_account_value(db_path, key_id, force=True)
+    invalidate_dashboard_alerts(request.app)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    return JSONResponse(
+        {"ok": True, "key_id": key_id, "account_value": state}, headers=_NO_STORE_HEADERS
+    )
 
 
 @router.post("/api/inventory/keys/{key_id}/archive")

@@ -25,6 +25,7 @@ Summary = Literal["ok", "warning", "critical"]
 _SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 _ALERT_CAP = 8
 _LOW_CREDIT_USD = 1.0
+_EXHAUSTED_WINDOW_PERCENT = 90.0
 _BAD_INVENTORY_STATUSES = frozenset(
     {
         "critical",
@@ -305,12 +306,33 @@ async def _cooldown_alerts(db_path: Path, request: Request) -> list[DashboardAle
     ]
 
 
+def _worst_account_window(account_value: Any) -> float:
+    if not isinstance(account_value, str) or not account_value:
+        return 0.0
+    import json
+
+    try:
+        parsed = json.loads(account_value)
+    except json.JSONDecodeError:
+        return 0.0
+    windows = parsed.get("windows") if isinstance(parsed, dict) else None
+    if not isinstance(windows, list):
+        return 0.0
+    percents = [
+        float(window["used_percent"])
+        for window in windows
+        if isinstance(window, dict) and isinstance(window.get("used_percent"), (int, float))
+    ]
+    return max(percents, default=0.0)
+
+
 async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
     del request
     alerts: list[DashboardAlert] = []
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT k.status, k.health_status, k.credits_remaining, p.billing_model
+            """SELECT k.status, k.health_status, k.credits_remaining, k.account_value,
+                      p.billing_model
                FROM upstream_keys k
                JOIN inventory_providers p ON k.provider_id = p.id
                WHERE k.status != 'revoked' AND k.is_archived = 0"""
@@ -319,6 +341,7 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
 
     bad_status_count = 0
     low_credit_count = 0
+    exhausted_quota_count = 0
     for row in rows:
         billing_model = str(row["billing_model"] or "")
         status = str(row["status"] or "")
@@ -330,6 +353,23 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
         credits = row["credits_remaining"]
         if credits is not None and float(credits) < _LOW_CREDIT_USD:
             low_credit_count += 1
+        if _worst_account_window(row["account_value"]) >= _EXHAUSTED_WINDOW_PERCENT:
+            exhausted_quota_count += 1
+
+    if exhausted_quota_count:
+        noun = "account" if exhausted_quota_count == 1 else "accounts"
+        alerts.append(
+            DashboardAlert(
+                id="inventory:quota_exhausted",
+                severity="warning",
+                title="Upstream quota nearly exhausted",
+                detail=(
+                    f"{exhausted_quota_count} inventory {noun} at or above "
+                    f"{_EXHAUSTED_WINDOW_PERCENT:.0f}% of a usage window."
+                ),
+                href="/dashboard/ui/inventory/keys",
+            )
+        )
 
     if bad_status_count:
         noun = "key" if bad_status_count == 1 else "keys"

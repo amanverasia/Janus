@@ -298,16 +298,26 @@
         {#each credits as row}
           {@const remaining = number(row.total_remaining)}
           {@const cap = number(row.total_cap)}
+          {@const worstUsage =
+            row.worst_usage_percent == null ? null : Math.round(number(row.worst_usage_percent))}
           <div class="credit-row">
             <div>
               <strong>{text(row.display_name ?? row.provider_id)}</strong>
               <small>{compact(row.key_count)} keys · {text(row.billing_model, 'usage')}</small>
+              {#if worstUsage != null}
+                <div class="usage-bar" class:usage-hot={worstUsage >= 90}>
+                  <span class="usage-track"><i style={`width:${worstUsage}%`}></i></span>
+                  <span>{worstUsage}% worst window</span>
+                </div>
+              {/if}
             </div>
             <div class="credit-value">
               <strong>{money(remaining)}</strong>
               {#if cap > 0}<small>
                   {Math.round((remaining / cap) * 100)}% remaining
-                </small>{:else}<small>available</small>{/if}
+                </small>{:else if worstUsage != null}<small>windows tracked</small>{:else}<small>
+                  available
+                </small>{/if}
             </div>
           </div>
         {/each}
@@ -634,6 +644,36 @@
   .credit-value small {
     display: block;
     margin: 3px 0 0;
+  }
+  .usage-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .usage-track {
+    display: block;
+    flex: none;
+    width: 120px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    overflow: hidden;
+  }
+  .usage-track i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--accent-strong);
+  }
+  .usage-bar.usage-hot .usage-track i {
+    background: var(--danger);
+  }
+  .usage-bar span {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
   }
   .activity-panel {
     margin-top: 18px;

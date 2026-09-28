@@ -33,6 +33,9 @@
   let testing = '';
   let reclassifying = false;
   let reclassifyPreview: JsonObject | undefined;
+  let refreshingValue = '';
+
+  const VALUE_STALE_MS = 30 * 60 * 1000;
 
   $: rows = firstList(data, 'keys', 'items');
   $: filters = object(data.filters);
@@ -161,6 +164,43 @@
       };
     } finally {
       testing = '';
+    }
+  }
+
+  function accountWindowsOf(row: JsonObject): JsonObject[] {
+    return list(object(row.account_value).windows);
+  }
+
+  function windowPercent(window: JsonObject): number {
+    return Math.round(number(window.used_percent, 0));
+  }
+
+  function windowTitle(window: JsonObject): string {
+    const reset = text(window.reset_at, '');
+    return reset ? `Resets ${dateTime(reset)}` : text(window.label);
+  }
+
+  function accountStatusOf(row: JsonObject): string {
+    return text(row.account_value_status, '');
+  }
+
+  function accountStale(row: JsonObject): boolean {
+    const checked = text(row.account_value_checked_at, '');
+    if (!checked) return true;
+    return Date.now() - new Date(checked).getTime() > VALUE_STALE_MS;
+  }
+
+  async function refreshAccountValue(row: JsonObject | undefined) {
+    const id = row ? idOf(row) : '';
+    if (!id) return;
+    refreshingValue = id;
+    try {
+      await action(
+        `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/account-value/refresh`,
+        { success: 'Account usage refreshed' }
+      );
+    } finally {
+      refreshingValue = '';
     }
   }
 
@@ -509,6 +549,31 @@
                 {#if row.rate_limit_rpm != null}<small class="cell-subtitle">
                     {compact(row.rate_limit_rpm)} RPM
                   </small>{/if}
+                {#if accountWindowsOf(row).length}
+                  <div class="quota-bars">
+                    {#each accountWindowsOf(row) as window}
+                      <div
+                        class="quota-bar"
+                        class:quota-hot={windowPercent(window) >= 90}
+                        class:quota-warm={windowPercent(window) >= 75 && windowPercent(window) < 90}
+                        title={windowTitle(window)}
+                      >
+                        <span class="quota-label">{text(window.label)}</span>
+                        <span class="quota-track">
+                          <i style={`width:${windowPercent(window)}%`}></i>
+                        </span>
+                        <span class="quota-value">{windowPercent(window)}%</span>
+                      </div>
+                    {/each}
+                  </div>
+                {:else if accountStatusOf(row) === 'unavailable'}
+                  <small
+                    class="cell-subtitle quota-error"
+                    title={text(row.account_value_error, '')}
+                  >
+                    usage unavailable
+                  </small>
+                {/if}
               </td>
               <td data-label="Priority">
                 <span class="priority-pill">P{compact(row.priority)}</span>
@@ -642,6 +707,7 @@
       <p>Loading credential health…</p>
     </div>
   {:else if detail}
+    {@const detailId = idOf(detail)}
     <div class="detail-hero">
       <span class="provider-avatar">
         {text(detail.provider_display_name ?? detail.provider_id, '?')
@@ -691,6 +757,47 @@
         <span>Last checked</span>
         <strong>{dateTime(detail.last_checked_at)}</strong>
       </div>
+    </div>
+    <div class="detail-section">
+      <div class="section-title">
+        <h3>Account usage</h3>
+        <button
+          class="button compact-button"
+          disabled={refreshingValue === detailId}
+          on:click={() => refreshAccountValue(detail)}
+        >
+          <Icon name="refresh" size={15} />
+          {refreshingValue === detailId ? 'Refreshing…' : 'Refresh usage'}
+        </button>
+      </div>
+      {#if accountWindowsOf(detail).length}
+        <div class="quota-bars quota-bars-detail">
+          {#each accountWindowsOf(detail) as window}
+            <div
+              class="quota-bar"
+              class:quota-hot={windowPercent(window) >= 90}
+              class:quota-warm={windowPercent(window) >= 75 && windowPercent(window) < 90}
+            >
+              <span class="quota-label">{text(window.label)}</span>
+              <span class="quota-track"><i style={`width:${windowPercent(window)}%`}></i></span>
+              <span class="quota-value">{windowPercent(window)}%</span>
+            </div>
+          {/each}
+        </div>
+        <p class="muted detail-copy">
+          {detail.account_value_fetched_at
+            ? `Fetched ${dateTime(detail.account_value_fetched_at)}`
+            : 'Usage windows reported by the provider.'}
+        </p>
+      {:else if accountStatusOf(detail) === 'unavailable'}
+        <p class="muted detail-copy quota-error">
+          Usage probe unavailable: {text(detail.account_value_error, 'unknown error')}
+        </p>
+      {:else if accountStatusOf(detail) === 'unsupported'}
+        <p class="muted detail-copy">This provider does not expose a usage endpoint.</p>
+      {:else}
+        <p class="muted detail-copy">No usage data yet — refresh to probe the provider.</p>
+      {/if}
     </div>
     <form class="priority-form" on:submit|preventDefault={savePriority}>
       <label class="field">
@@ -1185,6 +1292,61 @@
   }
   .history-list time {
     text-align: right;
+  }
+  .quota-bars {
+    display: grid;
+    gap: 4px;
+    margin-top: 7px;
+  }
+  .quota-bars-detail {
+    margin-top: 0;
+  }
+  .quota-bar {
+    display: grid;
+    grid-template-columns: 72px 1fr 38px;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+  }
+  .quota-label {
+    color: var(--muted);
+    font-weight: 620;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quota-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    overflow: hidden;
+  }
+  .quota-track i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--accent-strong);
+  }
+  .quota-bar.quota-warm .quota-track i {
+    background: var(--warning);
+  }
+  .quota-bar.quota-hot .quota-track i {
+    background: var(--danger);
+  }
+  .quota-value {
+    color: var(--muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .quota-error {
+    color: var(--warning);
+  }
+  .section-title .compact-button {
+    white-space: nowrap;
+  }
+  .detail-section .detail-copy {
+    margin: 6px 0 2px;
   }
   @media (max-width: 900px) {
     .inventory-toolbar .search-field {

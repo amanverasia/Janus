@@ -198,6 +198,11 @@ CREATE TABLE IF NOT EXISTS upstream_keys (
     daily_credit_used REAL DEFAULT 0,
     daily_credit_date TEXT,
     is_daily_limited INTEGER NOT NULL DEFAULT 0,
+    account_value TEXT,
+    account_value_status TEXT,
+    account_value_error TEXT,
+    account_value_fetched_at TEXT,
+    account_value_checked_at TEXT,
     priority INTEGER NOT NULL DEFAULT 0,
     metadata TEXT,
     source_node TEXT,
@@ -269,6 +274,11 @@ _UPSTREAM_KEY_NEW_COLUMNS = [
     ("consecutive_failures", "INTEGER NOT NULL DEFAULT 0"),
     ("validation_paused_at", "TEXT"),
     ("models_discovered_at", "TEXT"),
+    ("account_value", "TEXT"),
+    ("account_value_status", "TEXT"),
+    ("account_value_error", "TEXT"),
+    ("account_value_fetched_at", "TEXT"),
+    ("account_value_checked_at", "TEXT"),
 ]
 
 _NEW_USAGE_COLUMNS = [
