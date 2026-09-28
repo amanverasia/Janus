@@ -623,7 +623,12 @@ async def count_pending_upstream_keys(db_path: str | Path) -> int:
     return int(row[0])
 
 
-async def get_upstream_keys_by_ids(db_path: str | Path, key_ids: list[str]) -> list[dict[str, Any]]:
+async def get_upstream_keys_by_ids(
+    db_path: str | Path,
+    key_ids: list[str],
+    *,
+    include_secret: bool = True,
+) -> list[dict[str, Any]]:
     if not key_ids:
         return []
     placeholders = ", ".join("?" for _ in key_ids)
@@ -631,7 +636,7 @@ async def get_upstream_keys_by_ids(db_path: str | Path, key_ids: list[str]) -> l
     async with get_connection(db_path) as db:
         async with db.execute(query, key_ids) as cur:
             rows = await cur.fetchall()
-    return [_decode_upstream_row(row) for row in rows]
+    return [_decode_upstream_row(row, include_secret=include_secret) for row in rows]
 
 
 async def export_upstream_keys(db_path: str | Path) -> list[dict[str, Any]]:

@@ -466,6 +466,9 @@ async def api_refresh_account_value(request: Request, key_id: str) -> JSONRespon
 
     state = await refresh_account_value(db_path, key_id, force=True)
     invalidate_dashboard_alerts(request.app)
+    handler = getattr(request.app.state.provider_snapshot, "handler", None)
+    if handler is not None:
+        await handler.load_probed_headroom()
     if state is None:
         raise HTTPException(status_code=404, detail="Key not found")
     return JSONResponse(

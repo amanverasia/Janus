@@ -950,8 +950,12 @@ async def _handle_with_snapshot(
 
     attempt_errors: list[str] = []
     public_attempt_errors: list[str] = []
+    probe_demoted: dict[str, float] = dict(handler.last_probe_demotions)
 
     def _note_attempt_failure(failed: ResolvedTarget, detail: str) -> None:
+        probed_percent = probe_demoted.get(failed.account_id)
+        if probed_percent is not None:
+            detail = f"{detail} (probed window {probed_percent:.0f}% used)"
         attempt_errors.append(f"{failed.account_id}: {detail}")
         public_attempt_errors.append(f"attempt {len(public_attempt_errors) + 1}: {detail}")
         logger.warning(

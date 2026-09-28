@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
@@ -31,12 +32,47 @@ from janus.storage.cooldowns import (
     save_cooldown,
 )
 from janus.storage.quotas import window_id
+from janus.storage.upstream_keys import get_upstream_keys_by_ids
 
 RPM_WINDOW_SECONDS = 60.0
 DEFAULT_COOLDOWN_RETRY_AFTER_S = 60.0
 MIN_RETRY_AFTER_S = 1.0
+PROBED_TTL_SECONDS = 600.0
+PROBED_DEMOTION_PERCENT = 90.0
+PROBED_EXHAUSTED_PERCENT = 100.0
 
 logger = logging.getLogger(__name__)
+
+
+def _worst_window_percent(account_value: Any) -> float | None:
+    """Max used_percent across an account-value probe payload's usage windows."""
+    if isinstance(account_value, str):
+        try:
+            account_value = json.loads(account_value)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(account_value, dict):
+        return None
+    windows = account_value.get("windows")
+    if not isinstance(windows, list):
+        return None
+    percents = [
+        float(window["used_percent"])
+        for window in windows
+        if isinstance(window, dict)
+        and isinstance(window.get("used_percent"), (int, float))
+        and not isinstance(window.get("used_percent"), bool)
+    ]
+    return max(percents) if percents else None
+
+
+def _iso_epoch(value: Any) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return None
 
 
 def _persist_task_callback(operation: str, subject: str) -> Callable[[asyncio.Task[Any]], None]:
@@ -91,6 +127,8 @@ class FallbackHandler:
         self._daily_date: str = self._today()
         self._quota_used: dict[str, int] = {}
         self._quota_window_id: dict[str, str] = {}
+        self._probed_used: dict[str, tuple[float, float]] = {}
+        self.last_probe_demotions: list[tuple[str, float]] = []
 
     @staticmethod
     def _today() -> str:
@@ -210,9 +248,9 @@ class FallbackHandler:
                 return False
         return True
 
-    def _deprioritize_rate_limited(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
-        if len(accounts) <= 1:
-            return accounts
+    def _partition_rate_limited(
+        self, accounts: list[ResolvedTarget]
+    ) -> tuple[list[ResolvedTarget], list[ResolvedTarget]]:
         headroom: list[ResolvedTarget] = []
         limited: list[ResolvedTarget] = []
         for target in accounts:
@@ -220,7 +258,90 @@ class FallbackHandler:
                 headroom.append(target)
             else:
                 limited.append(target)
+        return headroom, limited
+
+    def _deprioritize_rate_limited(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
+        if len(accounts) <= 1:
+            return accounts
+        headroom, limited = self._partition_rate_limited(accounts)
         return headroom + limited
+
+    def _probed_tier(self, account_id: str) -> int:
+        """0 = fresh/unknown headroom, 1 = ≥90% used, 2 = exhausted (100%).
+
+        Only TTL-fresh probe data counts; stale or absent data is neutral so a
+        long-running process never demotes an account on outdated probes.
+        """
+        entry = self._probed_used.get(account_id)
+        if entry is None:
+            return 0
+        used_percent, checked_at = entry
+        if time.time() - checked_at >= PROBED_TTL_SECONDS:
+            return 0
+        if used_percent >= PROBED_EXHAUSTED_PERCENT:
+            return 2
+        if used_percent >= PROBED_DEMOTION_PERCENT:
+            return 1
+        return 0
+
+    def _deprioritize_probed(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
+        """Soft-order accounts by probed window usage; nothing is ever dropped."""
+        if len(accounts) <= 1:
+            return accounts
+        fresh: list[ResolvedTarget] = []
+        near_limit: list[ResolvedTarget] = []
+        exhausted: list[ResolvedTarget] = []
+        for target in accounts:
+            tier = self._probed_tier(target.account_id)
+            if tier > 0:
+                self.last_probe_demotions.append(
+                    (target.account_id, self._probed_used[target.account_id][0])
+                )
+            if tier == 2:
+                exhausted.append(target)
+            elif tier == 1:
+                near_limit.append(target)
+            else:
+                fresh.append(target)
+        return fresh + near_limit + exhausted
+
+    def _apply_headroom_ordering(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
+        """Compose soft headroom ordering: rate limits first, then probed windows.
+
+        Probed demotion is applied within each rate group so a rate-limited
+        account never outranks a rate-ok account via probe data.
+        """
+        headroom, limited = self._partition_rate_limited(accounts)
+        return self._deprioritize_probed(headroom) + self._deprioritize_probed(limited)
+
+    async def load_probed_headroom(self) -> None:
+        """Seed probed window usage from the account-value cache (never secrets)."""
+        if self.db_path is None:
+            return
+        key_ids = sorted(
+            {
+                config.upstream_key_id
+                for configs in self.registry.providers.values()
+                for config in configs
+                if config.upstream_key_id
+            }
+        )
+        if not key_ids:
+            self._probed_used = {}
+            return
+        rows = await get_upstream_keys_by_ids(self.db_path, key_ids, include_secret=False)
+        probed: dict[str, tuple[float, float]] = {}
+        for row in rows:
+            if str(row.get("account_value_status") or "") != "ok":
+                continue
+            checked_at = _iso_epoch(row.get("account_value_checked_at"))
+            worst = _worst_window_percent(row.get("account_value"))
+            if checked_at is None or worst is None:
+                continue
+            if time.time() - checked_at >= PROBED_TTL_SECONDS:
+                continue
+            probed[str(row["id"])] = (worst, checked_at)
+        self._probed_used = probed
 
     async def load_request_counts(self) -> None:
         if self.db_path is None:
@@ -403,6 +524,7 @@ class FallbackHandler:
         self._last_strategy = (
             strategy.value if isinstance(strategy, AccountStrategy) else str(strategy)
         )
+        self.last_probe_demotions = []
         # Synchronous by design: the rotation-counter and sticky read-modify-writes
         # below have no await between read and write, so they are an atomic critical
         # section under the single-threaded event loop (no lock needed).
@@ -445,7 +567,7 @@ class FallbackHandler:
                         if self.is_available(target.account_id, target.model)
                     ]
                     all_attempts.extend(
-                        self._deprioritize_rate_limited(
+                        self._apply_headroom_ordering(
                             self._resolve_order(
                                 m,
                                 available,
@@ -489,7 +611,7 @@ class FallbackHandler:
                 f"No available providers for '{model_str}' (all accounts cooled down)",
                 retry_after=retry_after,
             )
-        return self._deprioritize_rate_limited(
+        ordered = self._apply_headroom_ordering(
             self._resolve_order(
                 model_str,
                 available,
@@ -499,6 +621,14 @@ class FallbackHandler:
                 sticky_limit=sticky_limit,
             )
         )
+        if self.last_probe_demotions:
+            logger.debug(
+                "Probed window headroom demoted %d account(s) for '%s': %s",
+                len(self.last_probe_demotions),
+                model_str,
+                ", ".join(f"{a}={p:.0f}%" for a, p in self.last_probe_demotions),
+            )
+        return ordered
 
     def mark_cooldown(
         self,
