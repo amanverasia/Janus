@@ -141,6 +141,14 @@ class CanonicalRequest(BaseModel):
     stream: bool = False
     thinking: dict[str, Any] | None = None
     reasoning_effort: str | None = None
+    seed: int | None = None
+    n: int | None = None
+    presence_penalty: float | None = None
+    frequency_penalty: float | None = None
+    logit_bias: dict[str, int] | None = None
+    parallel_tool_calls: bool | None = None
+    logprobs: bool | None = None
+    top_logprobs: int | None = None
 
 
 class CanonicalResponse(BaseModel):

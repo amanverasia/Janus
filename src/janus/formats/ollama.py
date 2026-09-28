@@ -35,6 +35,7 @@ from janus.canonical.models import (
     Usage,
     tool_result_text,
 )
+from janus.canonical.params import log_unsupported_sampling_params
 
 _DONE_TO_STOP: dict[str, str] = {
     "stop": "end_turn",
@@ -355,6 +356,7 @@ class OllamaAdapter:
     # ---- upstream request building ----
 
     def build_upstream_request(self, req: CanonicalRequest, model: str) -> dict[str, Any]:
+        log_unsupported_sampling_params(req, "ollama", supported=frozenset({"seed"}))
         messages: list[dict[str, Any]] = []
         for block in req.system:
             messages.append({"role": "system", "content": block.text})
@@ -373,6 +375,8 @@ class OllamaAdapter:
             options["temperature"] = req.temperature
         if req.top_p is not None:
             options["top_p"] = req.top_p
+        if req.seed is not None:
+            options["seed"] = req.seed
         if req.stop:
             options["stop"] = req.stop
         if options:

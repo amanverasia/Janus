@@ -34,6 +34,7 @@ from janus.canonical.models import (
     Usage,
     tool_result_text,
 )
+from janus.canonical.params import log_unsupported_sampling_params
 from janus.streaming.sse import encode_sse
 
 _ROLE_TO_GEMINI: dict[str, str] = {
@@ -471,6 +472,7 @@ class GeminiAdapter:
     # ---- upstream request building ----
 
     def build_upstream_request(self, req: CanonicalRequest, model: str) -> dict[str, Any]:
+        log_unsupported_sampling_params(req, "gemini", supported=frozenset({"seed"}))
         system_parts = [{"text": b.text} for b in req.system]
         tool_names: dict[str, str] = {}
         for message in req.messages:
@@ -495,6 +497,8 @@ class GeminiAdapter:
             gen_config["temperature"] = req.temperature
         if req.top_p is not None:
             gen_config["topP"] = req.top_p
+        if req.seed is not None:
+            gen_config["seed"] = req.seed
         if req.stop:
             gen_config["stopSequences"] = req.stop
         if gen_config:

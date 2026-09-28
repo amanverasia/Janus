@@ -335,6 +335,16 @@ class OpenAIAdapter:
         temperature = raw.get("temperature")
         top_p = raw.get("top_p")
         stop = raw.get("stop")
+        if isinstance(stop, str):
+            stop = [stop]
+        seed = raw.get("seed")
+        n = raw.get("n")
+        presence_penalty = raw.get("presence_penalty")
+        frequency_penalty = raw.get("frequency_penalty")
+        logit_bias = raw.get("logit_bias")
+        parallel_tool_calls = raw.get("parallel_tool_calls")
+        logprobs = raw.get("logprobs")
+        top_logprobs = raw.get("top_logprobs")
         reasoning_effort = self._parse_reasoning_effort(raw)
 
         return CanonicalRequest(
@@ -350,6 +360,20 @@ class OpenAIAdapter:
             stream=bool(raw.get("stream", False)),
             thinking=self._parse_thinking(raw),
             reasoning_effort=reasoning_effort,
+            seed=int(seed) if seed is not None else None,
+            n=int(n) if n is not None else None,
+            presence_penalty=(float(presence_penalty) if presence_penalty is not None else None),
+            frequency_penalty=(float(frequency_penalty) if frequency_penalty is not None else None),
+            logit_bias=(
+                {str(k): int(v) for k, v in logit_bias.items()}
+                if isinstance(logit_bias, dict)
+                else None
+            ),
+            parallel_tool_calls=(
+                bool(parallel_tool_calls) if parallel_tool_calls is not None else None
+            ),
+            logprobs=bool(logprobs) if logprobs is not None else None,
+            top_logprobs=int(top_logprobs) if top_logprobs is not None else None,
         )
 
     @staticmethod
@@ -484,6 +508,22 @@ class OpenAIAdapter:
             payload["temperature"] = req.temperature
         if req.top_p is not None:
             payload["top_p"] = req.top_p
+        if req.seed is not None:
+            payload["seed"] = req.seed
+        if req.n is not None:
+            payload["n"] = req.n
+        if req.presence_penalty is not None:
+            payload["presence_penalty"] = req.presence_penalty
+        if req.frequency_penalty is not None:
+            payload["frequency_penalty"] = req.frequency_penalty
+        if req.logit_bias:
+            payload["logit_bias"] = req.logit_bias
+        if req.parallel_tool_calls is not None:
+            payload["parallel_tool_calls"] = req.parallel_tool_calls
+        if req.logprobs is not None:
+            payload["logprobs"] = req.logprobs
+        if req.top_logprobs is not None:
+            payload["top_logprobs"] = req.top_logprobs
         if req.stop:
             payload["stop"] = req.stop
         if req.tools:
