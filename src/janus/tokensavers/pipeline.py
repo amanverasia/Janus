@@ -49,6 +49,12 @@ class SaverPipeline:
             logger.warning("Saver stats recording failed for %s: %s", name, e)
 
     def apply(self, req: CanonicalRequest) -> CanonicalRequest:
+        req, _ = self.apply_traced(req)
+        return req
+
+    def apply_traced(self, req: CanonicalRequest) -> tuple[CanonicalRequest, list[str]]:
+        """Run sync savers, returning the request and the savers that ran for it."""
+        applied: list[str] = []
         for saver in self._savers:
             name = type(saver).__name__
             try:
@@ -58,6 +64,7 @@ class SaverPipeline:
                 bytes_before = None
             try:
                 req = saver.transform(req)
+                applied.append(name)
             except Exception as e:
                 logger.warning("Token saver %s failed: %s", name, e)
                 continue
@@ -67,9 +74,15 @@ class SaverPipeline:
                     self._record(name, bytes_before, bytes_after)
                 except Exception as e:
                     logger.warning("Saver size probe failed for %s: %s", name, e)
-        return req
+        return req, applied
 
     async def apply_async(self, req: CanonicalRequest) -> CanonicalRequest:
+        req, _ = await self.apply_async_traced(req)
+        return req
+
+    async def apply_async_traced(self, req: CanonicalRequest) -> tuple[CanonicalRequest, list[str]]:
+        """Run async savers, returning the request and the savers that ran for it."""
+        applied: list[str] = []
         for saver in self._async_savers:
             name = type(saver).__name__
             try:
@@ -79,6 +92,7 @@ class SaverPipeline:
                 bytes_before = None
             try:
                 req = await saver.transform(req)
+                applied.append(name)
             except Exception as e:
                 logger.warning("Token saver %s failed: %s", name, e)
                 continue
@@ -88,7 +102,7 @@ class SaverPipeline:
                     self._record(name, bytes_before, bytes_after)
                 except Exception as e:
                     logger.warning("Saver size probe failed for %s: %s", name, e)
-        return req
+        return req, applied
 
     def adopt_stats(self, other: SaverPipeline) -> None:
         """Carry cumulative in-memory savings counters across pipeline rebuilds."""

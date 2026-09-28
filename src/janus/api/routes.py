@@ -124,6 +124,11 @@ def _is_void_response(response: Any) -> bool:
     )
 
 
+def _safe_header_value(value: str) -> str:
+    """Coerce client-derived text into a header-safe printable-ASCII string."""
+    return "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in value)[:200]
+
+
 def _resolve_format(name: str) -> FormatAdapter:
     if name in (
         "opencode_free",
@@ -176,6 +181,7 @@ async def _check_budgets(
                         }
                     },
                     status_code=429,
+                    headers={"x-janus-error-type": "budget_exceeded"},
                 )
         for s in statuses:
             if s["daily_status"] == "exceeded":
@@ -195,7 +201,10 @@ async def _check_budgets(
                 return JSONResponse(
                     content=error_body,
                     status_code=429,
-                    headers={"Retry-After": str(max(retry_after, 1))},
+                    headers={
+                        "Retry-After": str(max(retry_after, 1)),
+                        "x-janus-error-type": "budget_exceeded",
+                    },
                 )
     except Exception as e:
         logger.warning("Budget check failed, allowing request: %s", e, exc_info=True)
@@ -409,6 +418,7 @@ async def _log_error_and_raise(
     client_key_label: str | None = None,
     max_rows: int = MAX_ROWS,
     attempts: int = 1,
+    extra_headers: dict[str, str] | None = None,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
     await outcome.record(
@@ -446,7 +456,7 @@ async def _log_error_and_raise(
             client_key_label=client_key_label,
             max_rows=max_rows,
         )
-    raise HTTPException(status_code=status, detail=detail)
+    raise HTTPException(status_code=status, detail=detail, headers=extra_headers)
 
 
 def _apply_client_body_quirks(
@@ -547,6 +557,7 @@ async def _malformed_request_response(
                 "type": "invalid_request_error",
             }
         },
+        headers={"x-janus-error-type": "invalid_request_error"},
     )
 
 
@@ -741,6 +752,7 @@ async def _handle_with_snapshot(
                     "type": "invalid_request_error",
                 }
             },
+            headers={"x-janus-error-type": "invalid_request_error"},
         )
 
     # Client detection (Claude Code / Codex / Gemini CLI / Copilot / …)
@@ -787,6 +799,10 @@ async def _handle_with_snapshot(
                 }
             },
             status_code=403,
+            headers={
+                "x-janus-requested-model": _safe_header_value(model),
+                "x-janus-error-type": "model_not_allowed",
+            },
         )
 
     canonical_target_allowed = any(
@@ -799,11 +815,30 @@ async def _handle_with_snapshot(
         return await _model_not_allowed(requested_model)
 
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
-    canonical_req = await saver_pipeline.apply_async(canonical_req)
-    canonical_req = saver_pipeline.apply(canonical_req)
+    canonical_req, async_savers_applied = await saver_pipeline.apply_async_traced(canonical_req)
+    canonical_req, sync_savers_applied = saver_pipeline.apply_traced(canonical_req)
+    applied_savers = async_savers_applied + sync_savers_applied
     canonical_req = canonical_req.model_copy(
         update={"messages": prepare_tool_messages(canonical_req.messages)},
     )
+
+    def _janus_headers(
+        resolved_model: str | None = None,
+        *,
+        attempt: int = 1,
+        error_type: str | None = None,
+    ) -> dict[str, str]:
+        headers = {"x-janus-requested-model": _safe_header_value(requested_model)}
+        if resolved_model is not None:
+            headers["x-janus-resolved-model"] = _safe_header_value(resolved_model)
+        if applied_savers:
+            headers["x-janus-saver"] = _safe_header_value(",".join(applied_savers))
+        if attempt > 1:
+            headers["x-janus-fallback"] = "true"
+            headers["x-janus-fallback-attempt"] = str(attempt)
+        if error_type is not None:
+            headers["x-janus-error-type"] = error_type
+        return headers
 
     sticky_routing = sticky_client_key_routing_enabled(settings)
     try:
@@ -881,7 +916,10 @@ async def _handle_with_snapshot(
             status_code=503,
             detail=f"All accounts for '{canonical_req.model}' are cooling down; "
             f"retry after {int(retry_after)}s",
-            headers={"Retry-After": str(int(retry_after))},
+            headers={
+                "Retry-After": str(int(retry_after)),
+                **_janus_headers(error_type="all_accounts_cooled_down"),
+            },
         )
     except ValueError as e:
         await _maybe_log_client_error(
@@ -895,7 +933,11 @@ async def _handle_with_snapshot(
             max_rows=retention,
         )
         await outcome.record(status=400, model=canonical_req.model)
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+            headers=_janus_headers(error_type="no_available_providers"),
+        )
 
     if not explicit_namespace and not grants_combo:
         attempts = [
@@ -1024,6 +1066,11 @@ async def _handle_with_snapshot(
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
+                        extra_headers=_janus_headers(
+                            target.model,
+                            attempt=len(attempt_errors) + 1,
+                            error_type="upstream_error",
+                        ),
                     )
                 if is_200_wrapped_error(result.json_data):
                     handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
@@ -1046,6 +1093,11 @@ async def _handle_with_snapshot(
                             request_body=logged_request_body,
                             detail="No stream from upstream",
                             attempts=len(attempt_errors) + 1,
+                            extra_headers=_janus_headers(
+                                target.model,
+                                attempt=len(attempt_errors) + 1,
+                                error_type="upstream_error",
+                            ),
                         )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
@@ -1129,7 +1181,11 @@ async def _handle_with_snapshot(
                                 attempts=len(attempt_errors) + 1,
                             )
 
-                    return StreamingResponse(_pt_stream(), media_type=media_type)
+                    return StreamingResponse(
+                        _pt_stream(),
+                        media_type=media_type,
+                        headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
+                    )
 
                 pt_usage = Usage(input_tokens=0, output_tokens=0)
                 if result.json_data:
@@ -1183,7 +1239,10 @@ async def _handle_with_snapshot(
                     attempts=len(attempt_errors) + 1,
                 )
                 pt_payload = _restore_claude_oauth_response(result.json_data, pt_prep)
-                return JSONResponse(content=pt_payload if pt_payload else {})
+                return JSONResponse(
+                    content=pt_payload if pt_payload else {},
+                    headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
+                )
         # ── End transport passthrough ───────────────────────────────────
 
         # ── Native-format passthrough ──────────────────────────────────
@@ -1266,6 +1325,11 @@ async def _handle_with_snapshot(
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
+                        extra_headers=_janus_headers(
+                            target.model,
+                            attempt=len(attempt_errors) + 1,
+                            error_type="upstream_error",
+                        ),
                     )
                 if is_200_wrapped_error(native_result.json_data):
                     handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
@@ -1288,6 +1352,11 @@ async def _handle_with_snapshot(
                             request_body=logged_request_body,
                             detail="No stream from upstream",
                             attempts=len(attempt_errors) + 1,
+                            extra_headers=_janus_headers(
+                                target.model,
+                                attempt=len(attempt_errors) + 1,
+                                error_type="upstream_error",
+                            ),
                         )
                     parser = client_adapter.stream_parser()
                     tracker = StreamUsageTracker(parser)
@@ -1375,7 +1444,11 @@ async def _handle_with_snapshot(
                                 attempts=len(attempt_errors) + 1,
                             )
 
-                    return StreamingResponse(_native_stream(), media_type=native_media)
+                    return StreamingResponse(
+                        _native_stream(),
+                        media_type=native_media,
+                        headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
+                    )
 
                 passthrough_usage = Usage(input_tokens=0, output_tokens=0)
                 if native_result.json_data:
@@ -1436,7 +1509,10 @@ async def _handle_with_snapshot(
                 native_payload = _restore_claude_oauth_response(
                     native_result.json_data, native_prep
                 )
-                return JSONResponse(content=native_payload if native_payload else {})
+                return JSONResponse(
+                    content=native_payload if native_payload else {},
+                    headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
+                )
         # ── End native passthrough ─────────────────────────────────────
 
         provider_adapter = _resolve_format(effective_native_format)
@@ -1497,6 +1573,11 @@ async def _handle_with_snapshot(
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
+                        extra_headers=_janus_headers(
+                            target.model,
+                            attempt=len(attempt_errors) + 1,
+                            error_type="upstream_error",
+                        ),
                     )
                 if is_200_wrapped_error(result.json_data):
                     handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
@@ -1520,6 +1601,11 @@ async def _handle_with_snapshot(
                         client_key_id=client_key_id,
                         client_key_label=client_key_label,
                         attempts=len(attempt_errors) + 1,
+                        extra_headers=_janus_headers(
+                            target.model,
+                            attempt=len(attempt_errors) + 1,
+                            error_type="upstream_error",
+                        ),
                     )
                 parser = provider_adapter.stream_parser()
                 emitter = client_adapter.stream_emitter()
@@ -1615,7 +1701,11 @@ async def _handle_with_snapshot(
                         )
 
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
-                return StreamingResponse(_streaming_generator(), media_type=media_type)
+                return StreamingResponse(
+                    _streaming_generator(),
+                    media_type=media_type,
+                    headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
+                )
 
             result = await provider.call(upstream_payload, stream=False, **provider_kwargs)
             if result.status_code >= 400:
@@ -1645,6 +1735,11 @@ async def _handle_with_snapshot(
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
                     attempts=len(attempt_errors) + 1,
+                    extra_headers=_janus_headers(
+                        target.model,
+                        attempt=len(attempt_errors) + 1,
+                        error_type="upstream_error",
+                    ),
                 )
             if is_200_wrapped_error(result.json_data):
                 handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
@@ -1667,6 +1762,11 @@ async def _handle_with_snapshot(
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
                     attempts=len(attempt_errors) + 1,
+                    extra_headers=_janus_headers(
+                        target.model,
+                        attempt=len(attempt_errors) + 1,
+                        error_type="upstream_error",
+                    ),
                 )
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             if _is_void_response(canonical_resp):
@@ -1726,7 +1826,10 @@ async def _handle_with_snapshot(
                 duration_ms=_elapsed_ms(),
                 attempts=len(attempt_errors) + 1,
             )
-            return JSONResponse(content=client_payload)
+            return JSONResponse(
+                content=client_payload,
+                headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
+            )
 
         except httpx.RequestError as e:
             handler.mark_cooldown(target.account_id, "network", model=target.model)
@@ -1761,7 +1864,11 @@ async def _handle_with_snapshot(
     await outcome.record(
         status=503, model=canonical_req.model, attempts=max(len(attempt_errors), 1)
     )
-    raise HTTPException(status_code=503, detail=exhausted_detail)
+    raise HTTPException(
+        status_code=503,
+        detail=exhausted_detail,
+        headers=_janus_headers(error_type="all_providers_exhausted"),
+    )
 
 
 @router.get("/models", dependencies=[Depends(require_gateway_rate_limit)])
