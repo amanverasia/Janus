@@ -1458,7 +1458,8 @@ either side needing to know the other exists.</p>
 janus<span class="w"> </span>config-init
 janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">20128</span>
 </code></pre></div>
-<p>Point your coding tool at <code>http://localhost:20128/v1</code> and start routing.</p>
+<p>Run <code>janus dashboard</code> to open the Cloudline UI, add your providers and keys there,
+then point your coding tool at <code>http://localhost:20128/v1</code> and start routing.</p>
 <div class="admonition tip">
 <p class="admonition-title">What next?</p>
 <ul>
@@ -1474,7 +1475,7 @@ janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w">
 <h3 id="combos">Combos<a class="headerlink" href="#combos" title="Permanent link">&para;</a></h3>
 <p>Named ordered model sequences. A client sends <code>"model": "best-effort"</code> and Janus tries each model in the combo chain with all its accounts.</p>
 <h3 id="key-inventory">Key Inventory<a class="headerlink" href="#key-inventory" title="Permanent link">&para;</a></h3>
-<p>Store, validate, and route with many upstream API keys across 27+ providers. Keys are auto-detected, rechecked on a schedule, and wired into gateway routing as multi-account pools. See <a href="inventory/">Key Inventory</a>.</p>
+<p>Store, validate, and route with many upstream API keys across 27+ providers. Keys are auto-detected, rechecked on a schedule, and wired into gateway routing as multi-account pools. Per-account value — credit balances and provider usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot balances, MiniMax/Venice plans) — is probed from each provider's billing endpoint, rendered with usage bars and reset times, and raises alerts near exhaustion. See <a href="inventory/">Key Inventory</a>.</p>
 <h3 id="token-savers">Token Savers<a class="headerlink" href="#token-savers" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>RTK</strong> (default ON) — compresses tool output (git diffs, file listings, logs) before sending</li>
@@ -1489,11 +1490,14 @@ janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w">
 <h3 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h3>
 <p>Cost tracking, spend trends, success rates, and breakdowns by model, provider, account, or client key. Visualized in the dashboard with Chart.js.</p>
 <h3 id="dashboard">Dashboard<a class="headerlink" href="#dashboard" title="Permanent link">&para;</a></h3>
-<p>Cloudline is the single dashboard UI: a responsive Svelte control plane at
-<code>/dashboard/ui</code> with light/dark/system themes, deep links, and a command palette.
-It provides monitoring, provider and model routing, key inventory, budgets, API
-keys, pricing, and settings. Changes hot-reload without a server restart.
-<code>/dashboard</code> and former page URLs are compatibility redirects to Cloudline.</p>
+<p>Cloudline is the single dashboard UI — and the primary interface for operating
+Janus. It is a responsive Svelte control plane at <code>/dashboard/ui</code> (open it with
+<code>janus dashboard</code>) with light/dark/system themes, deep links, and a command
+palette. It provides monitoring, provider and model routing, key inventory with
+per-account usage tracking, budgets, API keys, pricing, and settings. Changes
+hot-reload without a server restart. The CLI remains for scripting and
+automation. <code>/dashboard</code> and former page URLs are compatibility redirects to
+Cloudline.</p>
 <h2 id="tech-stack">Tech Stack<a class="headerlink" href="#tech-stack" title="Permanent link">&para;</a></h2>
 <p>Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / SvelteKit 2 / Svelte 5 / TypeScript</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
