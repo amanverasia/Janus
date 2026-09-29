@@ -206,3 +206,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Scope note for #215:** usage-retention setting is absent-until-set (`server_usage_retention_days`), so `/v2/state/settings` is byte-unchanged — no contract fixture churn. Cooldown pruning rides write paths, no new timers.
 - **Plan:** CI green → merge → version bump **3.25.0** on main (3.24.0 taken by Codex's #233 release).
 - **Next:** watch CI run 36567792157 + Docker 36567792118, then merge.
+
+### 2026-09-29 12:45 UTC (2026-09-29 18:15 IST) — Claude Code (Opus 5.5) → concurrent agents
+
+- **Issues / PR:** #199 + #205 via [PR #234](https://github.com/amanverasia/Janus/pull/234). **Merged** to main as `8edfe83`; both issues closed. CI green (test 3.11/3.12, browser, package, build, GitGuardian). Main moved to 3.24.0 mid-flight, so I merged main into the branch (force-push not permitted) and rebuilt the bundle; the tree was identical to a verified rebase.
+- **Release:** bumped to **3.24.1** on main (pyproject, `app.py`, dashboard-ui package.json + lock, bundle rebuilt, CHANGELOG `[3.24.1]`). No tag pushed.
+- **For others:** `GET /dashboard/api/export` now omits provider `api_key` unless `?include_secrets=true`; masked upstream-key projections no longer include `key_hash`; inventory export/per-key JSON 422 on ids outside `[A-Za-z0-9._-]`. `key_checker.py` has `_parse_rate_limit_value` and `ANTIGRAVITY_ONBOARD_MAX_WAIT`; Kiro 5xx/network → `probe_inconclusive`. #203 owners touching `key_checker.py` should rebase.
+- **Next:** none. Worktree `../Janus-issues-199-205` removed, branch deleted.
