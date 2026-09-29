@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Optional detailed gateway health checks** — `GET /v1/health?details=true`
+  reports database reachability, configured provider count, inventory scheduler
+  state, and the age of the latest inventory check while preserving the default
+  lightweight health response.
+### Fixed
+- **Settings controls recover after a failed save** — toggles, selects, and
+  inputs return to their saved value when a settings update is rejected. (#117)
 
 ## [3.23.0] - 2026-09-29
 ### Changed

@@ -44,11 +44,50 @@
     ]
   ];
 
-  async function save(key: string, value: string) {
+  const statusKeys: Record<string, string> = {
+    server_require_api_key: 'require_api_key_enabled',
+    server_cooldowns_enabled: 'cooldowns_enabled',
+    server_sticky_client_key_routing: 'sticky_client_key_routing_enabled',
+    server_request_logging: 'request_logging_enabled'
+  };
+
+  const defaults: Record<string, string> = {
+    server_reporting_timezone: 'UTC',
+    server_request_log_retention: '500',
+    server_account_strategy: 'round_robin',
+    server_sticky_limit: '3',
+    server_gateway_rate_limit_rpm: '0',
+    combo_strategy: 'fallback',
+    combo_sticky_limit: '1',
+    combo_fusion_judge: '',
+    combo_fusion_min_panel: '2',
+    combo_fusion_straggler_grace_s: '8',
+    combo_fusion_hard_timeout_s: '90'
+  };
+
+  function savedValue(key: string) {
+    const statusKey = statusKeys[key] ?? key.replace(/^server_/, '');
+    return values[key] ?? status[statusKey] ?? defaults[key] ?? '';
+  }
+
+  function restoreControl(key: string, field: HTMLInputElement | HTMLSelectElement) {
+    const value = savedValue(key);
+    if (field instanceof HTMLInputElement && field.type === 'checkbox') {
+      field.checked = bool(value);
+    } else {
+      field.value = text(value, defaults[key] ?? '');
+    }
+  }
+
+  async function save(key: string, value: string, field?: HTMLInputElement | HTMLSelectElement) {
     const body = new FormData();
     body.set('key', key);
     body.set('value', value);
-    await action('/dashboard/api/settings', { body, success: 'Setting saved' });
+    try {
+      await action('/dashboard/api/settings', { body, success: 'Setting saved' });
+    } catch {
+      if (field) restoreControl(key, field);
+    }
   }
 
   // `on:change` fired for out-of-range values too, persisting them silently.
@@ -58,7 +97,7 @@
       field.reportValidity();
       return;
     }
-    void save(key, field.value);
+    void save(key, field.value, field);
   }
 
   async function exportConfiguration() {
@@ -155,11 +194,10 @@
             class="switch"
             type="checkbox"
             checked={bool(values[setting[0]] ?? status[setting[1]])}
-            on:change={(event) =>
-              save(
-                setting[0],
-                (event.currentTarget as HTMLInputElement).checked ? 'true' : 'false'
-              )}
+            on:change={(event) => {
+              const field = event.currentTarget as HTMLInputElement;
+              void save(setting[0], field.checked ? 'true' : 'false', field);
+            }}
           />
         </label>
       {/each}
@@ -184,8 +222,10 @@
         <span>Account strategy</span>
         <select
           value={text(values.server_account_strategy ?? status.account_strategy, 'round_robin')}
-          on:change={(event) =>
-            save('server_account_strategy', (event.currentTarget as HTMLSelectElement).value)}
+          on:change={(event) => {
+            const field = event.currentTarget as HTMLSelectElement;
+            void save('server_account_strategy', field.value, field);
+          }}
         >
           <option value="fill_first">Fill first</option>
           <option value="round_robin">Round robin</option>
@@ -228,8 +268,10 @@
         <span>Combo strategy</span>
         <select
           value={comboStrategy}
-          on:change={(event) =>
-            save('combo_strategy', (event.currentTarget as HTMLSelectElement).value)}
+          on:change={(event) => {
+            const field = event.currentTarget as HTMLSelectElement;
+            void save('combo_strategy', field.value, field);
+          }}
         >
           <option value="fallback">Ordered fallback</option>
           <option value="round_robin">Round robin</option>
