@@ -30,6 +30,10 @@
     return short.length > 28 ? `${short.slice(0, 25)}…` : short;
   }
 
+  function keyLabel(value: unknown, row: JsonObject): string {
+    return text(value ?? row.client_key_label, '—');
+  }
+
   const columns = [
     { key: 'timestamp', label: 'Time', format: dateTime },
     { key: 'model', label: 'Model' },
@@ -37,6 +41,11 @@
       key: 'provider_id',
       label: 'Provider',
       format: (value: unknown, row: JsonObject) => providerLabel(value, row)
+    },
+    {
+      key: 'client_key_name',
+      label: 'API key',
+      format: (value: unknown, row: JsonObject) => keyLabel(value, row)
     },
     { key: 'status', label: 'Status', format: (value: unknown) => text(value) },
     { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` }
@@ -80,6 +89,7 @@
         detailField('Time', detail.timestamp ?? detail.created_at),
         detailField('Model', detail.model),
         detailField('Provider', providerLabel(detail.provider_id ?? detail.provider, detail)),
+        detailField('API key', detail.client_key_name ?? detail.client_key_label),
         detailField('Status', detail.status),
         detailField(
           'Latency',
