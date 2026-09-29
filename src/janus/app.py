@@ -6,6 +6,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from importlib.metadata import version as package_version
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -209,7 +210,7 @@ def create_app(
     registry: ProviderRegistry | None = None,
     config: JanusConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Janus", version="3.25.0", lifespan=lifespan)
+    app = FastAPI(title="Janus", version=package_version("janus-ai"), lifespan=lifespan)
     if registry is None:
         registry = ProviderRegistry()
     if config is None:
@@ -223,6 +224,7 @@ def create_app(
     app.state.providers = {}
     app.state.model_catalog = []
     app.state._dashboard_db_ready = False
+    app.state._dashboard_db_lock = asyncio.Lock()
     app.state._dashboard_alert_cache = None
     app.state._dashboard_alert_cache_generation = 0
     app.state.provider_snapshot = ProviderSnapshot(

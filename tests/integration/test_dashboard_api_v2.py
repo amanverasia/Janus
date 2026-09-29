@@ -74,6 +74,8 @@ async def test_lazy_dashboard_initialization_is_single_flight(
 ) -> None:
     from janus.dashboard.routes import _ensure_db
 
+    assert isinstance(app.state._dashboard_db_lock, asyncio.Lock)
+
     calls: Counter[str] = Counter()
 
     def fake_step(name: str):

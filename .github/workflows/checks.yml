@@ -15,6 +15,33 @@ on:
         default: 80
 
 jobs:
+  single-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard-ui/package-lock.json
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Dashboard bundle check
+        run: python scripts/build_dashboard_ui.py --check
+
+      - name: SQLite migration smoke
+        run: python scripts/migration_smoke.py
+
+      - name: Docs build (strict)
+        run: mkdocs build --strict
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -28,15 +55,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: dashboard-ui/package-lock.json
-
-      - name: Dashboard bundle check
-        run: python scripts/build_dashboard_ui.py --check
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
@@ -58,9 +76,6 @@ jobs:
             --cov-report=xml \
             --cov-fail-under=${{ inputs.coverage-threshold }}
 
-      - name: SQLite migration smoke
-        run: python scripts/migration_smoke.py
-
       - name: Coverage summary
         if: always()
         run: |
@@ -81,9 +96,6 @@ jobs:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
-
-      - name: Docs build (strict)
-        run: mkdocs build --strict
 
   browser:
     # Browser regression suite for the dashboard SPA (#110). Drives a real
