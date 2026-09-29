@@ -657,3 +657,28 @@ async def test_reset_to_defaults(client):
     )
     r = await client.post("/dashboard/api/reset")
     assert r.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", "/dashboard/api/providers"),
+        ("PUT", "/dashboard/api/providers/openai"),
+        ("POST", "/dashboard/api/providers/fetch-models"),
+        ("POST", "/dashboard/api/oauth/copilot/poll"),
+        ("POST", "/dashboard/api/combos"),
+        ("PUT", "/dashboard/api/combos/1"),
+        ("POST", "/dashboard/api/settings"),
+        ("POST", "/dashboard/api/pricing"),
+    ],
+)
+async def test_form_endpoints_reject_malformed_utf8_with_400(client, method, path):
+    r = await client.request(
+        method,
+        path,
+        content=b"name=\xff\xfe",
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+
+    assert r.status_code == 400
+    assert r.json() == {"detail": "Request body is not valid UTF-8 form data"}

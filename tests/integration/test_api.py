@@ -184,10 +184,12 @@ async def test_health(app):
 @pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_chat_completions_client_disconnect_returns_204(app, monkeypatch):
-    async def _gone(_request):
-        return None
+    from starlette.requests import ClientDisconnect, Request
 
-    monkeypatch.setattr("janus.api.routes._read_json_body", _gone)
+    async def _gone(_request):
+        raise ClientDisconnect()
+
+    monkeypatch.setattr(Request, "body", _gone)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(
             "/v1/chat/completions",
@@ -211,6 +213,44 @@ async def test_malformed_json_object_returns_400(app, payload):
         body = r.json()
         assert body["error"]["type"] == "invalid_request_error"
         assert "JSON object" in body["error"]["message"]
+
+
+JSON_BODY_ROUTES = [
+    ("/v1/chat/completions", "openai"),
+    ("/v1/responses", "openai_responses"),
+    ("/v1/messages", "anthropic"),
+    ("/v1/messages/count_tokens", "anthropic"),
+    ("/v1beta/models/gemini-2.0-flash:generateContent", "gemini"),
+    ("/api/chat", "ollama"),
+    ("/api/generate", "ollama"),
+    ("/api/show", "ollama"),
+]
+
+MALFORMED_BODIES = [
+    pytest.param(b'{"model": "test/test-m1", "messages": [', "not valid JSON", id="broken-json"),
+    pytest.param(b"\xff\xfe{}", "not valid JSON", id="invalid-utf8"),
+    pytest.param(b'["not", "an", "object"]', "JSON object", id="list"),
+    pytest.param(b'"bare string body"', "JSON object", id="string"),
+    pytest.param(b"42", "JSON object", id="int"),
+    pytest.param(b"[" * 100_000 + b"]" * 100_000, None, id="deeply-nested"),
+]
+
+
+@pytest.mark.parametrize(("path", "client_format"), JSON_BODY_ROUTES)
+@pytest.mark.parametrize(("raw", "message"), MALFORMED_BODIES)
+async def test_malformed_body_returns_400_with_outcome_row(app, path, client_format, raw, message):
+    from janus.storage.outcomes import list_request_outcomes
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post(path, content=raw, headers={"content-type": "application/json"})
+
+    assert r.status_code == 400
+    error = r.json()["error"]
+    assert error["type"] == "invalid_request_error"
+    if message is not None:
+        assert message in error["message"]
+    outcomes = await list_request_outcomes(app.state.db_path, limit=10)
+    assert [(o["client_format"], o["status"]) for o in outcomes] == [(client_format, 400)]
 
 
 @pytest.mark.asyncio

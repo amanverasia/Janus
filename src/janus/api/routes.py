@@ -2053,36 +2053,56 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _read_json_body(request: Request) -> dict[str, Any] | None:
-    """Parse JSON body; return None when the client disconnects mid-body."""
+async def _read_json_body(request: Request, client_format: str) -> dict[str, Any] | Response:
+    """Parse a JSON object body, or return the response to send instead.
+
+    A client disconnect mid-body yields 204; undecodable JSON or a non-object
+    payload yields the logged 400 malformed-request envelope.
+    """
     try:
-        body = await request.json()
+        raw = await request.body()
     except ClientDisconnect:
-        return None
-    return body  # type: ignore[no-any-return]
+        return Response(status_code=204)
+    try:
+        body = json.loads(raw)
+    except (ValueError, RecursionError):
+        return await _malformed_request_response(
+            client_format=client_format,
+            body=raw.decode("utf-8", errors="replace"),
+            request=request,
+            message="Request body is not valid JSON",
+        )
+    if not isinstance(body, dict):
+        return await _malformed_request_response(
+            client_format=client_format,
+            body=body,
+            request=request,
+            message="Request body must be a JSON object",
+        )
+    return body
 
 
 @router.post("/chat/completions", dependencies=[Depends(require_gateway_rate_limit)])
 async def chat_completions(request: Request) -> Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "openai")
+    if isinstance(body, Response):
+        return body
     return await _handle("openai", body, request)
 
 
 @router.post("/responses", dependencies=[Depends(require_gateway_rate_limit)])
 async def responses(request: Request) -> Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "openai_responses")
+    if isinstance(body, Response):
+        return body
     return await _handle("openai_responses", body, request)
 
 
 @router.post("/messages", dependencies=[Depends(require_gateway_rate_limit)])
 async def messages(request: Request) -> Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "anthropic")
+    if isinstance(body, Response):
+        return body
     return await _handle("anthropic", body, request)
 
 
@@ -2092,9 +2112,9 @@ async def messages(request: Request) -> Response:
     response_model=None,
 )
 async def count_tokens(request: Request) -> dict[str, Any] | Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "anthropic")
+    if isinstance(body, Response):
+        return body
     try:
         import tiktoken
 
@@ -2119,9 +2139,9 @@ async def gemini_generate(model_action: str, request: Request) -> Response:
     model, action = model_action.rsplit(":", 1)
     if action not in ("generateContent", "streamGenerateContent"):
         raise HTTPException(status_code=404, detail=f"Unsupported action: {action}")
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "gemini")
+    if isinstance(body, Response):
+        return body
     if "/" not in model:
         model = f"gemini/{model}"
     body["model"] = model
@@ -2222,17 +2242,17 @@ def _ollama_chat_ndjson_to_generate(line: str) -> str:
 
 @ollama_router.post("/api/chat", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_chat(request: Request) -> Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "ollama")
+    if isinstance(body, Response):
+        return body
     return await _handle("ollama", body, request)
 
 
 @ollama_router.post("/api/generate", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_generate(request: Request) -> Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "ollama")
+    if isinstance(body, Response):
+        return body
     if not body.get("model"):
         raise HTTPException(status_code=400, detail="model required")
     chat_body = _ollama_generate_to_chat(body)
@@ -2282,9 +2302,9 @@ async def ollama_tags(request: Request) -> dict[str, Any]:
 
 @ollama_router.post("/api/show", dependencies=[Depends(require_gateway_rate_limit)])
 async def ollama_show(request: Request) -> Response:
-    body = await _read_json_body(request)
-    if body is None:
-        return Response(status_code=204)
+    body = await _read_json_body(request, "ollama")
+    if isinstance(body, Response):
+        return body
     name = (body.get("name") or body.get("model") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="model name required")
