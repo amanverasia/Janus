@@ -125,6 +125,33 @@ async def test_get_connection_reuses_connections_and_caps_concurrency(tmp_path):
     assert count[0] == 24
 
 
+def test_get_connection_does_not_reuse_connections_across_event_loops(tmp_path, monkeypatch):
+    from janus.storage import database
+
+    db_path = tmp_path / "test.db"
+    asyncio.run(init_db(db_path))
+    connections = []
+    connect = database.aiosqlite.connect
+
+    def track_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(database.aiosqlite, "connect", track_connect)
+
+    async def query() -> None:
+        async with get_connection(db_path) as db:
+            async with db.execute("SELECT 1") as cursor:
+                assert (await cursor.fetchone())[0] == 1
+
+    asyncio.run(query())
+    asyncio.run(query())
+
+    assert len(connections) == 2
+    assert connections[0] is not connections[1]
+
+
 @pytest.mark.asyncio
 async def test_cancelled_pool_waiter_does_not_consume_a_connection_slot(tmp_path):
     from janus.storage.database import _SQLITE_MAX_CONNECTIONS

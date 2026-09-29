@@ -282,7 +282,7 @@ _SQLITE_MAX_CONNECTIONS = 4
 _SQLITE_FOREIGN_KEYS_ENABLED = False
 _SQLITE_MAX_IDLE_CONNECTIONS = 1
 _pool_registry_lock = threading.RLock()
-_connection_pools: dict[str, _ConnectionPool] = {}
+_connection_pools: dict[tuple[str, asyncio.AbstractEventLoop], _ConnectionPool] = {}
 
 
 class _ConnectionPool:
@@ -366,11 +366,12 @@ class _ConnectionPool:
 
 def _pool_for(db_path: str | Path) -> _ConnectionPool:
     path = str(Path(db_path).resolve())
+    key = (path, asyncio.get_running_loop())
     with _pool_registry_lock:
-        pool = _connection_pools.get(path)
+        pool = _connection_pools.get(key)
         if pool is None:
             pool = _ConnectionPool(path)
-            _connection_pools[path] = pool
+            _connection_pools[key] = pool
         return pool
 
 
@@ -829,12 +830,13 @@ async def close_connection_pools(db_path: str | Path | None = None) -> None:
             closing = list(_connection_pools.items())
         else:
             normalized_path = str(Path(db_path).resolve())
-            pool = _connection_pools.get(normalized_path)
-            closing = [(normalized_path, pool)] if pool is not None else []
-    for path, pool in closing:
+            closing = [
+                (key, pool) for key, pool in _connection_pools.items() if key[0] == normalized_path
+            ]
+    for key, pool in closing:
         await pool.close()
         with _pool_registry_lock:
-            _connection_pools.pop(path, None)
+            _connection_pools.pop(key, None)
 
 
 async def _table_is_empty(db: aiosqlite.Connection, table: str) -> bool:

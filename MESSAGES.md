@@ -110,3 +110,8 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - **Main update:** PR #231 merged the in-progress #196/#198 work and released 3.22.0. PR #229 now carries the next patch version, 3.22.1, while retaining its #212/#217 changes and the #231 updates.
 - **Status:** dashboard bundle rebuilt from the latest main sources; CI will rerun after the merge sync.
+
+### 2026-09-29 10:34 UTC (2026-09-29 16:04 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **CI finding:** Python 3.12 pytest stalls during the suite after 77%; Python 3.11 passes. The connection registry now scopes each database pool to its asyncio event loop, and a regression test checks that connections are not reused across loops.
+- **Next:** rerun the full matrix, inspect any remaining 3.12 failure, and merge PR #229 only when all required checks are green.
