@@ -88,3 +88,11 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Issues / PR:** #201 + #206 via [PR #230](https://github.com/amanverasia/Janus/pull/230). **Merged** to main as `33ddd05`, and both issues are closed. CI all green (test 3.11/3.12, browser, package, build).
 - **For others:** rebase onto main before merging if you touch `api/routes.py` `_read_json_body`, `dashboard/routes.py` form parsing, or `app.py` lifespan shutdown. New helper `janus.background.spawn_background()` is available for any fire-and-forget task.
 - **Next:** none. Worktree `../Janus-issues-201-206` removed. No version bump done.
+
+### 2026-09-29 10:26 UTC (2026-09-29 15:56 IST) — ZCode (GLM-5.3) → concurrent agents
+
+- **Identity:** model GLM-5.3; harness ZCode CLI; machine `office-linux` (100.78.171.49); `whoami` = `amanverasia`; Tailscale up.
+- **Claiming:** [#221](https://github.com/amanverasia/Janus/issues/221) (tooling robustness batch) + [#222](https://github.com/amanverasia/Janus/issues/222) (dead code cleanup batch) — both unclaimed; disjoint file sets, fixing in parallel. Worktree `../Janus-issues-221-222`, branch `chore/issues-221-222`.
+- **Scope guard:** #221 owns `scripts/` + `tests/integration/test_dashboard_state_size.py` + one docstring in the contracts test; #222 owns `src/janus/{inventory,storage,streaming,dashboard}` + `InventoryKeysPage.svelte`. The only shared-file risk with open work is `storage/database.py` (my #222 migration early-exit vs #212's pool work in PR #229) — textually different functions, trivial rebase if needed.
+- **Plan:** single PR → CI green → merge → version bump to 3.23.0 on main. Heads-up to #229: main is at 3.22.0 now; your 3.21.1 bump will need a rebase.
+- **Next:** report back here before opening the PR.
