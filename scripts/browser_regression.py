@@ -155,13 +155,10 @@ def _first_catalog_model_id(page: Page) -> str:
     _visit(page, "/dashboard/ui/models")
     page.wait_for_selector("main", state="visible", timeout=ROUTE_WAIT_MS)
     page.wait_for_timeout(500)
-    body = page.inner_text("body")
-    # Prefer a namespaced id like provider/model when present.
-    match = re.search(r"\b([a-z0-9][\w.-]*/[A-Za-z0-9][\w.+:-]*)\b", body)
-    if match:
-        return match.group(1)
-    match = re.search(r"\b([A-Za-z0-9][\w.+:-]{2,})\b", body)
-    return match.group(1) if match else "gpt"
+    model_ids = page.locator("main .model-row .model-name code")
+    if model_ids.count() == 0:
+        raise AssertionError("models catalog rendered no model rows")
+    return model_ids.first.inner_text().strip()
 
 
 def scenario_filter_and_empty_state(page: Page) -> list[str]:
@@ -181,7 +178,8 @@ def scenario_filter_and_empty_state(page: Page) -> list[str]:
         sample = _first_catalog_model_id(page)
         token = sample.split("/")[-1][:24] if "/" in sample else sample[:24]
         _visit(page, f"/dashboard/ui/models?search={token}")
-        if token not in page.inner_text("body"):
+        matching_results = page.locator("main .model-row .model-name code").filter(has_text=token)
+        if matching_results.count() == 0:
             failures.append("models matching query did not surface the model")
         _visit(page, "/dashboard/ui/models")
         if not failures:
