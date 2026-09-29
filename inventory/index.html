@@ -1770,9 +1770,13 @@ janus<span class="w"> </span>inventory<span class="w"> </span>migrate<span class
 </table>
 <h2 id="export">Export<a class="headerlink" href="#export" title="Permanent link">&para;</a></h2>
 <p>Download inventory keys as JSON from the dashboard or:</p>
-<div class="highlight"><pre><span></span><code>GET /dashboard/api/inventory/export
+<div class="highlight"><pre><span></span><code>POST /dashboard/api/inventory/export
 </code></pre></div>
-<p>Requires dashboard authentication when accessing remotely (see
+<p>The export (and the per-key <code>POST /dashboard/api/inventory/keys/{key_id}/json</code>
+download) is POST-only so a decrypted credential can never be fetched by a
+plain GET link, and query-param (<code>?key=</code>) authentication is not accepted on
+these routes — use the <code>Authorization</code> header or the dashboard cookie.
+Requires dashboard authentication when accessing remotely (see
 <a href="../dashboard/#authentication">Dashboard — Authentication</a>).</p>
 
 
