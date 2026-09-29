@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.25.1] - 2026-09-29
 ### Fixed
 - Dashboard mutation routes validate settings, providers, quotas, and combos;
   missing records return 404 and validation errors use safe JSON responses. (#207)
+### Changed
+- Centralize package version metadata and streamline CI checks and release validation. (#220)
 
 
 ## [3.25.0] - 2026-09-29
