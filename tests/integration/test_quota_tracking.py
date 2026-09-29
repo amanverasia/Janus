@@ -180,7 +180,7 @@ async def test_quota_warning_banner_at_eighty_percent(app):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_invalid_quota_params_stored_as_none(app):
+async def test_invalid_quota_params_are_rejected(app):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(
             "/dashboard/api/providers",
@@ -196,10 +196,9 @@ async def test_invalid_quota_params_stored_as_none(app):
                 "quota_metric": "requests",
             },
         )
-        assert r.status_code == 200
+        assert r.status_code == 422
 
         from janus.storage.providers_db import get_provider
 
         row = await get_provider(app.state.db_path, "noq")
-        assert row["quota_window"] is None
-        assert row["quota_limit"] is None
+        assert row is None

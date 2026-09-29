@@ -132,8 +132,8 @@ async def test_provider_create_rejects_unsupported_api_type_before_persist(
     )
 
     assert r.status_code == expected_status
-    assert "text/html" in r.headers["content-type"]
-    assert "API type" in r.text or "api_type" in r.text
+    assert r.headers["content-type"].startswith("application/json")
+    assert "API type" in r.json()["detail"] or "api_type" in r.json()["detail"]
     assert await get_provider(app.state.db_path, "invalid-executor") is None
 
 
