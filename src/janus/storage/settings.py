@@ -214,6 +214,20 @@ def resolve_request_log_retention(settings: dict[str, str]) -> int:
     return max(50, min(value, 5000))
 
 
+USAGE_RETENTION_SETTING_KEY = "server_usage_retention_days"
+_USAGE_RETENTION_DAYS_DEFAULT = 365
+_USAGE_RETENTION_DAYS_MIN = 7
+_USAGE_RETENTION_DAYS_MAX = 3650
+
+
+def resolve_usage_retention_days(settings: dict[str, str]) -> int:
+    try:
+        value = int(settings.get(USAGE_RETENTION_SETTING_KEY, _USAGE_RETENTION_DAYS_DEFAULT))
+    except (ValueError, TypeError):
+        value = _USAGE_RETENTION_DAYS_DEFAULT
+    return max(_USAGE_RETENTION_DAYS_MIN, min(value, _USAGE_RETENTION_DAYS_MAX))
+
+
 async def is_request_logging_enabled(db_path: str | Path) -> bool:
     settings = await get_all_settings(db_path)
     return request_logging_enabled(settings)

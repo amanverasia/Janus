@@ -25,6 +25,7 @@
   let detail: JsonObject | undefined;
   let detailOpen = false;
   let detailLoading = false;
+  let detailToken = 0;
   let detailPriority = 0;
   let revealedDetail = '';
   let revealBusy = false;
@@ -199,6 +200,7 @@
   async function openDetail(row: JsonObject) {
     const id = idOf(row);
     if (!id) return;
+    const token = ++detailToken;
     detailOpen = true;
     detailLoading = true;
     detail = undefined;
@@ -211,11 +213,17 @@
           headers: { Accept: 'application/json' }
         }
       );
+      if (token !== detailToken) return;
       if (!response.ok) throw new Error('Credential detail unavailable');
-      detail = object(await response.json());
-      detailPriority = number(detail.priority);
+      const loaded = object(await response.json());
+      if (token !== detailToken) return;
+      detail = loaded;
+      detailPriority = number(loaded.priority);
+    } catch (caught) {
+      if (token !== detailToken) return;
+      throw caught;
     } finally {
-      detailLoading = false;
+      if (token === detailToken) detailLoading = false;
     }
   }
 
@@ -225,10 +233,11 @@
       clearReveal();
       return;
     }
+    const id = idOf(detail);
     revealBusy = true;
     try {
       const response = await dashboardFetch(
-        `/dashboard/api/inventory/keys/${encodeURIComponent(idOf(detail))}/reveal`,
+        `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/reveal`,
         {
           method: 'POST',
           credentials: 'same-origin',
@@ -237,7 +246,9 @@
         }
       );
       if (!response.ok) throw new Error('Credential unavailable');
-      revealedDetail = text(object(await response.json()).key_value, '');
+      const key = text(object(await response.json()).key_value, '');
+      if (!detail || idOf(detail) !== id) return;
+      revealedDetail = key;
       window.clearTimeout(revealTimer);
       revealTimer = window.setTimeout(clearReveal, 30_000);
     } finally {
@@ -261,12 +272,14 @@
 
   async function savePriority() {
     if (!detail) return;
+    const id = idOf(detail);
     const body = new FormData();
     body.set('priority', String(Math.max(0, detailPriority)));
-    await action(`/dashboard/api/inventory/keys/${encodeURIComponent(idOf(detail))}/priority`, {
+    await action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/priority`, {
       body,
       success: 'Routing priority updated'
     });
+    if (!detail || idOf(detail) !== id) return;
     detail = { ...detail, priority: Math.max(0, detailPriority) };
   }
 
