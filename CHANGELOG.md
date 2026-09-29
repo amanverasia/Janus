@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **In-flight guards on all mutating dashboard forms** — double-clicks can no
+  longer double-submit: modal submits, row actions, toggles, and catalog-sync
+  buttons are disabled while their action is pending, and row-action pages
+  track in-flight work per id. The Keys page can no longer orphan a created
+  key behind a second submit. (#209)
+
+### Changed
+- **Trimmed dashboard state payloads** — the overview section now carries only
+  rendered fields (`live_inflight` replaces the 50-event `live` ring; drops
+  `by_model`, `combos`, `global_budget`, `base_url`); `GET
+  /dashboard/api/v2/models` is paginated (default `limit=200`, max 2000,
+  `limit=0` rejected) instead of shipping the full ~1.1 MB catalog; the
+  pricing state's unpriced list is capped at the top 25 models by tokens;
+  routing state drops unread per-provider `models`, `combos`,
+  `quota_warnings`, and the static `rotation_note`. (#216)
 
 ## [3.25.0] - 2026-09-29
 ### Fixed
