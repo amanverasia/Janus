@@ -58,6 +58,10 @@ USABILITY_PROBE_ENABLED = os.environ.get("USABILITY_PROBE", "true").lower() != "
 CHECK_CONCURRENCY = int(os.environ.get("CHECK_CONCURRENCY", "8"))
 VALIDATION_MAX_FAILURES = max(1, int(os.environ.get("VALIDATION_MAX_FAILURES", "3")))
 FETCH_TIMEOUT = 15.0
+# Upper bound on the total time antigravity validation may spend polling
+# onboardUser, so one key cannot monopolize a check_all concurrency slot.
+ANTIGRAVITY_ONBOARD_MAX_WAIT = FETCH_TIMEOUT
+ANTIGRAVITY_ONBOARD_POLL_INTERVAL = 5.0
 ANTIGRAVITY_LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
 ANTIGRAVITY_ONBOARD_URL = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser"
 ANTIGRAVITY_USER_AGENT = "antigravity/ide/2.1.1 darwin/arm64"
@@ -290,6 +294,25 @@ async def _fetch_with_headers(
     return {"status": response.status_code, "headers": response_headers, "body": parsed_body}
 
 
+def _parse_rate_limit_value(raw: str | None) -> int | None:
+    """Parse an ``x-ratelimit-*`` header value tolerantly.
+
+    Upstreams occasionally send values like ``"1,000"`` or ``"500.0"``. A
+    malformed advisory header must never raise, because that would bubble up to
+    ``validate_key``'s catch-all and mark a healthy key invalid.
+    """
+    if not raw:
+        return None
+    text = raw.strip().replace(",", "").replace("_", "")
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    if value != value or value in (float("inf"), float("-inf")) or value < 0:
+        return None
+    return int(value)
+
+
 def _extract_rate_limits(headers: dict[str, str]) -> dict[str, int | None]:
     result: dict[str, int | None] = {"rpm": None, "tpm": None, "rpd": None}
     rpm_keys = [
@@ -304,18 +327,12 @@ def _extract_rate_limits(headers: dict[str, str]) -> dict[str, int | None]:
     ]
     rpd_keys = ["x-ratelimit-requests-per-day", "x-ratelimit-limit-requests-per-day"]
 
-    for key in rpm_keys:
-        if headers.get(key):
-            result["rpm"] = int(headers[key])
-            break
-    for key in tpm_keys:
-        if headers.get(key):
-            result["tpm"] = int(headers[key])
-            break
-    for key in rpd_keys:
-        if headers.get(key):
-            result["rpd"] = int(headers[key])
-            break
+    for field, keys in (("rpm", rpm_keys), ("tpm", tpm_keys), ("rpd", rpd_keys)):
+        for key in keys:
+            value = _parse_rate_limit_value(headers.get(key))
+            if value is not None:
+                result[field] = value
+                break
 
     combined = headers.get("x-ratelimit-limit")
     if combined and result["rpm"] is None and result["tpm"] is None:
@@ -947,14 +964,17 @@ async def _validate_kiro_key(
 
     provider = KiroProvider(api_key=key_value, base_url="https://runtime.us-east-1.kiro.dev")
     try:
-        result = await provider.call(
-            {
-                "model": KIRO_PROBE_MODEL,
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 1,
-            },
-            stream=False,
-        )
+        try:
+            result = await provider.call(
+                {
+                    "model": KIRO_PROBE_MODEL,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                },
+                stream=False,
+            )
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            return {"probe_inconclusive": True, "error": f"Kiro probe unavailable: {exc}"}
         if result.status_code in {200, 201}:
             return {
                 "is_valid": True,
@@ -974,6 +994,13 @@ async def _validate_kiro_key(
                 "is_usable": False,
                 "usability_status": "rate_limited",
                 "error": "Kiro probe rate limited",
+            }
+        if result.status_code >= 500:
+            # KiroProvider reports timeouts/unreachable hosts as 502; a transient
+            # upstream outage must not invalidate the credential.
+            return {
+                "probe_inconclusive": True,
+                "error": f"Kiro probe HTTP {result.status_code}",
             }
         return {"is_valid": False, "error": f"Kiro probe HTTP {result.status_code}"}
     finally:
@@ -1059,6 +1086,8 @@ async def _validate_antigravity_key(
                     tier_id = str(tier["id"]).strip()
                     break
         onboarding_note = ""
+        loop = asyncio.get_running_loop()
+        onboard_deadline = loop.time() + ANTIGRAVITY_ONBOARD_MAX_WAIT
         for _attempt in range(10 if not project_id else 1):
             try:
                 onboard = await client.post(
@@ -1073,6 +1102,7 @@ async def _validate_antigravity_key(
                             else {}
                         ),
                     },
+                    timeout=min(FETCH_TIMEOUT, max(onboard_deadline - loop.time(), 1.0)),
                 )
             except (httpx.TimeoutException, httpx.RequestError):
                 onboarding_note = "OAuth valid; onboarding unavailable"
@@ -1099,7 +1129,14 @@ async def _validate_antigravity_key(
             if onboard_data.get("done") is True or project_id:
                 onboarding_note = "OAuth valid; Cloud Code Assist project verified"
                 break
-            await asyncio.sleep(5)
+            remaining = onboard_deadline - loop.time()
+            if remaining <= 0:
+                onboarding_note = "OAuth valid; onboarding timed out"
+                break
+            await asyncio.sleep(min(ANTIGRAVITY_ONBOARD_POLL_INTERVAL, remaining))
+            if loop.time() >= onboard_deadline:
+                onboarding_note = "OAuth valid; onboarding timed out"
+                break
         else:
             onboarding_note = "OAuth valid; onboarding timed out"
     if not onboarding_note:
