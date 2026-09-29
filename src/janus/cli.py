@@ -9,7 +9,20 @@ import uvicorn
 from janus.app import create_app
 from janus.config.loader import load_config
 
-app = typer.Typer(name="janus", help="The two-faced AI routing gateway")
+
+def _close_pooled_connections(*args: object, **kwargs: object) -> None:
+    import asyncio
+
+    from janus.storage.database import close_connection_pools
+
+    asyncio.run(close_connection_pools())
+
+
+app = typer.Typer(
+    name="janus",
+    help="The two-faced AI routing gateway",
+    result_callback=_close_pooled_connections,
+)
 
 TEMPLATE_YAML = """# Janus configuration
 server:
