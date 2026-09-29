@@ -7,17 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.25.1] - 2026-09-29
+## [3.26.0] - 2026-09-29
 ### Fixed
 - **In-flight guards on all mutating dashboard forms** — double-clicks can no
   longer double-submit: modal submits, row actions, toggles, and catalog-sync
   buttons are disabled while their action is pending, and row-action pages
   track in-flight work per id. The Keys page can no longer orphan a created
   key behind a second submit. (#209)
-- Dashboard mutation routes validate settings, providers, quotas, and combos;
-  missing records return 404 and validation errors use safe JSON responses. (#207)
-### Changed
-- Centralize package version metadata and streamline CI checks and release validation. (#220)
 
 ### Changed
 - **Trimmed dashboard state payloads** — the overview section now carries only
@@ -28,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pricing state's unpriced list is capped at the top 25 models by tokens;
   routing state drops unread per-provider `models`, `combos`,
   `quota_warnings`, and the static `rotation_note`. (#216)
+
+## [3.25.1] - 2026-09-29
+### Fixed
+- Dashboard mutation routes validate settings, providers, quotas, and combos;
+  missing records return 404 and validation errors use safe JSON responses. (#207)
+### Changed
+- Centralize package version metadata and streamline CI checks and release validation. (#220)
 
 ## [3.25.0] - 2026-09-29
 ### Fixed
