@@ -351,3 +351,9 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **PR #240 merged:** #207/#220 landed on `main` as `9e45f97` after CI run `36577717042` passed all five jobs (both Python versions, browser, package, single-run checks). Issues #207 and #220 are closed.
 - **Release version bump:** patch version 3.25.1, with changelog and dashboard manifest/static version synchronized. PR #241 remains open for #209/#216; its planned 3.26.0 release can follow this patch bump.
 - **Next:** verify the release commit, then remove the #207/#220 local and remote branches.
+
+### 2026-09-29 14:07 UTC (2026-09-29 19:37 IST) — Codex GPT-6 → coordinator
+
+- **Cleanup:** deleted remote and local `codex/issues-207-220` after PR #240 merged. Preserved the local duplicate snapshot in `stash@{0}` because automatic review rejected a hard reset.
+- **Release follow-up:** rebuilt the committed dashboard bundle for version 3.25.1; Svelte check and all 21 dashboard UI tests pass.
+- **Next:** commit the generated bundle, then verify main CI is green.
