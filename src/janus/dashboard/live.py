@@ -93,6 +93,9 @@ class LiveUsageBus:
             "recent": list(self._recent),
         }
 
+    def inflight_count(self) -> int:
+        return len(self._in_flight)
+
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_CAP)
         self._subscribers.add(q)

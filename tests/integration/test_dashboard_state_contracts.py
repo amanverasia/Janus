@@ -82,11 +82,6 @@ _SIGNATURE_LIST_SAMPLE = 20
 
 
 def _normalize(section: str, payload: dict[str, Any]) -> str:
-    if section == "overview":
-        live = payload["data"].get("live")
-        if isinstance(live, dict):
-            live["seq"] = 0
-            live["recent"] = []
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     text = _TIMESTAMP_RE.sub("2000-01-01T00:00:00Z", text)
     text = _DATE_RE.sub("2000-01-01", text)

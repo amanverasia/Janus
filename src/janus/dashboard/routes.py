@@ -1678,11 +1678,19 @@ def _pricing_sync_status(last_sync_raw: str | None) -> dict[str, Any]:
     }
 
 
+UNPRICED_MODELS_CAP = 25
+
+
 async def _unpriced_models_context(request: Request, db_path: Path) -> list[dict[str, Any]]:
-    """Models with recent zero-cost usage that the *current* registry still can't price."""
+    """Models with recent zero-cost usage that the *current* registry still can't price.
+
+    ``get_unpriced_models`` orders by total tokens descending, so the cap keeps
+    the heaviest 25 instead of the unbounded full list.
+    """
     registry = request.app.state.pricing_registry
     candidates = await get_unpriced_models(db_path)
-    return [row for row in candidates if registry.get(row["model"]) is None]
+    unpriced = [row for row in candidates if registry.get(row["model"]) is None]
+    return unpriced[:UNPRICED_MODELS_CAP]
 
 
 async def _pricing_page_context(

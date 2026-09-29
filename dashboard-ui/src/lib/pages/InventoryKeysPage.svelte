@@ -31,7 +31,11 @@
   let revealBusy = false;
   let revealTimer = 0;
   let testResults: Record<string, string> = {};
-  let testing = '';
+  let testing = new Set<string>();
+  let busyRows = new Set<string>();
+  let bulkBusy = false;
+  let recheckingAll = false;
+  let savingPriority = false;
   let reclassifying = false;
   let reclassifyPreview: JsonObject | undefined;
   let refreshingValue = '';
@@ -122,7 +126,7 @@
   }
 
   async function bulk(kind: 'archive' | 'restore' | 'recheck' | 'delete') {
-    if (!selected.size) return;
+    if (!selected.size || bulkBusy) return;
     if (
       kind === 'delete' &&
       !confirm(`Delete ${selected.size} selected credentials? This cannot be undone.`)
@@ -139,17 +143,46 @@
     body.set('offset', String(offset));
     if (kind === 'archive' || kind === 'restore') body.set('action', kind);
     const endpoint = kind === 'archive' || kind === 'restore' ? 'archive' : kind;
-    await action(`/dashboard/api/inventory/keys/bulk/${endpoint}`, {
-      body,
-      success: `${selected.size} credentials ${kind === 'recheck' ? 'queued' : `${kind}d`}`
-    });
+    bulkBusy = true;
+    try {
+      await action(`/dashboard/api/inventory/keys/bulk/${endpoint}`, {
+        body,
+        success: `${selected.size} credentials ${kind === 'recheck' ? 'queued' : `${kind}d`}`
+      });
+    } finally {
+      bulkBusy = false;
+    }
     selected = new Set();
+  }
+
+  async function rowAction(id: string, url: string, options: MutationOptions) {
+    if (!id || busyRows.has(id)) return;
+    busyRows = new Set(busyRows).add(id);
+    try {
+      await action(url, options);
+    } finally {
+      const next = new Set(busyRows);
+      next.delete(id);
+      busyRows = next;
+    }
+  }
+
+  async function recheckAll() {
+    if (recheckingAll) return;
+    recheckingAll = true;
+    try {
+      await action('/dashboard/api/inventory/recheck-all', {
+        success: 'Inventory recheck started'
+      });
+    } finally {
+      recheckingAll = false;
+    }
   }
 
   async function testKey(row: JsonObject) {
     const id = idOf(row);
-    if (!id) return;
-    testing = id;
+    if (!id || testing.has(id)) return;
+    testing = new Set(testing).add(id);
     try {
       const result = object(
         await action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/test`, {
@@ -162,7 +195,9 @@
         [id]: text(result.message, result.ok ? 'Credential is valid' : 'Test completed')
       };
     } finally {
-      testing = '';
+      const next = new Set(testing);
+      next.delete(id);
+      testing = next;
     }
   }
 
@@ -185,7 +220,7 @@
 
   async function refreshAccountValue(row: JsonObject | undefined) {
     const id = row ? idOf(row) : '';
-    if (!id) return;
+    if (!id || refreshingValue === id) return;
     refreshingValue = id;
     try {
       await action(
@@ -271,14 +306,19 @@
   }
 
   async function savePriority() {
-    if (!detail) return;
+    if (!detail || savingPriority) return;
     const id = idOf(detail);
     const body = new FormData();
     body.set('priority', String(Math.max(0, detailPriority)));
-    await action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/priority`, {
-      body,
-      success: 'Routing priority updated'
-    });
+    savingPriority = true;
+    try {
+      await action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/priority`, {
+        body,
+        success: 'Routing priority updated'
+      });
+    } finally {
+      savingPriority = false;
+    }
     if (!detail || idOf(detail) !== id) return;
     detail = { ...detail, priority: Math.max(0, detailPriority) };
   }
@@ -320,12 +360,8 @@
   <a class="button" href="/dashboard/api/inventory/export" download>
     <Icon name="download" />Export
   </a>
-  <button
-    class="button"
-    on:click={() =>
-      action('/dashboard/api/inventory/recheck-all', { success: 'Inventory recheck started' })}
-  >
-    <Icon name="refresh" />Recheck all
+  <button class="button" disabled={recheckingAll} on:click={recheckAll}>
+    <Icon name="refresh" />{recheckingAll ? 'Rechecking…' : 'Recheck all'}
   </button>
   <button class="button" disabled={reclassifying} on:click={previewReclassification}>
     <Icon name="search" />{reclassifying ? 'Scanning…' : 'Re-identify'}
@@ -462,15 +498,19 @@
     <div class="bulk-bar">
       <strong>{selected.size} selected</strong>
       <span></span>
-      <button class="button" on:click={() => bulk('recheck')}>
+      <button class="button" disabled={bulkBusy} on:click={() => bulk('recheck')}>
         <Icon name="refresh" size={14} />Recheck
       </button>
-      {#if status === 'archived'}<button class="button" on:click={() => bulk('restore')}>
+      {#if status === 'archived'}<button
+          class="button"
+          disabled={bulkBusy}
+          on:click={() => bulk('restore')}
+        >
           Restore
-        </button>{:else}<button class="button" on:click={() => bulk('archive')}>
+        </button>{:else}<button class="button" disabled={bulkBusy} on:click={() => bulk('archive')}>
           Archive
         </button>{/if}
-      <button class="button danger" on:click={() => bulk('delete')}>
+      <button class="button danger" disabled={bulkBusy} on:click={() => bulk('delete')}>
         <Icon name="trash" size={14} />Delete
       </button>
       <button
@@ -596,9 +636,9 @@
                 </button>
                 <button
                   class="button compact-button"
-                  class:spinning={testing === id}
+                  class:spinning={testing.has(id)}
                   title="Test"
-                  disabled={testing === id}
+                  disabled={testing.has(id)}
                   on:click={() => testKey(row)}
                 >
                   <Icon name="pulse" size={15} />Test
@@ -606,38 +646,48 @@
                 <button
                   class="button compact-button"
                   title="Recheck"
+                  disabled={busyRows.has(id)}
                   on:click={() =>
-                    action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/recheck`, {
-                      success: 'Recheck started'
-                    })}
+                    rowAction(
+                      id,
+                      `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/recheck`,
+                      { success: 'Recheck started' }
+                    )}
                 >
                   <Icon name="refresh" size={15} />Recheck
                 </button>
                 {#if row.is_archived}<button
                     class="button compact-button restore-button"
                     title="Restore"
+                    disabled={busyRows.has(id)}
                     on:click={() =>
-                      action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/restore`, {
-                        success: 'Credential restored'
-                      })}
+                      rowAction(
+                        id,
+                        `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/restore`,
+                        { success: 'Credential restored' }
+                      )}
                   >
                     <Icon name="check" size={15} />Restore
                   </button>{:else}<button
                     class="button compact-button archive-button"
                     title="Archive"
+                    disabled={busyRows.has(id)}
                     on:click={() =>
-                      action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}/archive`, {
-                        success: 'Credential archived'
-                      })}
+                      rowAction(
+                        id,
+                        `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/archive`,
+                        { success: 'Credential archived' }
+                      )}
                   >
                     <Icon name="archive" size={15} />Archive
                   </button>{/if}
                 <button
                   class="button compact-button delete-button"
                   title="Delete"
+                  disabled={busyRows.has(id)}
                   on:click={() =>
                     confirm('Delete this credential? This cannot be undone.') &&
-                    action(`/dashboard/api/inventory/keys/${encodeURIComponent(id)}`, {
+                    rowAction(id, `/dashboard/api/inventory/keys/${encodeURIComponent(id)}`, {
                       method: 'DELETE',
                       success: 'Credential deleted'
                     })}
@@ -810,7 +860,7 @@
         <input type="number" min="0" bind:value={detailPriority} />
         <small>Lower values are tried first within the provider.</small>
       </label>
-      <button class="button">Save priority</button>
+      <button class="button" disabled={savingPriority}>Save priority</button>
     </form>
     <div class="detail-section">
       <div class="section-title">
