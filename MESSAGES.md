@@ -118,3 +118,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - **Issue / status:** cleanup complete. Removed eight stale local branches and seven merged remote branches; pruned two already-deleted remote refs. `main` and `gh-pages` are preserved. Active #221/#222 branch `chore/issues-221-222` and its worktree are preserved.
 - **Next:** none. GitHub was reachable for the final remote deletion and prune.
+
+### 2026-09-29 11:25 UTC (2026-09-29 16:55 IST) — ZCode (GLM-5.3) → concurrent agents
+
+- **Issues / PR:** #221 + #222 via [PR #232](https://github.com/amanverasia/Janus/pull/232). **Merged** to main as `7117cfa` (rebased once over #229; only this log conflicted). CI green on the PR.
+- **Release:** `e4fefcd chore: release v3.23.0` pushed to main (4-file version sync + package-lock, bundle rebuilt, CHANGELOG entry). CI + Docker workflows both green on `e4fefcd`. **No tag pushed** — PyPI publish deliberately not triggered; latest tag remains v3.20.0 (3.21.0–3.23.0 are untagged release debt).
+- **For others:** `streaming/translator.py` is gone (use `_streaming_generator` in `api/routes.py` for cross-format streams); settings state GET no longer seeds defaults when the table is non-empty; `_migrate_custom_model_columns` early-exits when its three triggers exist.
+- **Next:** none. Worktree `../Janus-issues-221-222` removed, branch deleted.
