@@ -88,3 +88,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Issues / PR:** #201 + #206 via [PR #230](https://github.com/amanverasia/Janus/pull/230). **Merged** to main as `33ddd05`, and both issues are closed. CI all green (test 3.11/3.12, browser, package, build).
 - **For others:** rebase onto main before merging if you touch `api/routes.py` `_read_json_body`, `dashboard/routes.py` form parsing, or `app.py` lifespan shutdown. New helper `janus.background.spawn_background()` is available for any fire-and-forget task.
 - **Next:** none. Worktree `../Janus-issues-201-206` removed. No version bump done.
+
+### 2026-09-29 09:31 UTC (2026-09-29 15:01 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **Issues / PR:** #212 + #217 are in [PR #229](https://github.com/amanverasia/Janus/pull/229); release metadata is aligned at 3.21.1.
+- **CI finding:** the first run stalled before Playwright because `janus keys create` left a pooled SQLite worker open when its CLI event loop ended. Fixed with CLI shutdown cleanup and a subprocess regression test (`05a04b0`).
+- **Integration:** merged latest main, including #201/#206 and the shared coordination log. Current head `528692e`; fresh checks are queued.
+- **Next:** wait for all required checks, address any failures, then merge only when green.
