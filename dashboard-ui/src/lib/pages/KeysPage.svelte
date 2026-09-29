@@ -13,6 +13,7 @@
 
   let open = false;
   let editing: JsonObject | undefined;
+  let saving = false;
   let revealed = '';
   let copied = '';
   let copyError = '';
@@ -61,6 +62,7 @@
   ];
 
   async function submit(event: SubmitEvent) {
+    if (saving) return;
     const form = event.currentTarget as HTMLFormElement;
     const formData = new FormData(form);
     formData.set('login_field', '1');
@@ -68,6 +70,7 @@
       formData.set('models_field', '1');
       formData.set('budget_fields', '1');
     }
+    saving = true;
     try {
       const result = await action(
         editing ? `/dashboard/api/keys/${idOf(editing)}` : '/dashboard/api/v2/keys',
@@ -83,6 +86,8 @@
       }
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     open = false;
   }
@@ -245,7 +250,9 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (open = false)}>Cancel</button>
-      <button class="button primary">{editing ? 'Save changes' : 'Create key'}</button>
+      <button class="button primary" disabled={saving}>
+        {editing ? 'Save changes' : 'Create key'}
+      </button>
     </div>
   </form>
 </Modal>

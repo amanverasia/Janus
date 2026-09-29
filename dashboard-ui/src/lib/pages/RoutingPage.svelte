@@ -50,21 +50,28 @@
     if (seconds < 60) return `${Math.ceil(seconds)}s`;
     return `${Math.ceil(seconds / 60)}m`;
   }
+
+  let clearing = false;
+
+  async function clearCooldowns() {
+    if (clearing) return;
+    clearing = true;
+    try {
+      await action('/dashboard/api/routing/cooldowns/clear', {
+        success: 'All cooldowns cleared'
+      });
+    } finally {
+      clearing = false;
+    }
+  }
 </script>
 
 <PageHeader
   title="Routing"
   description="See how Janus distributes attempts, applies cooldowns, and protects upstream capacity."
 >
-  <button
-    class="button"
-    disabled={!cooldowns.length}
-    on:click={() =>
-      action('/dashboard/api/routing/cooldowns/clear', {
-        success: 'All cooldowns cleared'
-      })}
-  >
-    <Icon name="refresh" />Clear cooldowns
+  <button class="button" disabled={!cooldowns.length || clearing} on:click={clearCooldowns}>
+    <Icon name="refresh" />{clearing ? 'Clearing…' : 'Clear cooldowns'}
   </button>
 </PageHeader>
 

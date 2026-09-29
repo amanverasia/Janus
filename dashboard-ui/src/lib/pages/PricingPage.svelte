@@ -12,6 +12,8 @@
   export let navigateQuery: (params: Record<string, string>) => void;
 
   let open = false;
+  let saving = false;
+  let syncing = false;
   let tab = 'overrides';
   $: overrides = firstList(data, 'overrides');
   $: builtin = firstList(data, 'builtin');
@@ -61,7 +63,19 @@
 
   $: activeCols = tab === 'unpriced' ? unpricedCols : cols;
 
+  async function syncCatalog() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      await action('/dashboard/api/pricing/sync', { success: 'Pricing catalog synced' });
+    } finally {
+      syncing = false;
+    }
+  }
+
   async function submit(event: SubmitEvent) {
+    if (saving) return;
+    saving = true;
     try {
       await action('/dashboard/api/pricing', {
         body: new FormData(event.currentTarget as HTMLFormElement),
@@ -69,6 +83,8 @@
       });
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     open = false;
   }
@@ -78,11 +94,8 @@
   title="Pricing"
   description="Calculate gateway spend with layered model pricing and explicit overrides."
 >
-  <button
-    class="button"
-    on:click={() => action('/dashboard/api/pricing/sync', { success: 'Pricing catalog synced' })}
-  >
-    <Icon name="refresh" />Sync catalog
+  <button class="button" disabled={syncing} on:click={syncCatalog}>
+    <Icon name="refresh" />{syncing ? 'Syncing…' : 'Sync catalog'}
   </button>
   <button class="button primary" on:click={() => (open = true)}>
     <Icon name="plus" />Add override
@@ -176,7 +189,7 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (open = false)}>Cancel</button>
-      <button class="button primary">Save override</button>
+      <button class="button primary" disabled={saving}>Save override</button>
     </div>
   </form>
 </Modal>

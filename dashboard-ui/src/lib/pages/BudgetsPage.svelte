@@ -8,6 +8,7 @@
   export let data: JsonObject;
   export let action: (u: string, o?: MutationOptions) => Promise<unknown>;
   let open = false;
+  let saving = false;
   let scope = 'global';
   let dailyLimit: number | undefined;
   let absoluteLimit: number | undefined;
@@ -59,6 +60,8 @@
   }
 
   async function submit(e: SubmitEvent) {
+    if (saving) return;
+    saving = true;
     try {
       await action('/dashboard/api/budgets', {
         body: new FormData(e.currentTarget as HTMLFormElement),
@@ -66,6 +69,8 @@
       });
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     open = false;
   }
@@ -173,7 +178,7 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (open = false)}>Cancel</button>
-      <button class="button primary">Save budget</button>
+      <button class="button primary" disabled={saving}>Save budget</button>
     </div>
   </form>
 </Modal>

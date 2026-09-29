@@ -31,6 +31,7 @@
   let collapsed: Record<string, boolean> = {};
   let busy = '';
   let customOpen = false;
+  let savingCustom = false;
   let editingCustom: JsonObject | undefined;
   let customRecordId = '';
   let customProviderId = '';
@@ -254,6 +255,7 @@
   }
 
   async function saveCustomModel() {
+    if (savingCustom) return;
     const body: JsonObject = {
       provider_id: customProviderId,
       model_id: customModelId.trim(),
@@ -264,6 +266,7 @@
       reasoning_efforts: customReasoningEfforts,
       is_enabled: true
     };
+    savingCustom = true;
     try {
       await action(
         editingCustom
@@ -277,6 +280,8 @@
       );
     } catch {
       return;
+    } finally {
+      savingCustom = false;
     }
     customOpen = false;
   }
@@ -592,7 +597,10 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (customOpen = false)}>Cancel</button>
-      <button class="button primary" disabled={!customProviderId || !customModelId.trim()}>
+      <button
+        class="button primary"
+        disabled={savingCustom || !customProviderId || !customModelId.trim()}
+      >
         {editingCustom ? 'Save model' : 'Add custom model'}
       </button>
     </div>

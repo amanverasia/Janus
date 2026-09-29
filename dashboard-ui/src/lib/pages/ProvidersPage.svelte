@@ -42,6 +42,8 @@
   let open = false;
   let editing: JsonObject | undefined;
   let draft: JsonObject = {};
+  let saving = false;
+  let testingConnection = false;
   let providerSearch = '';
   let presetSearch = '';
   let selectedPresetId = '';
@@ -375,8 +377,10 @@
   }
 
   async function submit(event: SubmitEvent) {
+    if (saving) return;
     const form = event.currentTarget as HTMLFormElement;
     const id = editing ? idOf(editing) : '';
+    saving = true;
     try {
       await action(
         id ? `/dashboard/api/providers/${encodeURIComponent(id)}` : '/dashboard/api/providers',
@@ -388,12 +392,16 @@
       );
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     closeModal();
     if (id) selectedProviderId = id;
   }
 
   async function testProvider(provider: JsonObject) {
+    if (testingConnection) return;
+    testingConnection = true;
     try {
       await action(`/dashboard/api/providers/${encodeURIComponent(idOf(provider))}/test`, {
         success: 'Connection test completed',
@@ -401,6 +409,8 @@
       });
     } catch {
       return;
+    } finally {
+      testingConnection = false;
     }
   }
 
@@ -790,8 +800,12 @@
               Keep one routing connection for this prefix and manage the shared credential pool in
               Inventory. Secrets are write-only.
             </p>
-            <button class="button" on:click={() => testProvider(selectedProvider)}>
-              Test connection
+            <button
+              class="button"
+              disabled={testingConnection}
+              on:click={() => testProvider(selectedProvider)}
+            >
+              {testingConnection ? 'Testing…' : 'Test connection'}
             </button>
           </aside>
         </div>
@@ -1465,7 +1479,9 @@
           </button>{/if}
         <span></span>
         <button type="button" class="button" on:click={closeModal}>Cancel</button>
-        <button class="button primary">{editing ? 'Save changes' : 'Create connection'}</button>
+        <button class="button primary" disabled={saving}>
+          {editing ? 'Save changes' : 'Create connection'}
+        </button>
       </div>
     </form>
   {/if}

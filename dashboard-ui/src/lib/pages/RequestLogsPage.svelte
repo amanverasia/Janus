@@ -15,6 +15,7 @@
   let detailOpen = false;
   let detailError = '';
   let showBodies = false;
+  let clearing = false;
   // Rapid clicks resolved out of order and showed the wrong row's detail.
   let detailRequest: AbortController | undefined;
 
@@ -111,11 +112,16 @@
     const confirmed = window.confirm(
       'Permanently clear every retained request log? This cannot be undone.'
     );
-    if (!confirmed) return;
-    await action('/dashboard/api/request-logs', {
-      method: 'DELETE',
-      success: 'Request logs cleared'
-    });
+    if (!confirmed || clearing) return;
+    clearing = true;
+    try {
+      await action('/dashboard/api/request-logs', {
+        method: 'DELETE',
+        success: 'Request logs cleared'
+      });
+    } finally {
+      clearing = false;
+    }
   }
 </script>
 
@@ -126,7 +132,9 @@
   <a class="button" href="/dashboard/api/request-logs/export" download>
     <Icon name="download" />Export JSON
   </a>
-  <button class="button danger" on:click={clearLogs}><Icon name="trash" />Clear logs</button>
+  <button class="button danger" disabled={clearing} on:click={clearLogs}>
+    <Icon name="trash" />{clearing ? 'Clearing…' : 'Clear logs'}
+  </button>
 </PageHeader>
 
 <section class="panel">

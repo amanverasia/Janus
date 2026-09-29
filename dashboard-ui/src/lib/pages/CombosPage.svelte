@@ -9,6 +9,7 @@
   export let action: (url: string, o?: MutationOptions) => Promise<unknown>;
   let open = false;
   let editing: JsonObject | undefined;
+  let saving = false;
   $: combos = firstList(data, 'combos', 'items');
 
   function comboModelsPreview(combo: JsonObject): string {
@@ -22,8 +23,10 @@
   }
 
   async function submit(e: SubmitEvent) {
+    if (saving) return;
     const f = e.currentTarget as HTMLFormElement;
     const id = editing ? idOf(editing) : '';
+    saving = true;
     try {
       await action(id ? `/dashboard/api/combos/${id}` : '/dashboard/api/combos', {
         method: id ? 'PUT' : 'POST',
@@ -32,6 +35,8 @@
       });
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     open = false;
   }
@@ -126,7 +131,7 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (open = false)}>Cancel</button>
-      <button class="button primary">Save combo</button>
+      <button class="button primary" disabled={saving}>Save combo</button>
     </div>
   </form>
 </Modal>
