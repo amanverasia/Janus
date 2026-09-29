@@ -42,6 +42,9 @@
   let open = false;
   let editing: JsonObject | undefined;
   let draft: JsonObject = {};
+  let saving = false;
+  let testingConnection = false;
+  let rowBusy = new Set<string>();
   let providerSearch = '';
   let presetSearch = '';
   let selectedPresetId = '';
@@ -375,8 +378,10 @@
   }
 
   async function submit(event: SubmitEvent) {
+    if (saving) return;
     const form = event.currentTarget as HTMLFormElement;
     const id = editing ? idOf(editing) : '';
+    saving = true;
     try {
       await action(
         id ? `/dashboard/api/providers/${encodeURIComponent(id)}` : '/dashboard/api/providers',
@@ -388,12 +393,16 @@
       );
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     closeModal();
     if (id) selectedProviderId = id;
   }
 
   async function testProvider(provider: JsonObject) {
+    if (testingConnection) return;
+    testingConnection = true;
     try {
       await action(`/dashboard/api/providers/${encodeURIComponent(idOf(provider))}/test`, {
         success: 'Connection test completed',
@@ -401,28 +410,39 @@
       });
     } catch {
       return;
+    } finally {
+      testingConnection = false;
     }
   }
 
   async function toggleProvider(provider: JsonObject) {
+    const providerId = idOf(provider);
+    if (!providerId || rowBusy.has(providerId)) return;
+    rowBusy = new Set(rowBusy).add(providerId);
     try {
-      await action(`/dashboard/api/providers/${encodeURIComponent(idOf(provider))}/toggle`, {
+      await action(`/dashboard/api/providers/${encodeURIComponent(providerId)}/toggle`, {
         method: 'PATCH',
         success: 'Provider status changed'
       });
     } catch {
       return;
+    } finally {
+      const next = new Set(rowBusy);
+      next.delete(providerId);
+      rowBusy = next;
     }
   }
 
   async function removeProvider(provider: JsonObject) {
     const providerId = idOf(provider);
+    if (!providerId || rowBusy.has(providerId)) return;
     if (
       !confirm(
         `Delete connection ${providerId} (${providerDisplayName(provider)})? This removes this exact gateway configuration.`
       )
     )
       return;
+    rowBusy = new Set(rowBusy).add(providerId);
     try {
       await action(`/dashboard/api/providers/${encodeURIComponent(providerId)}`, {
         method: 'DELETE',
@@ -430,6 +450,10 @@
       });
     } catch {
       return;
+    } finally {
+      const next = new Set(rowBusy);
+      next.delete(providerId);
+      rowBusy = next;
     }
     if (selectedProviderId === providerId) selectedProviderId = '';
   }
@@ -724,6 +748,7 @@
           <button
             class="button"
             aria-pressed={bool(selectedProvider.is_enabled, true)}
+            disabled={rowBusy.has(idOf(selectedProvider))}
             on:click={() => toggleProvider(selectedProvider)}
           >
             {bool(selectedProvider.is_enabled, true) ? 'Enabled' : 'Disabled'}
@@ -731,6 +756,7 @@
           <button
             class="icon-button"
             aria-label={`Delete connection ${idOf(selectedProvider)}`}
+            disabled={rowBusy.has(idOf(selectedProvider))}
             on:click={() => removeProvider(selectedProvider)}
           >
             <Icon name="trash" size={15} />
@@ -790,8 +816,12 @@
               Keep one routing connection for this prefix and manage the shared credential pool in
               Inventory. Secrets are write-only.
             </p>
-            <button class="button" on:click={() => testProvider(selectedProvider)}>
-              Test connection
+            <button
+              class="button"
+              disabled={testingConnection}
+              on:click={() => testProvider(selectedProvider)}
+            >
+              {testingConnection ? 'Testing…' : 'Test connection'}
             </button>
           </aside>
         </div>
@@ -957,6 +987,7 @@
                     type="button"
                     class="icon-button"
                     aria-label={`Delete connection ${idOf(provider)}`}
+                    disabled={rowBusy.has(idOf(provider))}
                     on:click={() => removeProvider(provider)}
                   >
                     <Icon name="trash" size={14} />
@@ -1465,7 +1496,9 @@
           </button>{/if}
         <span></span>
         <button type="button" class="button" on:click={closeModal}>Cancel</button>
-        <button class="button primary">{editing ? 'Save changes' : 'Create connection'}</button>
+        <button class="button primary" disabled={saving}>
+          {editing ? 'Save changes' : 'Create connection'}
+        </button>
       </div>
     </form>
   {/if}

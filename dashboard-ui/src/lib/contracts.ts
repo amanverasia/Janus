@@ -1,4 +1,4 @@
-import type { AlertItem, JsonObject, JsonValue } from './types';
+import type { AlertItem, JsonObject } from './types';
 
 /**
  * Typed contracts for the byte-pinned `/dashboard/api/v2/state/*` sections.
@@ -48,14 +48,11 @@ export interface UsageState extends JsonObject {
 }
 
 export interface OverviewState extends JsonObject {
-  stats: UsageStats;
+  stats: Omit<UsageStats, 'by_model'>;
   provider_count: number;
-  combos: Record<string, string[]>;
   today_cost: number;
   reporting_timezone: string;
-  global_budget: BudgetStatus | null;
-  base_url: string;
-  live: { type: string; seq: number; inflight: number; recent: JsonValue[] };
+  live_inflight: number;
   cooldown_count: number;
   setup_checklist: { has_providers: boolean; has_keys: boolean; has_requests: boolean };
 }

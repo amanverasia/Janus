@@ -110,6 +110,51 @@ async def test_management_catalog_is_safe_and_custom_models_have_first_class_cru
     assert deleted.json() == {"deleted": True, "id": custom_id}
 
 
+async def test_management_models_endpoint_is_paginated(tmp_path) -> None:
+    config = JanusConfig(
+        server=ServerSettings(port=0, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="test-provider",
+                catalog_id="custom",
+                prefix="test",
+                api_type="openai_compat",
+                base_url="https://provider.example/v1",
+                api_key="provider-secret",
+                models=[f"model-{i:03d}" for i in range(250)],
+            )
+        ],
+        api_keys=[ADMIN_KEY],
+    )
+    paged_app = create_app(config=config)
+    async with AsyncClient(transport=remote_transport(paged_app), base_url="http://test") as client:
+        default_page = await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
+        full = await client.get("/dashboard/api/v2/models?limit=250", headers=ADMIN_HEADERS)
+        tail = await client.get(
+            "/dashboard/api/v2/models?limit=100&offset=200", headers=ADMIN_HEADERS
+        )
+        oversized = await client.get("/dashboard/api/v2/models?limit=0", headers=ADMIN_HEADERS)
+
+    assert default_page.status_code == 200
+    data = default_page.json()
+    assert len(data["models"]) == 200
+    assert data["model_total"] == 250
+    assert data["visible_total"] == 250
+    assert data["providers"] == [
+        {
+            "id": "test-provider",
+            "catalog_id": "custom",
+            "name": "Custom Provider",
+            "prefix": "test",
+            "is_enabled": True,
+        }
+    ]
+    assert full.json()["model_total"] == 250
+    assert len(full.json()["models"]) == 250
+    assert tail.json()["models"] == full.json()["models"][200:]
+    assert oversized.status_code == 422
+
+
 @respx.mock
 async def test_selected_models_hide_discovery_but_do_not_block_direct_routing(app) -> None:
     respx.post("https://provider.example/v1/chat/completions").mock(

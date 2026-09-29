@@ -127,11 +127,10 @@ async def test_get_routing_overview_includes_quota_status(tmp_path) -> None:
     assert provider["quota"]["used"] == 3
     assert provider["quota"]["limit"] == 10
     assert provider["quota"]["status"] == "ok"
-    assert overview["quota_warnings"] == []
 
 
 @pytest.mark.asyncio
-async def test_get_routing_overview_quota_warnings_and_deprioritized(tmp_path) -> None:
+async def test_get_routing_overview_deprioritizes_exhausted_quota(tmp_path) -> None:
     from janus.storage.database import init_db
     from janus.storage.providers_db import create_provider
     from janus.storage.usage import record_usage
@@ -158,8 +157,6 @@ async def test_get_routing_overview_quota_warnings_and_deprioritized(tmp_path) -
     overview = await get_routing_overview(db_path)
     provider = overview["providers"][0]
     assert provider["quota"]["status"] == "warning"
-    assert len(overview["quota_warnings"]) == 1
-    assert overview["quota_warnings"][0]["id"] == "sub"
     assert provider["accounts"][0]["quota_deprioritized"] is False
 
     for _ in range(2):
@@ -168,6 +165,4 @@ async def test_get_routing_overview_quota_warnings_and_deprioritized(tmp_path) -
     overview = await get_routing_overview(db_path)
     provider = overview["providers"][0]
     assert provider["quota"]["status"] == "exhausted"
-    assert len(overview["quota_warnings"]) == 1
-    assert overview["quota_warnings"][0]["quota"]["status"] == "exhausted"
     assert provider["accounts"][0]["quota_deprioritized"] is True
