@@ -11,10 +11,11 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
 
 import httpx
 import yaml
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -109,6 +110,19 @@ _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 def _api_v1_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/v1"
+
+
+async def _read_form_params(
+    request: Request, *, keep_blank_values: bool = False
+) -> dict[str, list[str]]:
+    body = await request.body()
+    try:
+        text = body.decode()
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400, detail="Request body is not valid UTF-8 form data"
+        ) from None
+    return parse_qs(text, keep_blank_values=keep_blank_values)
 
 
 async def _reject_unsafe_url(
@@ -684,12 +698,9 @@ def _provider_form_data(
 @router.post("/api/providers")
 async def api_create_provider(request: Request) -> Response:
     db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
     from janus.storage.providers_db import create_provider
 
-    body = await request.body()
-    params = parse_qs(body.decode(), keep_blank_values=True)
+    params = await _read_form_params(request, keep_blank_values=True)
     if (
         not params.get("api_type", [""])[0].strip()
         and not params.get("catalog_id", [""])[0].strip()
@@ -728,12 +739,9 @@ async def api_create_provider(request: Request) -> Response:
 @router.put("/api/providers/{provider_id}")
 async def api_update_provider(request: Request, provider_id: str) -> Response:
     db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
     from janus.storage.providers_db import update_provider
 
-    body = await request.body()
-    params = parse_qs(body.decode(), keep_blank_values=True)
+    params = await _read_form_params(request, keep_blank_values=True)
     from janus.storage.providers_db import get_provider
 
     existing = await get_provider(db_path, provider_id)
@@ -892,15 +900,12 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
 
 @router.post("/api/providers/fetch-models")
 async def api_fetch_models(request: Request) -> JSONResponse:
-    from urllib.parse import parse_qs
-
     import httpx
 
     from janus.inventory.url_guard import BROWSER_USER_AGENT
 
     db_path = await _ensure_db(request)
-    body = await request.body()
-    params = parse_qs(body.decode(), keep_blank_values=True)
+    params = await _read_form_params(request, keep_blank_values=True)
     api_type = params.get("api_type", [""])[0]
     base_url = params.get("base_url", [""])[0].rstrip("/")
     api_key = params.get("api_key", [""])[0]
@@ -1120,12 +1125,9 @@ async def api_copilot_oauth_start(request: Request) -> JSONResponse:
 
 @router.post("/api/oauth/copilot/poll")
 async def api_copilot_oauth_poll(request: Request) -> JSONResponse:
-    from urllib.parse import parse_qs
-
     from janus.providers.github_copilot import poll_device_flow
 
-    body = await request.body()
-    params = parse_qs(body.decode())
+    params = await _read_form_params(request)
     device_code = params.get("device_code", [""])[0]
     if not device_code:
         return JSONResponse({"error": "Missing device_code"}, status_code=400)
@@ -1345,12 +1347,9 @@ async def api_test_connection(
 @router.post("/api/combos")
 async def api_create_combo(request: Request) -> Response:
     db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
     from janus.storage.combos_db import create_combo
 
-    body = await request.body()
-    params = parse_qs(body.decode())
+    params = await _read_form_params(request)
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
     try:
@@ -1368,12 +1367,9 @@ async def api_create_combo(request: Request) -> Response:
 @router.put("/api/combos/{combo_id}")
 async def api_update_combo(request: Request, combo_id: int) -> Response:
     db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
     from janus.storage.combos_db import update_combo
 
-    body = await request.body()
-    params = parse_qs(body.decode())
+    params = await _read_form_params(request)
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
     try:
@@ -1507,12 +1503,9 @@ def _require_float(
 @router.post("/api/settings")
 async def api_update_setting(request: Request) -> Response:
     db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
     from janus.storage.settings import set_setting
 
-    body = await request.body()
-    params = parse_qs(body.decode(), keep_blank_values=True)
+    params = await _read_form_params(request, keep_blank_values=True)
     try:
         key = params["key"][0]
         value = params["value"][0]
@@ -1662,12 +1655,9 @@ async def _pricing_page_context(
 @router.post("/api/pricing")
 async def api_create_pricing(request: Request) -> Response:
     db_path = await _ensure_db(request)
-    from urllib.parse import parse_qs
-
     from janus.storage.pricing_db import create_or_update_pricing_override
 
-    body = await request.body()
-    params = parse_qs(body.decode())
+    params = await _read_form_params(request)
     try:
         await create_or_update_pricing_override(
             db_path,

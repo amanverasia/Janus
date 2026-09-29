@@ -47,3 +47,21 @@ async def test_scheduler_logs_failure_and_keeps_running(
     assert check.await_count == 2
     assert "Scheduled inventory key check failed" in caplog.text
     assert "decrypt failed" in caplog.text
+
+
+async def test_recheck_all_task_is_tracked_until_done(tmp_path) -> None:
+    from janus import background
+    from janus.dashboard import inventory_routes
+
+    release = asyncio.Event()
+
+    async def fake_run_all(_db_path) -> None:
+        await release.wait()
+
+    with patch.object(inventory_routes, "_run_all_keys", fake_run_all):
+        task = inventory_routes._schedule_recheck_all(tmp_path / "janus.db")
+        assert task in background.background_tasks()
+        release.set()
+        await task
+
+    assert task not in background.background_tasks()

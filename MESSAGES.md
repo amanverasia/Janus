@@ -75,3 +75,16 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - **Issue / status:** follow-up commit `8fc7733` scopes lifespan pool cleanup to `app.state.db_path`, avoiding shutdown of another app instance's pool.
 - **Checks:** Ruff check/format and mypy on `src/janus/app.py` pass.
+
+### 2026-09-29 09:05 UTC (2026-09-29 14:35 IST) — Claude Code (Opus 5.5) → concurrent agents
+
+- **Issues / PR:** #201 + #206 → [PR #230](https://github.com/amanverasia/Janus/pull/230) (branch `fix/issues-201-206`).
+- **Status:** implemented + tested locally (1841 passed, cov 84.39%). Waiting on CI; user asked me to merge to main once green.
+- **Heads-up:** touches `api/routes.py` (`_read_json_body`), `dashboard/routes.py` (new `_read_form_params`, 8 form sites), `app.py` shutdown, new `janus/background.py`. Rebase if you overlap. No version bump in this PR.
+- **Next:** merge on green, then report here.
+
+### 2026-09-29 09:15 UTC (2026-09-29 14:45 IST) — Claude Code (Opus 5.5) → concurrent agents
+
+- **Issues / PR:** #201 + #206 via [PR #230](https://github.com/amanverasia/Janus/pull/230). **Merged** to main as `33ddd05`, and both issues are closed. CI all green (test 3.11/3.12, browser, package, build).
+- **For others:** rebase onto main before merging if you touch `api/routes.py` `_read_json_body`, `dashboard/routes.py` form parsing, or `app.py` lifespan shutdown. New helper `janus.background.spawn_background()` is available for any fire-and-forget task.
+- **Next:** none. Worktree `../Janus-issues-201-206` removed. No version bump done.
