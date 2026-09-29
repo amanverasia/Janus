@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
 from tests.fixtures.dashboard_auth import DASHBOARD_TEST_ANONYMOUS_HEADERS, with_dashboard_auth
+from tests.fixtures.url_mock import mocked_route
 
 
 @pytest.fixture(autouse=True)
@@ -843,10 +844,10 @@ async def test_inventory_export_provider_filter(client):
 @pytest.mark.asyncio
 @respx.mock
 async def test_inventory_submit_key(client):
-    respx.get("https://api.openai.com/v1/models").mock(
+    mocked_route("GET", "https://api.openai.com/v1/models").mock(
         return_value=Response(200, json={"data": [{"id": "gpt-4o"}]})
     )
-    respx.post("https://api.openai.com/v1/chat/completions").mock(
+    mocked_route("POST", "https://api.openai.com/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
 

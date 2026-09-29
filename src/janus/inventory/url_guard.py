@@ -6,11 +6,14 @@ import json
 import os
 import re
 import socket
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
 MAX_REDIRECTS = 3
+_REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
+_CREDENTIAL_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie", "x-api-key"})
 
 _BLOCKED_V4: list[tuple[str, int]] = [
     ("0.0.0.0", 8),
@@ -177,7 +180,7 @@ async def resolve_public_url(
             None,
             type=socket.SOCK_STREAM,
         )
-    except socket.gaierror as exc:
+    except OSError as exc:
         raise BlockedUrlError(f"DNS resolution failed for {host}: {exc}") from exc
 
     if not addresses:
@@ -216,7 +219,7 @@ async def assert_public_url(
 
 
 def _resolve_redirect(current_url: str, location: str) -> str:
-    return str(httpx.URL(location, base=current_url))
+    return str(httpx.URL(current_url).join(location))
 
 
 # Some upstream gateways (e.g. new-api/gorouter-style dashboards) sit behind
@@ -229,6 +232,26 @@ BROWSER_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 )
 DEFAULT_HTTP_HEADERS = {"User-Agent": BROWSER_USER_AGENT}
+
+
+def _pin_url(url: str, address: str) -> tuple[httpx.URL, dict[str, str], dict[str, Any]]:
+    original = httpx.URL(url)
+    host = original.host
+    if host is None:
+        raise BlockedUrlError(f"Invalid URL: {url}")
+    extensions: dict[str, Any] = {}
+    if original.scheme == "https":
+        extensions["sni_hostname"] = host
+    return (
+        original.copy_with(host=address),
+        {"Host": original.netloc.decode("ascii")},
+        extensions,
+    )
+
+
+def _origin(url: httpx.URL) -> tuple[str, str, int]:
+    port = url.port or (443 if url.scheme == "https" else 80)
+    return url.scheme, (url.host or "").lower(), port
 
 
 async def safe_fetch(
@@ -249,15 +272,23 @@ async def safe_fetch(
         if headers:
             merged_headers.update(headers)
         for hop in range(MAX_REDIRECTS + 1):
-            await assert_public_url(current_url, allow_private_network=allow_private_network)
+            addresses = await resolve_public_url(
+                current_url, allow_private_network=allow_private_network
+            )
+            request_url = httpx.URL(current_url)
+            hop_headers: dict[str, str] = {}
+            extensions: dict[str, Any] = {}
+            if addresses:
+                request_url, hop_headers, extensions = _pin_url(current_url, addresses[0])
             response = await client.request(
                 current_method,
-                current_url,
-                headers=merged_headers,
+                request_url,
+                headers={**merged_headers, **hop_headers},
                 content=current_content,
+                extensions=extensions,
             )
 
-            if response.status_code not in {301, 302, 303, 307, 308}:
+            if response.status_code not in _REDIRECT_STATUS_CODES:
                 return response
 
             location = response.headers.get("location")
@@ -267,10 +298,17 @@ async def safe_fetch(
             if hop >= MAX_REDIRECTS:
                 raise BlockedUrlError(f"Too many redirects from {url}")
 
-            current_url = _resolve_redirect(current_url, location)
+            next_url = _resolve_redirect(current_url, location)
+            if _origin(httpx.URL(current_url)) != _origin(httpx.URL(next_url)):
+                merged_headers = {
+                    name: value
+                    for name, value in merged_headers.items()
+                    if name.lower() not in _CREDENTIAL_HEADERS
+                }
             if response.status_code in {301, 302, 303}:
                 current_method = "GET"
                 current_content = None
+            current_url = next_url
 
     raise BlockedUrlError(f"Too many redirects from {url}")
 

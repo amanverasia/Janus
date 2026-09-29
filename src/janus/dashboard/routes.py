@@ -119,7 +119,7 @@ async def _reject_unsafe_url(
     Guards dashboard endpoints that send the user's API key to an arbitrary URL
     against scheme abuse and SSRF to internal/private addresses. DNS resolution
     goes through the event loop's threadpool so a slow resolver never blocks
-    concurrent dashboard requests.
+    concurrent dashboard requests, and resolution failure rejects the request.
     """
     import ipaddress
 
@@ -134,7 +134,7 @@ async def _reject_unsafe_url(
         try:
             infos = await asyncio.get_running_loop().getaddrinfo(hostname, None)
         except OSError:
-            infos = []
+            return JSONResponse({"error": "URL host could not be resolved"}, status_code=400)
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
