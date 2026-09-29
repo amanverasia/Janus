@@ -42,9 +42,7 @@ async def test_health_requires_dashboard_authentication(app):
         r = await client.get("/dashboard/api/v2/health")
         assert r.status_code == 401
 
-        browser = await client.get(
-            "/dashboard/api/v2/health", headers={"Accept": "text/html"}
-        )
+        browser = await client.get("/dashboard/api/v2/health", headers={"Accept": "text/html"})
     assert browser.status_code == 303
     assert browser.headers["location"].startswith("/dashboard/login")
 
