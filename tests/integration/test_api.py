@@ -182,6 +182,20 @@ async def test_health(app):
 
 
 @pytest.mark.asyncio
+async def test_health_details_report_runtime_checks(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/v1/health?details=true")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["database"] == {"reachable": True}
+    assert body["providers"] == {"total": 1}
+    assert body["inventory_scheduler"]["status"] == "unknown"
+    assert body["last_inventory_check_age_s"] is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_chat_completions_client_disconnect_returns_204(app, monkeypatch):
     from starlette.requests import ClientDisconnect, Request

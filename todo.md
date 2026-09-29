@@ -46,7 +46,7 @@ Explicitly out of scope (anti-goals): cloud sync (conflicts with local-first des
 - [ ] **Smarter inventory account ordering** — today: `priority DESC`, then credits. Consider health status, recent 429s, and RPM headroom in sort/rotation.
 - [ ] **Streaming fallback story** — mid-stream errors cannot retry (by design). Document clearly for users; optionally explore safe reconnect patterns for idempotent short streams.
 - [x] **Gateway-level rate limiting** — optional per-client RPM limiting now covers authenticated `/v1`, `/v1beta`, and `/api` traffic using DB-key, static-key, or anonymous-IP buckets, with standard retry/limit headers and immediate DB-backed settings updates. Counters are process-local and reset on restart. *(Done 2026-07-21.)*
-- [ ] **Richer `/v1/health`** — today returns `{"status":"ok"}`. Add optional checks: DB reachable, provider count, inventory scheduler alive, last recheck age.
+- [x] **Richer `/v1/health`** — `?details=true` reports DB reachability, runtime provider count, inventory scheduler state, and latest inventory-check age while the default lightweight response stays unchanged. *(Done 2026-09-29.)*
 - [x] **OAuth / subscription providers** — deferred since Phase 1 (Codex, ChatGPT Plus, etc.). Needs token refresh, secure storage, and provider executors beyond API-key types. *(Done 2026-07-05 for the framework + GitHub Copilot — see Phase 8.4. Remaining providers tracked as 8.4b.)*
 - [x] **Cooldown persistence error logging** — fire-and-forget save/delete tasks now retrieve failures in a done callback and log with operation, account, and model context while treating cancellation as normal shutdown. *(Done 2026-07-21.)*
 

@@ -160,3 +160,35 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Workspace:** worktree `../Janus-issues-208-203`, branch `fix/issues-208-215` from `origin/main`. Also deleted the stale merged remote branch `chore/issues-221-222`.
 - **Plan:** single PR → CI green → merge → version bump to 3.24.0 on main (4-file sync + bundle + CHANGELOG, no tag per existing release debt). Heads-up to #220's future owner: the bump lands first; your version-single-source work rebases on it.
 - **Next:** report back here before opening the PR.
+
+### 2026-09-29 11:55 UTC (2026-09-29 17:25 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **Issue #117 status:** implemented restoration of failed checkbox, select, and input saves from current saved settings/status/defaults. Added `SettingsPage.test.ts` regression coverage.
+- **Checks:** focused Vitest passed (1 test); `npm run check` passed (0 Svelte errors/warnings); `git diff --check` passed. `scripts/build_dashboard_ui.py --check` could not complete: `npm ci` failed with `EPERM` when esbuild's install step spawned its binary; afterward the partial install left `vite` unavailable. No bundle artifacts were produced.
+- **Next:** coordinator can review/integrate; modified implementation scope is `SettingsPage.svelte` and `SettingsPage.test.ts`.
+
+### 2026-09-29 12:02 UTC (2026-09-29 17:32 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **Branch:** `codex/health-details-settings-regression`, based on current `main` after the #199/#205 coordination commit.
+- **Implementation:** #117 current frontend regression fix is ready; the `/v1/health` backlog item is now optional `?details=true` diagnostics (DB, runtime provider count, inventory scheduler, latest-check age). Updated `CHANGELOG.md` and marked the health item complete in `todo.md`.
+- **Checks:** SettingsPage Vitest (1 test), `npm run check`, and its diff check passed. Changed Python files pass Ruff check/format, mypy on `api/routes.py`, `py_compile` under Python 3.11, and `git diff --check`. Python integration execution hangs under repository `.venv` Python 3.14.4/aiosqlite; no pytest result. Full dashboard bundle check is blocked by `npm ci` esbuild EPERM.
+- **Next:** review/commit, push and open PR once DNS permits; CI must be green before merge and version bump.
+
+### 2026-09-29 11:45 UTC (2026-09-29 17:15 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **PR:** [#233](https://github.com/amanverasia/Janus/pull/233) opened from `codex/health-details-settings-regression`; PR artifact attached to this task.
+- **CI:** GitGuardian passed. Python 3.12 check reports failure; Python 3.11, browser, package, and build remain pending. The workflow is still running and GitHub has not made the failing job logs available yet.
+- **Next:** inspect the failure when logs are published, fix or rerun as needed, then merge only after every required check is green and bump the version on updated `main`.
+
+### 2026-09-29 11:49 UTC (2026-09-29 17:19 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **PR #233 CI diagnosis:** Python 3.11/3.12 failed before lint/tests because Prettier flagged `SettingsPage.svelte` and `SettingsPage.test.ts`; the dashboard bundle had not yet been regenerated.
+- **Fix:** formatted both sources and rebuilt the committed Svelte bundle. Full `scripts/build_dashboard_ui.py --check` now passes locally, including 18 Vitest tests, Svelte check (0 warnings/errors), format check, and Vite production build. Browser and package jobs had already passed remotely.
+- **Next:** push the bundle/format follow-up and wait for a fresh complete CI run; then merge and apply the version bump on main.
+
+### 2026-09-29 12:00 UTC (2026-09-29 17:30 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **PR #233:** merged to `main` as `4f84fe5` after every required CI check passed (Python 3.11/3.12, browser, package, Docker build, docs, Ruff, mypy, dashboard check, and security scan).
+- **Release metadata:** bumped and synchronized the repo to **3.24.0** across `pyproject.toml`, `src/janus/app.py`, `dashboard-ui/package.json`, and `dashboard-ui/package-lock.json`; moved the PR's Unreleased notes to `CHANGELOG.md` and rebuilt the dashboard bundle. No tag pushed.
+- **Coordination:** #199/#205 and #208/#215 owners should rebase/adjust planned release metadata against 3.24.0 on main before opening their PRs.
+- **Next:** run the release bundle/package checks, commit and push the version bump, and verify its CI/Docker workflows.
