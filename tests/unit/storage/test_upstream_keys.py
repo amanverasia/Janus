@@ -208,3 +208,43 @@ async def test_masked_projections_omit_key_hash(tmp_path):
     assert "key_value" not in detail
     by_ids = await get_upstream_keys_by_ids(db_path, [record["id"]], include_secret=False)
     assert "key_hash" not in by_ids[0]
+
+
+@pytest.mark.asyncio
+async def test_search_treats_like_wildcards_literally(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await create_upstream_key(
+        db_path, provider_id="openai", key_value="sk-" + "a" * 20, key_label="alpha"
+    )
+    await create_upstream_key(
+        db_path, provider_id="groq", key_value="sk-" + "b" * 20, key_label="a%b"
+    )
+    await create_upstream_key(
+        db_path, provider_id="xai", key_value="sk-" + "c" * 20, key_label="a_b"
+    )
+    matches = await list_upstream_keys(db_path, search="a%b")
+    assert [k["key_label"] for k in matches] == ["a%b"]
+
+    matches_underscore = await list_upstream_keys(db_path, search="a_b")
+    assert [k["key_label"] for k in matches_underscore] == ["a_b"]
+
+
+@pytest.mark.asyncio
+async def test_delete_upstream_keys_chunks_large_batches(tmp_path, monkeypatch):
+    from janus.storage import upstream_keys as uk
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    monkeypatch.setattr(uk, "_DELETE_CHUNK", 2)
+    ids = []
+    for i in range(5):
+        record = await uk.create_upstream_key(
+            db_path, provider_id="openai", key_value=f"sk-chunk-{i:012d}"
+        )
+        ids.append(record["id"])
+
+    deleted = await uk.delete_upstream_keys(db_path, ids)
+
+    assert deleted == 5
+    assert await uk.count_upstream_keys(db_path) == 0

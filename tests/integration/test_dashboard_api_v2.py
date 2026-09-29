@@ -63,8 +63,12 @@ async def test_state_requires_dashboard_authentication(app):
         response = await client.get(
             "/dashboard/api/v2/state/overview", headers={"Accept": "application/json"}
         )
-        assert response.status_code == 303
-        assert response.headers["location"].startswith("/dashboard/login")
+        assert response.status_code == 401
+        browser_response = await client.get(
+            "/dashboard/api/v2/state/overview", headers={"Accept": "text/html"}
+        )
+        assert browser_response.status_code == 303
+        assert browser_response.headers["location"].startswith("/dashboard/login")
         response = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
         assert response.status_code == 200
 
@@ -202,6 +206,18 @@ async def test_failed_dashboard_mutation_preserves_alert_cache(app) -> None:
         state = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
         cached = app.state._dashboard_alert_cache
         generation = app.state._dashboard_alert_cache_generation
+        missing = await client.delete("/dashboard/api/budgets/999999", headers=AUTH_HEADERS)
+
+    assert state.status_code == 200
+    assert missing.status_code == 404
+    assert app.state._dashboard_alert_cache is cached
+    assert app.state._dashboard_alert_cache_generation == generation
+
+
+async def test_partial_submit_422_invalidates_alert_cache(app) -> None:
+    async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
+        state = await client.get("/dashboard/api/v2/state/overview", headers=AUTH_HEADERS)
+        generation = app.state._dashboard_alert_cache_generation
         response = await client.post(
             "/dashboard/api/budgets",
             data={"key_select": "invalid", "daily_limit": "10", "warn_pct": "80"},
@@ -210,8 +226,8 @@ async def test_failed_dashboard_mutation_preserves_alert_cache(app) -> None:
 
     assert state.status_code == 200
     assert response.status_code == 422
-    assert app.state._dashboard_alert_cache is cached
-    assert app.state._dashboard_alert_cache_generation == generation
+    assert app.state._dashboard_alert_cache is None
+    assert app.state._dashboard_alert_cache_generation == generation + 1
 
 
 async def test_key_create_returns_plaintext_once_in_non_cacheable_json(app):

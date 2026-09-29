@@ -37,6 +37,14 @@ def _now() -> str:
     return datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
 
 
+_ERROR_NOTE_MAX_LEN = 200
+
+
+def _safe_error_note(value: Any) -> str:
+    text = re.sub(r"https?://\S+", "<url>", " ".join(str(value or "Unknown error").split()))
+    return text[:_ERROR_NOTE_MAX_LEN]
+
+
 HealthStatus = Literal["healthy", "warning", "critical", "exhausted"]
 UsabilityStatus = Literal[
     "usable",
@@ -1460,7 +1468,7 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
         if result.get("probe_inconclusive"):
             # A rate limit, unavailable model, timeout, or other transient probe
             # failure must not invalidate an otherwise routable credential.
-            error = result.get("error") or "Codex probe inconclusive"
+            error = _safe_error_note(result.get("error") or "Codex probe inconclusive")
             final_status = str(previous_status or "pending_validation")
             await update_upstream_key(
                 db_path,
@@ -1481,7 +1489,9 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                     "consecutive_failures": 0,
                     "validation_paused_at": None,
                     "last_checked_at": _now(),
-                    "last_error": result.get("error"),
+                    "last_error": (
+                        _safe_error_note(result["error"]) if result.get("error") else None
+                    ),
                 },
             )
         elif result.get("is_valid"):
@@ -1543,7 +1553,7 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 except Exception as exc:
                     logger.warning("account-value refresh failed for %s: %s", key_id, exc)
         else:
-            error = result.get("error") or "Unknown error"
+            error = _safe_error_note(result.get("error"))
             failure_count = int(key.get("consecutive_failures") or 0) + 1
             paused = failure_count >= VALIDATION_MAX_FAILURES
             final_status = "validation_paused" if paused else "invalid"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -145,13 +146,15 @@ def _finite(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
+        number = float(value)
+    elif isinstance(value, str):
         try:
-            return float(value)
+            number = float(value)
         except ValueError:
             return None
-    return None
+    else:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _percent(value: Any) -> float | None:
@@ -886,7 +889,10 @@ async def refresh_account_value(
 
     existing_task = _inflight.get(key_id)
     if existing_task is not None:
-        await existing_task
+        try:
+            await existing_task
+        except Exception:
+            logger.exception("Co-waited account value refresh failed for key %s", key_id)
         refreshed = await get_upstream_key(db_path, key_id)
         return _stored_state(refreshed) if refreshed else None
 

@@ -36,7 +36,7 @@ async def test_scheduler_logs_failure_and_keeps_running(
         stop_event.set()
 
     check = AsyncMock(side_effect=check_all)
-    monkeypatch.setattr(scheduler, "CHECK_INTERVAL_HOURS", 0)
+    monkeypatch.setattr(scheduler, "_interval_seconds", lambda: 0.01)
 
     with (
         caplog.at_level(logging.ERROR, logger="janus.inventory.scheduler"),
@@ -47,6 +47,25 @@ async def test_scheduler_logs_failure_and_keeps_running(
     assert check.await_count == 2
     assert "Scheduled inventory key check failed" in caplog.text
     assert "decrypt failed" in caplog.text
+
+
+def test_scheduler_interval_clamped_to_one_hour(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(scheduler, "CHECK_INTERVAL_HOURS", 0)
+    assert scheduler._interval_seconds() == 3600.0
+    monkeypatch.setattr(scheduler, "CHECK_INTERVAL_HOURS", 12)
+    assert scheduler._interval_seconds() == 43200.0
+
+
+async def test_scheduler_checks_at_startup(tmp_path) -> None:
+    stop_event = asyncio.Event()
+    check = AsyncMock(side_effect=lambda _db_path: stop_event.set())
+
+    with patch("janus.inventory.key_checker.check_all_upstream_keys", check):
+        await scheduler.run_inventory_scheduler(tmp_path / "janus.db", stop_event)
+
+    assert check.await_count == 1
 
 
 async def test_recheck_all_task_is_tracked_until_done(tmp_path) -> None:
