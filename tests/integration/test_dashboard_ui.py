@@ -30,13 +30,17 @@ def _remote_transport(app):
 
 async def test_dashboard_ui_requires_the_same_non_loopback_authentication(app) -> None:
     async with AsyncClient(transport=_remote_transport(app), base_url="http://test") as client:
-        legacy = await client.get("/dashboard/providers")
-        shell = await client.get("/dashboard/ui")
-        deep_link = await client.get("/dashboard/ui/inventory/keys")
+        legacy = await client.get("/dashboard/providers", headers={"Accept": "text/html"})
+        shell = await client.get("/dashboard/ui", headers={"Accept": "text/html"})
+        deep_link = await client.get(
+            "/dashboard/ui/inventory/keys", headers={"Accept": "text/html"}
+        )
+        api_like = await client.get("/dashboard/ui/inventory/keys")
 
     assert legacy.status_code == 303
     assert shell.status_code == legacy.status_code
     assert deep_link.status_code == legacy.status_code
+    assert api_like.status_code == 401
     assert shell.headers["location"].startswith("/dashboard/login?next=/dashboard/ui")
     assert deep_link.headers["location"].startswith("/dashboard/login?next=/dashboard/ui/")
 

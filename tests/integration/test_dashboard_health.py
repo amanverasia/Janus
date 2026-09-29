@@ -40,8 +40,13 @@ def client_for(app):
 async def test_health_requires_dashboard_authentication(app):
     async with client_for(app) as client:
         r = await client.get("/dashboard/api/v2/health")
-    assert r.status_code == 303
-    assert r.headers["location"].startswith("/dashboard/login")
+        assert r.status_code == 401
+
+        browser = await client.get(
+            "/dashboard/api/v2/health", headers={"Accept": "text/html"}
+        )
+    assert browser.status_code == 303
+    assert browser.headers["location"].startswith("/dashboard/login")
 
 
 async def test_health_contract_is_state_backed_and_secret_free(app):
