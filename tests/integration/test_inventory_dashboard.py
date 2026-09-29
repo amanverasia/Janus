@@ -882,3 +882,44 @@ async def test_inventory_delete_key(client):
 
     export_after = await client.get("/dashboard/api/inventory/export")
     assert export_after.json()["count"] == 0
+
+
+async def test_inventory_key_detail_omits_key_hash(client):
+    await _submit_inventory_key(client, "sk-proj-hash-detail-key", "openai")
+    export = await client.get("/dashboard/api/inventory/export")
+    key_id = export.json()["keys"][0]["id"]
+    detail = await client.get(f"/dashboard/api/inventory/keys/{key_id}")
+    assert detail.status_code == 200
+    assert "key_hash" not in detail.json()
+    listing = await client.get("/dashboard/api/inventory/keys")
+    assert listing.status_code == 200
+    assert all("key_hash" not in key for key in listing.json()["keys"])
+
+
+@pytest.mark.parametrize("provider_id", ['open"ai', "open ai", "open\\ai", "../x", "a;b"])
+async def test_inventory_export_rejects_unsafe_provider_id(client, provider_id):
+    response = await client.get(
+        "/dashboard/api/inventory/export", params={"provider_id": provider_id}
+    )
+    assert response.status_code == 422
+    assert "content-disposition" not in response.headers
+
+
+async def test_inventory_export_accepts_safe_provider_id(client):
+    response = await client.get(
+        "/dashboard/api/inventory/export", params={"provider_id": "open-ai_v1.2"}
+    )
+    assert response.status_code == 200
+    assert (
+        response.headers["content-disposition"]
+        == 'attachment; filename="janus-inventory-open-ai_v1.2.json"'
+    )
+
+
+@pytest.mark.parametrize("key_id", ['bad"id', "bad id", "bad;id", "bad\\id"])
+async def test_inventory_key_json_rejects_unsafe_key_id(client, key_id):
+    from urllib.parse import quote
+
+    response = await client.get(f"/dashboard/api/inventory/keys/{quote(key_id)}/json")
+    assert response.status_code == 422
+    assert "content-disposition" not in response.headers

@@ -48,6 +48,7 @@ def _decode_upstream_row(row: Any, *, include_secret: bool = True) -> dict[str, 
             item["account_value"] = None
     if not include_secret:
         item.pop("key_value", None)
+        item.pop("key_hash", None)
         return item
     key_value = item.get("key_value")
     if isinstance(key_value, str):
@@ -261,6 +262,7 @@ async def list_upstream_keys_page(
     if masked:
         for item in items:
             item.pop("key_value", None)
+            item.pop("key_hash", None)
     return items
 
 
@@ -352,6 +354,7 @@ async def list_upstream_keys_masked(db_path: str | Path, **kwargs: Any) -> list[
     for key in keys:
         item = dict(key)
         item.pop("key_value", None)
+        item.pop("key_hash", None)
         masked.append(item)
     return masked
 

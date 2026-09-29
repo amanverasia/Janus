@@ -183,3 +183,28 @@ async def test_list_upstream_keys_excludes_archived(tmp_path):
 
     keys_all = await list_upstream_keys(db_path, include_archived=True)
     assert len(keys_all) == 2
+
+
+@pytest.mark.asyncio
+async def test_masked_projections_omit_key_hash(tmp_path):
+    from janus.storage.upstream_keys import (
+        get_upstream_key_detail,
+        get_upstream_keys_by_ids,
+        list_upstream_keys_page,
+    )
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path, provider_id="openai", key_value="sk-proj-hash-secret"
+    )
+    masked = await list_upstream_keys_masked(db_path)
+    assert "key_hash" not in masked[0]
+    page = await list_upstream_keys_page(db_path, masked=True)
+    assert page and "key_hash" not in page[0]
+    detail = await get_upstream_key_detail(db_path, record["id"])
+    assert detail is not None
+    assert "key_hash" not in detail
+    assert "key_value" not in detail
+    by_ids = await get_upstream_keys_by_ids(db_path, [record["id"]], include_secret=False)
+    assert "key_hash" not in by_ids[0]

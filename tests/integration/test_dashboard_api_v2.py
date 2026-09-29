@@ -298,6 +298,7 @@ async def test_every_supported_state_section_returns_stable_json(app, section):
 
     assert response.status_code == 200, response.text
     assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
     payload = response.json()
     assert payload["section"] == section
     assert isinstance(payload["alerts"], list)

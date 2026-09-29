@@ -50,7 +50,8 @@
       "available": true,
       "method": "GET",
       "url": "/dashboard/api/export",
-      "contains_credentials": true
+      "contains_credentials": false,
+      "secrets_url": "/dashboard/api/export?include_secrets=true"
     }
   },
   "meta": {

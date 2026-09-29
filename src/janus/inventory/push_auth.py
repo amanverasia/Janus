@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 
 from fastapi import Header, HTTPException, Request
 
@@ -17,5 +18,5 @@ async def require_inventory_push_token(
     if not expected:
         raise HTTPException(status_code=503, detail="Inventory push token is not configured")
     token = authorization[7:].strip() if authorization.startswith("Bearer ") else ""
-    if token != expected:
+    if not token or not secrets.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid or missing push token")

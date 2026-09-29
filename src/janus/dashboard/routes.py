@@ -1726,7 +1726,8 @@ async def api_sync_pricing(request: Request) -> JSONResponse:
 
 
 @router.get("/api/export")
-async def api_export_config(request: Request) -> Response:
+async def api_export_config(request: Request, include_secrets: str = "false") -> Response:
+    reveal_secrets = include_secrets.strip().lower() == "true"
     db_path = await _ensure_db(request)
     from janus.storage.combos_db import list_combos
     from janus.storage.custom_models import list_custom_models
@@ -1741,7 +1742,7 @@ async def api_export_config(request: Request) -> Response:
             "prefix": p["prefix"],
             "api_type": p["api_type"],
             "base_url": p["base_url"],
-            "api_key": p["api_key"],
+            **({"api_key": p["api_key"]} if reveal_secrets else {}),
             "models": json.loads(p["models"]) if p["models"] else [],
             "default_model": p.get("default_model"),
             "live_models": bool(p.get("live_models", 1)),
@@ -1754,6 +1755,14 @@ async def api_export_config(request: Request) -> Response:
         }
         for p in providers_raw
     ]
+    if reveal_secrets:
+        client_host = request.client.host if request.client else "unknown"
+        logger.warning(
+            "Config export with include_secrets=true revealed credentials for %d provider(s) "
+            "to client %s",
+            len(providers_raw),
+            client_host,
+        )
 
     combos_raw = await list_combos(db_path)
     combos_yaml = [
