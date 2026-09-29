@@ -79,11 +79,7 @@
     }
   }
 
-  async function save(
-    key: string,
-    value: string,
-    field?: HTMLInputElement | HTMLSelectElement
-  ) {
+  async function save(key: string, value: string, field?: HTMLInputElement | HTMLSelectElement) {
     const body = new FormData();
     body.set('key', key);
     body.set('value', value);

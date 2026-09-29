@@ -22,7 +22,9 @@ describe('SettingsPage failed saves', () => {
       }
     });
 
-    const apiKeyToggle = page.getByRole('checkbox', { name: /Require API key/ }) as HTMLInputElement;
+    const apiKeyToggle = page.getByRole('checkbox', {
+      name: /Require API key/
+    }) as HTMLInputElement;
     await fireEvent.click(apiKeyToggle);
     await waitFor(() => expect(apiKeyToggle.checked).toBe(true));
 
