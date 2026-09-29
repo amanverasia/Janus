@@ -52,7 +52,7 @@ async def test_large_state_payload_is_gzipped_when_the_client_accepts_it(app) ->
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.get("/dashboard/api/v2/models", headers=_headers())
         response = await client.get(
-            "/dashboard/api/v2/state/models",
+            "/dashboard/api/v2/state/models?provider=test",
             headers=_headers(**{"Accept-Encoding": "gzip"}),
         )
 
@@ -66,7 +66,7 @@ async def test_response_is_untouched_when_the_client_does_not_accept_gzip(app) -
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.get("/dashboard/api/v2/models", headers=_headers())
         response = await client.get(
-            "/dashboard/api/v2/state/models",
+            "/dashboard/api/v2/state/models?provider=test",
             headers=_headers(**{"Accept-Encoding": "identity"}),
         )
 
@@ -127,11 +127,11 @@ async def test_compression_does_not_corrupt_the_payload(app) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.get("/dashboard/api/v2/models", headers=_headers())
         plain = await client.get(
-            "/dashboard/api/v2/state/models",
+            "/dashboard/api/v2/state/models?provider=test",
             headers=_headers(**{"Accept-Encoding": "identity"}),
         )
         compressed = await client.get(
-            "/dashboard/api/v2/state/models",
+            "/dashboard/api/v2/state/models?provider=test",
             headers=_headers(**{"Accept-Encoding": "gzip"}),
         )
 

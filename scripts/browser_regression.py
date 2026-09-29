@@ -284,7 +284,11 @@ def scenario_filter_and_empty_state(page: Page) -> list[str]:
         matching_results = page.locator("main .model-row .model-name code").filter(has_text=token)
         if matching_results.count() == 0:
             failures.append("models matching query did not surface the model")
-        _visit(page, "/dashboard/ui/models")
+        _visit(page, "/dashboard/ui/models?offset=150&limit=25")
+        page.wait_for_selector("main .model-provider-rail", timeout=ROUTE_WAIT_MS)
+        page.wait_for_timeout(400)
+        if page.get_by_role("button", name="Next").count():
+            failures.append("models overview rendered a pager (#245)")
         if not failures:
             print("  filter + empty state OK")
     except Exception as exc:  # noqa: BLE001
@@ -295,7 +299,7 @@ def scenario_filter_and_empty_state(page: Page) -> list[str]:
 def scenario_pagination(page: Page) -> list[str]:
     """Server-side pagination advances the page and the URL offset."""
     failures: list[str] = []
-    for path, name in [("/dashboard/ui/pricing", "pricing"), ("/dashboard/ui/models", "models")]:
+    for path, name in [("/dashboard/ui/pricing", "pricing")]:
         try:
             _visit(page, path)
             page.wait_for_selector("main", state="visible", timeout=ROUTE_WAIT_MS)

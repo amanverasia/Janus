@@ -24,23 +24,26 @@ from janus.storage.providers_db import create_provider
 from janus.storage.upstream_keys import create_upstream_key
 from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard_auth
 
-# Models and routing are paged server-side (a page of ~25 rows); these budgets
-# are the backstop behind the dedicated pagination tests -- loose enough that
-# legitimate page/field growth does not flap CI, tight enough that an
-# un-pagination regression (~700 KB models / ~110 KB routing) fails here.
+# Routing is paged server-side (a page of ~25 rows) and the models overview
+# ships per-provider counts only (#245); these budgets are the backstop behind
+# the dedicated tests -- loose enough that legitimate field growth does not
+# flap CI, tight enough that shipping the whole catalog (~700 KB models) or
+# account pool (~110 KB routing) fails here.
 RAW_BUDGETS: dict[str, int] = {
-    "models": 80_000,
+    "models": 10_000,
     "routing": 25_000,
     "providers": 130_000,
     "pricing": 40_000,
 }
 GZIP_BUDGETS: dict[str, int] = {
-    "models": 15_000,
+    "models": 3_000,
     "routing": 4_000,
     "providers": 35_000,
     "pricing": 12_000,
 }
 MODEL_ROWS_PER_PROVIDER = 190
+PROVIDER_MODELS_RAW_BUDGET = 100_000
+SEARCH_MODELS_RAW_BUDGET = 130_000
 PROVIDER_PREFIXES = ("openai", "anthropic", "gemini", "groq", "mistral", "deepseek")
 INVENTORY_KEY_COUNT = 350
 PRICING_ROW_COUNT = 4096
@@ -193,33 +196,52 @@ async def test_pricing_catalog_is_paginated_and_searchable(sized_app: FastAPI) -
     assert payload["data"]["catalog"][0]["model"].endswith("model-00042")
 
 
-async def test_models_state_is_paginated_and_searchable(sized_app: FastAPI) -> None:
+async def test_models_state_is_grouped_by_provider_not_paged(sized_app: FastAPI) -> None:
     expected_total = MODEL_ROWS_PER_PROVIDER * len(PROVIDER_PREFIXES)
     status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/models")
     assert status == 200
     payload = json.loads(gzip.decompress(raw))
     data = payload["data"]
-    pagination = payload["meta"]["pagination"]
-    assert len(data["models"]) == pagination["limit"]
-    assert pagination["total"] == expected_total
-    assert pagination["total_pages"] > 1
-    # The provider list stays whole (it drives the provider filter rail).
+    assert "pagination" not in payload["meta"]
+    # The overview ships per-provider counts for the whole catalog, not rows.
+    assert data["models"] == []
+    assert data["model_total"] == expected_total
     assert len(data["providers"]) == len(PROVIDER_PREFIXES)
+    for provider in data["providers"]:
+        assert provider["model_count"] == MODEL_ROWS_PER_PROVIDER
+        assert provider["toggleable_model_count"] == MODEL_ROWS_PER_PROVIDER
 
     status, raw, _headers = await _raw_request(
-        sized_app, "/dashboard/api/v2/state/models?provider=openai&limit=200"
+        sized_app, "/dashboard/api/v2/state/models?provider=openai&offset=150&limit=25"
     )
     assert status == 200
-    payload = json.loads(gzip.decompress(raw))
-    assert payload["meta"]["pagination"]["total"] == MODEL_ROWS_PER_PROVIDER
+    decompressed = gzip.decompress(raw)
+    data = json.loads(decompressed)["data"]
+    assert len(data["models"]) == MODEL_ROWS_PER_PROVIDER
+    assert {row["prefix"] for row in data["models"]} == {"openai"}
+    assert "capabilities" not in data["models"][0]
+    assert data["truncated"] is False
+    assert len(decompressed) <= PROVIDER_MODELS_RAW_BUDGET
 
     status, raw, _headers = await _raw_request(
         sized_app, "/dashboard/api/v2/state/models?search=fixture-model-0001"
     )
     assert status == 200
-    payload = json.loads(gzip.decompress(raw))
-    narrowed = payload["meta"]["pagination"]["total"]
-    assert 0 < narrowed < expected_total
+    data = json.loads(gzip.decompress(raw))["data"]
+    assert data["match_total"] == len(PROVIDER_PREFIXES)
+    assert len(data["models"]) == len(PROVIDER_PREFIXES)
+    assert data["model_total"] == expected_total
+
+    status, raw, _headers = await _raw_request(
+        sized_app, "/dashboard/api/v2/state/models?search=fixture"
+    )
+    assert status == 200
+    decompressed = gzip.decompress(raw)
+    data = json.loads(decompressed)["data"]
+    assert len(decompressed) <= SEARCH_MODELS_RAW_BUDGET
+    assert data["match_total"] == expected_total
+    assert data["truncated"] is True
+    assert 0 < len(data["models"]) < expected_total
 
 
 async def test_routing_state_is_paginated_and_slim(sized_app: FastAPI) -> None:

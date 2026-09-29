@@ -2120,6 +2120,11 @@ kbd {
   width: min(410px, 100%);
   margin-right: auto;
 }
+.model-search-summary {
+  margin: -6px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .model-groups {
   display: grid;
   gap: 10px;

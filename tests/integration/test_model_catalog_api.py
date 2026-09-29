@@ -44,7 +44,9 @@ def remote_transport(app):
 async def test_management_catalog_is_safe_and_custom_models_have_first_class_crud(app) -> None:
     async with AsyncClient(transport=remote_transport(app), base_url="http://test") as client:
         initial = await client.get("/dashboard/api/v2/models", headers=ADMIN_HEADERS)
-        state = await client.get("/dashboard/api/v2/state/models", headers=ADMIN_HEADERS)
+        state = await client.get(
+            "/dashboard/api/v2/state/models?provider=test", headers=ADMIN_HEADERS
+        )
         presets = await client.get("/dashboard/api/v2/provider-presets", headers=ADMIN_HEADERS)
         created = await client.post(
             "/dashboard/api/v2/custom-models",
@@ -85,13 +87,23 @@ async def test_management_catalog_is_safe_and_custom_models_have_first_class_cru
     ]
     assert "provider-secret" not in json.dumps(initial.json())
     assert state.status_code == 200
-    # The state section is now a server-paginated page (with a `visible_total`
-    # aggregate) while the management endpoint returns the whole catalog, so
-    # compare the providers list and the state's page as a prefix of the full
-    # list rather than the entire envelope.
+    # The state section adds per-provider counts and ships one provider's rows
+    # without the fields the Models page never renders (#245).
     state_data = state.json()["data"]
-    assert state_data["providers"] == initial.json()["providers"]
-    assert state_data["models"] == initial.json()["models"][: len(state_data["models"])]
+    count_keys = {
+        "model_count",
+        "visible_model_count",
+        "toggleable_model_count",
+        "toggleable_visible_count",
+    }
+    assert [
+        {k: v for k, v in row.items() if k not in count_keys} for row in state_data["providers"]
+    ] == initial.json()["providers"]
+    assert state_data["providers"][0]["model_count"] == len(initial.json()["models"])
+    assert state_data["models"] == [
+        {k: v for k, v in row.items() if k not in {"capabilities", "selected"}}
+        for row in initial.json()["models"]
+    ]
     assert "provider-secret" not in json.dumps(state_data)
     assert presets.status_code == 200
     assert "provider-secret" not in json.dumps(presets.json())
