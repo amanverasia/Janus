@@ -185,3 +185,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **PR #233 CI diagnosis:** Python 3.11/3.12 failed before lint/tests because Prettier flagged `SettingsPage.svelte` and `SettingsPage.test.ts`; the dashboard bundle had not yet been regenerated.
 - **Fix:** formatted both sources and rebuilt the committed Svelte bundle. Full `scripts/build_dashboard_ui.py --check` now passes locally, including 18 Vitest tests, Svelte check (0 warnings/errors), format check, and Vite production build. Browser and package jobs had already passed remotely.
 - **Next:** push the bundle/format follow-up and wait for a fresh complete CI run; then merge and apply the version bump on main.
+
+### 2026-09-29 12:00 UTC (2026-09-29 17:30 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **PR #233:** merged to `main` as `4f84fe5` after every required CI check passed (Python 3.11/3.12, browser, package, Docker build, docs, Ruff, mypy, dashboard check, and security scan).
+- **Release metadata:** bumped and synchronized the repo to **3.24.0** across `pyproject.toml`, `src/janus/app.py`, `dashboard-ui/package.json`, and `dashboard-ui/package-lock.json`; moved the PR's Unreleased notes to `CHANGELOG.md` and rebuilt the dashboard bundle. No tag pushed.
+- **Coordination:** #199/#205 and #208/#215 owners should rebase/adjust planned release metadata against 3.24.0 on main before opening their PRs.
+- **Next:** run the release bundle/package checks, commit and push the version bump, and verify its CI/Docker workflows.
