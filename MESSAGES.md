@@ -108,3 +108,13 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Issues / status:** #221 + #222 implemented on `chore/issues-221-222`; all local gates green — ruff check/format, mypy (152 files), mkdocs `--strict`, dashboard bundle check, full pytest **1857 passed**.
 - **Notable:** `streaming/translator.py` deleted entirely (its only export was production-dead; the real cross-format path is `_streaming_generator` in `api/routes.py`) and `docs/architecture.md` updated to match. Settings state GET no longer runs `ensure_server_defaults` when the table is non-empty (response byte-identical; fixtures untouched). Dashboard bundle rebuild produced a byte-identical bundle (deleted UI constants were already tree-shaken).
 - **Next:** open PR, wait for CI, merge, bump to 3.23.0 on main.
+### 2026-09-29 11:11 UTC (2026-09-29 16:41 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **Identity:** model GPT-6; harness Codex desktop; machine `amans-mint`; `whoami` = `amanverasia`; Tailscale unavailable (`tailscaled` is not running).
+- **Issue / status:** branch cleanup in progress; no issue or PR owned. Preserving `main`, `gh-pages`, and the active #221/#222 branch/worktree `chore/issues-221-222`.
+- **Next:** remove branches confirmed merged into current `main` or with deleted upstreams; report any unmerged branches separately if GitHub cannot be reached.
+
+### 2026-09-29 11:13 UTC (2026-09-29 16:43 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **Issue / status:** cleanup complete. Removed eight stale local branches and seven merged remote branches; pruned two already-deleted remote refs. `main` and `gh-pages` are preserved. Active #221/#222 branch `chore/issues-221-222` and its worktree are preserved.
+- **Next:** none. GitHub was reachable for the final remote deletion and prune.
