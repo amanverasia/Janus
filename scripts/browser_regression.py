@@ -150,19 +150,6 @@ def _wait_for_text(page: Page, needle: str, *, timeout_ms: int = ROUTE_WAIT_MS) 
     return False
 
 
-def _first_catalog_model_id(page: Page) -> str:
-    """Pick a real model id from the live Models catalog for search assertions."""
-    _visit(page, "/dashboard/ui/models")
-    page.wait_for_selector("main", state="visible", timeout=ROUTE_WAIT_MS)
-    page.wait_for_timeout(500)
-    page.get_by_role("button", name="Expand all").click()
-    page.wait_for_selector("main .model-row .model-name code", timeout=ROUTE_WAIT_MS)
-    model_ids = page.locator("main .model-row .model-name code")
-    if model_ids.count() == 0:
-        raise AssertionError("models catalog rendered no model rows")
-    return str(model_ids.first.inner_text()).strip()
-
-
 def scenario_filter_and_empty_state(page: Page) -> list[str]:
     """A server-side filter narrows results; a no-match query renders cleanly.
 
@@ -177,11 +164,13 @@ def scenario_filter_and_empty_state(page: Page) -> list[str]:
             failures.append("models no-match search did not preserve the URL query")
         if "Couldn’t load" in page.inner_text("body"):
             failures.append("models no-match query rendered an error state")
-        sample = _first_catalog_model_id(page)
-        token = sample.split("/")[-1][:24] if "/" in sample else sample[:24]
+        token = "openai-model-000"
         _visit(page, f"/dashboard/ui/models?search={token}")
-        page.get_by_role("button", name="Expand all").click()
-        page.wait_for_selector("main .model-row .model-name code", timeout=ROUTE_WAIT_MS)
+        page.wait_for_function(
+            "document.querySelector('main .model-row .model-name code') "
+            "|| document.body.innerText.includes('No models match')",
+            timeout=ROUTE_WAIT_MS,
+        )
         matching_results = page.locator("main .model-row .model-name code").filter(has_text=token)
         if matching_results.count() == 0:
             failures.append("models matching query did not surface the model")
