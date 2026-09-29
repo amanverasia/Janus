@@ -40,7 +40,7 @@ Repository = "https://github.com/amanverasia/Janus"
 Issues = "https://github.com/amanverasia/Janus/issues"
 
 [project.scripts]
-janus = "janus.cli:app"
+janus = "janus.cli:main"
 
 [project.optional-dependencies]
 dev = [

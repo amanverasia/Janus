@@ -902,3 +902,14 @@ def settings_set(
     asyncio.run(init_db(db_path))
     asyncio.run(set_setting(db_path, key, value))
     typer.echo(f"{key} = {value}")
+
+
+def main() -> None:
+    import asyncio
+
+    from janus.storage.database import close_connection_pools
+
+    try:
+        app()
+    finally:
+        asyncio.run(close_connection_pools())

@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -47,6 +49,33 @@ def test_keys_create_and_list(tmp_path):
     result2 = runner.invoke(app, ["keys", "list", "--config", config_path])
     assert result2.exit_code == 0
     assert "test" in result2.output
+
+
+def test_keys_create_command_closes_pooled_connections(tmp_path):
+    import yaml
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({"server": {"data_dir": str(tmp_path)}}))
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from janus.cli import main; main()",
+            "keys",
+            "create",
+            "--name",
+            "test",
+            "--config",
+            str(config_path),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=10,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "sk-janus-" in result.stdout
 
 
 def test_usage_stats_empty(tmp_path):
