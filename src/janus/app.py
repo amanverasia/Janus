@@ -21,6 +21,7 @@ from janus.api.routes import (
     ollama_router,
     router,
 )
+from janus.background import cancel_background_tasks
 from janus.config.schema import JanusConfig, ProviderConfig
 from janus.inventory.key_encryption import CredentialEncryptionError
 from janus.pricing.registry import PricingRegistry
@@ -198,6 +199,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
 
+    await cancel_background_tasks()
     await _drain_stream_persist_tasks()
     await close_provider_snapshots(app)
 
