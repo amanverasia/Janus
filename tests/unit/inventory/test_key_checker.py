@@ -18,19 +18,20 @@ from janus.storage.upstream_keys import (
     update_upstream_key,
 )
 from janus.storage.upstream_models import list_model_ids_for_keys, list_models_for_key
+from tests.fixtures.url_mock import mocked_route
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_openai_success():
-    respx.get("https://api.openai.com/v1/models").mock(
+    mocked_route("GET", "https://api.openai.com/v1/models").mock(
         return_value=Response(
             200,
             json={"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]},
             headers={"x-ratelimit-limit-requests": "500"},
         )
     )
-    respx.post("https://api.openai.com/v1/chat/completions").mock(
+    mocked_route("POST", "https://api.openai.com/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
 
@@ -44,7 +45,9 @@ async def test_validate_key_openai_success():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_auth_failure():
-    respx.get("https://api.openai.com/v1/models").mock(return_value=Response(401, json={}))
+    mocked_route("GET", "https://api.openai.com/v1/models").mock(
+        return_value=Response(401, json={})
+    )
 
     result = await validate_key("sk-proj-bad", "openai", skip_probe=True)
     assert result["is_valid"] is False
@@ -54,7 +57,7 @@ async def test_validate_key_auth_failure():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_gateway_only_preset_discovers_models():
-    respx.get("https://api.deepinfra.com/v1/openai/models").mock(
+    mocked_route("GET", "https://api.deepinfra.com/v1/openai/models").mock(
         return_value=Response(200, json={"data": [{"id": "meta-llama/Llama-3.3-70B"}]})
     )
 
@@ -83,7 +86,7 @@ async def test_validate_local_preset_allows_private_endpoint_without_global_over
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_openrouter_credit_check():
-    respx.get("https://openrouter.ai/api/v1/models").mock(
+    mocked_route("GET", "https://openrouter.ai/api/v1/models").mock(
         return_value=Response(
             200,
             json={"data": [{"id": "openai/gpt-4o"}]},
@@ -94,7 +97,7 @@ async def test_validate_key_openrouter_credit_check():
             },
         )
     )
-    respx.get("https://openrouter.ai/api/v1/key").mock(
+    mocked_route("GET", "https://openrouter.ai/api/v1/key").mock(
         return_value=Response(
             200,
             json={"data": {"limit": 20, "limit_remaining": 12.5, "usage": 7.5}},
@@ -110,7 +113,7 @@ async def test_validate_key_openrouter_credit_check():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_deepseek_leaves_credits_to_account_probe():
-    respx.get("https://api.deepseek.com/v1/models").mock(
+    mocked_route("GET", "https://api.deepseek.com/v1/models").mock(
         return_value=Response(200, json={"data": [{"id": "deepseek-chat"}]})
     )
 
@@ -123,7 +126,7 @@ async def test_validate_key_deepseek_leaves_credits_to_account_probe():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_rate_limited_partial_check():
-    respx.get("https://api.openai.com/v1/models").mock(
+    mocked_route("GET", "https://api.openai.com/v1/models").mock(
         return_value=Response(429, headers={"x-ratelimit-limit-requests": "3"})
     )
 
@@ -136,10 +139,10 @@ async def test_validate_key_rate_limited_partial_check():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_nvidia_via_chat():
-    respx.get("https://integrate.api.nvidia.com/v1/models").mock(
+    mocked_route("GET", "https://integrate.api.nvidia.com/v1/models").mock(
         return_value=Response(200, json={"data": [{"id": "meta/llama-3.1-8b-instruct"}]})
     )
-    respx.post("https://integrate.api.nvidia.com/v1/chat/completions").mock(
+    mocked_route("POST", "https://integrate.api.nvidia.com/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
 
@@ -151,13 +154,13 @@ async def test_validate_key_nvidia_via_chat():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_ollama_requires_authenticated_chat_probe():
-    respx.get("https://ollama.com/v1/models").mock(
+    mocked_route("GET", "https://ollama.com/v1/models").mock(
         return_value=Response(
             200,
             json={"object": "list", "data": [{"id": "gpt-oss:20b"}, {"id": "glm-5.2"}]},
         )
     )
-    respx.post("https://ollama.com/v1/chat/completions").mock(
+    mocked_route("POST", "https://ollama.com/v1/chat/completions").mock(
         return_value=Response(401, json={"error": "Unauthorized"})
     )
 
@@ -169,13 +172,13 @@ async def test_validate_key_ollama_requires_authenticated_chat_probe():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_ollama_success_via_chat_probe():
-    respx.get("https://ollama.com/v1/models").mock(
+    mocked_route("GET", "https://ollama.com/v1/models").mock(
         return_value=Response(
             200,
             json={"object": "list", "data": [{"id": "gpt-oss:20b"}, {"id": "glm-5.2"}]},
         )
     )
-    respx.post("https://ollama.com/v1/chat/completions").mock(
+    mocked_route("POST", "https://ollama.com/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
 
@@ -216,13 +219,13 @@ async def test_check_upstream_key_updates_db_and_models(tmp_path):
         key_value="sk-proj-test",
     )
 
-    respx.get("https://api.openai.com/v1/models").mock(
+    mocked_route("GET", "https://api.openai.com/v1/models").mock(
         return_value=Response(
             200,
             json={"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}]},
         )
     )
-    respx.post("https://api.openai.com/v1/chat/completions").mock(
+    mocked_route("POST", "https://api.openai.com/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
 
@@ -246,7 +249,7 @@ async def test_validate_key_xai_quota_exhausted_not_auth_failure():
             "Your team has either used all available credits or reached its monthly spending limit."
         ),
     }
-    respx.get("https://api.x.ai/v1/models").mock(return_value=Response(403, json=body))
+    mocked_route("GET", "https://api.x.ai/v1/models").mock(return_value=Response(403, json=body))
 
     result = await validate_key("xai-test-key", "xai", skip_probe=True)
     assert result["is_valid"] is True
@@ -259,7 +262,7 @@ async def test_validate_key_xai_quota_exhausted_not_auth_failure():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_xai_probe_skips_media_models_and_uses_chat():
-    respx.get("https://api.x.ai/v1/models").mock(
+    mocked_route("GET", "https://api.x.ai/v1/models").mock(
         return_value=Response(
             200,
             json={
@@ -271,7 +274,7 @@ async def test_validate_key_xai_probe_skips_media_models_and_uses_chat():
             },
         )
     )
-    route = respx.post("https://api.x.ai/v1/chat/completions").mock(
+    route = mocked_route("POST", "https://api.x.ai/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-xai"})
     )
 
@@ -289,10 +292,10 @@ async def test_validate_key_xai_probe_skips_media_models_and_uses_chat():
 @pytest.mark.asyncio
 @respx.mock
 async def test_validate_key_xai_probe_marks_quota_on_inference_403():
-    respx.get("https://api.x.ai/v1/models").mock(
+    mocked_route("GET", "https://api.x.ai/v1/models").mock(
         return_value=Response(200, json={"data": [{"id": "grok-4"}]})
     )
-    respx.post("https://api.x.ai/v1/chat/completions").mock(
+    mocked_route("POST", "https://api.x.ai/v1/chat/completions").mock(
         return_value=Response(
             403,
             json={
@@ -317,7 +320,9 @@ async def test_validate_key_tokenrouter_insufficient_user_quota_not_auth_failure
             "message": ("User's credit limit is insufficient, remaining credit limit: $0.000000"),
         }
     }
-    respx.get("https://api.tokenrouter.com/v1/models").mock(return_value=Response(403, json=body))
+    mocked_route("GET", "https://api.tokenrouter.com/v1/models").mock(
+        return_value=Response(403, json=body)
+    )
 
     result = await validate_key("sk-tr-test", "tokenrouter", skip_probe=True)
     assert result["is_valid"] is True
@@ -337,7 +342,9 @@ async def test_check_upstream_key_marks_invalid(tmp_path):
         provider_id="groq",
         key_value="gsk_bad",
     )
-    respx.get("https://api.groq.com/openai/v1/models").mock(return_value=Response(403, json={}))
+    mocked_route("GET", "https://api.groq.com/openai/v1/models").mock(
+        return_value=Response(403, json={})
+    )
 
     await check_upstream_key(db_path, record["id"])
     updated = await get_upstream_key(db_path, record["id"])
