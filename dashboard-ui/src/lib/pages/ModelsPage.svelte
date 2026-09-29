@@ -29,8 +29,9 @@
   let selectedGroupKey = 'all';
   let appliedProviderKey: string | undefined;
   let collapsed: Record<string, boolean> = {};
-  let busy = '';
+  let busy = new Set<string>();
   let customOpen = false;
+  let savingCustom = false;
   let editingCustom: JsonObject | undefined;
   let customRecordId = '';
   let customProviderId = '';
@@ -185,7 +186,8 @@
 
   async function setModelVisibility(model: JsonObject, enabled: boolean) {
     const key = modelName(model);
-    busy = key;
+    if (busy.has(key)) return;
+    busy = new Set(busy).add(key);
     try {
       await action('/dashboard/api/v2/model-visibility', {
         method: 'PUT',
@@ -203,13 +205,17 @@
     } catch {
       return;
     } finally {
-      busy = '';
+      const next = new Set(busy);
+      next.delete(key);
+      busy = next;
     }
   }
 
   async function setProviderVisibility(group: ModelGroup, enabled: boolean) {
     if (!groupActionable(group)) return;
-    busy = `provider:${group.key}`;
+    const key = `provider:${group.key}`;
+    if (busy.has(key)) return;
+    busy = new Set(busy).add(key);
     try {
       await action('/dashboard/api/v2/model-visibility', {
         method: 'PUT',
@@ -227,7 +233,9 @@
     } catch {
       return;
     } finally {
-      busy = '';
+      const next = new Set(busy);
+      next.delete(key);
+      busy = next;
     }
   }
 
@@ -254,6 +262,7 @@
   }
 
   async function saveCustomModel() {
+    if (savingCustom) return;
     const body: JsonObject = {
       provider_id: customProviderId,
       model_id: customModelId.trim(),
@@ -264,6 +273,7 @@
       reasoning_efforts: customReasoningEfforts,
       is_enabled: true
     };
+    savingCustom = true;
     try {
       await action(
         editingCustom
@@ -277,20 +287,25 @@
       );
     } catch {
       return;
+    } finally {
+      savingCustom = false;
     }
     customOpen = false;
   }
 
   async function removeCustomModel(model: JsonObject) {
     const id = text(model.custom_id, '');
-    if (!id || !confirm(`Delete custom model ${text(model.id)}?`)) return;
+    if (!id || busy.has(id) || !confirm(`Delete custom model ${text(model.id)}?`)) return;
+    busy = new Set(busy).add(id);
     try {
       await action(`/dashboard/api/v2/custom-models/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         success: 'Custom model deleted'
       });
-    } catch {
-      return;
+    } finally {
+      const next = new Set(busy);
+      next.delete(id);
+      busy = next;
     }
   }
 </script>
@@ -425,7 +440,7 @@
                 {#if group.rows.length}
                   <button
                     class="button"
-                    disabled={busy === `provider:${group.key}` || !groupActionable(group)}
+                    disabled={busy.has(`provider:${group.key}`) || !groupActionable(group)}
                     title={groupActionable(group)
                       ? allVisible
                         ? 'Hide every actionable model for this provider'
@@ -456,7 +471,7 @@
                         aria-checked={enabled}
                         aria-label={`${enabled ? 'Hide' : 'Show'} ${modelName(model)}`}
                         title={blockedReason || `${enabled ? 'Hide' : 'Show'} ${modelName(model)}`}
-                        disabled={busy === modelName(model) || !!blockedReason}
+                        disabled={busy.has(modelName(model)) || !!blockedReason}
                         on:click={() => setModelVisibility(model, !enabled)}
                       >
                         <span></span>
@@ -492,6 +507,7 @@
                           <button
                             class="icon-button"
                             aria-label="Delete custom model"
+                            disabled={busy.has(text(model.custom_id, ''))}
                             on:click={() => removeCustomModel(model)}
                           >
                             <Icon name="trash" size={14} />
@@ -592,7 +608,10 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (customOpen = false)}>Cancel</button>
-      <button class="button primary" disabled={!customProviderId || !customModelId.trim()}>
+      <button
+        class="button primary"
+        disabled={savingCustom || !customProviderId || !customModelId.trim()}
+      >
         {editingCustom ? 'Save model' : 'Add custom model'}
       </button>
     </div>

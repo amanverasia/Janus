@@ -35,6 +35,7 @@ from janus.storage.settings import (
 )
 from janus.storage.upstream_keys import list_routable_upstream_keys
 from janus.storage.upstream_models import list_model_ids_for_keys
+from janus.storage.usage import invalidate_unpriced_models_cache
 from janus.tokensavers.base import AsyncTokenSaver, TokenSaver
 from janus.tokensavers.caveman import PROMPTS as CAVEMAN_PROMPTS
 from janus.tokensavers.caveman import CavemanSaver
@@ -300,3 +301,4 @@ async def reload_pricing(app: FastAPI) -> None:
     overrides = await get_pricing_overrides(db_path)
     catalog = await get_catalog(db_path)
     app.state.pricing_registry = PricingRegistry(overrides, catalog)
+    invalidate_unpriced_models_cache(db_path)

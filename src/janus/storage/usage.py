@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .database import get_connection
+from .inventory_overview import UPSTREAM_KEY_HISTORY_RETENTION_DAYS, prune_upstream_key_history
+from .settings import get_all_settings, resolve_usage_retention_days
 from .time_windows import current_reporting_day
 
 if TYPE_CHECKING:
     from janus.pricing.registry import PricingRegistry
 
 logger = logging.getLogger(__name__)
+
+_RETENTION_PRUNE_MIN_INTERVAL_S = 3600.0
+_last_retention_prune: dict[str, float] = {}
+
+UNPRICED_MODELS_CACHE_TTL_S = 60.0
+_unpriced_models_cache: dict[tuple[str, int], tuple[float, list[dict[str, Any]]]] = {}
 
 
 def _not_subscription_provider_clause(table: str = "usage") -> tuple[str, tuple[Any, ...]]:
@@ -35,6 +44,32 @@ def _not_subscription_provider_clause(table: str = "usage") -> tuple[str, tuple[
         f"AND ({table}.provider_id = p.id OR {table}.provider_id LIKE p.id || '::%'))"
     )
     return clause, tuple(api_types)
+
+
+async def prune_usage_rows(db_path: str | Path, retention_days: int) -> int:
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM usage WHERE timestamp < datetime('now', ?)",
+            (f"-{int(retention_days)} days",),
+        )
+        await db.commit()
+        return int(cur.rowcount or 0)
+
+
+async def _maybe_prune_retention(db_path: str | Path) -> None:
+    key = str(db_path)
+    now = time.monotonic()
+    last = _last_retention_prune.get(key)
+    if last is not None and now - last < _RETENTION_PRUNE_MIN_INTERVAL_S:
+        return
+    _last_retention_prune[key] = now
+    try:
+        settings = await get_all_settings(db_path)
+        retention_days = resolve_usage_retention_days(settings)
+        await prune_usage_rows(db_path, retention_days)
+        await prune_upstream_key_history(db_path, UPSTREAM_KEY_HISTORY_RETENTION_DAYS)
+    except Exception as e:
+        logger.warning("Retention prune failed: %s", e)
 
 
 async def record_usage(
@@ -77,6 +112,7 @@ async def record_usage(
             await db.commit()
     except Exception as e:
         logger.warning("Failed to record usage: %s", e)
+    await _maybe_prune_retention(db_path)
     try:
         from janus.dashboard.live import get_bus
 
@@ -95,6 +131,15 @@ async def record_usage(
         pass
 
 
+def invalidate_unpriced_models_cache(db_path: str | Path | None = None) -> None:
+    if db_path is None:
+        _unpriced_models_cache.clear()
+    else:
+        key_prefix = str(db_path)
+        for key in [k for k in _unpriced_models_cache if k[0] == key_prefix]:
+            _unpriced_models_cache.pop(key, None)
+
+
 async def get_unpriced_models(db_path: str | Path, days: int = 30) -> list[dict[str, Any]]:
     """Models seen in usage within the last ``days`` days that have zero total cost
     but nonzero token volume -- candidates for a missing pricing entry.
@@ -106,7 +151,24 @@ async def get_unpriced_models(db_path: str | Path, days: int = 30) -> list[dict[
 
     Rows recorded against subscription/OAuth providers are excluded: their $0
     cost is intentional, not a missing pricing entry.
+
+    Results are memoized for ``UNPRICED_MODELS_CACHE_TTL_S`` per (db path, days)
+    so alert refreshes do not re-run the 30-day aggregation every few seconds.
+    ``reload_pricing`` and a committed ``backfill_costs`` invalidate the cache,
+    since pricing changes and cost backfills are the only things that move a
+    model between priced and unpriced.
     """
+    key = (str(db_path), days)
+    now = time.monotonic()
+    cached = _unpriced_models_cache.get(key)
+    if cached is not None and cached[0] > now:
+        return [dict(row) for row in cached[1]]
+    rows = await _compute_unpriced_models(db_path, days)
+    _unpriced_models_cache[key] = (time.monotonic() + UNPRICED_MODELS_CACHE_TTL_S, rows)
+    return [dict(row) for row in rows]
+
+
+async def _compute_unpriced_models(db_path: str | Path, days: int) -> list[dict[str, Any]]:
     sub_clause, sub_params = _not_subscription_provider_clause()
     async with get_connection(db_path) as db:
         async with db.execute(
@@ -256,5 +318,6 @@ async def backfill_costs(
             if updates:
                 await db.executemany("UPDATE usage SET cost = ? WHERE id = ?", updates)
             await db.commit()
+            invalidate_unpriced_models_cache(db_path)
 
     return rows_updated, total_cost_added

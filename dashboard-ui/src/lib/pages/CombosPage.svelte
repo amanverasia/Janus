@@ -9,6 +9,8 @@
   export let action: (url: string, o?: MutationOptions) => Promise<unknown>;
   let open = false;
   let editing: JsonObject | undefined;
+  let saving = false;
+  let deleting = new Set<string>();
   $: combos = firstList(data, 'combos', 'items');
 
   function comboModelsPreview(combo: JsonObject): string {
@@ -22,8 +24,10 @@
   }
 
   async function submit(e: SubmitEvent) {
+    if (saving) return;
     const f = e.currentTarget as HTMLFormElement;
     const id = editing ? idOf(editing) : '';
+    saving = true;
     try {
       await action(id ? `/dashboard/api/combos/${id}` : '/dashboard/api/combos', {
         method: id ? 'PUT' : 'POST',
@@ -32,8 +36,27 @@
       });
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     open = false;
+  }
+
+  async function remove(combo: JsonObject) {
+    const id = idOf(combo);
+    if (!id || deleting.has(id)) return;
+    if (!confirm('Delete this combo?')) return;
+    deleting = new Set(deleting).add(id);
+    try {
+      await action(`/dashboard/api/combos/${id}`, {
+        method: 'DELETE',
+        success: 'Combo deleted'
+      });
+    } finally {
+      const next = new Set(deleting);
+      next.delete(id);
+      deleting = next;
+    }
   }
 </script>
 
@@ -74,12 +97,8 @@
           </button>
           <button
             class="button danger"
-            on:click={() =>
-              confirm('Delete this combo?') &&
-              action(`/dashboard/api/combos/${idOf(combo)}`, {
-                method: 'DELETE',
-                success: 'Combo deleted'
-              })}
+            disabled={deleting.has(idOf(combo))}
+            on:click={() => remove(combo)}
           >
             <Icon name="trash" size={14} />Delete
           </button>
@@ -126,7 +145,7 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (open = false)}>Cancel</button>
-      <button class="button primary">Save combo</button>
+      <button class="button primary" disabled={saving}>Save combo</button>
     </div>
   </form>
 </Modal>

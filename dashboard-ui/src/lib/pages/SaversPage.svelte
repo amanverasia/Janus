@@ -45,11 +45,26 @@
     return bool(settings[`saver_${id}_enabled`]);
   }
 
+  let pending = new Set<string>();
+
+  function setPending(key: string, isPending: boolean) {
+    const next = new Set(pending);
+    if (isPending) next.add(key);
+    else next.delete(key);
+    pending = next;
+  }
+
   async function save(key: string, value: string, message: string) {
+    if (pending.has(key)) return;
+    setPending(key, true);
     const body = new FormData();
     body.set('key', key);
     body.set('value', value);
-    await action('/dashboard/api/settings', { body, success: message });
+    try {
+      await action('/dashboard/api/settings', { body, success: message });
+    } finally {
+      setPending(key, false);
+    }
   }
 
   function toggle(id: string, name: string) {
@@ -88,6 +103,7 @@
           role="switch"
           aria-checked={enabled(saver.id)}
           aria-label={`${enabled(saver.id) ? 'Disable' : 'Enable'} ${saver.name}`}
+          disabled={pending.has(`saver_${saver.id}_enabled`)}
           on:click={() => toggle(saver.id, saver.name)}
         >
           <span></span>
@@ -101,6 +117,7 @@
             {#each ['lite', 'full', 'ultra'] as level}<button
                 type="button"
                 class:active={text(settings[`saver_${saver.id}_level`], 'full') === level}
+                disabled={pending.has(`saver_${saver.id}_level`)}
                 on:click={() =>
                   save(`saver_${saver.id}_level`, level, `${saver.name} level updated`)}
               >
@@ -114,6 +131,7 @@
           <input
             value={text(settings.saver_headroom_url, 'http://localhost:8787')}
             placeholder="http://localhost:8787"
+            disabled={pending.has('saver_headroom_url')}
             on:change={(event) =>
               save(
                 'saver_headroom_url',
