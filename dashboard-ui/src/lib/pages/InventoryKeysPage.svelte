@@ -35,8 +35,6 @@
   let reclassifyPreview: JsonObject | undefined;
   let refreshingValue = '';
 
-  const VALUE_STALE_MS = 30 * 60 * 1000;
-
   $: rows = firstList(data, 'keys', 'items');
   $: filters = object(data.filters);
   $: providers = list(filters.providers);
@@ -182,12 +180,6 @@
 
   function accountStatusOf(row: JsonObject): string {
     return text(row.account_value_status, '');
-  }
-
-  function accountStale(row: JsonObject): boolean {
-    const checked = text(row.account_value_checked_at, '');
-    if (!checked) return true;
-    return Date.now() - new Date(checked).getTime() > VALUE_STALE_MS;
   }
 
   async function refreshAccountValue(row: JsonObject | undefined) {

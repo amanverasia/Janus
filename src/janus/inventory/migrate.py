@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from urllib.request import urlopen
 
 from janus.inventory.url_guard import detect_provider_from_key
 from janus.storage.database import init_db
@@ -29,12 +28,6 @@ def _parse_export_payload(raw: Any) -> list[dict[str, Any]]:
 
 def load_export_payload(export_path: Path) -> list[dict[str, Any]]:
     payload = json.loads(export_path.read_text())
-    return _parse_export_payload(payload)
-
-
-def fetch_export_payload(url: str) -> list[dict[str, Any]]:
-    with urlopen(url) as response:
-        payload = json.loads(response.read())
     return _parse_export_payload(payload)
 
 

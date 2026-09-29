@@ -558,6 +558,14 @@ async def _consolidate_custom_model_rows(db: aiosqlite.Connection) -> None:
 
 
 async def _migrate_custom_model_columns(db: aiosqlite.Connection) -> None:
+    async with db.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN "
+        "('custom_models_provider_insert', 'custom_models_provider_update', "
+        "'custom_models_provider_delete')"
+    ) as cur:
+        row = await cur.fetchone()
+    if row is not None and row[0] == 3:
+        return
     cursor = await db.execute("PRAGMA table_info(custom_models)")
     rows = await cursor.fetchall()
     existing = {row[1] for row in rows}

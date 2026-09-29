@@ -610,7 +610,7 @@ async def _routing_data(
     else:
         filtered = flat
     total = len(filtered)
-    page = filtered[offset : offset + limit] if limit else filtered
+    page = filtered[offset : offset + limit]
     return {
         "overview": overview,
         "live": request.app.state.fallback_handler.routing_snapshot(),
@@ -657,8 +657,10 @@ async def _keys_data(db_path: Path, *, status: str) -> dict[str, Any]:
 
 
 async def _settings_data(db_path: Path) -> dict[str, Any]:
-    await ensure_server_defaults(db_path)
     settings = await get_all_settings(db_path)
+    if not settings:
+        await ensure_server_defaults(db_path)
+        settings = await get_all_settings(db_path)
     safe_values = {key: settings[key] for key in _SAFE_SETTING_KEYS if key in settings}
     return {
         "values": safe_values,
@@ -1106,8 +1108,8 @@ async def get_dashboard_state(
                     "total": models_total,
                     "limit": limit,
                     "offset": offset,
-                    "page": (offset // limit) + 1 if limit else 1,
-                    "total_pages": max(1, -(-models_total // limit)) if limit else 1,
+                    "page": (offset // limit) + 1,
+                    "total_pages": max(1, -(-models_total // limit)),
                 },
                 "query": {"provider": provider, "search": search},
             },
@@ -1131,8 +1133,8 @@ async def get_dashboard_state(
                     "total": routing_total,
                     "limit": limit,
                     "offset": offset,
-                    "page": (offset // limit) + 1 if limit else 1,
-                    "total_pages": max(1, -(-routing_total // limit)) if limit else 1,
+                    "page": (offset // limit) + 1,
+                    "total_pages": max(1, -(-routing_total // limit)),
                 },
                 "query": {"search": search},
             },
@@ -1175,8 +1177,8 @@ async def get_dashboard_state(
                     "total": total,
                     "limit": limit,
                     "offset": offset,
-                    "page": (offset // limit) + 1 if limit else 1,
-                    "total_pages": max(1, -(-total // limit)) if limit else 1,
+                    "page": (offset // limit) + 1,
+                    "total_pages": max(1, -(-total // limit)),
                 },
                 "query": {"search": search},
             },

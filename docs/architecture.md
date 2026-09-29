@@ -145,7 +145,7 @@ succeeds:
 |---|---|---|
 | **OpenAI passthrough** | Client format is `openai` and the upstream body is already OpenAI Chat Completions SSE (native or transport path) | `streaming/passthrough.py` → `openai_passthrough_stream` |
 | **Generic SSE passthrough** | Same client/provider wire format but not OpenAI Chat Completions (Anthropic, Gemini, Responses, …) | `streaming/passthrough.py` → `generic_sse_passthrough` |
-| **Translate** | Client format ≠ provider format | `streaming/translator.py` → `translate_stream` via parser + emitter |
+| **Translate** | Client format ≠ provider format | `api/routes.py` `_streaming_generator` → provider parser + client emitter |
 
 ### OpenAI passthrough (9router-style)
 
@@ -172,12 +172,13 @@ DeepSeek V4 Pro native passthrough.
 
 ### Translate path
 
-Cross-format streams use `translate_stream(upstream_lines, parser, emitter)`:
+Cross-format streams run the canonical round-trip inline in `_handle()`'s
+`_streaming_generator` (provider adapter's parser, client adapter's emitter):
 
 ```
-upstream SSE line → StreamParser.feed → CanonicalEvent(s)
-                  → StreamEmitter.feed → client SSE bytes
-stream end        → parser.finish + emitter.finish (includes [DONE] for OpenAI)
+upstream SSE line → provider StreamParser.feed → CanonicalEvent(s)
+                  → StreamUsageTracker → client StreamEmitter.feed → client SSE bytes
+stream end        → tracker/parser finish + emitter.finish (includes [DONE] for OpenAI)
 ```
 
 OpenAI client emitters always end with `data: [DONE]\n\n` via `emitter.finish()`.
