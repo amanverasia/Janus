@@ -17,7 +17,12 @@ _DIMENSION_COLUMN = {
 }
 
 
-async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str, Any]:
+async def get_spend_summary(
+    db_path: str | Path,
+    *,
+    days: int = 30,
+    include_success: bool = False,
+) -> dict[str, Any]:
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT COALESCE(SUM(input_tokens), 0) as inp,
@@ -33,15 +38,11 @@ async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str,
             assert row is not None
 
         async with db.execute(
-            "SELECT COUNT(*) as cnt FROM request_outcomes WHERE timestamp >= datetime('now', ?)",
-            (f"-{days} days",),
-        ) as cur:
-            outcome_row = await cur.fetchone()
-            assert outcome_row is not None
-
-        async with db.execute(
             """SELECT date(o.timestamp) as date,
                       COUNT(o.id) as requests,
+                      SUM(CASE WHEN o.status >= 200 AND o.status < 300 THEN 1 ELSE 0 END) as s2xx,
+                      SUM(CASE WHEN o.status >= 400 AND o.status < 500 THEN 1 ELSE 0 END) as s4xx,
+                      SUM(CASE WHEN o.status >= 500 THEN 1 ELSE 0 END) as s5xx,
                       COALESCE(u.cost, 0.0) as cost,
                       COALESCE(u.input_tokens, 0) as input_tokens,
                       COALESCE(u.output_tokens, 0) as output_tokens,
@@ -64,15 +65,29 @@ async def get_spend_summary(db_path: str | Path, *, days: int = 30) -> dict[str,
         ) as cur:
             daily_rows = await cur.fetchall()
 
-    return {
+    summary = {
         "total_cost": row["cost"],
-        "total_requests": outcome_row["cnt"],
+        "total_requests": sum(int(daily["requests"]) for daily in daily_rows),
         "total_input_tokens": row["inp"],
         "total_output_tokens": row["outp"],
         "total_cache_creation_tokens": row["cc"],
         "total_cache_read_tokens": row["cr"],
-        "daily": [dict(r) for r in daily_rows],
+        "daily": [
+            {
+                key: r[key]
+                for key in ("date", "requests", "cost", "input_tokens", "output_tokens", "tokens")
+            }
+            for r in daily_rows
+        ],
     }
+    if include_success:
+        summary["_success"] = {
+            "success_2xx": sum(int(daily["s2xx"] or 0) for daily in daily_rows),
+            "client_4xx": sum(int(daily["s4xx"] or 0) for daily in daily_rows),
+            "server_5xx": sum(int(daily["s5xx"] or 0) for daily in daily_rows),
+            "total": summary["total_requests"],
+        }
+    return summary
 
 
 async def get_calendar_day_spend_summary(

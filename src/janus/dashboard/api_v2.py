@@ -36,10 +36,9 @@ from janus.storage.analytics import (
     get_calendar_day_spend_summary,
     get_leaderboard,
     get_spend_summary,
-    get_success_rate,
 )
 from janus.storage.api_keys import create_key, list_keys
-from janus.storage.budgets import create_or_update_budget, get_budget_status
+from janus.storage.budgets import create_or_update_budget, get_budget_status, get_budget_statuses
 from janus.storage.combos_db import list_combos
 from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.inventory_overview import (
@@ -216,8 +215,14 @@ async def _response(
     )
 
 
-async def _usage_stats_data(db_path: Path, *, days: int) -> dict[str, Any]:
-    lifetime = await _get_usage_stats_safe(db_path)
+async def _usage_stats_data(
+    db_path: Path,
+    *,
+    days: int,
+    lifetime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if lifetime is None:
+        lifetime = await _get_usage_stats_safe(db_path)
     try:
         period = await get_spend_summary(db_path, days=days)
     except Exception:
@@ -242,8 +247,8 @@ async def _overview_data(request: Request, db_path: Path, *, days: int) -> dict[
     from janus.dashboard.live import get_bus
     from janus.storage.providers_db import list_providers
 
-    stats = await _usage_stats_data(db_path, days=days)
     lifetime = await _get_usage_stats_safe(db_path)
+    stats = await _usage_stats_data(db_path, days=days, lifetime=lifetime)
     providers = await list_providers(db_path, enabled_only=True)
     keys = await list_keys(db_path)
     reporting_now = datetime.now(UTC)
@@ -279,9 +284,9 @@ async def _overview_data(request: Request, db_path: Path, *, days: int) -> dict[
 async def _analytics_data(db_path: Path, *, days: int, dimension: str) -> dict[str, Any]:
     if dimension not in _DIMENSIONS:
         raise _invalid_query("dimension", "expected model, provider, account, or client_key")
-    summary = await get_spend_summary(db_path, days=days)
+    summary = await get_spend_summary(db_path, days=days, include_success=True)
     breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
-    success = await get_success_rate(db_path, days=days)
+    success = summary.pop("_success")
     return {
         "summary": summary,
         "breakdown": breakdown,
@@ -293,7 +298,7 @@ async def _request_logs_data(
     db_path: Path, *, limit: int, offset: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     settings = await get_all_settings(db_path)
-    context = await _request_logs_context(db_path, limit=limit, offset=offset)
+    context = await _request_logs_context(db_path, limit=limit, offset=offset, settings=settings)
     return (
         {
             "logs": context["logs"],
@@ -638,11 +643,12 @@ async def _keys_data(db_path: Path, *, status: str) -> dict[str, Any]:
     if status not in _KEY_STATUSES:
         raise _invalid_query("status", "expected active, revoked, or all")
     keys = await list_keys(db_path)
+    budget_statuses = await get_budget_statuses(db_path)
     active = [key for key in keys if key["is_active"]]
     revoked = [key for key in keys if not key["is_active"]]
     shown = keys if status == "all" else active if status == "active" else revoked
     for key in shown:
-        key["budget"] = await get_budget_status(db_path, key_id=int(key["id"]))
+        key["budget"] = budget_statuses.get(int(key["id"]))
     return {
         "keys": shown,
         "status": status,

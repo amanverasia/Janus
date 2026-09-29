@@ -560,6 +560,37 @@ async def list_routable_upstream_keys(
     return [_decode_upstream_row(row) for row in rows]
 
 
+async def list_routable_upstream_keys_for_providers(
+    db_path: str | Path,
+    inventory_provider_ids: list[str],
+) -> dict[str, list[dict[str, Any]]]:
+    if not inventory_provider_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in inventory_provider_ids)
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            f"""SELECT * FROM upstream_keys
+                WHERE provider_id IN ({placeholders})
+                  AND status = 'active'
+                  AND is_valid = 1
+                  AND is_usable = 1
+                  AND is_archived = 0
+                  AND (is_daily_limited = 0 OR daily_credit_limit IS NULL
+                       OR daily_credit_used IS NULL OR daily_credit_used < daily_credit_limit)
+                ORDER BY provider_id, priority DESC,
+                         CASE WHEN credits_remaining IS NULL THEN 1 ELSE 0 END,
+                         credits_remaining DESC, created_at ASC""",
+            inventory_provider_ids,
+        ) as cur:
+            rows = await cur.fetchall()
+    result: dict[str, list[dict[str, Any]]] = {
+        provider_id: [] for provider_id in inventory_provider_ids
+    }
+    for row in rows:
+        result[str(row["provider_id"])].append(_decode_upstream_row(row))
+    return result
+
+
 async def summarize_upstream_keys_for_inventory(
     db_path: str | Path,
     inventory_provider_id: str,
@@ -584,6 +615,41 @@ async def summarize_upstream_keys_for_inventory(
         "routable": int(row[1] or 0),
         "pending": int(row[2] or 0),
     }
+
+
+async def summarize_upstream_keys_for_inventories(
+    db_path: str | Path,
+    inventory_provider_ids: list[str],
+) -> dict[str, dict[str, int]]:
+    if not inventory_provider_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in inventory_provider_ids)
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            f"""SELECT provider_id,
+                       COUNT(*) AS total,
+                       SUM(CASE
+                         WHEN status = 'active' AND is_valid = 1 AND is_usable = 1
+                         THEN 1 ELSE 0 END) AS routable,
+                       SUM(CASE WHEN status = 'pending_validation' THEN 1 ELSE 0 END) AS pending
+                FROM upstream_keys
+                WHERE provider_id IN ({placeholders})
+                  AND status != 'revoked' AND is_archived = 0
+                GROUP BY provider_id""",
+            inventory_provider_ids,
+        ) as cur:
+            rows = await cur.fetchall()
+    result = {
+        provider_id: {"total": 0, "routable": 0, "pending": 0}
+        for provider_id in inventory_provider_ids
+    }
+    for row in rows:
+        result[str(row["provider_id"])] = {
+            "total": int(row["total"]),
+            "routable": int(row["routable"] or 0),
+            "pending": int(row["pending"] or 0),
+        }
+    return result
 
 
 async def get_probe_upstream_key_row(

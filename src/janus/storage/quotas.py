@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -80,6 +81,49 @@ async def get_window_usage(
     if row is None:
         return {"requests": 0, "tokens": 0}
     return {"requests": int(row["requests"]), "tokens": int(row["tokens"])}
+
+
+async def get_window_usages(
+    db_path: str | Path,
+    providers: list[tuple[str, str]],
+) -> dict[str, dict[str, int]]:
+    """Batch quota usage, issuing at most one grouped query per window type."""
+    requested = dict(providers)
+    result = {provider_id: {"requests": 0, "tokens": 0} for provider_id, _ in providers}
+    by_window: dict[str, list[str]] = {}
+    for provider_id, window in providers:
+        by_window.setdefault(window, []).append(provider_id)
+
+    async def load_window(window: str, provider_ids: list[str]) -> None:
+        start = window_start(window).strftime("%Y-%m-%d %H:%M:%S")
+        async with get_connection(db_path) as db:
+            async with db.execute(
+                """SELECT CASE WHEN instr(provider_id, '::') > 0
+                            THEN substr(provider_id, 1, instr(provider_id, '::') - 1)
+                            ELSE provider_id END AS row_id,
+                          COUNT(*) AS requests,
+                          COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens
+                   FROM usage
+                   WHERE timestamp >= ?
+                     AND (provider_id IN ({placeholders})
+                          OR {expanded_clauses})
+                   GROUP BY row_id""".format(
+                    placeholders=", ".join("?" for _ in provider_ids),
+                    expanded_clauses=" OR ".join("provider_id LIKE ?" for _ in provider_ids),
+                ),
+                (start, *provider_ids, *(f"{provider_id}::%" for provider_id in provider_ids)),
+            ) as cur:
+                rows = await cur.fetchall()
+        for row in rows:
+            provider_id = str(row["row_id"])
+            if provider_id in requested and requested[provider_id] == window:
+                result[provider_id] = {
+                    "requests": int(row["requests"]),
+                    "tokens": int(row["tokens"]),
+                }
+
+    await asyncio.gather(*(load_window(window, ids) for window, ids in by_window.items()))
+    return result
 
 
 def quota_status(used: int, limit: int, warn_pct: float = 80.0) -> str:
