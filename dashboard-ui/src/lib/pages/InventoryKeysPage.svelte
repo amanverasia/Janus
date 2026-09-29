@@ -35,6 +35,8 @@
   let reclassifying = false;
   let reclassifyPreview: JsonObject | undefined;
   let refreshingValue = '';
+  let exporting = false;
+  let downloadingJson = false;
 
   $: rows = firstList(data, 'keys', 'items');
   $: filters = object(data.filters);
@@ -270,6 +272,50 @@
     if (revealedDetail) await copyText(revealedDetail);
   }
 
+  async function downloadAttachment(url: string, init: RequestInit, fallbackName: string) {
+    const response = await dashboardFetch(url, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      ...init
+    });
+    if (!response.ok) throw new Error(`Download failed (${response.status})`);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName;
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = filename;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(link.href));
+  }
+
+  async function exportKeys() {
+    exporting = true;
+    try {
+      await downloadAttachment(
+        '/dashboard/api/inventory/export',
+        { method: 'POST', headers: { Accept: 'application/json' } },
+        'janus-inventory-export.json'
+      );
+    } finally {
+      exporting = false;
+    }
+  }
+
+  async function downloadDetailJson() {
+    if (!detail) return;
+    downloadingJson = true;
+    try {
+      const id = encodeURIComponent(idOf(detail));
+      await downloadAttachment(
+        `/dashboard/api/inventory/keys/${id}/json`,
+        { method: 'POST', headers: { Accept: 'application/json' } },
+        `janus-key-${idOf(detail)}.json`
+      );
+    } finally {
+      downloadingJson = false;
+    }
+  }
+
   async function savePriority() {
     if (!detail) return;
     const id = idOf(detail);
@@ -317,9 +363,9 @@
   title="Upstream credentials"
   description="Search, validate, and manage every account Janus can use for upstream routing."
 >
-  <a class="button" href="/dashboard/api/inventory/export" download>
-    <Icon name="download" />Export
-  </a>
+  <button class="button" disabled={exporting} on:click={exportKeys}>
+    <Icon name="download" />{exporting ? 'Exporting…' : 'Export'}
+  </button>
   <button
     class="button"
     on:click={() =>
@@ -739,13 +785,9 @@
       <button class="button" disabled={!revealedDetail} on:click={copyRevealedDetail}>
         <Icon name="copy" size={15} />Copy
       </button>
-      <a
-        class="button"
-        href={`/dashboard/api/inventory/keys/${encodeURIComponent(idOf(detail))}/json`}
-        download
-      >
+      <button class="button" disabled={downloadingJson} on:click={downloadDetailJson}>
         Download JSON
-      </a>
+      </button>
     </div>
     <div class="detail-metrics">
       <div>
