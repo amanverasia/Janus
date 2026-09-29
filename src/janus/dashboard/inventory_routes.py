@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
+from janus.background import spawn_background
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
@@ -67,8 +68,8 @@ def _schedule_recheck(key_id: str, db_path: Path) -> None:
     schedule_upstream_recheck(key_id, db_path)
 
 
-def _schedule_recheck_all(db_path: Path) -> None:
-    asyncio.create_task(_run_all_keys(db_path))
+def _schedule_recheck_all(db_path: Path) -> asyncio.Task[None]:
+    return spawn_background(_run_all_keys(db_path), name="inventory-recheck-all")
 
 
 async def _run_all_keys(db_path: Path) -> None:
