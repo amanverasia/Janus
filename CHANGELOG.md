@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [3.27.0] - 2026-09-29
+## [4.0.0] - 2026-09-29
 ### Added
 - **Dashboard-first navigation** — the sidebar is now six hubs (Home, Connect,
   Inventory, Routing, Usage, Settings) with section tabs; every page keeps its
