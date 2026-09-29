@@ -142,3 +142,55 @@ describe('InventoryKeysPage inspect modal', () => {
     expect(priorityInputOf(page).value).toBe('7');
   });
 });
+
+describe('InventoryKeysPage row actions', () => {
+  it('tracks row actions in flight per credential id', async () => {
+    const pendingA = deferred<unknown>();
+    const pendingB = deferred<unknown>();
+    const action = vi
+      .fn<(url: string, options?: MutationOptions) => Promise<unknown>>()
+      .mockImplementationOnce(() => pendingA.promise)
+      .mockImplementationOnce(() => pendingB.promise);
+    const page = renderPage([keyA, keyB], action);
+    const [recheckA, recheckB] = page.getAllByTitle('Recheck') as HTMLButtonElement[];
+
+    await fireEvent.click(recheckA);
+    await waitFor(() => expect(action).toHaveBeenCalledOnce());
+    expect(action.mock.calls[0][0]).toBe('/dashboard/api/inventory/keys/key-a/recheck');
+    await waitFor(() => expect(recheckA.disabled).toBe(true));
+
+    await fireEvent.click(recheckA);
+    expect(action).toHaveBeenCalledOnce();
+
+    await fireEvent.click(recheckB);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+    expect(action.mock.calls[1][0]).toBe('/dashboard/api/inventory/keys/key-b/recheck');
+    await waitFor(() => expect(recheckB.disabled).toBe(true));
+
+    pendingA.resolve({});
+    await waitFor(() => expect(recheckA.disabled).toBe(false));
+    expect(recheckB.disabled).toBe(true);
+    expect(action).toHaveBeenCalledTimes(2);
+
+    pendingB.resolve({});
+    await waitFor(() => expect(recheckB.disabled).toBe(false));
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fire a second test for a credential already being tested', async () => {
+    const pending = deferred<unknown>();
+    const action = vi.fn<(url: string, options?: MutationOptions) => Promise<unknown>>(
+      () => pending.promise
+    );
+    const page = renderPage([keyA], action);
+    const test = page.getByTitle('Test') as HTMLButtonElement;
+    await fireEvent.click(test);
+    await waitFor(() => expect(action).toHaveBeenCalledOnce());
+    expect(action.mock.calls[0][0]).toBe('/dashboard/api/inventory/keys/key-a/test');
+    await waitFor(() => expect(test.disabled).toBe(true));
+    await fireEvent.click(test);
+    expect(action).toHaveBeenCalledOnce();
+    pending.resolve({});
+    await waitFor(() => expect(test.disabled).toBe(false));
+  });
+});

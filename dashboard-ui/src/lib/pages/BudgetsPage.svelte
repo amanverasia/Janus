@@ -9,6 +9,7 @@
   export let action: (u: string, o?: MutationOptions) => Promise<unknown>;
   let open = false;
   let saving = false;
+  let deleting = new Set<string>();
   let scope = 'global';
   let dailyLimit: number | undefined;
   let absoluteLimit: number | undefined;
@@ -74,6 +75,23 @@
     }
     open = false;
   }
+
+  async function remove(row: JsonObject) {
+    const id = idOf(row);
+    if (!id || deleting.has(id)) return;
+    if (!confirm('Delete this budget?')) return;
+    deleting = new Set(deleting).add(id);
+    try {
+      await action(`/dashboard/api/budgets/${id}`, {
+        method: 'DELETE',
+        success: 'Budget deleted'
+      });
+    } finally {
+      const next = new Set(deleting);
+      next.delete(id);
+      deleting = next;
+    }
+  }
 </script>
 
 <PageHeader
@@ -98,12 +116,8 @@
       <button
         class="icon-button"
         title="Delete"
-        on:click={() =>
-          confirm('Delete this budget?') &&
-          action(`/dashboard/api/budgets/${idOf(row)}`, {
-            method: 'DELETE',
-            success: 'Budget deleted'
-          })}
+        disabled={deleting.has(idOf(row))}
+        on:click={() => remove(row)}
       >
         <Icon name="trash" size={15} />
       </button>

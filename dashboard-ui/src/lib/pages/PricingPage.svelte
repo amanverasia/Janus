@@ -14,6 +14,7 @@
   let open = false;
   let saving = false;
   let syncing = false;
+  let deleting = new Set<string>();
   let tab = 'overrides';
   $: overrides = firstList(data, 'overrides');
   $: builtin = firstList(data, 'builtin');
@@ -88,6 +89,23 @@
     }
     open = false;
   }
+
+  async function remove(row: JsonObject) {
+    const model = text(row.model);
+    if (!model || deleting.has(model)) return;
+    if (!confirm('Delete this pricing override?')) return;
+    deleting = new Set(deleting).add(model);
+    try {
+      await action(`/dashboard/api/pricing/${encodeURIComponent(model)}`, {
+        method: 'DELETE',
+        success: 'Pricing override deleted'
+      });
+    } finally {
+      const next = new Set(deleting);
+      next.delete(model);
+      deleting = next;
+    }
+  }
 </script>
 
 <PageHeader
@@ -148,12 +166,8 @@
       {#if tab === 'overrides'}<button
           class="icon-button"
           title="Delete override"
-          on:click={() =>
-            confirm('Delete this pricing override?') &&
-            action(`/dashboard/api/pricing/${encodeURIComponent(text(row.model))}`, {
-              method: 'DELETE',
-              success: 'Pricing override deleted'
-            })}
+          disabled={deleting.has(text(row.model))}
+          on:click={() => remove(row)}
         >
           <Icon name="trash" size={15} />
         </button>{/if}

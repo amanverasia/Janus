@@ -10,6 +10,7 @@
   let open = false;
   let editing: JsonObject | undefined;
   let saving = false;
+  let deleting = new Set<string>();
   $: combos = firstList(data, 'combos', 'items');
 
   function comboModelsPreview(combo: JsonObject): string {
@@ -39,6 +40,23 @@
       saving = false;
     }
     open = false;
+  }
+
+  async function remove(combo: JsonObject) {
+    const id = idOf(combo);
+    if (!id || deleting.has(id)) return;
+    if (!confirm('Delete this combo?')) return;
+    deleting = new Set(deleting).add(id);
+    try {
+      await action(`/dashboard/api/combos/${id}`, {
+        method: 'DELETE',
+        success: 'Combo deleted'
+      });
+    } finally {
+      const next = new Set(deleting);
+      next.delete(id);
+      deleting = next;
+    }
   }
 </script>
 
@@ -79,12 +97,8 @@
           </button>
           <button
             class="button danger"
-            on:click={() =>
-              confirm('Delete this combo?') &&
-              action(`/dashboard/api/combos/${idOf(combo)}`, {
-                method: 'DELETE',
-                success: 'Combo deleted'
-              })}
+            disabled={deleting.has(idOf(combo))}
+            on:click={() => remove(combo)}
           >
             <Icon name="trash" size={14} />Delete
           </button>

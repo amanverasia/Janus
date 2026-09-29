@@ -14,6 +14,7 @@
   let open = false;
   let editing: JsonObject | undefined;
   let saving = false;
+  let revoking = new Set<string>();
   let revealed = '';
   let copied = '';
   let copyError = '';
@@ -111,6 +112,23 @@
     if (revealed) await copy(revealed, 'new-key');
   }
 
+  async function revoke(row: JsonObject) {
+    const id = idOf(row);
+    if (!id || revoking.has(id)) return;
+    if (!confirm('Revoke this key?')) return;
+    revoking = new Set(revoking).add(id);
+    try {
+      await action(`/dashboard/api/keys/${id}`, {
+        method: 'DELETE',
+        success: 'API key revoked'
+      });
+    } finally {
+      const next = new Set(revoking);
+      next.delete(id);
+      revoking = next;
+    }
+  }
+
   async function copyPrefix(row: JsonObject) {
     const prefix = text(row.prefix ?? row.key_prefix, '');
     if (prefix) await copy(prefix, `prefix-${idOf(row)}`);
@@ -177,12 +195,8 @@
       {#if bool(row.is_active, true)}<button
           class="icon-button"
           title="Revoke"
-          on:click={() =>
-            confirm('Revoke this key?') &&
-            action(`/dashboard/api/keys/${idOf(row)}`, {
-              method: 'DELETE',
-              success: 'API key revoked'
-            })}
+          disabled={revoking.has(idOf(row))}
+          on:click={() => revoke(row)}
         >
           <Icon name="trash" size={15} />
         </button>{/if}

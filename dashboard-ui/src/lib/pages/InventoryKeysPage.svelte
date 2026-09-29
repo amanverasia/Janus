@@ -220,7 +220,7 @@
 
   async function refreshAccountValue(row: JsonObject | undefined) {
     const id = row ? idOf(row) : '';
-    if (!id) return;
+    if (!id || refreshingValue === id) return;
     refreshingValue = id;
     try {
       await action(

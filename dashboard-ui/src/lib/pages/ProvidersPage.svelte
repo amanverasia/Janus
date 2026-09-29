@@ -44,6 +44,7 @@
   let draft: JsonObject = {};
   let saving = false;
   let testingConnection = false;
+  let rowBusy = new Set<string>();
   let providerSearch = '';
   let presetSearch = '';
   let selectedPresetId = '';
@@ -415,24 +416,33 @@
   }
 
   async function toggleProvider(provider: JsonObject) {
+    const providerId = idOf(provider);
+    if (!providerId || rowBusy.has(providerId)) return;
+    rowBusy = new Set(rowBusy).add(providerId);
     try {
-      await action(`/dashboard/api/providers/${encodeURIComponent(idOf(provider))}/toggle`, {
+      await action(`/dashboard/api/providers/${encodeURIComponent(providerId)}/toggle`, {
         method: 'PATCH',
         success: 'Provider status changed'
       });
     } catch {
       return;
+    } finally {
+      const next = new Set(rowBusy);
+      next.delete(providerId);
+      rowBusy = next;
     }
   }
 
   async function removeProvider(provider: JsonObject) {
     const providerId = idOf(provider);
+    if (!providerId || rowBusy.has(providerId)) return;
     if (
       !confirm(
         `Delete connection ${providerId} (${providerDisplayName(provider)})? This removes this exact gateway configuration.`
       )
     )
       return;
+    rowBusy = new Set(rowBusy).add(providerId);
     try {
       await action(`/dashboard/api/providers/${encodeURIComponent(providerId)}`, {
         method: 'DELETE',
@@ -440,6 +450,10 @@
       });
     } catch {
       return;
+    } finally {
+      const next = new Set(rowBusy);
+      next.delete(providerId);
+      rowBusy = next;
     }
     if (selectedProviderId === providerId) selectedProviderId = '';
   }
@@ -734,6 +748,7 @@
           <button
             class="button"
             aria-pressed={bool(selectedProvider.is_enabled, true)}
+            disabled={rowBusy.has(idOf(selectedProvider))}
             on:click={() => toggleProvider(selectedProvider)}
           >
             {bool(selectedProvider.is_enabled, true) ? 'Enabled' : 'Disabled'}
@@ -741,6 +756,7 @@
           <button
             class="icon-button"
             aria-label={`Delete connection ${idOf(selectedProvider)}`}
+            disabled={rowBusy.has(idOf(selectedProvider))}
             on:click={() => removeProvider(selectedProvider)}
           >
             <Icon name="trash" size={15} />
@@ -971,6 +987,7 @@
                     type="button"
                     class="icon-button"
                     aria-label={`Delete connection ${idOf(provider)}`}
+                    disabled={rowBusy.has(idOf(provider))}
                     on:click={() => removeProvider(provider)}
                   >
                     <Icon name="trash" size={14} />

@@ -47,4 +47,34 @@ describe('KeysPage create key', () => {
     expect(action).toHaveBeenCalledOnce();
     expect(submitButton.disabled).toBe(false);
   });
+
+  it('ignores a second revoke click while the delete request is in flight', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const pending = deferred<unknown>();
+    const action = vi.fn<(url: string, options?: MutationOptions) => Promise<unknown>>(
+      () => pending.promise
+    );
+    const existing: JsonObject = {
+      id: 'key-a',
+      name: 'Primary',
+      key_prefix: 'sk-janus-1',
+      is_active: true
+    };
+    const page = render(KeysPage, {
+      props: { data: { keys: [existing] }, action, navigateQuery: vi.fn() }
+    });
+    const revoke = page.getByTitle('Revoke') as HTMLButtonElement;
+
+    await fireEvent.click(revoke);
+    await waitFor(() => expect(action).toHaveBeenCalledOnce());
+    expect(action.mock.calls[0][0]).toBe('/dashboard/api/keys/key-a');
+    await waitFor(() => expect(revoke.disabled).toBe(true));
+
+    await fireEvent.click(revoke);
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(action).toHaveBeenCalledOnce();
+
+    pending.resolve({});
+    await waitFor(() => expect(revoke.disabled).toBe(false));
+  });
 });
