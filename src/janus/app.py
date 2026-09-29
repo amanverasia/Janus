@@ -200,14 +200,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await _drain_stream_persist_tasks()
     await close_provider_snapshots(app)
-    await close_connection_pools()
+    await close_connection_pools(app.state.db_path)
 
 
 def create_app(
     registry: ProviderRegistry | None = None,
     config: JanusConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Janus", version="3.21.0", lifespan=lifespan)
+    app = FastAPI(title="Janus", version="3.21.1", lifespan=lifespan)
     if registry is None:
         registry = ProviderRegistry()
     if config is None:
