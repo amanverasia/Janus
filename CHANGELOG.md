@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-09-29
+### Fixed
+- **Aborted client streams no longer lose usage, cost, and request rows** —
+  when a client disconnects mid-stream, terminal bookkeeping (usage row with
+  any observable tokens, cost, request log, outcome) now runs in tracked
+  background tasks that survive task-group cancellation, and the outcome is
+  recorded as `499` (client closed request) instead of a misleading upstream
+  `502`. Happy-path streaming behavior, retries, and cooldown semantics are
+  unchanged.
+- **Request Logs shows the issuing client API key** — the table gains an
+  "API key" column (key name, falling back to the key label, then an em dash)
+  and the Inspect modal shows the same field, so operators can attribute
+  requests, errors, and spend to specific keys without exporting logs.
+
 ## [3.20.0] - 2026-09-28
 ### Added
 - **Per-provider account-value probes** — a dedicated probe layer now queries each
