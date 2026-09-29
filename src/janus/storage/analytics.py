@@ -176,7 +176,8 @@ async def get_breakdown(
         async with get_connection(db_path) as db:
             async with db.execute(
                 """SELECT
-                       COALESCE(k.name, u.client_key_label, 'Direct (no API key)') as client_key,
+                       COALESCE(MAX(k.name), MAX(u.client_key_label),
+                                'Direct (no API key)') as client_key,
                        COUNT(*) as requests,
                        COALESCE(SUM(u.input_tokens), 0) as input_tokens,
                        COALESCE(SUM(u.output_tokens), 0) as output_tokens,
@@ -186,7 +187,7 @@ async def get_breakdown(
                 FROM usage u
                 LEFT JOIN api_keys k ON u.client_key_id = k.id
                 WHERE u.timestamp >= datetime('now', ?)
-                GROUP BY COALESCE(k.name, u.client_key_label, 'Direct (no API key)')
+                GROUP BY u.client_key_id
                 ORDER BY cost DESC""",
                 (f"-{days} days",),
             ) as cur:
@@ -314,7 +315,8 @@ async def get_leaderboard(
         # Keys with requests in the time window.
         async with db.execute(
             f"""SELECT
-                   COALESCE(k.name, o.client_key_label, 'Direct (no API key)') as key_name,
+                   COALESCE(MAX(k.name), MAX(o.client_key_label),
+                            'Direct (no API key)') as key_name,
                    MAX(k.id) as key_id,
                    COUNT(o.id) as requests,
                    COALESCE(u.tokens, 0) as tokens,
@@ -340,7 +342,7 @@ async def get_leaderboard(
                 GROUP BY client_key_id
             ) u ON u.client_key_id IS o.client_key_id
             WHERE {outcome_clause}
-            GROUP BY COALESCE(k.name, o.client_key_label, 'Direct (no API key)')
+            GROUP BY o.client_key_id
             ORDER BY {sort_col} DESC
             LIMIT ?""",
             (*params, limit),
@@ -348,7 +350,7 @@ async def get_leaderboard(
             used_rows = await cur.fetchall()
 
         # Active keys with zero usage in this window — append at the end.
-        used_names = {str(row["key_name"]) for row in used_rows}
+        used_ids = {row["key_id"] for row in used_rows if row["key_id"] is not None}
         async with db.execute(
             "SELECT name as key_name, id as key_id FROM api_keys WHERE is_active = 1 ORDER BY name"
         ) as cur:
@@ -356,7 +358,7 @@ async def get_leaderboard(
         zero_keys = [
             {"key_name": r["key_name"], "key_id": r["key_id"]}
             for r in all_keys
-            if str(r["key_name"]) not in used_names
+            if r["key_id"] not in used_ids
         ]
 
     result: list[dict[str, Any]] = []

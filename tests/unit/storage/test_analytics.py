@@ -429,3 +429,80 @@ async def test_get_leaderboard_zero_keys_keep_zero_success(tmp_path):
     idle = next(r for r in result if r["key_name"] == "idle")
     assert idle["requests"] == 0
     assert idle["success_pct"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_get_leaderboard_keeps_duplicate_names_separate(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("twin", "hash-a", "sk-janus-a"),
+        )
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("twin", "hash-b", "sk-janus-b"),
+        )
+        await db.commit()
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "client_key_id": 1,
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cost": 0.001,
+                "status": 200,
+            },
+        ],
+    )
+    result = await get_leaderboard(db_path, days=30)
+    twins = [r for r in result if r["key_name"] == "twin"]
+    assert len(twins) == 2
+    assert sorted(r["tokens"] for r in twins) == [0, 15]
+
+
+@pytest.mark.asyncio
+async def test_get_breakdown_client_groups_by_key_id(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("twin", "hash-a", "sk-janus-a"),
+        )
+        await db.execute(
+            "INSERT INTO api_keys (name, key_hash, prefix) VALUES (?, ?, ?)",
+            ("twin", "hash-b", "sk-janus-b"),
+        )
+        await db.commit()
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "client_key_id": 1,
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cost": 0.001,
+                "status": 200,
+            },
+            {
+                "timestamp": _ts(0),
+                "model": "gpt-4o",
+                "client_key_id": 2,
+                "input_tokens": 20,
+                "output_tokens": 10,
+                "cost": 0.002,
+                "status": 200,
+            },
+        ],
+    )
+    rows = await get_breakdown(db_path, dimension="client_key", days=30)
+    twins = [r for r in rows if r["client_key"] == "twin"]
+    assert len(twins) == 2
+    assert sorted(r["cost"] for r in twins) == [0.001, 0.002]

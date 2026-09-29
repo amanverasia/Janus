@@ -711,7 +711,8 @@ async def api_list_upstream_keys_json(
             "limit": page_size,
             "offset": offset,
             "providers": providers,
-        }
+        },
+        headers=_NO_STORE_HEADERS,
     )
 
 
@@ -733,7 +734,8 @@ async def api_get_upstream_key_json(request: Request, key_id: str) -> JSONRespon
             **detail,
             "models": models,
             "history": history,
-        }
+        },
+        headers=_NO_STORE_HEADERS,
     )
 
 

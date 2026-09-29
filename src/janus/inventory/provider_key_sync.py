@@ -85,10 +85,27 @@ async def sync_provider_key(
     key_value = api_key.strip()
     key_hash = hash_upstream_key(key_value)
     existing = await _find_mirrored_key(db_path, provider_id)
-    if existing is not None and existing.get("key_hash") == key_hash:
-        return str(existing["id"])
 
     inventory_id = await _resolve_inventory_provider_id(db_path, provider)
+
+    base_url = (
+        (str(provider.get("base_url") or "").rstrip("/") or None)
+        if inventory_id
+        not in {
+            "openai",
+            "anthropic",
+            "gemini",
+            "google",
+        }
+        else None
+    )
+
+    if (
+        existing is not None
+        and existing.get("key_hash") == key_hash
+        and existing.get("custom_base_url") == base_url
+    ):
+        return str(existing["id"])
 
     duplicate = await find_upstream_key_by_value(db_path, key_value)
     if (
@@ -105,17 +122,6 @@ async def sync_provider_key(
             await update_upstream_key(db_path, str(existing["id"]), {"status": "revoked"})
         return None
 
-    base_url = (
-        (str(provider.get("base_url") or "").rstrip("/") or None)
-        if inventory_id
-        not in {
-            "openai",
-            "anthropic",
-            "gemini",
-            "google",
-        }
-        else None
-    )
     label = f"via Providers: {provider_id}"
 
     if existing is not None:
