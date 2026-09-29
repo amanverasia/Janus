@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { navGroups, type NavItem } from '$lib/nav';
+  import { hubFor, navHubs, pageTitle, type NavItem } from '$lib/nav';
   import type { HealthState } from '$lib/types';
   import Icon from './Icon.svelte';
   import CommandPalette from './CommandPalette.svelte';
@@ -15,6 +15,7 @@
   let themeMode: 'system' | 'light' | 'dark' = 'system';
   const dispatch = createEventDispatcher<{ navigate: string; refresh: void; logout: void }>();
 
+  $: activeHub = hubFor(active.href);
   $: stale = !healthOffline && healthAgeMs > 90_000;
   $: systemTone = healthOffline
     ? 'offline'
@@ -112,7 +113,7 @@
   }
 </script>
 
-<svelte:head><title>{active.label} · Janus</title></svelte:head>
+<svelte:head><title>{pageTitle(active)} · Janus</title></svelte:head>
 <div class="app-shell">
   {#if mobileOpen}<button
       class="nav-scrim"
@@ -139,22 +140,16 @@
         <Icon name="x" />
       </button>
     </div>
-    <nav aria-label="Main navigation">
-      {#each navGroups as group}
-        <div class="nav-group">
-          <span class="nav-label">{group.label}</span>
-          {#each group.items as item}<a
-              href={item.href}
-              class:active={item.section === active.section ||
-                (item.section === 'inventory' && active.section === 'inventory-keys')}
-              aria-current={item.section === active.section ? 'page' : undefined}
-              on:click={(event) => follow(event, item.href)}
-            >
-              <span class="nav-icon"><Icon name={item.icon} /></span>
-              <span>{item.label}</span>
-            </a>{/each}
-        </div>
-      {/each}
+    <nav aria-label="Main navigation" class="nav-group">
+      {#each navHubs as hub (hub.label)}<a
+          href={hub.href}
+          class:active={hub === activeHub}
+          aria-current={hub === activeHub ? 'page' : undefined}
+          on:click={(event) => follow(event, hub.href)}
+        >
+          <span class="nav-icon"><Icon name={hub.icon} /></span>
+          <span>{hub.label}</span>
+        </a>{/each}
     </nav>
     <div class="sidebar-footer">
       <div class="system-dot {systemTone}"></div>

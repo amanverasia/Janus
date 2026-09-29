@@ -24,20 +24,42 @@ either side needing to know the other exists.
 
 ## Quick Start
 
+Janus is operated from its dashboard, Cloudline. Start the server, sign in, and
+connect your credentials there.
+
 ```bash
 pip install janus-ai
 janus config-init
 janus serve --port 20128
+janus keys create --name admin   # in a second terminal: your sign-in key, shown once
 ```
 
-Run `janus dashboard` to open the Cloudline UI, add your providers and keys there,
-then point your coding tool at `http://localhost:20128/v1` and start routing.
+1. **Open the dashboard.** Run `janus dashboard` or visit
+   `http://localhost:20128/dashboard/ui`, then sign in with the `sk-janus-...` key.
+   While setup is incomplete, **Home** shows a three-step checklist that links to
+   each screen.
+2. **Connect credentials.** On **Connect**, paste provider API keys or drop
+   credential files. Janus previews each entry with masked values and a
+   new / exists / rejected status before anything is stored. Import them with
+   **Make these routable** on (the default). See
+   [Key Inventory — Connect](inventory.md#connect-paste-or-drop-credentials).
+3. **Point your client at the endpoint.** The **Your endpoint** card on Home shows
+   the base URL (`http://localhost:20128/v1`) and a copyable `curl` request.
+   **Settings → Tools** has ready-made settings for Claude Code, Codex, Cursor, and
+   Cline.
 
 !!! tip "What next?"
+    - [Dashboard](dashboard.md) — the six sections and every tab
     - [Getting Started](getting-started.md) — full install and first-request walkthrough
-    - [Configuration](configuration.md) — YAML config reference and DB-driven config
-    - [Providers](providers.md) — setup guides for all supported providers
     - [Client Setup](client-setup.md) — connect Claude Code, Codex, Cursor, and more
+    - [Providers](providers.md) — setup guides for all supported providers
+
+### Headless / automation
+
+On a server without a browser, or for scripted setup, seed providers from YAML
+([Configuration](configuration.md)), manage keys and budgets with the
+[CLI](cli.md), and push upstream keys through the
+[inventory Push API](inventory.md#push-api).
 
 ## Features
 
@@ -74,14 +96,13 @@ Cost tracking, spend trends, success rates, and breakdowns by model, provider, a
 
 ### Dashboard
 
-Cloudline is the single dashboard UI — and the primary interface for operating
-Janus. It is a responsive Svelte control plane at `/dashboard/ui` (open it with
-`janus dashboard`) with light/dark/system themes, deep links, and a command
-palette. It provides monitoring, provider and model routing, key inventory with
-per-account usage tracking, budgets, API keys, pricing, and settings. Changes
-hot-reload without a server restart. The CLI remains for scripting and
-automation. `/dashboard` and former page URLs are compatibility redirects to
-Cloudline.
+Cloudline is the single dashboard UI and the primary way to operate Janus. It is
+a responsive Svelte control plane at `/dashboard/ui` with six sidebar sections
+(Home, Connect, Inventory, Routing, Usage, Settings). Each section groups its
+pages as tabs, and every page keeps a deep link. It also has light/dark/system
+themes and a command palette. Changes hot-reload without a server restart.
+`/dashboard` and former page URLs are compatibility redirects to Cloudline. See
+[Dashboard](dashboard.md).
 
 ## Tech Stack
 

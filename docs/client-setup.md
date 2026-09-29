@@ -4,8 +4,8 @@ Point your coding tools at Janus. Most OpenAI/Anthropic clients use
 `http://localhost:20128/v1` (adjust the port if you changed it). Gemini-native
 and Ollama-native clients use the host root `http://localhost:20128`.
 
-!!! tip "Tool Setup page"
-    The dashboard at `/dashboard/tools` shows copy-paste environment variable
+!!! tip "Settings → Tools"
+    The dashboard tab **Settings → Tools** (`/dashboard/ui/tools`) shows copy-paste environment variable
     cards for Claude Code, Codex, Cursor, and Cline — tailored to your server URL
     and auth settings. For Codex CLI, prefer the `config.toml` recipe below so
     requests hit `/v1/responses`.

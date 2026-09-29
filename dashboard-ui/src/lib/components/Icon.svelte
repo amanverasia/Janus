@@ -88,6 +88,7 @@
   {:else if name === 'plus'}<path d="M12 5v14M5 12h14" />
   {:else if name === 'trash'}<path d="M4 7h16m-10 4v6m4-6v6M7 7l1 14h8l1-14m-8-3h6l1 3H8l1-3Z" />
   {:else if name === 'download'}<path d="M12 3v12m-4-4 4 4 4-4M4 20h16" />
+  {:else if name === 'upload'}<path d="M12 15V3m-4 4 4-4 4 4M4 20h16" />
   {:else if name === 'sun'}<circle cx="12" cy="12" r="4" />
     <path
       d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"

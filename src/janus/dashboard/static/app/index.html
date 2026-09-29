@@ -133,7 +133,7 @@
 		<link href="/dashboard/static/app/_app/immutable/chunks/BwvsZq5x.js" rel="modulepreload">
 		<link href="/dashboard/static/app/_app/immutable/chunks/G02hwl8X.js" rel="modulepreload">
 		<link href="/dashboard/static/app/_app/immutable/chunks/D7HqbCix.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/entry/app.DG8Ykk-h.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/entry/app.B5U-qZyy.js" rel="modulepreload">
 		<link href="/dashboard/static/app/_app/immutable/chunks/jQWNM1YS.js" rel="modulepreload">
 		<link href="/dashboard/static/app/_app/immutable/chunks/BrVNaoNp.js" rel="modulepreload">
 		<link href="/dashboard/static/app/_app/immutable/chunks/D4bZLExL.js" rel="modulepreload">
@@ -180,7 +180,12 @@
               '/dashboard/ui/budgets'
             ];
             if (!statPaths.includes(path)) shell.dataset.compact = '';
-            if (path.endsWith('/inventory/add') || path.endsWith('/inventory/import')) {
+            if (
+              path.endsWith('/connect') ||
+              path.endsWith('/connect/restore') ||
+              path.endsWith('/inventory/add') ||
+              path.endsWith('/inventory/import')
+            ) {
               shell.dataset.form = '';
             }
           }
@@ -198,7 +203,7 @@
 
 					Promise.all([
 						import("/dashboard/static/app/_app/immutable/entry/start.BFdyWNqY.js"),
-						import("/dashboard/static/app/_app/immutable/entry/app.DG8Ykk-h.js")
+						import("/dashboard/static/app/_app/immutable/entry/app.B5U-qZyy.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});

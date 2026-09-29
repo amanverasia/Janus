@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 from typing import Any
 
 from janus.inventory.catalog import get_inventory_providers
@@ -14,6 +15,7 @@ from janus.inventory.xiaomi_tokenplan import (
 )
 
 DETECT_CONCURRENCY = int(os.environ.get("DETECT_CONCURRENCY", "6"))
+_ACCEPTS_ANY_KEY: dict[str, bool] = {}
 
 
 def detectable_provider_ids(exclude_id: str | None = None) -> list[str]:
@@ -27,6 +29,19 @@ def detectable_provider_ids(exclude_id: str | None = None) -> list[str]:
         and provider.get("health_check_endpoint")
         and provider.get("base_url")
     ]
+
+
+async def accepts_any_key(provider_id: str, metadata: dict[str, Any] | None = None) -> bool:
+    cached = _ACCEPTS_ANY_KEY.get(provider_id)
+    if cached is not None:
+        return cached
+    canary = f"janus-detect-canary-{secrets.token_hex(16)}"
+    try:
+        result = await validate_key(canary, provider_id, metadata, skip_probe=True)
+    except Exception:
+        return False
+    _ACCEPTS_ANY_KEY[provider_id] = bool(result.get("is_valid"))
+    return _ACCEPTS_ANY_KEY[provider_id]
 
 
 async def find_authenticating_provider(
@@ -62,6 +77,8 @@ async def find_authenticating_provider(
             except Exception:
                 continue
             if not result.get("is_valid"):
+                continue
+            if await accepts_any_key(provider_id, metadata):
                 continue
             async with lock:
                 if rank < found_rank:

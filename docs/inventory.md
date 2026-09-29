@@ -5,11 +5,14 @@ validating, and routing with many API keys across 27+ providers. Keys are checke
 for validity, credit balance (where supported), and model access, then wired into
 gateway routing as multi-account pools.
 
-Open the dashboard at `/dashboard/inventory` or use the CLI (`janus inventory`).
+Add credentials on the dashboard's **Connect** screen (`/dashboard/ui/connect`) and
+manage them under **Inventory** (`/dashboard/ui/inventory`). For headless setups,
+use the [Push API](#push-api) or the CLI (`janus inventory`).
 
 ## How it works
 
-1. **Add keys** — paste keys in bulk, import a JSON export, or push via API.
+1. **Add keys** — paste or drop credentials on **Connect**, restore a JSON export,
+   or push via API. Connect previews every entry before anything is stored.
 2. **Auto-detect provider** — Janus probes each key and assigns a provider (or
    marks it `unidentified`).
 3. **Validate & recheck** — keys are checked on ingest and on a background schedule
@@ -33,11 +36,11 @@ exist, the gateway provider's configured `api_key` is used as before.
 
 ## Dashboard pages
 
-### Overview — `/dashboard/inventory`
+### Overview — `/dashboard/ui/inventory`
 
 Credit summary, provider cards, best keys, recent activity, and encryption status.
 
-### Key list — `/dashboard/inventory/keys`
+### Keys — `/dashboard/ui/inventory/keys`
 
 Filter by provider or status, search, sort, and paginate. Per-key actions:
 
@@ -45,15 +48,50 @@ Filter by provider or status, search, sort, and paginate. Per-key actions:
 - **Delete** — remove from inventory
 - **Reclassify** — fix misidentified provider assignments (bulk action on overview)
 
-### Add keys — `/dashboard/inventory/add`
+### Connect: paste or drop credentials
 
-Paste one or many keys (one per line). Optionally set a label, pick a provider, or
-provide a custom base URL. Keys are auto-detected when provider is omitted.
+**Connect → Keys and logins** (`/dashboard/ui/connect`) replaces the former Add keys
+screen; `/dashboard/ui/inventory/add` redirects there.
 
-### Import — `/dashboard/inventory/import`
+1. Paste keys (one per line) or a credential JSON export, or drop files onto the
+   page. Files are read in the browser with no upload step.
+2. Leave the provider on **Auto**, or pick a provider. Auto recognizes the
+   credential files listed under [Supported credential formats](#supported-credential-formats);
+   pick the provider yourself for bare OAuth access tokens. An optional custom
+   base URL is under **Advanced**.
+3. **Preview** classifies every entry through the [Preview API](#preview-api):
+   per-provider counts plus a masked table where each entry is `new`, `exists`,
+   or `rejected`. Nothing is written to the database.
+4. **Import** is enabled when at least one entry is `new`. It submits through
+   `POST /dashboard/api/inventory/submit` with **Make these routable**
+   (`provision_routing=true`) on by default, which creates the matching gateway
+   routing provider when one is missing. Imported keys are validated in the
+   background; the page refreshes until validation settles.
+
+### Restore backup — `/dashboard/ui/connect/restore`
 
 Import a **Dashboard_For_Apis** JSON export. Use this when migrating from another
-key-management tool.
+Janus node or key-management tool. `/dashboard/ui/inventory/import` redirects
+here.
+
+## Supported credential formats
+
+| Input | Provider selection | Notes |
+|---|---|---|
+| Raw provider API keys, one per line | **Auto** | Keys with a distinctive prefix (`gsk_`, `nvapi-`, `sk-ant-`, `sk-proj-`, `sk-or-v1-`, `xai-`, …) are assigned by prefix, and preview and import always agree. Generic `sk-…` and prefix-less keys show as *Detected on import* in the preview; import identifies them by probing providers. Keys that no provider accepts are stored as `unidentified` for review. |
+| Codex CLI `~/.codex/auth.json` | **Auto** | The nested `tokens` object (access, refresh, id token, account id) is flattened into a Codex credential. |
+| Codex (ChatGPT) OAuth JSON | **Auto** or **Codex (ChatGPT)** | See [Codex / ChatGPT OAuth](#codex-chatgpt-oauth). A 9router `providerConnections` export with several accounts becomes one inventory entry per Codex connection. |
+| Cline account | **Auto** or **Cline** | A WorkOS access token with the `workos:` prefix, a JSON object with `"provider": "cline"` plus `accessToken` / `refreshToken`, or Cline entries in a `providerConnections` export. The refresh token is kept so Janus can renew the ~1 hour access token. Pick **Cline** for a token without the `workos:` prefix. |
+| Antigravity (Google) OAuth JSON | **Auto** or **Antigravity (Google)** | Needs an access token (`access_token` or `accessToken`); refresh token, expiry, and `projectId` are kept when present. Auto needs `projectId`; pick the provider for a bare access token. |
+| Kiro (AWS) OAuth JSON | **Auto** or **Kiro (AWS)** | A credential blob containing `accessToken` and `refreshToken`. Auto needs `profileArn` or `authMethod`. |
+
+Claude Code `~/.claude/.credentials.json` is recognized but not stored in the
+inventory: the preview rejects it with a pointer to **Routing → Providers**, where
+it can be added as a Claude OAuth provider (see
+[Subscription / OAuth providers](client-setup.md#subscription-oauth-providers)).
+Other credential files are not supported and come back from the preview as
+`rejected` with an "unsupported credential format" message. Gemini CLI
+`oauth_creds.json` is one example.
 
 ## Supported inventory providers
 
@@ -62,12 +100,12 @@ Janus recognizes keys for these providers (auto-detection probes each):
 OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
-Firecrawl, fal.ai, Exa, Brave Search, **Codex (ChatGPT)** (OAuth blobs — select
-explicitly), plus **custom** and **unidentified** fallbacks.
+Firecrawl, fal.ai, Exa, Brave Search, **Codex (ChatGPT)**, **Cline**, **Antigravity**,
+and **Kiro** (OAuth credentials), plus **custom** and **unidentified** fallbacks.
 
 ### Codex / ChatGPT OAuth
 
-Paste one of the following into **Add keys**, then choose provider **Codex (ChatGPT)**:
+Paste or drop one of the following on **Connect**, then choose provider **Codex (ChatGPT)**:
 
 - A Janus credential JSON blob (`access_token` / `refresh_token` / optional
   `extra.workspaceId`)
@@ -109,6 +147,25 @@ The dashboard shows separate encryption counts on the inventory overview and off
 one **Encrypt credentials** action when `INVENTORY_ENCRYPTION_KEY` is set. Dashboard
 configuration export remains a portable plaintext YAML export; protect exported files
 accordingly. For encrypted backups, copy the SQLite database and retain the Fernet key.
+
+## Preview API
+
+`POST /dashboard/api/inventory/preview` is the read-only half of
+`/dashboard/api/inventory/submit`. **Connect** uses it, and scripts can call it
+with dashboard authentication to check a paste before importing it.
+
+- **Input:** the same form fields as `submit` — `keys_text` plus an optional
+  `provider_id` (default `auto`). Input is parsed the same way, so a Codex
+  `providerConnections` export expands to one entry per connection.
+- **Output:** per-provider summary counts and one row per entry with the provider,
+  masked key, label, and a status of `new`, `exists`, or `rejected` (with an
+  error message). Raw keys and token values are never returned, and responses
+  are sent with `Cache-Control: no-store`.
+- **No writes:** previewing never creates, updates, or reclassifies inventory
+  rows.
+- **Limits:** the submit batch cap (`INVENTORY_MAX_SUBMIT_BATCH`) and rate limiter
+  apply, and the request body is capped at 1 MiB. Empty or oversized input returns
+  `422`; a rate-limited request returns `429`.
 
 ## Push API
 

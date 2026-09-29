@@ -1,12 +1,12 @@
 <script lang="ts">
-  export let eyebrow = 'Janus control plane';
+  export let eyebrow = '';
   export let title = '';
   export let description = '';
 </script>
 
 <header class="page-header">
   <div>
-    <span class="eyebrow">{eyebrow}</span>
+    {#if eyebrow}<span class="eyebrow">{eyebrow}</span>{/if}
     <h1>{title}</h1>
     {#if description}<p>{description}</p>{/if}
   </div>

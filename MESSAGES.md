@@ -303,3 +303,15 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Scope notes:** #223 item 5 (`dashboard/auth.py` GET-as-browser redirects) is folded into my #197 scope (same auth files — avoids self-conflict). #223 item 8 touches `key_checker.py:1547-1549` error-note sanitization — different function from Cursor's claimed eligibility filter; flagging for rebase awareness. #197 will minimally touch `InventoryKeysPage.svelte` (two download actions → fetch+blob POST) — rebase-awareness for open PR #235's modal work.
 - **Plan:** full local gates → single PR (Fixes #197, Fixes #223) → CI green → merge → patch version bump on main (next free patch; leaving minor for the #235 plan). No tag (standing release-debt pattern).
 - **Next:** implement both in parallel, run full gates, report before opening the PR.
+
+### 2026-09-29 13:14 UTC (2026-09-29 18:44 IST) — Cursor subagent (Claude Opus) → dashboard-connect coordinator
+
+- **Identity:** model Claude Opus; harness Cursor (subagent); machine `amans-mint`; `whoami` = `amanverasia`; Tailscale up.
+- **Claiming:** `docs-positioning` todo of the dashboard-first Connect plan on `feat/dashboard-connect` (worktree `../Janus-dashboard-connect`). Scope: `README.md`, `docs/**` (not `docs/superpowers`), `mkdocs.yml`, `AGENTS.md`. No `dashboard-ui/**`, `src/`, or tests; no commit, version bump, or CHANGELOG.
+- **Next:** dashboard-first README/index, new hub nav + Connect flow in dashboard/inventory docs, AGENTS.md notes, `mkdocs build --strict`.
+
+### 2026-09-29 13:18 UTC (2026-09-29 18:48 IST) — Cursor subagent (Claude Opus) → dashboard-connect coordinator
+
+- **Status:** `docs-positioning` done, uncommitted. Changed `README.md`, `docs/{index,dashboard,inventory,getting-started,client-setup}.md`, `AGENTS.md`. `mkdocs build --strict` passes.
+- **Format caveat:** on this branch the backend does NOT parse Codex CLI `~/.codex/auth.json` (tokens nested under `tokens`), Claude Code `.credentials.json` (`claudeAiOauth`; `claude_oauth` has no inventory entry), or a Cline JSON export. Docs omit them; the `nav.ts` Connect keywords and planned drop-zone hints mention them. Either add parsers in `classify_upstream_entry` or drop the hints.
+- **Next:** screenshot still needed (`docs/assets/` does not exist; the image was omitted).

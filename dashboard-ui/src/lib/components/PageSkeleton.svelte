@@ -25,8 +25,7 @@
     'settings'
   ]);
 
-  $: inventoryForm =
-    section === 'inventory' && (pathname.endsWith('/add') || pathname.endsWith('/import'));
+  $: inventoryForm = section === 'inventory' && /\/connect(\/restore)?\/?$/.test(pathname);
   $: statCount = statSections.has(section) && !inventoryForm ? 4 : 0;
   $: showSecondaryPanel = !inventoryForm && !singlePanelSections.has(section);
 </script>

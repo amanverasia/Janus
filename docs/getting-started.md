@@ -39,7 +39,10 @@ Generate a default config file:
 janus config-init
 ```
 
-This creates `~/.janus/config.yaml`. Edit it to add your API keys:
+This creates `~/.janus/config.yaml`. It only needs to exist: the easiest way to
+add credentials is the dashboard's **Connect** screen (see
+[Open the dashboard](#open-the-dashboard) below). For file-based or headless
+setup, add providers to the YAML instead:
 
 ```yaml
 server:
@@ -94,9 +97,33 @@ curl http://localhost:20128/v1/health
 
 The root URL `/` redirects to the Cloudline dashboard at `/dashboard/ui`.
 
+## Open the dashboard
+
+The dashboard always requires a Janus API key, including on localhost. Create
+your first one (the full `sk-janus-...` value is shown once):
+
+```bash
+janus keys create --name admin
+```
+
+Then run `janus dashboard` (or visit `http://localhost:20128/dashboard/ui`) and
+sign in with that key.
+
+1. **Home** shows a three-step checklist while setup is incomplete: connect
+   credentials, create a client key, and send a first request.
+2. **Connect** takes pasted API keys or dropped credential files, previews them
+   with masked values, and imports the new ones with **Make these routable** on.
+   See [Key Inventory — Connect](inventory.md#connect-paste-or-drop-credentials).
+3. The **Your endpoint** card on Home shows your base URL and a copyable `curl`
+   snippet. **Settings → Tools** has per-client setup for Claude Code, Codex,
+   Cursor, and Cline.
+
+See [Dashboard](dashboard.md) for every section and tab.
+
 ## Your First Request
 
-Send an OpenAI-format request to Janus:
+Send an OpenAI-format request to Janus. If **Require API key** is on, add
+`-H "Authorization: Bearer sk-janus-yourkey"`:
 
 ```bash
 curl http://localhost:20128/v1/chat/completions \

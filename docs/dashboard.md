@@ -52,82 +52,113 @@ Accepted auth methods (same as the API):
 
 ## Navigation
 
-Cloudline's responsive sidebar groups its primary screens into three sections.
-On narrow viewports it becomes a drawer, and the command palette (`Ctrl+K`,
-`Cmd+K`, or `/`) can open any screen directly.
+The sidebar has six sections. Selecting a section opens its first tab, and a tab
+strip under the page header switches between the section's pages. Every tab is a
+real link with its own URL under `/dashboard/ui`, so back/forward navigation,
+deep links, and bookmarks work as before. A section stays highlighted in the
+sidebar while any of its tabs is open. On narrow viewports the sidebar becomes a
+drawer, and the command palette (`Ctrl+K`, `Cmd+K`, or `/`) opens any tab
+directly.
 
-| Section | Pages |
-|---|---|
-| **Observe** | Overview, Usage, Analytics, Leaderboard, Request Logs |
-| **Route** | Inventory, Providers, Combos, Routing, Token Savers |
-| **Manage** | Budgets, API Keys, Tools, Pricing, Settings |
+| Section | Tab | URL |
+|---|---|---|
+| **Home** | Overview | `/dashboard/ui` |
+| **Connect** | Keys and logins | `/dashboard/ui/connect` |
+| | Restore backup | `/dashboard/ui/connect/restore` |
+| **Inventory** | Overview | `/dashboard/ui/inventory` |
+| | Keys | `/dashboard/ui/inventory/keys` |
+| **Routing** | Providers | `/dashboard/ui/providers` |
+| | Models | `/dashboard/ui/models` |
+| | Combos | `/dashboard/ui/combos` |
+| | Health | `/dashboard/ui/routing` |
+| | Token savers | `/dashboard/ui/savers` |
+| **Usage** | Live | `/dashboard/ui/usage` |
+| | Analytics | `/dashboard/ui/analytics` |
+| | Leaderboard | `/dashboard/ui/leaderboard` |
+| | Request logs | `/dashboard/ui/request-logs` |
+| **Settings** | General | `/dashboard/ui/settings` |
+| | API keys | `/dashboard/ui/keys` |
+| | Budgets | `/dashboard/ui/budgets` |
+| | Pricing | `/dashboard/ui/pricing` |
+| | Tools | `/dashboard/ui/tools` |
 
-Inventory adds dedicated All Keys, Add Keys, and Import JSON screens. Cloudline
-uses real deep links under `/dashboard/ui`, so browser navigation and bookmarks
-work normally. The theme control cycles through system, light, and dark modes
-and stores the preference in the browser.
+The former inventory URLs `/dashboard/ui/inventory/add` and
+`/dashboard/ui/inventory/import` redirect to **Connect → Keys and logins** and
+**Connect → Restore backup**. The theme control cycles through system, light,
+and dark modes and stores the preference in the browser.
 
 ---
 
-## Observe
+## Home
 
 ### Overview — `/dashboard/ui`
 
-Summary landing page:
+![Home overview with endpoint card and setup checklist](assets/dashboard-overview.png)
 
-- Total requests, input/output tokens
-- Provider and combo counts
-- Today's total cost
-- Global budget status bar
+The landing page.
 
-### Usage — `/dashboard/ui/usage`
+- **First-run checklist.** While setup is incomplete, a hero card lists three
+  steps: **Connect credentials**, **Create a client key**, and **Send a first
+  request**. Each step links to the screen that does it and is checked off once
+  Janus sees a provider, an active client key, and a recorded request.
+- **Your endpoint.** The API base URL for this server (for example
+  `http://localhost:20128/v1`) and a copyable `curl` snippet for a first request.
+  **Settings → Tools** has per-client setup.
+- Below that: total requests, input/output tokens, provider and combo counts,
+  today's total cost, and the global budget status bar.
 
-- Live in-flight request count and recent gateway events
-- Historical request volume, token use, and cost
-- Automatic live-stream reconnection after transient disconnects
+## Connect
 
-### Analytics — `/dashboard/ui/analytics`
+### Keys and logins — `/dashboard/ui/connect`
 
-- Spend trajectory for 7, 30, 90, or 365 days
-- Breakdown by model, provider, account, or client key
-- Request, token, cost, and success-rate summaries
+![Connect preview showing masked keys grouped by provider](assets/dashboard-connect.png)
 
-### Leaderboard — `/dashboard/ui/leaderboard`
+One screen for adding upstream credentials:
 
-- Rank clients by tokens, cost, or requests
-- Compare request volume, success rate, token use, and cost
+1. **Paste or drop.** Paste API keys (one per line) or a credential JSON export
+   into the text area, or drop files onto the drop zone. Dropped files are read
+   in the browser; nothing is uploaded until you preview.
+2. **Choose options.** The provider selector defaults to **Auto** (detect the
+   provider for each entry). Auto recognizes Codex CLI `auth.json`, 9router
+   `providerConnections` exports, Cline, Antigravity, and Kiro credential JSON
+   (see [Supported credential formats](inventory.md#supported-credential-formats));
+   choose the provider yourself for a bare OAuth access token. Claude Code
+   logins belong under **Routing → Providers** as Claude OAuth. **Advanced** holds an optional
+   custom base URL. **Make these routable** is on by default; it creates the
+   matching routing provider when one is missing, so imported credentials join
+   fallback rotation once they validate.
+3. **Preview.** Janus calls `POST /dashboard/api/inventory/preview` and shows
+   summary chips per provider (for example "Codex ×2, Groq ×1, 1 duplicate,
+   1 unsupported"), then a table of masked entries. Each entry is **new**,
+   **exists** (already in the inventory), or **rejected** with a reason. The
+   preview never writes to the database.
+4. **Import.** Import is enabled once at least one entry is new. It submits
+   through the regular inventory submit endpoint, shows per-entry results, and
+   refreshes while validation is still pending. Next-step buttons lead to
+   **Inventory**, **Settings → API keys**, and a test request.
 
-### Request Logs — `/dashboard/ui/request-logs`
+Credential values are masked throughout and rendered as text only. See
+[Key Inventory — Supported credential formats](inventory.md#supported-credential-formats)
+for what can be pasted.
 
-Debug view of captured API requests (**off by default** — enable **Request
-Logging** under Settings, or set `server_request_logging=true`):
+### Restore backup — `/dashboard/ui/connect/restore`
 
-- Paginated table of recent requests: time, model, provider, status, and latency
-- Per-request JSON detail (full request/response bodies, truncated at 64 KB)
-- Successful completions (stream + non-stream), exhausted fallbacks (`503`), and
-  non-fallback upstream errors (e.g. `400`) are recorded when logging is on
-- Export all logs as JSON; Clear button wipes the table
-- Retention is **configurable** via `server_request_log_retention` (default
-  `500`, clamped between 50 and 5000) on the Settings page — oldest rows
-  beyond the limit are pruned automatically
+Import a **Dashboard_For_Apis** JSON export (from another Janus node or a
+compatible key manager) into the inventory.
 
-The table also has a **User** column. It shows the DB-issued key name,
-the configured static-key label (`client_key_label`), or `—` when an API request
-was allowed without a client key.
+## Inventory
 
-If the page is empty, logging is almost always still disabled — check the banner
-and the Settings toggle.
+### Overview — `/dashboard/ui/inventory`
 
-!!! warning "Sensitive content"
-    Captured bodies contain prompts and completions. Leave request logging off
-    unless actively debugging.
+Credit summary, provider cards, best keys, recent activity, and encryption
+status.
 
-## Route
+### Keys — `/dashboard/ui/inventory/keys`
 
-### Key Inventory — `/dashboard/ui/inventory`
+Filterable, paginated key list with per-key recheck, reveal, history, and
+delete. See [Key Inventory](inventory.md) for full documentation.
 
-Upstream key management — overview, key list, add, import, encryption status.
-See [Key Inventory](inventory.md) for full documentation.
+## Routing
 
 ### Providers — `/dashboard/ui/providers`
 
@@ -151,6 +182,12 @@ When editing, leave the API key field **blank** to preserve the existing key.
 
 Changes hot-reload — no server restart needed.
 
+### Models — `/dashboard/ui/models`
+
+Choose which models appear in the shared Janus catalog and `GET /v1/models`, and
+add custom models to a provider prefix. Hidden models remain callable by exact
+ID.
+
 ### Combos — `/dashboard/ui/combos`
 
 Full CRUD for fallback chains:
@@ -158,14 +195,16 @@ Full CRUD for fallback chains:
 - **Create / Edit** — name and ordered model list
 - **Delete** — remove combo
 
-### Routing — `/dashboard/ui/routing`
+### Health — `/dashboard/ui/routing`
+
+![Routing hub with section tabs on the Health page](assets/dashboard-routing-tabs.png)
 
 - Enabled provider and account readiness at a glance
 - Current account strategy and try order
 - Active cooldowns with remaining duration
 - Quota-deprioritized accounts and a guarded clear-cooldowns action
 
-### Token Savers — `/dashboard/ui/savers`
+### Token savers — `/dashboard/ui/savers`
 
 Toggle savers at runtime:
 
@@ -176,42 +215,53 @@ Toggle savers at runtime:
 
 Settings are stored in the DB and take effect immediately.
 
-## Manage
+## Usage
 
-### Budgets — `/dashboard/ui/budgets`
+### Live — `/dashboard/ui/usage`
 
-- **Budget list** — scope (global or key name), daily limit, spent today,
-  absolute lifetime limit, spent total, warning threshold, and status (`ok` / `warning` / `exceeded`)
-- **Create/edit** — select a scope, enter a daily limit, an absolute limit for a specific
-  key, or both, and choose a warning percentage. Absolute limits never reset and include past usage.
-- **Delete** — remove both limits without deleting the key or its spending history
+- Live in-flight request count and recent gateway events
+- Historical request volume, token use, and cost
+- Automatic live-stream reconnection after transient disconnects
 
-### API Keys — `/dashboard/ui/keys`
+### Analytics — `/dashboard/ui/analytics`
 
-- **Key list** — ID, prefix, name, login permission, model allowlist, status (active/revoked)
-- **Create** — modal with **Allow dashboard login**, allowed models (`exact` or
-  `prefix/*`), and daily/absolute budgets; full `sk-janus-...` key shown **once**
-- **Edit** — update name, dashboard access, models, or either budget; blank budget fields remove their limits
-- **Revoke** — deactivate key
+- Spend trajectory for 7, 30, 90, or 365 days
+- Breakdown by model, provider, account, or client key
+- Request, token, cost, and success-rate summaries
 
-### Tools — `/dashboard/ui/tools`
+### Leaderboard — `/dashboard/ui/leaderboard`
 
-Copy-paste environment variable cards for:
+- Rank clients by tokens, cost, or requests
+- Compare request volume, success rate, token use, and cost
 
-- Claude Code
-- Codex
-- Cursor
-- Cline
+### Request logs — `/dashboard/ui/request-logs`
 
-Each card shows the exact `export` commands for your server URL and auth settings.
+Debug view of captured API requests (**off by default** — enable **Request
+Logging** under Settings → General, or set `server_request_logging=true`):
 
-### Pricing — `/dashboard/ui/pricing`
+- Paginated table of recent requests: time, model, provider, status, and latency
+- Per-request JSON detail (full request/response bodies, truncated at 64 KB)
+- Successful completions (stream + non-stream), exhausted fallbacks (`503`), and
+  non-fallback upstream errors (e.g. `400`) are recorded when logging is on
+- Export all logs as JSON; Clear button wipes the table
+- Retention is **configurable** via `server_request_log_retention` (default
+  `500`, clamped between 50 and 5000) on the Settings page — oldest rows
+  beyond the limit are pruned automatically
 
-- View all ~28 builtin model prices
-- **Add / Edit / Delete** custom pricing overrides
-- Overrides merge with builtins at request recording time
+The table also has a **User** column. It shows the DB-issued key name,
+the configured static-key label (`client_key_label`), or `—` when an API request
+was allowed without a client key.
 
-### Settings — `/dashboard/ui/settings`
+If the page is empty, logging is almost always still disabled — check the banner
+and the Settings toggle.
+
+!!! warning "Sensitive content"
+    Captured bodies contain prompts and completions. Leave request logging off
+    unless actively debugging.
+
+## Settings
+
+### General — `/dashboard/ui/settings`
 
 - **Require API key** — runtime toggle (stored in DB, overrides YAML default)
 - **Enable account cooldowns** — when on (default), accounts that hit 429/5xx/auth/network
@@ -231,12 +281,45 @@ are validated server-side, and reset wipes the relevant DB state before
 re-seeding from `config.yaml`.
 
 Settings does not contain a dashboard username or password. Dashboard identity
-and access are API-key based, and **API Keys** is the place to grant or revoke
+and access are API-key based, and **Settings → API keys** is the place to grant or revoke
 **Allow dashboard login**. Any legacy username/password settings are purged at
 database initialization.
 
-On **Routing**, use **Clear all cooldowns** to wipe active in-memory and SQLite
+On **Routing → Health**, use **Clear all cooldowns** to wipe active in-memory and SQLite
 cooldown timers without changing the enable toggle.
+
+### API keys — `/dashboard/ui/keys`
+
+- **Key list** — ID, prefix, name, login permission, model allowlist, status (active/revoked)
+- **Create** — modal with **Allow dashboard login**, allowed models (`exact` or
+  `prefix/*`), and daily/absolute budgets; full `sk-janus-...` key shown **once**
+- **Edit** — update name, dashboard access, models, or either budget; blank budget fields remove their limits
+- **Revoke** — deactivate key
+
+### Budgets — `/dashboard/ui/budgets`
+
+- **Budget list** — scope (global or key name), daily limit, spent today,
+  absolute lifetime limit, spent total, warning threshold, and status (`ok` / `warning` / `exceeded`)
+- **Create/edit** — select a scope, enter a daily limit, an absolute limit for a specific
+  key, or both, and choose a warning percentage. Absolute limits never reset and include past usage.
+- **Delete** — remove both limits without deleting the key or its spending history
+
+### Pricing — `/dashboard/ui/pricing`
+
+- View all ~28 builtin model prices
+- **Add / Edit / Delete** custom pricing overrides
+- Overrides merge with builtins at request recording time
+
+### Tools — `/dashboard/ui/tools`
+
+Copy-paste environment variable cards for:
+
+- Claude Code
+- Codex
+- Cursor
+- Cline
+
+Each card shows the exact `export` commands for your server URL and auth settings.
 
 ---
 
@@ -326,7 +409,14 @@ See [Budgets](budgets.md) for setup examples and enforcement details.
 
 ### Inventory
 
-See [Key Inventory — Push API](inventory.md#push-api) for `POST /dashboard/api/inventory/push`.
+| Method | Path | Action |
+|---|---|---|
+| `POST` | `/dashboard/api/inventory/preview` | Classify pasted keys or credential JSON without storing them (masked, no database writes) |
+| `POST` | `/dashboard/api/inventory/submit` | Add keys to the inventory (used by **Connect** with `provision_routing=true`) |
+
+See [Key Inventory — Preview API](inventory.md#preview-api) for the preview
+response, and [Key Inventory — Push API](inventory.md#push-api) for
+`POST /dashboard/api/inventory/push`.
 
 Former page routes under `/dashboard` are compatibility redirects to matching
 screen names under `/dashboard/ui`; API routes remain under `/dashboard/api`.

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Browser regression suite for the dashboard SPA (#110).
 
-Extends the route smoke with interaction coverage: back/forward navigation,
-filters, server-side pagination, a reversible CRUD mutation, and empty-state
-rendering, plus a no-secret DOM scan across every route. Drives a real
+Extends the route smoke with interaction coverage: hub section tabs, legacy
+redirects, back/forward navigation, filters, server-side pagination, a
+reversible CRUD mutation, empty-state rendering, and a Connect preview that
+must not import or echo the pasted credential, plus a no-secret DOM scan
+across every route. Drives a real
 Playwright browser against a running Janus server.
 
 Environment:
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+import secrets
 import sys
 import time
 from collections.abc import Callable
@@ -36,8 +39,8 @@ ROUTES: list[tuple[str, str]] = [
     ("/dashboard/ui/request-logs", "Request logs"),
     ("/dashboard/ui/inventory", "Inventory"),
     ("/dashboard/ui/inventory/keys", "Inventory keys"),
-    ("/dashboard/ui/inventory/add", "Add inventory"),
-    ("/dashboard/ui/inventory/import", "Import inventory"),
+    ("/dashboard/ui/connect", "Connect"),
+    ("/dashboard/ui/connect/restore", "Restore backup"),
     ("/dashboard/ui/providers", "Providers"),
     ("/dashboard/ui/models", "Models"),
     ("/dashboard/ui/combos", "Combos"),
@@ -48,6 +51,25 @@ ROUTES: list[tuple[str, str]] = [
     ("/dashboard/ui/tools", "Tools"),
     ("/dashboard/ui/pricing", "Pricing"),
     ("/dashboard/ui/settings", "Settings"),
+]
+
+HUB_TABS: list[tuple[str, str, list[str]]] = [
+    ("/dashboard/ui/connect", "Connect", ["Keys and logins", "Restore backup"]),
+    ("/dashboard/ui/inventory", "Inventory", ["Overview", "Keys"]),
+    (
+        "/dashboard/ui/providers",
+        "Routing",
+        ["Providers", "Models", "Combos", "Health", "Token savers"],
+    ),
+    ("/dashboard/ui/usage", "Usage", ["Live", "Analytics", "Leaderboard", "Request logs"]),
+    ("/dashboard/ui/settings", "Settings", ["General", "API keys", "Budgets", "Pricing", "Tools"]),
+]
+
+LEGACY_REDIRECTS: list[tuple[str, str]] = [
+    ("/dashboard/inventory/add", "/dashboard/ui/connect"),
+    ("/dashboard/inventory/import", "/dashboard/ui/connect/restore"),
+    ("/dashboard/ui/inventory/add", "/dashboard/ui/connect"),
+    ("/dashboard/ui/inventory/import", "/dashboard/ui/connect/restore"),
 ]
 
 LOGIN_WAIT_MS = 15_000
@@ -118,6 +140,78 @@ def scenario_render_and_no_leak(page: Page) -> list[str]:
                     print(f"  render {path} ({label}) in {elapsed}ms")
         except Exception as exc:  # noqa: BLE001 - report every route failure
             failures.append(f"{path}: {type(exc).__name__}: {exc}")
+    return failures
+
+
+def scenario_hub_tabs(page: Page) -> list[str]:
+    failures: list[str] = []
+    for path, hub, expected in HUB_TABS:
+        try:
+            _visit(page, path)
+            tabs = page.locator(f"nav.section-tabs[aria-label='{hub} sections'] a")
+            tabs.first.wait_for(state="visible", timeout=ROUTE_WAIT_MS)
+            labels = [label.strip() for label in tabs.all_inner_texts()]
+            if labels != expected:
+                failures.append(f"{hub} tabs: expected {expected}, got {labels}")
+                continue
+            target = tabs.nth(len(expected) - 1)
+            href = target.get_attribute("href") or ""
+            target.click()
+            page.wait_for_url(f"**{href}", timeout=ROUTE_WAIT_MS)
+            if target.get_attribute("aria-current") != "page":
+                failures.append(f"{hub} tabs: {expected[-1]} not marked current after click")
+            else:
+                print(f"  hub {hub}: {len(expected)} tabs OK")
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{hub} tabs: {type(exc).__name__}: {exc}")
+    return failures
+
+
+def scenario_legacy_redirects(page: Page) -> list[str]:
+    failures: list[str] = []
+    for legacy, target in LEGACY_REDIRECTS:
+        try:
+            _visit(page, legacy)
+            page.wait_for_url(f"**{target}", timeout=ROUTE_WAIT_MS)
+            print(f"  redirect {legacy} -> {target} OK")
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"redirect {legacy}: landed on {page.url} ({type(exc).__name__})")
+    return failures
+
+
+def _inventory_total(page: Page) -> int:
+    response = page.request.get(f"{BASE_URL}/dashboard/api/inventory/keys?limit=1")
+    if not response.ok:
+        raise RuntimeError(f"inventory keys API returned {response.status}")
+    return int(response.json()["total"])
+
+
+def scenario_connect_preview_without_import(page: Page) -> list[str]:
+    """Pasting a key previews it masked, never imports it, never echoes it."""
+    failures: list[str] = []
+    raw_key = f"gsk_regression{secrets.token_hex(20)}"
+    try:
+        before = _inventory_total(page)
+        _visit(page, "/dashboard/ui/connect")
+        page.fill("#connect-keys", raw_key)
+        chips = page.locator("ul.summary-chips[aria-label='What Janus found']")
+        chips.wait_for(state="visible", timeout=ROUTE_WAIT_MS)
+        if "Groq" not in chips.inner_text():
+            failures.append(f"connect preview chips missing Groq: {chips.inner_text()!r}")
+        if raw_key in page.content() or raw_key in page.locator(".preview").inner_text():
+            failures.append("connect preview echoed the raw key into the DOM")
+        import_button = page.locator("button.primary:has-text('Import')")
+        if import_button.count() == 0 or not import_button.first.is_enabled():
+            failures.append("connect preview did not enable Import for a new key")
+        page.fill("#connect-keys", "")
+        page.wait_for_timeout(500)
+        after = _inventory_total(page)
+        if after != before:
+            failures.append(f"connect preview wrote to inventory ({before} -> {after} keys)")
+        if not failures:
+            print("  connect preview (no import, no echo) OK")
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"connect preview: {type(exc).__name__}: {exc}")
     return failures
 
 
@@ -257,6 +351,9 @@ def scenario_pricing_override_crud(page: Page) -> list[str]:
 
 SCENARIOS: list[tuple[str, Callable[[Page], list[str]]]] = [
     ("render + no-secret DOM", scenario_render_and_no_leak),
+    ("hub section tabs", scenario_hub_tabs),
+    ("legacy redirects", scenario_legacy_redirects),
+    ("connect preview without import", scenario_connect_preview_without_import),
     ("back/forward navigation", scenario_back_forward_navigation),
     ("filter + empty state", scenario_filter_and_empty_state),
     ("pagination", scenario_pagination),

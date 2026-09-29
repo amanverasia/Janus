@@ -9,7 +9,8 @@
   import AnalyticsPage from '$lib/pages/AnalyticsPage.svelte';
   import BudgetsPage from '$lib/pages/BudgetsPage.svelte';
   import CombosPage from '$lib/pages/CombosPage.svelte';
-  import InventoryAddPage from '$lib/pages/InventoryAddPage.svelte';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  import ConnectPage from '$lib/pages/ConnectPage.svelte';
   import InventoryImportPage from '$lib/pages/InventoryImportPage.svelte';
   import InventoryKeysPage from '$lib/pages/InventoryKeysPage.svelte';
   import InventoryOverviewPage from '$lib/pages/InventoryOverviewPage.svelte';
@@ -27,7 +28,7 @@
   import UsagePage from '$lib/pages/UsagePage.svelte';
   import { getState, getHealth, mutate } from '$lib/api';
   import { object } from '$lib/data';
-  import { routeFor, type NavItem } from '$lib/nav';
+  import { hubFor, legacyRedirect, pageTitle, routeFor, type NavItem } from '$lib/nav';
   import type { AlertItem, HealthState, JsonObject, MutationOptions, ToastItem } from '$lib/types';
 
   type CachedView = { data: JsonObject; alerts: AlertItem[] };
@@ -55,6 +56,7 @@
   const latestPathCache = new Map<string, CachedView>();
 
   $: busy = loading || mutationCount > 0;
+  $: activeHub = hubFor(active.href);
   $: healthAgeMs = healthAt ? nowTs - healthAt : Infinity;
 
   async function refreshHealth() {
@@ -122,6 +124,14 @@
     request = controller;
     loading = true;
     error = '';
+    const redirect = legacyRedirect(window.location.pathname);
+    if (redirect) {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${redirect}${window.location.search}${window.location.hash}`
+      );
+    }
     const nextPathname = window.location.pathname.replace(/\/+$/, '') || '/dashboard/ui';
     const nextRoute = routeFor(window.location.pathname);
     const viewKey = `${nextPathname}${window.location.search}`;
@@ -149,7 +159,8 @@
       if (controller.signal.aborted || request !== controller) return;
       const message =
         caught instanceof Error ? caught.message : 'The dashboard could not be loaded.';
-      if (cached) notify(`Couldn’t refresh ${active.label.toLowerCase()}: ${message}`, 'error');
+      if (cached)
+        notify(`Couldn’t refresh ${pageTitle(active).toLowerCase()}: ${message}`, 'error');
       else error = message;
     } finally {
       if (request === controller) {
@@ -253,8 +264,9 @@
   on:refresh={load}
   on:logout={logout}
 >
+  <SectionTabs hub={activeHub} {active} {navigate} />
   {#if loading && !hasView}
-    <PageSkeleton label={active.label.toLowerCase()} section={active.section} {pathname} />
+    <PageSkeleton label={pageTitle(active).toLowerCase()} section={active.section} {pathname} />
   {:else if error && !hasView}
     <section class="error-state" role="alert">
       <Icon name="warning" size={26} />
@@ -276,9 +288,9 @@
       <RequestLogsPage {data} {action} {navigateQuery} />
     {:else if active.section === 'inventory-keys'}
       <InventoryKeysPage {data} {action} {navigate} {navigateQuery} />
-    {:else if active.section === 'inventory' && pathname.endsWith('/add')}
-      <InventoryAddPage {data} {action} {navigate} />
-    {:else if active.section === 'inventory' && pathname.endsWith('/import')}
+    {:else if active.href === '/dashboard/ui/connect'}
+      <ConnectPage {data} {action} {navigate} />
+    {:else if active.href === '/dashboard/ui/connect/restore'}
       <InventoryImportPage {data} {action} {navigate} />
     {:else if active.section === 'inventory'}
       <InventoryOverviewPage {data} {action} {navigate} />

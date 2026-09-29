@@ -65,4 +65,5 @@ def test_tools_examples_are_authentication_aware() -> None:
     assert "require_api_key" in source
     assert "API key required" in source
     assert "No API key required" in source
-    assert "$JANUS_API_KEY" in source
+    assert "curlSnippet(base, requireKey)" in source
+    assert "$JANUS_API_KEY" in _read("lib/snippets.ts")
