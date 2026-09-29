@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from janus.dashboard.routes import _reject_unsafe_url
 
 
@@ -35,9 +37,15 @@ def test_invalid_url_rejected():
     assert resp.status_code == 400
 
 
-def test_unresolvable_hostname_is_allowed_and_fails_later_at_connect():
-    # DNS failure must not 400 here; the probe surfaces it as a connect error.
-    assert _check("https://no-such-host.invalid/v1") is None
+async def test_unresolvable_hostname_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def raise_oserror(*args: object, **kwargs: object) -> list[object]:
+        raise OSError("name resolution failed")
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "getaddrinfo", raise_oserror)
+    resp = await _reject_unsafe_url("https://no-such-host.invalid/v1")
+    assert resp is not None
+    assert resp.status_code == 400
 
 
 def test_dns_resolution_does_not_block_the_event_loop(monkeypatch):

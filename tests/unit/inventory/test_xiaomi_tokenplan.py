@@ -14,6 +14,7 @@ from janus.inventory.xiaomi_tokenplan import (
 )
 from janus.storage.database import init_db
 from janus.storage.upstream_keys import get_upstream_key
+from tests.fixtures.url_mock import mocked_route
 
 
 def test_tokenplan_region_order() -> None:
@@ -26,13 +27,13 @@ def test_tokenplan_region_order() -> None:
 async def test_validate_tokenplan_tries_regions_until_auth() -> None:
     sgp = TOKENPLAN_REGIONS["sgp"] + "/models"
     cn = TOKENPLAN_REGIONS["cn"] + "/models"
-    respx.get(sgp).mock(return_value=httpx.Response(401, json={"error": "nope"}))
-    respx.get(cn).mock(
+    mocked_route("GET", sgp).mock(return_value=httpx.Response(401, json={"error": "nope"}))
+    mocked_route("GET", cn).mock(
         return_value=httpx.Response(
             200, json={"data": [{"id": "mimo-v2.5-pro", "object": "model"}]}
         )
     )
-    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(
+    mocked_route("GET", TOKENPLAN_REGIONS["ams"] + "/models").mock(
         return_value=httpx.Response(401, json={"error": "nope"})
     )
     result = await validate_key("tp-cn-key-xxxxxxxx", TOKENPLAN_PROVIDER_ID, skip_probe=True)
@@ -46,9 +47,9 @@ async def test_validate_tokenplan_tries_regions_until_auth() -> None:
 @respx.mock
 async def test_resolve_tp_key_never_returns_paygo_xiaomi() -> None:
     for base in TOKENPLAN_REGIONS.values():
-        respx.get(base + "/models").mock(return_value=httpx.Response(401, json={}))
+        mocked_route("GET", base + "/models").mock(return_value=httpx.Response(401, json={}))
     # even if paygo would accept (should not be tried)
-    respx.get("https://api.xiaomimimo.com/v1/models").mock(
+    mocked_route("GET", "https://api.xiaomimimo.com/v1/models").mock(
         return_value=httpx.Response(200, json={"data": []})
     )
     provider_id, meta = await resolve_provider_for_key("tp-dead-key-xxxxxxxx")
@@ -59,11 +60,15 @@ async def test_resolve_tp_key_never_returns_paygo_xiaomi() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_resolve_tp_key_returns_region_metadata() -> None:
-    respx.get(TOKENPLAN_REGIONS["sgp"] + "/models").mock(return_value=httpx.Response(401, json={}))
-    respx.get(TOKENPLAN_REGIONS["cn"] + "/models").mock(
+    mocked_route("GET", TOKENPLAN_REGIONS["sgp"] + "/models").mock(
+        return_value=httpx.Response(401, json={})
+    )
+    mocked_route("GET", TOKENPLAN_REGIONS["cn"] + "/models").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "mimo-v2.5"}]})
     )
-    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(return_value=httpx.Response(401, json={}))
+    mocked_route("GET", TOKENPLAN_REGIONS["ams"] + "/models").mock(
+        return_value=httpx.Response(401, json={})
+    )
     provider_id, meta = await resolve_provider_for_key("tp-cn-working-keyxxxx")
     assert provider_id == TOKENPLAN_PROVIDER_ID
     assert meta is not None
@@ -76,11 +81,15 @@ async def test_resolve_tp_key_returns_region_metadata() -> None:
 async def test_ingest_persists_tokenplan_region(tmp_path) -> None:
     db = tmp_path / "t.db"
     await init_db(db)
-    respx.get(TOKENPLAN_REGIONS["sgp"] + "/models").mock(return_value=httpx.Response(401, json={}))
-    respx.get(TOKENPLAN_REGIONS["cn"] + "/models").mock(
+    mocked_route("GET", TOKENPLAN_REGIONS["sgp"] + "/models").mock(
+        return_value=httpx.Response(401, json={})
+    )
+    mocked_route("GET", TOKENPLAN_REGIONS["cn"] + "/models").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "mimo-v2.5"}]})
     )
-    respx.get(TOKENPLAN_REGIONS["ams"] + "/models").mock(return_value=httpx.Response(401, json={}))
+    mocked_route("GET", TOKENPLAN_REGIONS["ams"] + "/models").mock(
+        return_value=httpx.Response(401, json={})
+    )
     result = await ingest_upstream_key(
         db,
         KeyIngestEntry(key="tp-cn-working-keyxxxx"),

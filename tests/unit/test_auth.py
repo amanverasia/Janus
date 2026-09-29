@@ -18,12 +18,14 @@ def _request(
     host: str | None = "127.0.0.1",
     config: JanusConfig | None = None,
     cookies: dict[str, str] | None = None,
+    path: str = "/v1/models",
 ) -> MagicMock:
     req = MagicMock()
     req.app.state.config = config or JanusConfig()
     req.app.state.db_path = config.server.data_dir / "janus.db" if config else MagicMock()
     req.state = MagicMock()
     req.cookies = cookies or {}
+    req.url.path = path
     if host is None:
         req.client = None
     else:
@@ -36,9 +38,13 @@ def test_extract_api_key_bearer() -> None:
     assert extract_api_key(req, "Bearer sk-test", "", "") == "sk-test"
 
 
-def test_extract_api_key_cookie() -> None:
+def test_extract_api_key_cookie_scoped_to_dashboard_paths() -> None:
     req = _request(cookies={"janus_dashboard_key": "sk-janus-abc"})
-    assert extract_api_key(req, "", "", "") == "sk-janus-abc"
+    assert extract_api_key(req, "", "", "") is None
+    dashboard_req = _request(
+        cookies={"janus_dashboard_key": "sk-janus-abc"}, path="/dashboard/keys"
+    )
+    assert extract_api_key(dashboard_req, "", "", "") == "sk-janus-abc"
 
 
 @pytest.mark.asyncio

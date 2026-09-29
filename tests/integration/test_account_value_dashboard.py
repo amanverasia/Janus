@@ -8,6 +8,7 @@ from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
 from janus.storage.upstream_keys import create_upstream_key, update_upstream_key
 from tests.fixtures.dashboard_auth import with_dashboard_auth
+from tests.fixtures.url_mock import mocked_route
 
 _ZAI_QUOTA_PATH = "/api/monitor/usage/quota/limit"
 
@@ -55,7 +56,7 @@ async def _create_key(client: AsyncClient, provider_id: str, key_value: str) -> 
 
 @respx.mock
 async def test_refresh_account_value_endpoint(client, app):
-    respx.get(f"https://open.bigmodel.cn{_ZAI_QUOTA_PATH}").mock(
+    mocked_route("GET", f"https://open.bigmodel.cn{_ZAI_QUOTA_PATH}").mock(
         return_value=Response(
             200,
             json={
@@ -93,7 +94,7 @@ async def test_refresh_account_value_unknown_key(client):
 
 @respx.mock
 async def test_inventory_overview_surfaces_worst_usage(client, app):
-    respx.get(f"https://open.bigmodel.cn{_ZAI_QUOTA_PATH}").mock(
+    mocked_route("GET", f"https://open.bigmodel.cn{_ZAI_QUOTA_PATH}").mock(
         return_value=Response(
             200,
             json={
@@ -122,7 +123,7 @@ async def test_inventory_overview_surfaces_worst_usage(client, app):
 
 @respx.mock
 async def test_quota_exhausted_alert_fires(client, app):
-    respx.get(f"https://open.bigmodel.cn{_ZAI_QUOTA_PATH}").mock(
+    mocked_route("GET", f"https://open.bigmodel.cn{_ZAI_QUOTA_PATH}").mock(
         return_value=Response(
             200,
             json={
@@ -151,15 +152,15 @@ async def test_quota_exhausted_alert_fires(client, app):
 
 @respx.mock
 async def test_key_check_runs_account_value_probe(client, app):
-    respx.get("https://openrouter.ai/api/v1/models").mock(
+    mocked_route("GET", "https://openrouter.ai/api/v1/models").mock(
         return_value=Response(200, json={"data": [{"id": "openai/gpt-4o"}]})
     )
-    respx.get("https://openrouter.ai/api/v1/key").mock(
+    mocked_route("GET", "https://openrouter.ai/api/v1/key").mock(
         return_value=Response(
             200, json={"data": {"limit": 50.0, "limit_remaining": 25.0, "usage": 25.0}}
         )
     )
-    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+    mocked_route("POST", "https://openrouter.ai/api/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
     key_id = await _create_key(client, "openrouter", "sk-or-v1-" + "c" * 40)
@@ -179,11 +180,11 @@ async def test_key_check_runs_account_value_probe(client, app):
 
 @respx.mock
 async def test_key_check_survives_probe_failure(client, app):
-    respx.get("https://openrouter.ai/api/v1/models").mock(
+    mocked_route("GET", "https://openrouter.ai/api/v1/models").mock(
         return_value=Response(200, json={"data": [{"id": "openai/gpt-4o"}]})
     )
-    respx.get("https://openrouter.ai/api/v1/key").mock(return_value=Response(503))
-    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+    mocked_route("GET", "https://openrouter.ai/api/v1/key").mock(return_value=Response(503))
+    mocked_route("POST", "https://openrouter.ai/api/v1/chat/completions").mock(
         return_value=Response(200, json={"id": "chatcmpl-test"})
     )
     key_id = await _create_key(client, "openrouter", "sk-or-v1-" + "d" * 40)

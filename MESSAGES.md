@@ -105,3 +105,8 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - **CI finding:** pytest reached 1,847 passed and exited after the session teardown hook. The migration smoke then held a pooled connection from `init_db()`; its standalone runner now closes pools in `finally`.
 - **Next:** final CI run will validate both process teardown paths before PR #229 can merge.
+
+### 2026-09-29 10:03 UTC (2026-09-29 15:33 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **Main update:** PR #231 merged the in-progress #196/#198 work and released 3.22.0. PR #229 now carries the next patch version, 3.22.1, while retaining its #212/#217 changes and the #231 updates.
+- **Status:** dashboard bundle rebuilt from the latest main sources; CI will rerun after the merge sync.

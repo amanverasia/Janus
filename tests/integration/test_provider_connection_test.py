@@ -1,5 +1,7 @@
 import asyncio
+import ipaddress
 import json
+import socket
 import time
 
 import httpx
@@ -14,6 +16,26 @@ AUTH_KEY = "dashboard-auth-secret"
 AUTH_HEADERS = {"Authorization": f"Bearer {AUTH_KEY}", "Accept": "application/json"}
 PROBE_URL = "https://provider.example/v1/chat/completions"
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def mock_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_getaddrinfo(
+        host: str,
+        port: object,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        del port, family, type, proto, flags
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            host = "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (host, 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 
 
 def _app(tmp_path, providers: list[ProviderConfig] | None = None):
