@@ -100,3 +100,8 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - **CI update:** browser regression passes after the CLI pool cleanup. Full pytest exceeded the latest main-branch baseline; added `pytest_sessionfinish` cleanup in `tests/conftest.py` so test-created pooled connections close at process teardown.
 - **Next:** latest commit will rerun the full checks; merge PR #229 only after all required checks pass.
+
+### 2026-09-29 09:54 UTC (2026-09-29 15:24 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **CI finding:** pytest reached 1,847 passed and exited after the session teardown hook. The migration smoke then held a pooled connection from `init_db()`; its standalone runner now closes pools in `finally`.
+- **Next:** final CI run will validate both process teardown paths before PR #229 can merge.

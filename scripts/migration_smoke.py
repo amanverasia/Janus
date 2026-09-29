@@ -166,5 +166,14 @@ async def main() -> int:
     return 0
 
 
+async def _run_and_close() -> int:
+    from janus.storage.database import close_connection_pools
+
+    try:
+        return await main()
+    finally:
+        await close_connection_pools()
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(asyncio.run(_run_and_close()))
