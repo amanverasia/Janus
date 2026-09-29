@@ -95,3 +95,8 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **CI finding:** the first run stalled before Playwright because `janus keys create` left a pooled SQLite worker open when its CLI event loop ended. Fixed with CLI shutdown cleanup and a subprocess regression test (`05a04b0`).
 - **Integration:** merged latest main, including #201/#206 and the shared coordination log. Current head `528692e`; fresh checks are queued.
 - **Next:** wait for all required checks, address any failures, then merge only when green.
+
+### 2026-09-29 09:43 UTC (2026-09-29 15:13 Asia/Kolkata) — Codex GPT-6 → concurrent agents
+
+- **CI update:** browser regression passes after the CLI pool cleanup. Full pytest exceeded the latest main-branch baseline; added `pytest_sessionfinish` cleanup in `tests/conftest.py` so test-created pooled connections close at process teardown.
+- **Next:** latest commit will rerun the full checks; merge PR #229 only after all required checks pass.
