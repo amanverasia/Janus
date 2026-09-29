@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.23.0] - 2026-09-29
+### Changed
+- **Tooling robustness** — the dashboard bundle staleness gate catches
+  file↔directory flips and content differences behind equal size+mtime; the
+  model-catalog generator strips comments string-aware (string values such as
+  URLs are no longer truncated) and validates the parsed catalog schema; the
+  OpenRouter pricing seeder skips and logs unparseable rates instead of
+  silently writing $0 overrides and gains `--prune` for stale overrides; the
+  migration smoke script no longer leaks temp dirs; the dashboard state size
+  test asserts real response statuses and uses a 5-second wall-clock budget to
+  stop CI flakes. (#221)
+- **Dashboard settings state no longer writes on read** — the settings state
+  GET skips the 15-upsert `ensure_server_defaults` seeding when defaults
+  already exist (response unchanged), and the custom-model migration
+  early-exits when its triggers are already in place instead of re-running a
+  full-scan + DDL rebuild on every startup. (#222)
+### Removed
+- **Dead code batch** — deleted the uncalled `SubmitRateLimiter.prune()`,
+  `is_sticky_client_key_routing_enabled()` (13 upserts per read),
+  `fetch_export_payload()` (bare `urlopen` without url_guard), dead
+  `if limit else` branches in the dashboard state API, and the unused
+  `accountStale`/`VALUE_STALE_MS` declarations in the inventory keys page.
+  `streaming/translator.py` (`translate_stream`) was removed outright — it
+  duplicated the production cross-format path (`_streaming_generator` in
+  `api/routes.py`), which `docs/architecture.md` now describes accurately.
+  (#222)
+
 ## [3.22.1] - 2026-09-29
 ### Changed
 - **Bounded SQLite concurrency and connection reuse** — enable WAL and a five-second
