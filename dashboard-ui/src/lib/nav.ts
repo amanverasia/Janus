@@ -14,124 +14,180 @@ export type IconName =
   | 'tag'
   | 'settings'
   | 'layers'
-  | 'plus';
+  | 'plus'
+  | 'upload';
 
 export interface NavItem {
   label: string;
   href: string;
   icon: IconName;
   section: string;
+  title?: string;
   keywords?: string;
 }
 
-export interface NavGroup {
+export interface NavHub {
   label: string;
-  items: NavItem[];
+  icon: IconName;
+  href: string;
+  tabs: NavItem[];
 }
 
-export const navGroups: NavGroup[] = [
+const UI = '/dashboard/ui';
+
+export const navHubs: NavHub[] = [
   {
-    label: 'Observe',
-    items: [
-      { label: 'Overview', href: '/dashboard/ui', icon: 'home', section: 'overview' },
+    label: 'Home',
+    icon: 'home',
+    href: UI,
+    tabs: [{ label: 'Overview', href: UI, icon: 'home', section: 'overview', title: 'Overview' }]
+  },
+  {
+    label: 'Connect',
+    icon: 'plug',
+    href: `${UI}/connect`,
+    tabs: [
       {
-        label: 'Usage',
-        href: '/dashboard/ui/usage',
-        icon: 'pulse',
-        section: 'usage',
-        keywords: 'live traffic tokens'
+        label: 'Keys and logins',
+        href: `${UI}/connect`,
+        icon: 'plus',
+        section: 'inventory',
+        title: 'Connect',
+        keywords: 'add credentials api keys auth.json codex claude cline antigravity paste drop'
       },
-      { label: 'Analytics', href: '/dashboard/ui/analytics', icon: 'chart', section: 'analytics' },
       {
-        label: 'Leaderboard',
-        href: '/dashboard/ui/leaderboard',
-        icon: 'trophy',
-        section: 'leaderboard'
-      },
-      {
-        label: 'Request logs',
-        href: '/dashboard/ui/request-logs',
-        icon: 'logs',
-        section: 'request-logs'
+        label: 'Restore backup',
+        href: `${UI}/connect/restore`,
+        icon: 'upload',
+        section: 'inventory',
+        title: 'Restore backup',
+        keywords: 'import json export restore inventory'
       }
     ]
   },
   {
-    label: 'Route',
-    items: [
+    label: 'Inventory',
+    icon: 'vault',
+    href: `${UI}/inventory`,
+    tabs: [
       {
-        label: 'Inventory',
-        href: '/dashboard/ui/inventory',
+        label: 'Overview',
+        href: `${UI}/inventory`,
         icon: 'vault',
         section: 'inventory',
-        keywords: 'accounts credentials'
+        title: 'Inventory',
+        keywords: 'accounts credentials capacity'
       },
-      { label: 'Providers', href: '/dashboard/ui/providers', icon: 'plug', section: 'providers' },
+      {
+        label: 'Keys',
+        href: `${UI}/inventory/keys`,
+        icon: 'key',
+        section: 'inventory-keys',
+        title: 'Inventory keys',
+        keywords: 'accounts credentials upstream'
+      }
+    ]
+  },
+  {
+    label: 'Routing',
+    icon: 'route',
+    href: `${UI}/providers`,
+    tabs: [
+      { label: 'Providers', href: `${UI}/providers`, icon: 'plug', section: 'providers' },
       {
         label: 'Models',
-        href: '/dashboard/ui/models',
+        href: `${UI}/models`,
         icon: 'layers',
         section: 'models',
         keywords: 'catalog visibility discovery custom'
       },
       {
         label: 'Combos',
-        href: '/dashboard/ui/combos',
+        href: `${UI}/combos`,
         icon: 'layers',
         section: 'combos',
         keywords: 'fallback models'
       },
-      { label: 'Routing', href: '/dashboard/ui/routing', icon: 'route', section: 'routing' },
-      { label: 'Token savers', href: '/dashboard/ui/savers', icon: 'spark', section: 'savers' }
+      {
+        label: 'Health',
+        href: `${UI}/routing`,
+        icon: 'route',
+        section: 'routing',
+        title: 'Routing health',
+        keywords: 'cooldowns attempts routing'
+      },
+      { label: 'Token savers', href: `${UI}/savers`, icon: 'spark', section: 'savers' }
     ]
   },
   {
-    label: 'Manage',
-    items: [
-      { label: 'Budgets', href: '/dashboard/ui/budgets', icon: 'wallet', section: 'budgets' },
-      { label: 'API keys', href: '/dashboard/ui/keys', icon: 'key', section: 'keys' },
-      { label: 'Tools', href: '/dashboard/ui/tools', icon: 'tool', section: 'tools' },
-      { label: 'Pricing', href: '/dashboard/ui/pricing', icon: 'tag', section: 'pricing' },
-      { label: 'Settings', href: '/dashboard/ui/settings', icon: 'settings', section: 'settings' }
+    label: 'Usage',
+    icon: 'pulse',
+    href: `${UI}/usage`,
+    tabs: [
+      {
+        label: 'Live',
+        href: `${UI}/usage`,
+        icon: 'pulse',
+        section: 'usage',
+        title: 'Live usage',
+        keywords: 'live traffic tokens'
+      },
+      { label: 'Analytics', href: `${UI}/analytics`, icon: 'chart', section: 'analytics' },
+      { label: 'Leaderboard', href: `${UI}/leaderboard`, icon: 'trophy', section: 'leaderboard' },
+      { label: 'Request logs', href: `${UI}/request-logs`, icon: 'logs', section: 'request-logs' }
+    ]
+  },
+  {
+    label: 'Settings',
+    icon: 'settings',
+    href: `${UI}/settings`,
+    tabs: [
+      {
+        label: 'General',
+        href: `${UI}/settings`,
+        icon: 'settings',
+        section: 'settings',
+        title: 'Settings'
+      },
+      {
+        label: 'API keys',
+        href: `${UI}/keys`,
+        icon: 'key',
+        section: 'keys',
+        keywords: 'client keys janus'
+      },
+      { label: 'Budgets', href: `${UI}/budgets`, icon: 'wallet', section: 'budgets' },
+      { label: 'Pricing', href: `${UI}/pricing`, icon: 'tag', section: 'pricing' },
+      { label: 'Tools', href: `${UI}/tools`, icon: 'tool', section: 'tools', keywords: 'sdk curl' }
     ]
   }
 ];
 
-export const allNavItems = navGroups.flatMap((group) => group.items);
-export const commandItems: NavItem[] = [
-  ...allNavItems,
-  {
-    label: 'Inventory keys',
-    href: '/dashboard/ui/inventory/keys',
-    icon: 'key',
-    section: 'inventory-keys',
-    keywords: 'accounts credentials upstream'
-  },
-  {
-    label: 'Add inventory keys',
-    href: '/dashboard/ui/inventory/add',
-    icon: 'plus',
-    section: 'inventory',
-    keywords: 'credential provider'
-  },
-  {
-    label: 'Import inventory',
-    href: '/dashboard/ui/inventory/import',
-    icon: 'vault',
-    section: 'inventory',
-    keywords: 'json restore credentials'
-  }
-];
+export const allNavItems: NavItem[] = navHubs.flatMap((hub) => hub.tabs);
+
+export const commandItems: NavItem[] = navHubs.flatMap((hub) =>
+  hub.tabs.map((tab) => ({
+    ...tab,
+    label: tab.title ?? tab.label,
+    keywords: [hub.label, tab.label, tab.keywords].filter(Boolean).join(' ')
+  }))
+);
+
+const LEGACY_REDIRECTS: Record<string, string> = {
+  [`${UI}/inventory/add`]: `${UI}/connect`,
+  [`${UI}/inventory/import`]: `${UI}/connect/restore`
+};
+
+function normalize(pathname: string): string {
+  return pathname.length > 1 ? pathname.replace(/\/+$/, '') || '/' : pathname;
+}
+
+export function legacyRedirect(pathname: string): string | null {
+  return LEGACY_REDIRECTS[normalize(pathname)] ?? null;
+}
 
 export function routeFor(pathname: string): NavItem {
-  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  if (normalized === '/dashboard/ui') return allNavItems[0];
-  if (normalized === '/dashboard/ui/inventory/keys')
-    return { label: 'Inventory keys', href: normalized, icon: 'key', section: 'inventory-keys' };
-  if (normalized === '/dashboard/ui/inventory/add')
-    return { label: 'Add inventory', href: normalized, icon: 'vault', section: 'inventory' };
-  if (normalized === '/dashboard/ui/inventory/import')
-    return { label: 'Import inventory', href: normalized, icon: 'vault', section: 'inventory' };
+  const normalized = legacyRedirect(pathname) ?? normalize(pathname);
   return (
     allNavItems.find((item) => normalized === item.href) ?? {
       label: 'Page not found',
@@ -140,4 +196,13 @@ export function routeFor(pathname: string): NavItem {
       section: 'not-found'
     }
   );
+}
+
+export function hubFor(pathname: string): NavHub | undefined {
+  const route = routeFor(pathname);
+  return navHubs.find((hub) => hub.tabs.some((tab) => tab.href === route.href));
+}
+
+export function pageTitle(item: NavItem): string {
+  return item.title ?? item.label;
 }

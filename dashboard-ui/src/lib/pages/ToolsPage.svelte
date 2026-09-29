@@ -3,14 +3,13 @@
   import Icon from '$lib/components/Icon.svelte';
   import { copyText } from '$lib/clipboard';
   import { bool, text } from '$lib/data';
+  import { curlSnippet } from '$lib/snippets';
   import type { JsonObject } from '$lib/types';
   export let data: JsonObject;
   let copied = '';
   $: base = text(data.base_url, `${location.origin}/v1`);
   $: requireKey = bool(data.require_api_key, true);
-  $: curlCommand = requireKey
-    ? `curl ${base}/chat/completions \\\n  -H "Authorization: Bearer $JANUS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "YOUR_MODEL", "messages": [{"role": "user", "content": "Hello"}]}'`
-    : `curl ${base}/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "YOUR_MODEL", "messages": [{"role": "user", "content": "Hello"}]}'`;
+  $: curlCommand = curlSnippet(base, requireKey);
   async function copy(value: string, label: string) {
     try {
       await copyText(value);

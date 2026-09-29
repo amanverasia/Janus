@@ -29,13 +29,6 @@
   $: encryptedCount = number(encryption.encrypted) + number(providerEncryption.encrypted);
   $: plaintextCount = number(encryption.plaintext) + number(providerEncryption.plaintext);
 
-  const tabs = [
-    { label: 'Overview', href: '/dashboard/ui/inventory' },
-    { label: 'All keys', href: '/dashboard/ui/inventory/keys' },
-    { label: 'Add keys', href: '/dashboard/ui/inventory/add' },
-    { label: 'Import JSON', href: '/dashboard/ui/inventory/import' }
-  ];
-
   async function reveal(key: JsonObject) {
     const id = idOf(key);
     if (!id) return;
@@ -97,18 +90,10 @@
   >
     <Icon name="refresh" />Recheck all
   </button>
-  <button class="button primary" on:click={() => navigate('/dashboard/ui/inventory/add')}>
+  <button class="button primary" on:click={() => navigate('/dashboard/ui/connect')}>
     <Icon name="plus" />Add credentials
   </button>
 </PageHeader>
-
-<nav class="inventory-tabs" aria-label="Credential inventory sections">
-  {#each tabs as tab}
-    <button class:active={tab.label === 'Overview'} on:click={() => navigate(tab.href)}>
-      {tab.label}
-    </button>
-  {/each}
-</nav>
 
 <div class="stats-grid">
   <StatCard
@@ -279,7 +264,7 @@
         title="No inventory yet"
         message="Add upstream credentials to unlock account-aware routing."
       >
-        <button class="button primary" on:click={() => navigate('/dashboard/ui/inventory/add')}>
+        <button class="button primary" on:click={() => navigate('/dashboard/ui/connect')}>
           Add credentials
         </button>
       </EmptyState>
@@ -378,36 +363,6 @@
 </section>
 
 <style>
-  .inventory-tabs {
-    display: flex;
-    gap: 5px;
-    width: max-content;
-    max-width: 100%;
-    padding: 4px;
-    margin: -10px 0 22px;
-    border: 1px solid var(--line);
-    border-radius: 13px;
-    background: var(--surface);
-  }
-  .inventory-tabs button {
-    padding: 8px 13px;
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 680;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .inventory-tabs button:hover {
-    color: var(--text);
-    background: var(--surface-soft);
-  }
-  .inventory-tabs button.active {
-    color: var(--accent-strong);
-    background: var(--accent-soft);
-  }
   .security-card {
     display: flex;
     align-items: center;
@@ -684,10 +639,6 @@
     }
   }
   @media (max-width: 700px) {
-    .inventory-tabs {
-      width: 100%;
-      overflow-x: auto;
-    }
     .security-card {
       align-items: flex-start;
       flex-wrap: wrap;

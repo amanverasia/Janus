@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-29
+### Added
+- **Dashboard-first navigation** — the sidebar is now six hubs (Home, Connect,
+  Inventory, Routing, Usage, Settings) with section tabs; every page keeps its
+  own URL. Home gains a first-run checklist and a "Your endpoint" card.
+- **Connect** (`/dashboard/ui/connect`) — paste keys or drop login files, see a
+  masked per-provider preview (new / already stored / rejected), then import
+  with routing provisioned. Backed by the new
+  `POST /dashboard/api/inventory/preview`, which shares classification with
+  import, never writes, never returns secrets, and has its own rate limiter.
+  Restore backup moves to `/dashboard/ui/connect/restore`.
+- **More credential formats on Auto** — Codex CLI `~/.codex/auth.json`, Cline
+  exports (`"provider": "cline"` JSON, 9router `providerConnections` entries,
+  `workos:` tokens; refresh token kept), alongside Antigravity and Kiro JSON.
+  Claude Code `.credentials.json` is recognized and rejected with a pointer to
+  the Claude OAuth provider.
+
+### Changed
+- `/dashboard/inventory/add` and `/dashboard/inventory/import` redirect to
+  Connect and Restore backup.
+- The Restore backup "Export current inventory" button downloads via POST, as
+  required since #197 (the old GET link returned 405).
+
+### Fixed
+- **Preview and import could disagree on the provider** — distinctive key
+  prefixes (`gsk_`, `nvapi-`, `sk-ant-`, `sk-proj-`, …) are now authoritative
+  on both paths; generic `sk-` keys are identified by probing on import.
+- **Auto-detect assigned unknown keys to providers that accept any key** —
+  Venice, Vultr, SambaNova, Novita, NanoGPT, Synthetic, ZenMux, Kilo, Parallel
+  and local Ollama return 200 to any key on their health endpoint. Detection
+  now skips a provider that also accepts a random canary key.
+
 ## [3.26.1] - 2026-09-29
 
 - Security (#197): inventory credential exports (bulk export and per-key agent JSON) are POST-only with query-param auth rejected; unauthenticated dashboard API GETs return 401 instead of a login redirect reserved for HTML requests.

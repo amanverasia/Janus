@@ -170,7 +170,12 @@
               '/dashboard/ui/budgets'
             ];
             if (!statPaths.includes(path)) shell.dataset.compact = '';
-            if (path.endsWith('/inventory/add') || path.endsWith('/inventory/import')) {
+            if (
+              path.endsWith('/connect') ||
+              path.endsWith('/connect/restore') ||
+              path.endsWith('/inventory/add') ||
+              path.endsWith('/inventory/import')
+            ) {
               shell.dataset.form = '';
             }
           }

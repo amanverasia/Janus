@@ -6,6 +6,7 @@
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import { dashboardFetch } from '$lib/api';
+  import { downloadAttachment, downloadInventoryExport } from '$lib/download';
   import { compact, dateTime, firstList, idOf, list, money, number, object, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
@@ -61,13 +62,6 @@
   $: reclassifyMoves = reclassifyPreview ? list(reclassifyPreview.moved) : [];
   $: reclassifyRegionFixes = reclassifyPreview ? list(reclassifyPreview.region_fixed) : [];
   $: reclassifyChangeCount = reclassifyMoves.length + reclassifyRegionFixes.length;
-
-  const tabs = [
-    { label: 'Overview', href: '/dashboard/ui/inventory' },
-    { label: 'All keys', href: '/dashboard/ui/inventory/keys' },
-    { label: 'Add keys', href: '/dashboard/ui/inventory/add' },
-    { label: 'Import JSON', href: '/dashboard/ui/inventory/import' }
-  ];
 
   onMount(() => {
     syncQueryState();
@@ -307,30 +301,10 @@
     if (revealedDetail) await copyText(revealedDetail);
   }
 
-  async function downloadAttachment(url: string, init: RequestInit, fallbackName: string) {
-    const response = await dashboardFetch(url, {
-      credentials: 'same-origin',
-      cache: 'no-store',
-      ...init
-    });
-    if (!response.ok) throw new Error(`Download failed (${response.status})`);
-    const disposition = response.headers.get('content-disposition') ?? '';
-    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName;
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(await response.blob());
-    link.download = filename;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(link.href));
-  }
-
   async function exportKeys() {
     exporting = true;
     try {
-      await downloadAttachment(
-        '/dashboard/api/inventory/export',
-        { method: 'POST', headers: { Accept: 'application/json' } },
-        'janus-inventory-export.json'
-      );
+      await downloadInventoryExport();
     } finally {
       exporting = false;
     }
@@ -412,19 +386,10 @@
   <button class="button" disabled={reclassifying} on:click={previewReclassification}>
     <Icon name="search" />{reclassifying ? 'Scanning…' : 'Re-identify'}
   </button>
-  <button class="button primary" on:click={() => navigate('/dashboard/ui/inventory/add')}>
+  <button class="button primary" on:click={() => navigate('/dashboard/ui/connect')}>
     <Icon name="plus" />Add keys
   </button>
 </PageHeader>
-
-<nav class="inventory-tabs" aria-label="Credential inventory sections">
-  {#each tabs as tab}<button
-      class:active={tab.label === 'All keys'}
-      on:click={() => navigate(tab.href)}
-    >
-      {tab.label}
-    </button>{/each}
-</nav>
 
 {#if reclassifyPreview}
   <section class="reclassify-panel" aria-live="polite">
@@ -789,7 +754,7 @@
       title="No credentials match"
       message="Change the current filters or add a new upstream account."
     >
-      <button class="button primary" on:click={() => navigate('/dashboard/ui/inventory/add')}>
+      <button class="button primary" on:click={() => navigate('/dashboard/ui/connect')}>
         Add credentials
       </button>
     </EmptyState>
@@ -938,36 +903,6 @@
 </Modal>
 
 <style>
-  .inventory-tabs {
-    display: flex;
-    gap: 5px;
-    width: max-content;
-    max-width: 100%;
-    padding: 4px;
-    margin: -10px 0 22px;
-    border: 1px solid var(--line);
-    border-radius: 13px;
-    background: var(--surface);
-  }
-  .inventory-tabs button {
-    padding: 8px 13px;
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 680;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .inventory-tabs button:hover {
-    color: var(--text);
-    background: var(--surface-soft);
-  }
-  .inventory-tabs button.active {
-    color: var(--accent-strong);
-    background: var(--accent-soft);
-  }
   .reclassify-panel {
     display: flex;
     align-items: flex-start;
@@ -1464,10 +1399,6 @@
     }
     .reclassify-actions {
       margin-top: 12px;
-    }
-    .inventory-tabs {
-      width: 100%;
-      overflow-x: auto;
     }
     .inventory-toolbar label:not(.search-field) {
       flex: 1;

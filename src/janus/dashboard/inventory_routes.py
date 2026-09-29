@@ -10,6 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from janus.background import spawn_background
@@ -21,7 +22,15 @@ from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
 from janus.inventory.account_value import refresh_account_value
 from janus.inventory.catalog import get_inventory_providers
-from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
+from janus.inventory.ingestion import (
+    CLAUDE_CODE_UNSUPPORTED_ERROR,
+    UNSUPPORTED_FORMAT_ERROR,
+    KeyIngestEntry,
+    classify_upstream_entry,
+    detect_credential_json_provider,
+    enforce_batch_size,
+    ingest_upstream_key,
+)
 from janus.inventory.key_checker import (
     check_all_upstream_keys,
     check_upstream_key,
@@ -34,7 +43,7 @@ from janus.inventory.migrate import (
     import_dashboard_json_with_ids,
     verify_inventory,
 )
-from janus.inventory.rate_limit import get_submit_rate_limiter
+from janus.inventory.rate_limit import SubmitRateLimiter, get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 from janus.inventory.reclassify import reclassify_upstream_keys
 from janus.routing.provider_provision import ensure_routing_providers
@@ -70,6 +79,13 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _SAFE_FILENAME_PART = re.compile(r"[A-Za-z0-9._-]+")
+MAX_PREVIEW_BYTES = 1024 * 1024
+_MAX_PREVIEW_FORM_BYTES = 4 * MAX_PREVIEW_BYTES
+_preview_rate_limiter = SubmitRateLimiter()
+
+
+def get_preview_rate_limiter() -> SubmitRateLimiter:
+    return _preview_rate_limiter
 
 
 def _safe_filename_part(value: str, field: str) -> str:
@@ -143,6 +159,8 @@ def _safe_ingest_error(value: Any) -> str | None:
     if not isinstance(value, str) or not value:
         return None
     lowered = value.lower()
+    if value in {UNSUPPORTED_FORMAT_ERROR, CLAUDE_CODE_UNSUPPORTED_ERROR}:
+        return value
     if "too short" in lowered:
         return "Credential is too short."
     if "too long" in lowered:
@@ -183,22 +201,63 @@ def _safe_submit_result(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _is_multi_account_paste(data: Any) -> bool:
+    return isinstance(data, list) or (
+        isinstance(data, dict) and isinstance(data.get("providerConnections"), list)
+    )
+
+
+def _connection_label(data: dict[str, Any]) -> str:
+    for key in ("name", "email"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _single_blob_label(data: Any) -> str:
+    if not isinstance(data, dict) or detect_credential_json_provider(data) not in {
+        "codex",
+        "cline",
+    }:
+        return ""
+    return _connection_label(data)
+
+
+def _cline_connections(data: Any) -> list[dict[str, str]]:
+    items = data.get("providerConnections") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    return [
+        {"label": _connection_label(item), "key": json.dumps(item), "provider": "cline"}
+        for item in items
+        if isinstance(item, dict) and detect_credential_json_provider(item) == "cline"
+    ]
+
+
 def _parse_bulk_keys(raw: str) -> list[dict[str, str]]:
     text = raw.strip()
     if text.startswith("{") or text.startswith("["):
         try:
-            from janus.inventory.codex_credentials import expand_codex_paste
-
-            expanded = expand_codex_paste(text)
-            if expanded:
-                return [{"label": e.get("label") or "", "key": e["key"]} for e in expanded]
-        except ValueError:
-            pass
-        try:
-            json.loads(text)
-            return [{"label": "", "key": text}]
+            data = json.loads(text)
         except json.JSONDecodeError:
-            pass
+            data = None
+        else:
+            if _is_multi_account_paste(data):
+                entries_found: list[dict[str, str]] = []
+                try:
+                    from janus.inventory.codex_credentials import expand_codex_paste
+
+                    entries_found = [
+                        {"label": e.get("label") or "", "key": e["key"], "provider": "codex"}
+                        for e in expand_codex_paste(text)
+                    ]
+                except ValueError:
+                    pass
+                entries_found.extend(_cline_connections(data))
+                if entries_found:
+                    return entries_found
+            return [{"label": _single_blob_label(data), "key": text}]
     entries: list[dict[str, str]] = []
     for line in raw.splitlines():
         line = line.strip()
@@ -216,6 +275,114 @@ async def _encryption_context(db_path: Path) -> dict[str, Any]:
     }
 
 
+def _ingest_entries(keys_text: str, provider_id: str) -> list[KeyIngestEntry]:
+    auto = provider_id in {"", "auto"}
+    return [
+        KeyIngestEntry(
+            key=entry["key"],
+            label=entry.get("label") or None,
+            provider=entry.get("provider") if auto else None,
+        )
+        for entry in _parse_bulk_keys(keys_text)
+    ]
+
+
+def _preview_result(item: dict[str, Any]) -> dict[str, Any]:
+    rejected = item["status"] == "rejected"
+    return {
+        "key_masked": "****" if rejected else str(item["key_masked"]),
+        "label": str(item.get("label") or ""),
+        "provider_id": None if rejected else item.get("provider_id"),
+        "provider_display_name": None if rejected else item.get("provider_display_name"),
+        "format": item["format"],
+        "status": item["status"],
+        "error": _safe_ingest_error(item.get("error")) if rejected else None,
+    }
+
+
+def _preview_by_provider(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for item in results:
+        if item["status"] != "new":
+            continue
+        provider_id = item["provider_id"] or "unidentified"
+        group = groups.setdefault(
+            provider_id,
+            {
+                "provider_id": provider_id,
+                "provider_display_name": item["provider_display_name"] or "Unidentified",
+                "count": 0,
+            },
+        )
+        group["count"] += 1
+    return sorted(groups.values(), key=lambda g: (-g["count"], g["provider_display_name"]))
+
+
+async def _read_preview_form(request: Request) -> tuple[str, str] | JSONResponse:
+    too_large = _json_error("Input is too large (max 1 MiB).", status_code=422)
+    try:
+        declared_length = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        declared_length = 0
+    if declared_length > _MAX_PREVIEW_FORM_BYTES:
+        return too_large
+    try:
+        form = await request.form(max_fields=8, max_part_size=_MAX_PREVIEW_FORM_BYTES)
+    except StarletteHTTPException:
+        return too_large
+    keys_text = form.get("keys_text")
+    provider_id = form.get("provider_id") or "auto"
+    if not isinstance(keys_text, str) or not isinstance(provider_id, str):
+        return _json_error("keys_text is required.", status_code=422)
+    if len(keys_text.encode("utf-8")) > MAX_PREVIEW_BYTES:
+        return too_large
+    return keys_text, provider_id
+
+
+@router.post("/api/inventory/preview", response_model=None)
+async def api_inventory_preview(request: Request) -> Response:
+    parsed = await _read_preview_form(request)
+    if isinstance(parsed, JSONResponse):
+        return parsed
+    keys_text, provider_id = parsed
+    db_path = await _ensure_db(request)
+    entries = _ingest_entries(keys_text, provider_id)
+    batch_error = enforce_batch_size(len(entries))
+    if batch_error:
+        return _json_error(batch_error, status_code=422)
+    if not entries:
+        return _json_error("No credentials found in input.", status_code=422)
+
+    limiter = get_preview_rate_limiter()
+    if not limiter.allow(_client_id(request), len(entries)):
+        error = f"Rate limited. Max {limiter.limit} credentials per minute."
+        return _json_error(error, status_code=429)
+
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        classification = await classify_upstream_entry(db_path, entry, provider_id or "auto")
+        if classification.status == "new" and classification.key_value in seen:
+            classification.status = "exists"
+        if classification.key_value:
+            seen.add(classification.key_value)
+        results.append(_preview_result(classification.public()))
+
+    new_count = sum(item["status"] == "new" for item in results)
+    exists_count = sum(item["status"] == "exists" for item in results)
+    rejected_count = sum(item["status"] == "rejected" for item in results)
+    payload: dict[str, Any] = {
+        "ok": rejected_count == 0,
+        "processed_count": len(results),
+        "new_count": new_count,
+        "exists_count": exists_count,
+        "rejected_count": rejected_count,
+        "by_provider": _preview_by_provider(results),
+        "results": results,
+    }
+    return JSONResponse(payload, headers=_NO_STORE_HEADERS)
+
+
 @router.post("/api/inventory/submit", response_model=None)
 async def api_inventory_submit(
     request: Request,
@@ -225,7 +392,7 @@ async def api_inventory_submit(
     provision_routing: str = Form("false"),
 ) -> Response:
     db_path = await _ensure_db(request)
-    entries = [KeyIngestEntry(key=entry["key"]) for entry in _parse_bulk_keys(keys_text)]
+    entries = _ingest_entries(keys_text, provider_id)
     batch_error = enforce_batch_size(len(entries))
     if batch_error:
         return _json_error(batch_error, status_code=422)

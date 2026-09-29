@@ -67,7 +67,7 @@
 </script>
 
 <PageHeader
-  title="Routing"
+  title="Routing health"
   description="See how Janus distributes attempts, applies cooldowns, and protects upstream capacity."
 >
   <button class="button" disabled={!cooldowns.length || clearing} on:click={clearCooldowns}>

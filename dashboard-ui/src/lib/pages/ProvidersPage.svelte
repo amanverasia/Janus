@@ -929,15 +929,15 @@
               </a>
               <a
                 class="button"
-                href="/dashboard/ui/inventory/add"
-                on:click|preventDefault={() => navigate('/dashboard/ui/inventory/add')}
+                href="/dashboard/ui/connect"
+                on:click|preventDefault={() => navigate('/dashboard/ui/connect')}
               >
                 Add credentials
               </a>
               <a
                 class="button ghost"
-                href="/dashboard/ui/inventory/import"
-                on:click|preventDefault={() => navigate('/dashboard/ui/inventory/import')}
+                href="/dashboard/ui/connect/restore"
+                on:click|preventDefault={() => navigate('/dashboard/ui/connect/restore')}
               >
                 Import JSON
               </a>
@@ -1296,16 +1296,15 @@
               <div class="provider-account-links">
                 <a
                   class="button"
-                  href="/dashboard/ui/inventory/add"
-                  on:click|preventDefault={() => navigateFromModal('/dashboard/ui/inventory/add')}
+                  href="/dashboard/ui/connect"
+                  on:click|preventDefault={() => navigateFromModal('/dashboard/ui/connect')}
                 >
                   Add credentials
                 </a>
                 <a
                   class="button ghost"
-                  href="/dashboard/ui/inventory/import"
-                  on:click|preventDefault={() =>
-                    navigateFromModal('/dashboard/ui/inventory/import')}
+                  href="/dashboard/ui/connect/restore"
+                  on:click|preventDefault={() => navigateFromModal('/dashboard/ui/connect/restore')}
                 >
                   Import JSON
                 </a>
@@ -1378,15 +1377,15 @@
             <div class="provider-account-links">
               <a
                 class="button"
-                href="/dashboard/ui/inventory/add"
-                on:click|preventDefault={() => navigateFromModal('/dashboard/ui/inventory/add')}
+                href="/dashboard/ui/connect"
+                on:click|preventDefault={() => navigateFromModal('/dashboard/ui/connect')}
               >
                 Add exported credential
               </a>
               <a
                 class="button ghost"
-                href="/dashboard/ui/inventory/import"
-                on:click|preventDefault={() => navigateFromModal('/dashboard/ui/inventory/import')}
+                href="/dashboard/ui/connect/restore"
+                on:click|preventDefault={() => navigateFromModal('/dashboard/ui/connect/restore')}
               >
                 Import JSON
               </a>

@@ -11,6 +11,7 @@ at the WorkOS user-management authenticate endpoint.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -32,6 +33,37 @@ def _strip_workos_prefix(token: str) -> str:
 def credential_value(access_token: str) -> str:
     """Return the key_value form Cline expects (``workos:`` prefixed)."""
     return access_token if access_token.startswith("workos:") else f"workos:{access_token}"
+
+
+def _first_str(data: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def normalize_cline_credential(raw: str) -> tuple[str, dict[str, Any] | None]:
+    text = raw.strip()
+    if not text.startswith("{"):
+        return credential_value(text), None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Invalid Cline credential JSON") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Cline credential JSON must be an object")
+    access = _first_str(data, "accessToken", "access_token", "token", "apiKey", "api_key")
+    if not access:
+        raise ValueError("Cline credential missing access token")
+    metadata: dict[str, Any] = {}
+    refresh = _first_str(data, "refreshToken", "refresh_token")
+    if refresh:
+        metadata["refresh_token"] = refresh
+    email = _first_str(data, "email")
+    if email:
+        metadata["email"] = email
+    return credential_value(access), metadata or None
 
 
 async def probe_cline(access_token: str, client: httpx.AsyncClient | None = None) -> int | None:

@@ -2,6 +2,7 @@
   import type { ValidatedMutationOptions } from '$lib/api';
   import Icon from '$lib/components/Icon.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import { downloadInventoryExport } from '$lib/download';
   import { compact, number, object, text } from '$lib/data';
   import type { JsonObject } from '$lib/types';
 
@@ -19,15 +20,22 @@
   let previewCount: number | undefined;
   let previewError = '';
   let importError = '';
+  let exporting = false;
+  let exportError = '';
+
+  async function exportInventory() {
+    exporting = true;
+    exportError = '';
+    try {
+      await downloadInventoryExport();
+    } catch (error) {
+      exportError = error instanceof Error ? error.message : 'Export failed.';
+    } finally {
+      exporting = false;
+    }
+  }
 
   $: summary = object(data.summary);
-
-  const tabs = [
-    { label: 'Overview', href: '/dashboard/ui/inventory' },
-    { label: 'All keys', href: '/dashboard/ui/inventory/keys' },
-    { label: 'Add keys', href: '/dashboard/ui/inventory/add' },
-    { label: 'Import JSON', href: '/dashboard/ui/inventory/import' }
-  ];
 
   const wrappedExample = `{
   "keys": [
@@ -146,22 +154,20 @@
 </script>
 
 <PageHeader
-  title="Import credentials"
+  title="Restore from a backup"
   description="Bring a JSON export from another Janus node or compatible key manager into this inventory."
 >
-  <a class="button" href="/dashboard/api/inventory/export" download>
-    <Icon name="download" />Export current inventory
-  </a>
+  <button type="button" class="button" disabled={exporting} on:click={exportInventory}>
+    <Icon name="download" />{exporting ? 'Exporting…' : 'Export current inventory'}
+  </button>
 </PageHeader>
-
-<nav class="inventory-tabs" aria-label="Credential inventory sections">
-  {#each tabs as tab}<button
-      class:active={tab.label === 'Import JSON'}
-      on:click={() => navigate(tab.href)}
-    >
-      {tab.label}
-    </button>{/each}
-</nav>
+{#if exportError}<div class="file-error" role="alert">
+    <Icon name="warning" size={16} />
+    <span>
+      <strong>Export failed</strong>
+      {exportError}
+    </span>
+  </div>{/if}
 
 {#if importedFilename}
   <section class="success-banner">
@@ -336,36 +342,6 @@
 </section>
 
 <style>
-  .inventory-tabs {
-    display: flex;
-    gap: 5px;
-    width: max-content;
-    max-width: 100%;
-    padding: 4px;
-    margin: -10px 0 22px;
-    border: 1px solid var(--line);
-    border-radius: 13px;
-    background: var(--surface);
-  }
-  .inventory-tabs button {
-    padding: 8px 13px;
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 680;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .inventory-tabs button:hover {
-    color: var(--text);
-    background: var(--surface-soft);
-  }
-  .inventory-tabs button.active {
-    color: var(--accent-strong);
-    background: var(--accent-soft);
-  }
   .success-banner {
     display: flex;
     align-items: center;
@@ -625,10 +601,6 @@
     }
   }
   @media (max-width: 650px) {
-    .inventory-tabs {
-      width: 100%;
-      overflow-x: auto;
-    }
     .success-banner {
       align-items: flex-start;
       flex-wrap: wrap;

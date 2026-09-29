@@ -4,7 +4,10 @@
   import MiniChart from '$lib/components/MiniChart.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
   import Icon from '$lib/components/Icon.svelte';
-  import { bool, compact, firstList, list, money, number, object, text } from '$lib/data';
+  import { onDestroy } from 'svelte';
+  import { copyText } from '$lib/clipboard';
+  import { bool, compact, firstList, money, number, object, text } from '$lib/data';
+  import { curlSnippet } from '$lib/snippets';
   import type { JsonObject } from '$lib/types';
   export let data: JsonObject;
   export let navigate: (href: string) => void;
@@ -18,6 +21,47 @@
   // Once every step is done the panel is permanent noise on a working gateway.
   $: checklistComplete =
     bool(checklist.has_providers) && bool(checklist.has_keys) && bool(checklist.has_requests);
+  $: hasChecklist = Object.keys(checklist).length > 0;
+  $: firstRun = hasChecklist && !checklistComplete;
+  $: base = text(data.base_url, `${location.origin}/v1`);
+  $: curlCommand = curlSnippet(base, true);
+  $: steps = [
+    {
+      title: 'Connect credentials',
+      detail: 'Paste an API key or drop a CLI login file.',
+      done: bool(checklist.has_providers),
+      href: '/dashboard/ui/connect',
+      cta: 'Open Connect'
+    },
+    {
+      title: 'Create a client key',
+      detail: 'Your apps use it to call Janus.',
+      done: bool(checklist.has_keys),
+      href: '/dashboard/ui/keys',
+      cta: 'Create key'
+    },
+    {
+      title: 'Send a first request',
+      detail: 'Use the test request above with your new key.',
+      done: bool(checklist.has_requests),
+      href: '/dashboard/ui/tools',
+      cta: 'More snippets'
+    }
+  ];
+  $: currentStep = steps.findIndex((step) => !step.done);
+  let copied = '';
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+  async function copy(value: string, label: string) {
+    try {
+      await copyText(value);
+      copied = label;
+    } catch {
+      copied = 'error';
+    }
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => (copied = ''), 1800);
+  }
+  onDestroy(() => clearTimeout(copyTimer));
   $: providerCount = number(data.provider_count ?? providers.length);
   $: cooldowns = number(data.cooldown_count);
   $: providerHealthTone = providerCount === 0 ? 'pending' : cooldowns > 0 ? 'warning' : 'active';
@@ -25,17 +69,61 @@
     providerCount === 0 ? 'No providers' : cooldowns > 0 ? 'Degraded' : 'Operational';
 </script>
 
-<PageHeader
-  title="Good to see you."
-  description="A clear view of traffic, spend, and routing health across your AI gateway."
->
+<PageHeader title="Overview">
   <button class="button" on:click={() => navigate('/dashboard/ui/usage')}>
-    <Icon name="pulse" />Live traffic
+    <Icon name="pulse" />Live usage
   </button>
-  <button class="button primary" on:click={() => navigate('/dashboard/ui/providers')}>
-    <Icon name="plus" />Add provider
+  <button class="button primary" on:click={() => navigate('/dashboard/ui/connect')}>
+    <Icon name="plus" />Connect credentials
   </button>
 </PageHeader>
+<section class="endpoint" class:first-run={firstRun} aria-labelledby="endpoint-heading">
+  <div class="endpoint-address">
+    <h2 id="endpoint-heading">
+      {firstRun ? 'Point your apps at this address' : 'Your endpoint'}
+    </h2>
+    <p class="endpoint-url"><code>{base}</code></p>
+    <div class="endpoint-actions">
+      <button class="button" on:click={() => copy(base, 'url')}>
+        <Icon name="copy" size={15} />{copied === 'url'
+          ? 'Copied'
+          : copied === 'error'
+            ? 'Copy failed'
+            : 'Copy address'}
+      </button>
+    </div>
+    <details class="endpoint-test" open={firstRun && currentStep === 2}>
+      <summary>Show a test request</summary>
+      <pre>{curlCommand}</pre>
+      <button class="button" on:click={() => copy(curlCommand, 'curl')}>
+        <Icon name="copy" size={15} />{copied === 'curl' ? 'Copied' : 'Copy command'}
+      </button>
+    </details>
+  </div>
+  {#if firstRun}
+    <ol class="setup-steps" aria-label="Get started">
+      {#each steps as step, index (step.title)}<li
+          class:done={step.done}
+          class:current={index === currentStep}
+        >
+          <span class="step-marker" aria-hidden="true">
+            {#if step.done}<Icon name="check" size={14} />{:else}{index + 1}{/if}
+          </span>
+          <div>
+            <h3>{step.title}</h3>
+            <p>{step.done ? 'Done' : step.detail}</p>
+            {#if !step.done}<a
+                class="button {index === currentStep ? 'primary' : ''}"
+                href={step.href}
+                on:click|preventDefault={() => navigate(step.href)}
+              >
+                {step.cta}
+              </a>{/if}
+          </div>
+        </li>{/each}
+    </ol>
+  {/if}
+</section>
 <div class="stats-grid">
   <StatCard
     label="Total requests"
@@ -135,44 +223,146 @@
     </div>
   </section>
 </div>
-{#if Object.keys(checklist).length && !checklistComplete}
-  <section class="panel" style="margin-top:18px">
-    <div class="panel-header">
-      <div>
-        <h2>Gateway readiness</h2>
-        <p>Complete the essentials, then send your first request.</p>
-      </div>
-    </div>
-    <div class="panel-body">
-      <div class="cards-grid">
-        <article class="item-card">
-          <header>
-            <h3>Connect a provider</h3>
-            <span class="status {bool(checklist.has_providers) ? 'active' : 'pending'}">
-              {bool(checklist.has_providers) ? 'Ready' : 'Next'}
-            </span>
-          </header>
-          <p>Add credentials for at least one upstream model provider.</p>
-        </article>
-        <article class="item-card">
-          <header>
-            <h3>Create a client key</h3>
-            <span class="status {bool(checklist.has_keys) ? 'active' : 'pending'}">
-              {bool(checklist.has_keys) ? 'Ready' : 'Waiting'}
-            </span>
-          </header>
-          <p>Issue a scoped Janus key for your application.</p>
-        </article>
-        <article class="item-card">
-          <header>
-            <h3>Route a request</h3>
-            <span class="status {bool(checklist.has_requests) ? 'active' : 'pending'}">
-              {bool(checklist.has_requests) ? 'Complete' : 'Waiting'}
-            </span>
-          </header>
-          <p>Use the OpenAI-compatible endpoint to test the gateway.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-{/if}
+
+<style>
+  .endpoint {
+    margin-bottom: var(--space-5);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  .endpoint-address {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--space-2) var(--space-5);
+    padding: var(--space-5) var(--space-5) var(--space-5) var(--space-5);
+  }
+  .endpoint h2 {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .endpoint-url {
+    min-width: 0;
+    margin: 0;
+  }
+  .endpoint-url code {
+    display: block;
+    overflow-wrap: anywhere;
+    color: var(--text);
+    font:
+      500 clamp(18px, 2vw, 24px) / 1.2 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    letter-spacing: -0.02em;
+  }
+  .first-run .endpoint-url code {
+    font-size: clamp(22px, 3.4vw, 40px);
+    letter-spacing: -0.035em;
+  }
+  .endpoint-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+  .endpoint-test {
+    grid-column: 1 / -1;
+  }
+  .endpoint-test summary {
+    width: max-content;
+    color: var(--accent-strong);
+    font-size: 13px;
+    font-weight: 620;
+    cursor: pointer;
+  }
+  .endpoint-test > .button {
+    margin-top: var(--space-1);
+  }
+  .endpoint-test pre {
+    margin: var(--space-3) 0 var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    overflow-x: auto;
+    font:
+      12px/1.6 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .setup-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+    list-style: none;
+  }
+  .setup-steps li {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5) var(--space-5);
+  }
+  .setup-steps li + li {
+    border-left: 1px solid var(--line);
+  }
+  .step-marker {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 50%;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .current .step-marker {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+  }
+  .done .step-marker {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .setup-steps h3 {
+    margin: 3px 0 2px;
+    font-size: 14px;
+  }
+  .done h3 {
+    color: var(--muted);
+  }
+  .setup-steps p {
+    margin: 0 0 var(--space-3);
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  @media (max-width: 900px) {
+    .endpoint-address {
+      grid-template-columns: 1fr;
+    }
+    .endpoint-actions {
+      justify-content: flex-start;
+    }
+    .setup-steps {
+      grid-template-columns: 1fr;
+    }
+    .setup-steps li + li {
+      border-left: 0;
+      border-top: 1px solid var(--line);
+    }
+  }
+</style>

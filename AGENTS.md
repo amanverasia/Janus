@@ -20,8 +20,8 @@
   `scripts/build_dashboard_ui.py --check`), docs build (strict), a SQLite
   migration smoke (`scripts/migration_smoke.py`), a browser regression job
   (`scripts/browser_regression.py` — drives Chromium against a running server
-  for every route, navigation, filters, pagination, a CRUD mutation, and a
-  no-secret DOM scan; needs `playwright` + `playwright install chromium`), and
+  for every route, sidebar-hub and section-tab navigation, filters, pagination, a
+  CRUD mutation, and a no-secret DOM scan; needs `playwright` + `playwright install chromium`), and
   a package job that builds distributions, validates metadata, and verifies the
   wheel ships the dashboard bundle. `publish.yml` runs the same suite via
   `workflow_call` before `twine check` gates the PyPI upload.
@@ -151,6 +151,28 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 - All UI and enforcement code labeled “today” must share the same configured timezone and calendar-day boundaries. A rolling 24-hour metric must be labeled “Last 24 hours.”
 - Dashboard API routes validate values and referenced row IDs server-side and return structured 400/422 responses; browser dropdown constraints are not sufficient validation.
 - Dashboard runtime assets should be served locally and included in wheels, sdists, and Docker images. Core dashboard rendering must not require public CDN access.
+
+## Dashboard navigation and Connect
+
+- The sidebar is six hubs defined by `navHubs` in `dashboard-ui/src/lib/nav.ts` (Home, Connect,
+ Inventory, Routing, Usage, Settings); each hub's `tabs` are the existing pages and keep their
+ URLs. `hubFor(pathname)` returns the hub owning a route; `routeFor` still returns the matched
+ tab, so state sections, `api.ts`, and contracts are unchanged. `commandItems` lists every tab.
+ Add a new page as a tab in the right hub, not as a new sidebar entry.
+- `SectionTabs.svelte` renders the active hub's tabs once in `routes/+page.svelte`; tabs are real
+ links through `navigate`, so deep links and back/forward keep working. Legacy URLs live in
+ `LEGACY_REDIRECTS` (`legacyRedirect()`): `/dashboard/ui/inventory/add` → `/dashboard/ui/connect`
+ and `/dashboard/ui/inventory/import` → `/dashboard/ui/connect/restore`.
+- Connect (`/dashboard/ui/connect`, section `inventory`) reads dropped files in the browser, calls
+ `POST /dashboard/api/inventory/preview` (masked, `no-store`, never writes the DB; statuses
+ `new`/`exists`/`rejected`), then imports through the existing `/dashboard/api/inventory/submit`
+ with `provision_routing=true` by default. Preview and ingest share `classify_upstream_entry` in
+ `inventory/ingestion.py` so they cannot drift; keep preview read-only and add new credential
+ formats there, not in the page. Document only formats that `inventory/*_credentials.py` and
+ `catalog.py` actually parse.
+- Home's first-run hero (3 steps) shows only while `overview.setup_checklist` is incomplete; it and
+ the "Your endpoint" card read the existing `overview` state (`setup_checklist`, `base_url`) —
+ do not add a state section for them.
 
 ## Dashboard lifecycle and responsiveness
 
