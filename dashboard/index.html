@@ -1818,8 +1818,14 @@ Dashboard management APIs remain under <code>/dashboard/api</code>.</p>
 clients on <code>127.0.0.1</code> and <code>localhost</code>. There is no loopback bypass and no
 username/password login. Unauthenticated browser requests are redirected to
 <code>/dashboard/login</code>, which sets an httponly
-<code>janus_dashboard_key</code> cookie (30-day max-age) and returns to the originally
-requested page. API-style requests without a valid key or cookie receive <code>401</code>.</p>
+<code>janus_dashboard_key</code> cookie (30-day max-age) scoped to the <code>/dashboard</code> path and
+returns to the originally requested page. The cookie carries the <code>Secure</code>
+attribute whenever the request arrives over HTTPS (behind a TLS-terminating
+reverse proxy, forward <code>X-Forwarded-Proto</code>); plain-HTTP local development gets a
+non-<code>Secure</code> cookie. The cookie is never accepted as a credential on <code>/v1/*</code> API
+endpoints. Repeated failed login attempts from one IP are temporarily locked out,
+and mutating dashboard requests whose <code>Origin</code> header differs from the request
+host are rejected. API-style requests without a valid key or cookie receive <code>401</code>.</p>
 <p>DB-managed keys must be active and have <strong>Allow dashboard login</strong>
 (<code>can_login=true</code>). Static API keys configured in YAML are also accepted. Manage
 DB-key access from <strong>API Keys</strong>; the <strong>Require API key</strong> setting controls API
