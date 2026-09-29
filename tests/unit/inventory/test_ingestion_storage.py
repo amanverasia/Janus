@@ -36,3 +36,16 @@ async def test_ingest_updates_unidentified_key(tmp_path):
     updated = await get_upstream_key(db_path, record["id"])
     assert updated is not None
     assert updated["provider_id"] == "openai"
+
+
+@pytest.mark.asyncio
+async def test_ingest_rejected_key_uses_standard_mask(tmp_path):
+    from janus.inventory.url_guard import mask_key
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key = "sk-proj-SECRETPREFIX" + "z" * 600
+    result = await ingest_upstream_key(db_path, KeyIngestEntry(key=key), chosen_provider="openai")
+    assert result["status"] == "rejected"
+    assert result["key_masked"] == mask_key(key)
+    assert key[:8] not in result["key_masked"]

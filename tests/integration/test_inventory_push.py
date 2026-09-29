@@ -40,3 +40,24 @@ async def test_push_registers_key(client):
     assert response.status_code == 201
     payload = response.json()
     assert payload["summary"]["registered"] == 1
+
+
+@pytest.mark.asyncio
+async def test_push_rejects_wrong_and_non_ascii_tokens(client):
+    for header in ("Bearer wrong-token", "Bearer tést-push-tökén", "Bearer ", "test-push-token"):
+        response = await client.post(
+            "/dashboard/api/inventory/push",
+            headers={"Authorization": header.encode("utf-8")},
+            json={"key": "sk-proj-" + "b" * 16, "provider": "openai"},
+        )
+        assert response.status_code == 401, header
+
+
+def test_push_token_uses_constant_time_comparison():
+    import inspect
+
+    from janus.inventory import push_auth
+
+    source = inspect.getsource(push_auth.require_inventory_push_token)
+    assert "compare_digest" in source
+    assert "token != expected" not in source

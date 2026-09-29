@@ -600,7 +600,7 @@ async def test_export_yaml_round_trips_provider_and_custom_model_state(client, a
         },
     )
     assert custom.status_code == 201
-    r = await client.get("/dashboard/api/export")
+    r = await client.get("/dashboard/api/export", params={"include_secrets": "true"})
     assert r.status_code == 200
     assert "text/yaml" in r.headers["content-type"]
     assert "janus-config.yaml" in r.headers["content-disposition"]
@@ -705,3 +705,34 @@ async def test_form_endpoints_reject_malformed_utf8_with_400(client, method, pat
 
     assert r.status_code == 400
     assert r.json() == {"detail": "Request body is not valid UTF-8 form data"}
+
+
+async def test_export_omits_provider_secrets_without_opt_in(client, caplog):
+    await client.post(
+        "/dashboard/api/providers",
+        data={
+            "id": "openai",
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "sk-export-secret-value",
+            "models": "gpt-4o",
+        },
+    )
+    for params in ({}, {"include_secrets": "false"}, {"include_secrets": "yes-please"}):
+        r = await client.get("/dashboard/api/export", params=params)
+        assert r.status_code == 200
+        assert "sk-export-secret-value" not in r.text
+        assert r.headers["x-content-type-options"] == "nosniff"
+        exported = yaml.safe_load(r.text)
+        provider = next(p for p in exported["providers"] if p["id"] == "openai")
+        assert "api_key" not in provider
+
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="janus.dashboard.routes"):
+        r = await client.get("/dashboard/api/export", params={"include_secrets": "true"})
+    assert r.status_code == 200
+    assert "sk-export-secret-value" in r.text
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("include_secrets" in message for message in messages)
+    assert all("sk-export-secret-value" not in message for message in messages)

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.24.1] - 2026-09-29
+### Security
+- **Dashboard/inventory hardening batch** — the inventory push token is compared
+  in constant time; masked and detail upstream-key projections no longer ship
+  the SHA-256 `key_hash`; inventory export and per-key JSON downloads return 422
+  for `provider_id`/`key_id` values outside `[A-Za-z0-9._-]` instead of
+  interpolating them into `Content-Disposition`; `GET /dashboard/api/export`
+  omits provider API keys unless `?include_secrets=true` is passed (the
+  Settings "Export secrets" button opts in, and each secret export is logged
+  without the secrets); v2 state responses send `X-Content-Type-Options:
+  nosniff`; rejected ingest entries echo the standard masked key instead of the
+  first 8 characters. (#199)
+### Fixed
+- **Healthy inventory keys no longer invalidated by upstream noise** —
+  non-integer `x-ratelimit-*` headers (`1,000`, `500.0`, `unlimited`) are parsed
+  leniently instead of flipping a key to invalid; Kiro 5xx responses, timeouts,
+  and network errors are `probe_inconclusive` rather than invalid; antigravity
+  onboarding polling is bounded to `FETCH_TIMEOUT` so it cannot monopolize a
+  recheck slot. (#205)
+
 ## [3.24.0] - 2026-09-29
 ### Added
 - **Optional detailed gateway health checks** — `GET /v1/health?details=true`

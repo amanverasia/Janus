@@ -109,7 +109,7 @@
     exporting = true;
     exportError = '';
     try {
-      const response = await dashboardFetch('/dashboard/api/export', {
+      const response = await dashboardFetch('/dashboard/api/export?include_secrets=true', {
         cache: 'no-store',
         headers: { Accept: 'text/yaml, application/yaml, text/plain' }
       });

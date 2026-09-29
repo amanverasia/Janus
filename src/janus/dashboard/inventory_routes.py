@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,16 @@ router = APIRouter(
 )
 logger = logging.getLogger(__name__)
 _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+_SAFE_FILENAME_PART = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def _safe_filename_part(value: str, field: str) -> str:
+    if not _SAFE_FILENAME_PART.fullmatch(value):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid {field}: only letters, digits, '.', '_' and '-' are allowed",
+        )
+    return value
 
 
 def _client_id(request: Request) -> str:
@@ -636,6 +647,8 @@ async def api_export_upstream_keys(
     request: Request,
     provider_id: str | None = None,
 ) -> JSONResponse:
+    if provider_id:
+        _safe_filename_part(provider_id, "provider_id")
     db_path = await _ensure_db(request)
     exported = await export_upstream_keys(db_path)
     if provider_id:
@@ -773,6 +786,7 @@ async def api_update_upstream_key_priority(
 
 @router.get("/api/inventory/keys/{key_id}/json")
 async def api_upstream_key_agent_json(request: Request, key_id: str) -> JSONResponse:
+    _safe_filename_part(key_id, "key_id")
     db_path = await _ensure_db(request)
     detail = await get_upstream_key_detail(db_path, key_id, include_secret=True)
     if detail is None:

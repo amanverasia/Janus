@@ -32,7 +32,9 @@ will not re-apply providers, combos, savers, or pricing.
 To manage runtime config:
 
 - Use the [dashboard](dashboard.md) — changes hot-reload immediately
-- **Export Config** (`GET /dashboard/api/export`) — download current DB state as YAML
+- **Export Config** (`GET /dashboard/api/export`) — download current DB state as YAML.
+  Provider API keys are omitted unless you pass `?include_secrets=true` (the Settings
+  page "Export secrets" button does this after a confirmation); secret exports are logged.
 - **Reset to Defaults** (Settings page) — wipe DB tables and re-seed from YAML
 
 Static `api_keys` in YAML are **not** seeded — they remain in the config file and

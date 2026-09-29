@@ -311,7 +311,7 @@ See [Budgets](budgets.md) for setup examples and enforcement details.
 | Method | Path | Action |
 |---|---|---|
 | `POST` | `/dashboard/api/settings` | Update runtime settings (savers, require_api_key, request logging) |
-| `GET` | `/dashboard/api/export` | Export DB config as a YAML download |
+| `GET` | `/dashboard/api/export` | Export DB config as a YAML download (provider API keys omitted unless `?include_secrets=true`) |
 | `POST` | `/dashboard/api/reset` | Reset DB and re-seed from YAML |
 | `GET` | `/dashboard/api/request-logs/export` | Export captured request logs as JSON |
 | `GET` | `/dashboard/api/request-logs/{id}` | Full detail for one captured request |

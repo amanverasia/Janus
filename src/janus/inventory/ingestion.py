@@ -84,7 +84,7 @@ async def ingest_upstream_key(
     validation_error = validate_key_value(entry.key, provider_id=provider_hint)
     if validation_error:
         return {
-            "key_masked": entry.key[:8] + "…" if entry.key else "?",
+            "key_masked": mask_key(entry.key) if entry.key else "?",
             "label": entry.label,
             "status": "rejected",
             "error": validation_error,
