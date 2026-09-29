@@ -10,9 +10,13 @@ the middleware must leave them alone.
 
 from __future__ import annotations
 
+import asyncio
+import gzip
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from janus import compression
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
 
@@ -141,3 +145,53 @@ async def test_small_responses_are_not_worth_compressing(app) -> None:
 
     assert response.status_code == 200
     assert "content-encoding" not in response.headers
+
+
+async def test_gzip_compression_does_not_block_the_event_loop(monkeypatch) -> None:
+    offload_calls = 0
+    payload = b'{"data":"' + b"x" * 2048 + b'"}'
+
+    async def fake_to_thread(function, *args, **kwargs):
+        nonlocal offload_calls
+        offload_calls += 1
+        await asyncio.sleep(0.1)
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(compression.asyncio, "to_thread", fake_to_thread)
+
+    async def app(scope, receive, send) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(payload)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": payload})
+
+    messages = []
+
+    async def send(message) -> None:
+        messages.append(message)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    middleware = compression.SelectiveGZipMiddleware(app)
+    scope = {
+        "type": "http",
+        "headers": [(b"accept-encoding", b"gzip")],
+    }
+    request = asyncio.create_task(middleware(scope, receive, send))
+    loop_tick = asyncio.create_task(asyncio.sleep(0.01))
+    await loop_tick
+    assert not request.done()
+    await request
+    assert offload_calls == 1
+    response_headers = dict(messages[0]["headers"])
+    assert response_headers[b"content-encoding"] == b"gzip"
+    assert response_headers[b"content-length"] == str(len(messages[1]["body"])).encode()
+    assert gzip.decompress(messages[1]["body"]) == payload

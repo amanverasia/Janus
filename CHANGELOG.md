@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.22.1] - 2026-09-29
+### Changed
+- **Bounded SQLite concurrency and connection reuse** — enable WAL and a five-second
+  busy timeout, reuse a small per-database, per-event-loop connection pool, and close
+  pooled connections during application shutdown.
+- **Dashboard response compression no longer blocks the event loop** — large JSON state
+  responses are gzip-compressed in a worker thread.
+
 ## [3.22.0] - 2026-09-29
 ### Security
 - **Dashboard session auth hardened** — the session cookie is now scoped to

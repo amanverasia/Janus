@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -50,6 +51,140 @@ async def test_init_db_creates_parent_dir(tmp_path):
     db_path = tmp_path / "subdir" / "nested" / "test.db"
     await init_db(db_path)
     assert db_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_init_db_enables_wal_and_connections_set_busy_timeout(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+
+    async with get_connection(db_path) as db:
+        async with db.execute("PRAGMA journal_mode") as cursor:
+            journal_mode = await cursor.fetchone()
+        async with db.execute("PRAGMA busy_timeout") as cursor:
+            busy_timeout = await cursor.fetchone()
+
+    assert journal_mode[0].lower() == "wal"
+    assert busy_timeout[0] == 5_000
+
+
+@pytest.mark.asyncio
+async def test_get_connection_preserves_existing_non_cascading_delete_semantics(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+
+    async with get_connection(db_path) as db:
+        async with db.execute("PRAGMA foreign_keys") as cursor:
+            foreign_keys = await cursor.fetchone()
+
+    assert foreign_keys[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_connection_reuses_connections_and_caps_concurrency(tmp_path):
+    from janus.storage.database import _SQLITE_MAX_CONNECTIONS
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    active = 0
+    max_active = 0
+    connection_ids: set[int] = set()
+    entered = asyncio.Event()
+
+    async def hold_connection() -> None:
+        nonlocal active, max_active
+        async with get_connection(db_path) as db:
+            connection_ids.add(id(db))
+            active += 1
+            max_active = max(max_active, active)
+            if active == _SQLITE_MAX_CONNECTIONS:
+                entered.set()
+            await entered.wait()
+            active -= 1
+
+    await asyncio.gather(*(hold_connection() for _ in range(12)))
+
+    assert max_active == _SQLITE_MAX_CONNECTIONS
+    assert len(connection_ids) == _SQLITE_MAX_CONNECTIONS
+
+    async with get_connection(db_path) as db:
+        assert id(db) in connection_ids
+
+    async def write_usage(index: int) -> None:
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO usage (model, input_tokens) VALUES (?, ?)",
+                (f"parallel-{index}", index),
+            )
+            await db.commit()
+
+    await asyncio.gather(*(write_usage(index) for index in range(24)))
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT COUNT(*) FROM usage WHERE model LIKE 'parallel-%'") as cursor:
+            count = await cursor.fetchone()
+    assert count[0] == 24
+
+
+def test_get_connection_does_not_reuse_connections_across_event_loops(tmp_path, monkeypatch):
+    from janus.storage import database
+
+    db_path = tmp_path / "test.db"
+    asyncio.run(init_db(db_path))
+    connections = []
+    connect = database.aiosqlite.connect
+
+    def track_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(database.aiosqlite, "connect", track_connect)
+
+    async def query() -> None:
+        async with get_connection(db_path) as db:
+            async with db.execute("SELECT 1") as cursor:
+                assert (await cursor.fetchone())[0] == 1
+
+    asyncio.run(query())
+    asyncio.run(query())
+
+    assert len(connections) == 2
+    assert connections[0] is not connections[1]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_pool_waiter_does_not_consume_a_connection_slot(tmp_path):
+    from janus.storage.database import _SQLITE_MAX_CONNECTIONS
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    acquired = asyncio.Event()
+    release_holders = asyncio.Event()
+    active = 0
+
+    async def hold_connection() -> None:
+        nonlocal active
+        async with get_connection(db_path):
+            active += 1
+            if active == _SQLITE_MAX_CONNECTIONS:
+                acquired.set()
+            await release_holders.wait()
+            active -= 1
+
+    holders = [asyncio.create_task(hold_connection()) for _ in range(_SQLITE_MAX_CONNECTIONS)]
+    await acquired.wait()
+    waiting = asyncio.create_task(hold_connection())
+    await asyncio.sleep(0.01)
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+
+    release_holders.set()
+    await asyncio.gather(*holders)
+    await asyncio.sleep(0.01)
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT 1") as cursor:
+            assert (await cursor.fetchone())[0] == 1
 
 
 @pytest.mark.asyncio
