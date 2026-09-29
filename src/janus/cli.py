@@ -831,6 +831,7 @@ _ALLOWED_SETTING_KEYS = {
     "server_sticky_client_key_routing",
     "server_request_logging",
     "server_request_log_retention",
+    "server_usage_retention_days",
     "server_account_strategy",
     "server_sticky_limit",
     "server_gateway_rate_limit_rpm",

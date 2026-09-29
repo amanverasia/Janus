@@ -257,6 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_upstream_keys_status ON upstream_keys(status);
 CREATE INDEX IF NOT EXISTS idx_upstream_models_provider ON upstream_models(provider_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_models_key ON upstream_models(upstream_key_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_key_history_key ON upstream_key_history(upstream_key_id);
+CREATE INDEX IF NOT EXISTS idx_upstream_key_history_changed_at ON upstream_key_history(changed_at);
 CREATE INDEX IF NOT EXISTS idx_upstream_keys_key_hash ON upstream_keys(key_hash);
 
 CREATE TABLE IF NOT EXISTS request_logs (
@@ -760,7 +761,7 @@ async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
     await db.execute("ALTER TABLE cooldowns_new RENAME TO cooldowns")
 
 
-_OUTCOMES_BACKFILL_VERSION = 1
+_OUTCOMES_BACKFILL_VERSION = 2
 
 
 async def _backfill_request_outcomes(db: aiosqlite.Connection) -> None:
@@ -774,19 +775,28 @@ async def _backfill_request_outcomes(db: aiosqlite.Connection) -> None:
     continuous across the upgrade. The marker lives in PRAGMA user_version
     (DB header), not the settings table, so it stays invisible to the
     settings API.
+
+    Version 2 fixes the import for ``record_usage``'s legacy ``status = 0``
+    default: those rows mean "success" (the old writer only recorded on
+    success), so they are imported as 200, and databases already migrated by
+    version 1 get their copied status = 0 outcome rows rewritten in place
+    (an UPDATE, never a re-import, so no duplicates).
     """
     async with db.execute("PRAGMA user_version") as cur:
         row = await cur.fetchone()
         version = int(row[0]) if row else 0
     if version >= _OUTCOMES_BACKFILL_VERSION:
         return
-    await db.execute(
-        """INSERT INTO request_outcomes
-           (timestamp, model, provider_id, account_id, status, client_key_id, client_key_label)
-           SELECT timestamp, model, provider_id, account_id,
-                  COALESCE(status, 200), client_key_id, client_key_label
-           FROM usage"""
-    )
+    if version < 1:
+        await db.execute(
+            """INSERT INTO request_outcomes
+               (timestamp, model, provider_id, account_id, status, client_key_id, client_key_label)
+               SELECT timestamp, model, provider_id, account_id,
+                      COALESCE(NULLIF(status, 0), 200), client_key_id, client_key_label
+               FROM usage"""
+        )
+    if version < 2:
+        await db.execute("UPDATE request_outcomes SET status = 200 WHERE status = 0")
     await db.execute(f"PRAGMA user_version = {_OUTCOMES_BACKFILL_VERSION}")
 
 

@@ -106,3 +106,68 @@ async def test_init_db_backfills_outcomes_from_usage_once(tmp_path):
     await init_db(db_path)
     rows = await list_request_outcomes(db_path)
     assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_backfill_imports_legacy_zero_status_as_success(tmp_path):
+    import aiosqlite
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            """INSERT INTO usage (timestamp, model, input_tokens, output_tokens, status)
+               VALUES ('2024-01-01 00:00:00', 'legacy-model', 10, 5, 0)"""
+        )
+        await db.execute("DELETE FROM request_outcomes")
+        await db.execute("PRAGMA user_version = 0")
+        await db.commit()
+
+    await init_db(db_path)
+    rows = await list_request_outcomes(db_path)
+    assert len(rows) == 1
+    assert rows[0]["status"] == 200
+
+
+@pytest.mark.asyncio
+async def test_upgrade_rewrites_zero_status_rows_from_v1_backfill(tmp_path):
+    import aiosqlite
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            """INSERT INTO request_outcomes
+               (timestamp, model, status)
+               VALUES ('2024-01-01 00:00:00', 'legacy-model', 0)"""
+        )
+        await db.execute("PRAGMA user_version = 1")
+        await db.commit()
+
+    await init_db(db_path)
+    rows = await list_request_outcomes(db_path)
+    assert len(rows) == 1
+    assert rows[0]["status"] == 200
+
+    await init_db(db_path)
+    rows = await list_request_outcomes(db_path)
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_upgrade_at_current_version_leaves_nonzero_statuses_alone(tmp_path):
+    import aiosqlite
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    async with aiosqlite.connect(str(db_path)) as db:
+        await db.execute(
+            """INSERT INTO request_outcomes
+               (timestamp, model, status)
+               VALUES ('2024-01-01 00:00:00', 'm', 400)"""
+        )
+        await db.commit()
+
+    await init_db(db_path)
+    rows = await list_request_outcomes(db_path)
+    assert [r["status"] for r in rows] == [400]

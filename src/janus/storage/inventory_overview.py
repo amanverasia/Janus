@@ -85,6 +85,19 @@ async def get_provider_cards(db_path: str | Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+UPSTREAM_KEY_HISTORY_RETENTION_DAYS = 180
+
+
+async def prune_upstream_key_history(db_path: str | Path, retention_days: int) -> int:
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM upstream_key_history WHERE changed_at < datetime('now', ?)",
+            (f"-{int(retention_days)} days",),
+        )
+        await db.commit()
+        return int(cur.rowcount or 0)
+
+
 async def get_recent_activity(db_path: str | Path, limit: int = 20) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
@@ -103,7 +116,7 @@ async def get_recent_activity(db_path: str | Path, limit: int = 20) -> list[dict
                FROM upstream_key_history h
                JOIN upstream_keys k ON h.upstream_key_id = k.id
                JOIN inventory_providers p ON k.provider_id = p.id
-               WHERE h.previous_status IS NULL OR h.previous_status != h.new_status
+               WHERE h.previous_status IS NOT h.new_status
                ORDER BY h.changed_at DESC
                LIMIT ?""",
             (limit,),
