@@ -13,6 +13,7 @@ construction rather than by a content-type blocklist that could miss a case.
 
 from __future__ import annotations
 
+import asyncio
 import gzip
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -88,7 +89,11 @@ class SelectiveGZipMiddleware:
             if message.get("more_body", False):
                 return
 
-            payload = gzip.compress(bytes(body), compresslevel=self.compresslevel)
+            payload = await asyncio.to_thread(
+                gzip.compress,
+                bytes(body),
+                compresslevel=self.compresslevel,
+            )
             headers.set(b"content-encoding", b"gzip")
             headers.set(b"content-length", str(len(payload)).encode())
             headers.append_vary(b"Accept-Encoding")
