@@ -122,6 +122,104 @@ async def create_upstream_key(
     return record
 
 
+_IMPORT_STATE_FIELDS = (
+    "status",
+    "is_valid",
+    "credits_remaining",
+    "credits_total",
+    "credits_used",
+    "health_status",
+    "is_usable",
+    "usability_status",
+    "usability_note",
+    "last_checked_at",
+    "last_error",
+)
+_HASH_LOOKUP_CHUNK = 500
+
+
+async def import_upstream_keys_atomic(
+    db_path: str | Path,
+    records: list[dict[str, Any]],
+) -> tuple[list[str], int]:
+    prepared: list[tuple[str, str, str, dict[str, Any]]] = []
+    for record in records:
+        stored_value, key_hash, key_masked = _prepare_key_storage(str(record["key_value"]))
+        prepared.append((stored_value, key_hash, key_masked, record))
+
+    columns = (
+        "id",
+        "provider_id",
+        "key_label",
+        "key_value",
+        "key_hash",
+        "key_masked",
+        "custom_base_url",
+        "priority",
+        "metadata",
+        "source_node",
+        *_IMPORT_STATE_FIELDS,
+    )
+    insert_sql = (
+        f"INSERT INTO upstream_keys ({', '.join(columns)}) "
+        f"VALUES ({', '.join('?' for _ in columns)})"
+    )
+    inserted_ids: list[str] = []
+    duplicates = 0
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            existing: set[str] = set()
+            hashes = list({item[1] for item in prepared})
+            for start in range(0, len(hashes), _HASH_LOOKUP_CHUNK):
+                chunk = hashes[start : start + _HASH_LOOKUP_CHUNK]
+                async with db.execute(
+                    "SELECT key_hash FROM upstream_keys "
+                    f"WHERE status != 'revoked' AND key_hash IN ({', '.join('?' for _ in chunk)})",
+                    chunk,
+                ) as cur:
+                    existing.update(row[0] for row in await cur.fetchall())
+            for stored_value, key_hash, key_masked, record in prepared:
+                if key_hash in existing:
+                    duplicates += 1
+                    continue
+                existing.add(key_hash)
+                key_id = _new_key_id()
+                metadata = record.get("metadata")
+                values = [
+                    key_id,
+                    record["provider_id"],
+                    record.get("key_label"),
+                    stored_value,
+                    key_hash,
+                    key_masked,
+                    record.get("custom_base_url"),
+                    int(record.get("priority") or 0),
+                    json.dumps(metadata) if metadata else None,
+                    record.get("source_node"),
+                ]
+                state = {
+                    "status": "pending_validation",
+                    "is_valid": 0,
+                    "health_status": "healthy",
+                    "is_usable": 0,
+                    "usability_status": "unknown",
+                    **{
+                        k: v
+                        for k, v in record.items()
+                        if k in _IMPORT_STATE_FIELDS and v is not None
+                    },
+                }
+                values.extend(state.get(field) for field in _IMPORT_STATE_FIELDS)
+                await db.execute(insert_sql, values)
+                inserted_ids.append(key_id)
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+    return inserted_ids, duplicates
+
+
 async def get_upstream_key(db_path: str | Path, key_id: str) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
         async with db.execute("SELECT * FROM upstream_keys WHERE id = ?", (key_id,)) as cur:
