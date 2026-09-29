@@ -15,6 +15,7 @@
   let importing = false;
   let importedFilename = '';
   let importedCount = 0;
+  let duplicateCount = 0;
   let previewCount: number | undefined;
   let previewError = '';
   let importError = '';
@@ -54,6 +55,7 @@
     selectedFile = file;
     importedFilename = '';
     importedCount = 0;
+    duplicateCount = 0;
     previewCount = undefined;
     previewError = '';
     importError = '';
@@ -83,14 +85,18 @@
     void choose(file);
   }
 
-  function successfulImportCount(payload: unknown): number {
+  type ImportCounts = { imported: number; duplicates: number };
+
+  function successfulImportCount(payload: unknown): ImportCounts {
     if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
       const result = object(payload);
       if (result.ok !== true)
         throw new Error(text(result.error, 'Janus rejected the inventory import.'));
-      const count = number(result.imported_count, -1);
-      if (count < 1) throw new Error('Janus did not confirm that the inventory import completed.');
-      return count;
+      const imported = number(result.imported_count, -1);
+      const duplicates = Math.max(0, number(result.duplicate_count, 0));
+      if (imported < 0 || imported + duplicates < 1)
+        throw new Error('Janus did not confirm that the inventory import completed.');
+      return { imported, duplicates };
     }
     if (typeof payload !== 'string')
       throw new Error('Janus returned an unexpected import response.');
@@ -102,7 +108,7 @@
     const count = body.match(/Imported\s+(\d+)\s+key\(s\)/i)?.[1];
     if (count === undefined)
       throw new Error('Janus did not confirm that the inventory import completed.');
-    return Number(count);
+    return { imported: Number(count), duplicates: 0 };
   }
 
   async function submit() {
@@ -110,6 +116,7 @@
     importing = true;
     importedFilename = '';
     importedCount = 0;
+    duplicateCount = 0;
     importError = '';
     try {
       const body = new FormData();
@@ -121,12 +128,14 @@
         refresh: false,
         validate: successfulImportCount
       });
-      if (typeof result !== 'number') {
+      if (result === null || typeof result !== 'object' || !('imported' in result)) {
         importError =
           'Janus did not confirm that the inventory import completed. The selected file has been preserved.';
         return;
       }
-      importedCount = result;
+      const counts = result as ImportCounts;
+      importedCount = counts.imported;
+      duplicateCount = counts.duplicates;
       importedFilename = selectedFile.name;
     } catch (error) {
       importError = error instanceof Error ? error.message : 'The inventory import failed.';
@@ -163,7 +172,9 @@
         {importedFilename} was processed successfully. Janus imported {importedCount} credential{importedCount ===
         1
           ? ''
-          : 's'}.
+          : 's'}{duplicateCount > 0
+          ? ` and skipped ${duplicateCount} already stored duplicate${duplicateCount === 1 ? '' : 's'}`
+          : ''}.
       </p>
     </div>
     <button class="button" on:click={() => navigate('/dashboard/ui/inventory/keys')}>
