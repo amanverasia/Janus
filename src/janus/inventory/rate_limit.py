@@ -35,14 +35,6 @@ class SubmitRateLimiter:
         self._entries[client_id] = (count + cost, reset_at)
         return True
 
-    def prune(self) -> None:
-        now = time.monotonic()
-        expired = [
-            client_id for client_id, (_, reset_at) in self._entries.items() if now >= reset_at
-        ]
-        for client_id in expired:
-            del self._entries[client_id]
-
 
 _submit_rate_limiter = SubmitRateLimiter()
 

@@ -16,6 +16,7 @@ Exit code 0 means the upgrade path is intact.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -101,69 +102,76 @@ def _schema_snapshot(db_path: Path) -> dict[str, tuple[tuple[str, ...], ...]]:
 
 async def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="janus-migration-smoke-"))
-    db_path = tmp / "janus.db"
-    conn = sqlite3.connect(db_path)
     try:
-        conn.executescript(LEGACY_SCHEMA)
-        conn.commit()
+        db_path = tmp / "janus.db"
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.executescript(LEGACY_SCHEMA)
+            conn.commit()
+        finally:
+            conn.close()
+
+        from janus.storage.database import init_db
+
+        await init_db(db_path)
+
+        provider_columns = _table_columns(db_path, "providers")
+        missing_providers = NEW_PROVIDER_COLUMNS - provider_columns
+        assert not missing_providers, (
+            f"providers migration missed columns: {sorted(missing_providers)}"
+        )
+
+        key_columns = _table_columns(db_path, "api_keys")
+        missing_keys = NEW_API_KEY_COLUMNS - key_columns
+        assert not missing_keys, f"api_keys migration missed columns: {sorted(missing_keys)}"
+
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT prefix, api_type FROM providers WHERE id = 'legacy-openai'"
+            ).fetchone()
+            assert row == ("openai", "openai_compat"), f"legacy provider row damaged: {row}"
+            budget = conn.execute(
+                "SELECT id, daily_limit, absolute_limit, warn_pct FROM budgets"
+            ).fetchone()
+            assert budget == (7, 10.0, None, 75.0), f"legacy budget row damaged: {budget}"
+            budget_columns = conn.execute("PRAGMA table_info(budgets)").fetchall()
+            assert next(col for col in budget_columns if col[1] == "daily_limit")[3] == 0
+            legacy_settings = [
+                "dashboard_username",
+                "dashboard_password_hash",
+                "dashboard_session_secret",
+            ]
+            for key in legacy_settings:
+                conn.execute(
+                    "INSERT INTO settings (key, value) VALUES (?, ?)", (key, "must-be-purged")
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        await init_db(db_path)
+        conn = sqlite3.connect(db_path)
+        try:
+            survivors = conn.execute(
+                "SELECT key FROM settings WHERE key IN (?, ?, ?)", tuple(legacy_settings)
+            ).fetchall()
+            assert not survivors, f"legacy dashboard settings survived: {survivors}"
+        finally:
+            conn.close()
+
+        before = _schema_snapshot(db_path)
+        await init_db(db_path)
+        assert _schema_snapshot(db_path) == before, "init_db is not idempotent"
+
+        print(
+            "migration smoke ok: "
+            f"providers +{len(NEW_PROVIDER_COLUMNS)} api_keys +{len(NEW_API_KEY_COLUMNS)} columns, "
+            "rows preserved, legacy settings purged, idempotent"
+        )
+        return 0
     finally:
-        conn.close()
-
-    from janus.storage.database import init_db
-
-    await init_db(db_path)
-
-    provider_columns = _table_columns(db_path, "providers")
-    missing_providers = NEW_PROVIDER_COLUMNS - provider_columns
-    assert not missing_providers, f"providers migration missed columns: {sorted(missing_providers)}"
-
-    key_columns = _table_columns(db_path, "api_keys")
-    missing_keys = NEW_API_KEY_COLUMNS - key_columns
-    assert not missing_keys, f"api_keys migration missed columns: {sorted(missing_keys)}"
-
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute(
-            "SELECT prefix, api_type FROM providers WHERE id = 'legacy-openai'"
-        ).fetchone()
-        assert row == ("openai", "openai_compat"), f"legacy provider row damaged: {row}"
-        budget = conn.execute(
-            "SELECT id, daily_limit, absolute_limit, warn_pct FROM budgets"
-        ).fetchone()
-        assert budget == (7, 10.0, None, 75.0), f"legacy budget row damaged: {budget}"
-        budget_columns = conn.execute("PRAGMA table_info(budgets)").fetchall()
-        assert next(col for col in budget_columns if col[1] == "daily_limit")[3] == 0
-        legacy_settings = [
-            "dashboard_username",
-            "dashboard_password_hash",
-            "dashboard_session_secret",
-        ]
-        for key in legacy_settings:
-            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, "must-be-purged"))
-        conn.commit()
-    finally:
-        conn.close()
-
-    await init_db(db_path)
-    conn = sqlite3.connect(db_path)
-    try:
-        survivors = conn.execute(
-            "SELECT key FROM settings WHERE key IN (?, ?, ?)", tuple(legacy_settings)
-        ).fetchall()
-        assert not survivors, f"legacy dashboard settings survived: {survivors}"
-    finally:
-        conn.close()
-
-    before = _schema_snapshot(db_path)
-    await init_db(db_path)
-    assert _schema_snapshot(db_path) == before, "init_db is not idempotent"
-
-    print(
-        "migration smoke ok: "
-        f"providers +{len(NEW_PROVIDER_COLUMNS)} api_keys +{len(NEW_API_KEY_COLUMNS)} columns, "
-        "rows preserved, legacy settings purged, idempotent"
-    )
-    return 0
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 async def _run_and_close() -> int:

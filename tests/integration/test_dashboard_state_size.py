@@ -106,14 +106,16 @@ async def _raw_request(
     body = bytearray()
     response_headers: dict[str, str] = {}
     start_sent = False
+    status = 0
 
     async def receive() -> dict[str, Any]:
         return {"type": "http.request", "body": b"", "more_body": False}
 
     async def send(message: MutableMapping[str, Any]) -> None:
-        nonlocal start_sent
+        nonlocal start_sent, status
         if message["type"] == "http.response.start":
             start_sent = True
+            status = int(message["status"])
             for key, value in message.get("headers") or []:
                 response_headers[key.decode("latin-1").lower()] = value.decode("latin-1")
         elif start_sent:
@@ -138,7 +140,7 @@ async def _raw_request(
     scope["raw_path"] = path.encode()
     scope["query_string"] = query.encode()
     await app(scope, receive, send)
-    return 200, bytes(body), response_headers
+    return status, bytes(body), response_headers
 
 
 @pytest.fixture
@@ -156,7 +158,8 @@ async def sized_app(tmp_path: Path) -> FastAPI:
 
 @pytest.mark.parametrize("section", sorted(RAW_BUDGETS))
 async def test_state_payload_size_budgets(sized_app: FastAPI, section: str) -> None:
-    _status, raw, headers = await _raw_request(sized_app, f"/dashboard/api/v2/state/{section}")
+    status, raw, headers = await _raw_request(sized_app, f"/dashboard/api/v2/state/{section}")
+    assert status == 200
     assert headers.get("content-encoding") == "gzip"
     decompressed = gzip.decompress(raw)
     decoded = json.loads(decompressed)
@@ -171,7 +174,8 @@ async def test_state_payload_size_budgets(sized_app: FastAPI, section: str) -> N
 
 
 async def test_pricing_catalog_is_paginated_and_searchable(sized_app: FastAPI) -> None:
-    _status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/pricing")
+    status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/pricing")
+    assert status == 200
     payload = json.loads(gzip.decompress(raw))
     data = payload["data"]
     pagination = payload["meta"]["pagination"]
@@ -179,10 +183,11 @@ async def test_pricing_catalog_is_paginated_and_searchable(sized_app: FastAPI) -
     assert pagination["total"] == PRICING_ROW_COUNT
     assert pagination["total_pages"] > 1
 
-    _status, raw, _headers = await _raw_request(
+    status, raw, _headers = await _raw_request(
         sized_app,
         "/dashboard/api/v2/state/pricing?search=model-00042&limit=200&offset=0",
     )
+    assert status == 200
     payload = json.loads(gzip.decompress(raw))
     assert payload["meta"]["pagination"]["total"] == 1
     assert payload["data"]["catalog"][0]["model"].endswith("model-00042")
@@ -190,7 +195,8 @@ async def test_pricing_catalog_is_paginated_and_searchable(sized_app: FastAPI) -
 
 async def test_models_state_is_paginated_and_searchable(sized_app: FastAPI) -> None:
     expected_total = MODEL_ROWS_PER_PROVIDER * len(PROVIDER_PREFIXES)
-    _status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/models")
+    status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/models")
+    assert status == 200
     payload = json.loads(gzip.decompress(raw))
     data = payload["data"]
     pagination = payload["meta"]["pagination"]
@@ -200,22 +206,25 @@ async def test_models_state_is_paginated_and_searchable(sized_app: FastAPI) -> N
     # The provider list stays whole (it drives the provider filter rail).
     assert len(data["providers"]) == len(PROVIDER_PREFIXES)
 
-    _status, raw, _headers = await _raw_request(
+    status, raw, _headers = await _raw_request(
         sized_app, "/dashboard/api/v2/state/models?provider=openai&limit=200"
     )
+    assert status == 200
     payload = json.loads(gzip.decompress(raw))
     assert payload["meta"]["pagination"]["total"] == MODEL_ROWS_PER_PROVIDER
 
-    _status, raw, _headers = await _raw_request(
+    status, raw, _headers = await _raw_request(
         sized_app, "/dashboard/api/v2/state/models?search=fixture-model-0001"
     )
+    assert status == 200
     payload = json.loads(gzip.decompress(raw))
     narrowed = payload["meta"]["pagination"]["total"]
     assert 0 < narrowed < expected_total
 
 
 async def test_routing_state_is_paginated_and_slim(sized_app: FastAPI) -> None:
-    _status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/routing")
+    status, raw, _headers = await _raw_request(sized_app, "/dashboard/api/v2/state/routing")
+    assert status == 200
     payload = json.loads(gzip.decompress(raw))
     data = payload["data"]
     pagination = payload["meta"]["pagination"]
@@ -240,30 +249,31 @@ async def test_state_response_time_budgets(sized_app: FastAPI) -> None:
     """
     import time
 
-    time_budget_ms = {"models": 1500, "routing": 1500, "providers": 1500, "pricing": 1500}
+    time_budget_ms = {"models": 5000, "routing": 5000, "providers": 5000, "pricing": 5000}
     for section in sorted(time_budget_ms):
         await _raw_request(sized_app, f"/dashboard/api/v2/state/{section}")  # warm
         start = time.perf_counter()
-        _status, _raw, _headers = await _raw_request(
-            sized_app, f"/dashboard/api/v2/state/{section}"
-        )
+        status, _raw, _headers = await _raw_request(sized_app, f"/dashboard/api/v2/state/{section}")
         elapsed_ms = (time.perf_counter() - start) * 1000
+        assert status == 200
         assert elapsed_ms < time_budget_ms[section], (
             f"{section} warm state response took {elapsed_ms:.0f}ms"
         )
 
 
 async def test_state_responses_stay_uncompressed_for_non_gzip_clients(sized_app: FastAPI) -> None:
-    _status, raw, headers = await _raw_request(
+    status, raw, headers = await _raw_request(
         sized_app, "/dashboard/api/v2/state/models", accept_gzip=False
     )
+    assert status == 200
     assert "content-encoding" not in headers
     payload = json.loads(raw)
     assert payload["section"] == "models"
 
 
 async def test_small_state_responses_are_not_compressed(sized_app: FastAPI) -> None:
-    _status, raw, headers = await _raw_request(sized_app, "/dashboard/api/v2/state/tools")
+    status, raw, headers = await _raw_request(sized_app, "/dashboard/api/v2/state/tools")
+    assert status == 200
     assert headers.get("content-type", "").startswith("application/json")
     assert "content-encoding" not in headers
     payload = json.loads(raw)

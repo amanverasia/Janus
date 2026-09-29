@@ -23,9 +23,14 @@ def _run(command: list[str]) -> None:
 
 def _same_tree(left: Path, right: Path) -> bool:
     comparison = filecmp.dircmp(left, right)
-    if comparison.left_only or comparison.right_only or comparison.funny_files:
+    if comparison.left_only or comparison.right_only or comparison.common_funny:
         return False
-    if comparison.diff_files:
+    if comparison.funny_files:
+        return False
+    if any(
+        not filecmp.cmp(left / name, right / name, shallow=False)
+        for name in comparison.common_files
+    ):
         return False
     return all(_same_tree(left / name, right / name) for name in comparison.common_dirs)
 

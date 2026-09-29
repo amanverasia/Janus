@@ -154,12 +154,6 @@ def sticky_client_key_routing_enabled(settings: dict[str, str]) -> bool:
     return resolve_server_settings(settings)["server_sticky_client_key_routing"].lower() == "true"
 
 
-async def is_sticky_client_key_routing_enabled(db_path: str | Path) -> bool:
-    await ensure_server_defaults(db_path)
-    settings = await get_all_settings(db_path)
-    return sticky_client_key_routing_enabled(settings)
-
-
 def resolve_account_strategy(settings: dict[str, str]) -> str:
     return resolve_server_settings(settings)["server_account_strategy"]
 
