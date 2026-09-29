@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.25.0] - 2026-09-29
+### Fixed
+- **Inventory Inspect modal can no longer reveal or re-prioritize the wrong
+  credential** — the detail fetch carries a generation token so a late
+  response from a previously-inspected row is discarded; reveal and
+  priority-save capture the id up front and drop their results if the
+  inspected credential changed mid-request. (#208)
+- **Bound unbounded growth** — new `server_usage_retention_days` setting
+  (default 365, clamp 7-3650) prunes the usage table via a throttled,
+  fail-safe prune on the record-usage write path; `upstream_key_history`
+  gains a `changed_at` index and 180-day retention; `get_unpriced_models`
+  is a 60s TTL cache invalidated by pricing reloads and cost backfills
+  instead of recomputing on every ~5s alert tick; cooldown reads are
+  read-only, with expired-row pruning moved to throttled write paths; the
+  legacy outcomes backfill treats `status=0` rows as 200. (#215)
+
+
 ## [3.24.2] - 2026-09-29
 ### Fixed
 - **Inventory import is atomic and idempotent** — every row is validated before
