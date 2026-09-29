@@ -28,12 +28,25 @@ jobs:
       - name: Verify the tag matches the packaged version
         run: |
           python - <<'PY'
-          import os, sys, tomllib, pathlib
+          import ast, json, os, pathlib, sys
           tag = os.environ["GITHUB_REF_NAME"]
-          version = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          module = ast.parse(pathlib.Path("src/janus/__init__.py").read_text(encoding="utf-8"))
+          version = next(
+              ast.literal_eval(node.value)
+              for node in module.body
+              if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets)
+          )
+          dashboard_version = json.loads(
+              pathlib.Path("dashboard-ui/package.json").read_text(encoding="utf-8")
+          )["version"]
           if tag != f"v{version}":
-              sys.exit(f"tag {tag} does not match pyproject version {version}")
-          print(f"tag {tag} matches packaged version {version}")
+              sys.exit(f"tag {tag} does not match project version {version}")
+          if dashboard_version != version:
+              sys.exit(
+                  f"dashboard package version {dashboard_version} does not match release version {version}"
+              )
+          print(f"tag {tag} and dashboard package match project version {version}")
           PY
 
       - name: Install build tool
@@ -46,4 +59,4 @@ jobs:
         run: twine check --strict dist/*
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1.14.2

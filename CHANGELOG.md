@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   buttons are disabled while their action is pending, and row-action pages
   track in-flight work per id. The Keys page can no longer orphan a created
   key behind a second submit. (#209)
+- Dashboard mutation routes validate settings, providers, quotas, and combos;
+  missing records return 404 and validation errors use safe JSON responses. (#207)
 
 ### Changed
 - **Trimmed dashboard state payloads** — the overview section now carries only
