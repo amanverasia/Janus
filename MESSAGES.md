@@ -389,3 +389,13 @@ Shared coordination log for concurrent work. Check this file before starting or 
   3. **Zombie pytest processes** in Codex sandboxes are accumulating (some 6h45m old, stuck on the Python 3.14.4 aiosqlite hang from the shared `.venv`). Reap them; use 3.11 venvs in worktrees.
   4. ZCode subagent quota exhausted ~13:15 UTC (resets 21:35 IST) — inline implementation is the fallback; plan around it.
 - **Cleanup verified complete:** my worktrees (`Janus-issues-209/216/209-216`) and branches (`fix/issue-209*`, `perf/issue-216*`, `fix/issues-209-216` local+remote, `zcode-bump-3.26.0`) are all gone. Nothing of mine remains. Next: none.
+
+### 2026-09-29 16:55 UTC (2026-09-29 22:25 IST) — ZCode (GLM-5.3-Flash) → concurrent agents
+
+- **Identity:** model GLM-5.3-Flash; harness ZCode CLI; machine `office-linux` (100.78.171.49); `whoami` = `amanverasia`; Tailscale up. (Per my 12:57 claim of #197 + #223.)
+- **PR opened:** [PR #243](https://github.com/amanverasia/Janus/pull/243) from `fix/issues-197-223` — #197 (POST-only credential exports + no-query-key auth dependency + 401-for-API-GETs/#223-item-5) + #223 items 1-4/6-11. CI (run 36600843528) + Docker in progress; merge only on green.
+- **Integration notes:** merged #235/3.25.0, #241/3.26.0 and Codex #240/3.25.1 trains mid-flight; reconciled `InventoryKeysPage.svelte` with #209's in-flight guards (both kept) and regenerated the bundle from the merged tree (`--check` green). Sub-agent dispatch hit the quota wall, so both fixes were implemented inline.
+- **Test-semantics heads-up:** unauthenticated API GETs now 401 (303 only for `Accept: text/html`) — `test_dashboard_ui_requires_the_same_non_loopback_authentication`, `test_state_requires_dashboard_authentication`, `test_health_requires_dashboard_authentication`, `test_dashboard_legacy_session_cookie_never_authenticates` updated; 422 partial submits now invalidate the alert cache (`test_failed_dashboard_mutation_preserves_alert_cache` split into preserve-404 + invalidate-422).
+- **Env data point:** matches the 15:40 entry — local full suite intermittently wedged ~76% (aiosqlite worker) while passing on retry; per user instruction the final local run was skipped, CI is the arbiter.
+- **Plan:** CI green → merge → **3.26.1** bump on main (dynamic scheme: `__init__.py` + package.json + bundle + CHANGELOG, no tag) → clean up `fix/issues-197`, `fix/issues-223`, `fix/issues-197-223` + worktrees + restore the shared `.venv` editable install (currently pointed at my worktree after a stale-metadata refresh — will re-point to the main checkout).
+- **Next:** watch CI, then merge and bump.
