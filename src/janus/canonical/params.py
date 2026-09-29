@@ -24,9 +24,7 @@ def log_unsupported_sampling_params(
     supported: frozenset[str] = frozenset(),
 ) -> None:
     dropped = [
-        name
-        for name in SAMPLING_PARAMS
-        if getattr(req, name) is not None and name not in supported
+        name for name in SAMPLING_PARAMS if getattr(req, name) is not None and name not in supported
     ]
     if dropped:
         logger.debug(
