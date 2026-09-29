@@ -94,8 +94,10 @@ API keys and use TLS termination (reverse proxy) for anything beyond a trusted L
 Every client, including `127.0.0.1` and `localhost`, is redirected to
 `/dashboard/login` until it authenticates with a valid Janus API key. DB-managed
 keys must be active and have **Allow dashboard login** (`can_login=true`);
-configured static keys are also accepted. Username/password login and the
-loopback bypass are not supported. Legacy dashboard credential settings are
+configured static keys are also accepted. The session cookie is scoped to
+`/dashboard` and marked `Secure` when the request arrives over HTTPS, so a
+TLS-terminating reverse proxy should forward `X-Forwarded-Proto`. Username/password
+login and the loopback bypass are not supported. Legacy dashboard credential settings are
 purged during database initialization. See
 [Dashboard — Authentication](dashboard.md#authentication).
 

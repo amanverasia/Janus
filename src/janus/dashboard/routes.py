@@ -28,6 +28,12 @@ from fastapi.templating import Jinja2Templates
 from janus.api.auth import authenticate_api_key
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.catalog import get_catalog
+from janus.dashboard.login_throttle import (
+    clear_login_failures,
+    client_identity,
+    is_login_locked,
+    record_login_failure,
+)
 from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.providers.drivers import supported_api_types
 from janus.storage.api_keys import list_keys, revoke_key, update_key
@@ -133,7 +139,7 @@ async def _reject_unsafe_url(
     Guards dashboard endpoints that send the user's API key to an arbitrary URL
     against scheme abuse and SSRF to internal/private addresses. DNS resolution
     goes through the event loop's threadpool so a slow resolver never blocks
-    concurrent dashboard requests.
+    concurrent dashboard requests, and resolution failure rejects the request.
     """
     import ipaddress
 
@@ -148,7 +154,7 @@ async def _reject_unsafe_url(
         try:
             infos = await asyncio.get_running_loop().getaddrinfo(hostname, None)
         except OSError:
-            infos = []
+            return JSONResponse({"error": "URL host could not be resolved"}, status_code=400)
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
@@ -225,10 +231,19 @@ async def login_submit(
     next: str = Form(_DASHBOARD_UI_ROOT),
 ) -> Response:
     next = _canonical_dashboard_next(next)
+    client_id = client_identity(request)
+    if is_login_locked(client_id):
+        context: dict[str, Any] = {
+            "request": request,
+            "next": next,
+            "error": "Too many failed login attempts. Try again in a few minutes.",
+        }
+        return _templates.TemplateResponse(request, "login.html", context, status_code=429)
     await _ensure_db(request)
 
     if not api_key.strip():
-        context: dict[str, Any] = {
+        record_login_failure(client_id)
+        context = {
             "request": request,
             "next": next,
             "error": "API key is required",
@@ -236,6 +251,7 @@ async def login_submit(
         return _templates.TemplateResponse(request, "login.html", context, status_code=401)
 
     if not await authenticate_api_key(request, api_key.strip()):
+        record_login_failure(client_id)
         context = {
             "request": request,
             "next": next,
@@ -245,12 +261,14 @@ async def login_submit(
     from janus.api.auth import key_can_login
 
     if not key_can_login(request):
+        record_login_failure(client_id)
         context = {
             "request": request,
             "next": next,
             "error": "This API key cannot access the dashboard",
         }
         return _templates.TemplateResponse(request, "login.html", context, status_code=401)
+    clear_login_failures(client_id)
     response = RedirectResponse(url=next, status_code=303)
     response.set_cookie(
         "janus_dashboard_key",
@@ -258,6 +276,8 @@ async def login_submit(
         httponly=True,
         samesite="lax",
         max_age=30 * 86400,
+        secure=request.url.scheme == "https",
+        path="/dashboard",
     )
     return response
 
@@ -265,6 +285,7 @@ async def login_submit(
 @router.post("/logout")
 async def logout(request: Request) -> RedirectResponse:
     response = RedirectResponse(url="/dashboard/login", status_code=303)
+    response.delete_cookie("janus_dashboard_key", path="/dashboard")
     response.delete_cookie("janus_dashboard_key")
     response.delete_cookie("janus_dashboard_session")
     return response

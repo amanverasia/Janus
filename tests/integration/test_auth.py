@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
+from janus.dashboard import login_throttle
 from janus.storage.api_keys import create_key
 from janus.storage.database import init_db
 from janus.storage.settings import set_setting
@@ -84,7 +85,51 @@ async def test_dashboard_api_key_login_sets_cookie_and_authenticates(app, tmp_pa
         assert login_response.status_code == 303
         assert login_response.headers["location"] == "/dashboard/ui/keys"
         assert login_response.cookies["janus_dashboard_key"] == key
-        assert "HttpOnly" in login_response.headers["set-cookie"]
+        set_cookie = login_response.headers["set-cookie"]
+        assert "HttpOnly" in set_cookie
+        assert "SameSite=lax" in set_cookie
+        assert "Path=/dashboard" in set_cookie
+        assert "Secure" not in set_cookie
+
+        dashboard_response = await client.get("/dashboard/ui/keys")
+        assert dashboard_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_dashboard_login_sets_secure_cookie_over_https(app, tmp_path):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="https://janus.test",
+    ) as client:
+        login_response = await client.post(
+            "/dashboard/login",
+            data={"api_key": key, "next": "/dashboard/keys"},
+            follow_redirects=False,
+        )
+        assert login_response.status_code == 303
+        assert "Secure" in login_response.headers["set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_cookie_never_authenticates_gateway(app, tmp_path):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    await set_setting(db_path, "server_require_api_key", "true")
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="http://janus.test",
+        cookies={"janus_dashboard_key": key},
+    ) as client:
+        gateway_response = await client.get("/v1/models")
+        assert gateway_response.status_code == 401
 
         dashboard_response = await client.get("/dashboard/ui/keys")
         assert dashboard_response.status_code == 200
@@ -252,3 +297,135 @@ async def test_tools_page_uses_request_base_url(app, tmp_path):
         )
         assert response.status_code == 200
         assert response.json()["data"]["base_url"] == "http://myhost:9999/v1"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_login_lockout_after_repeated_failures(app, tmp_path, monkeypatch):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+    monkeypatch.setattr(login_throttle, "LOGIN_MAX_FAILURES", 3)
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="http://janus.test",
+    ) as client:
+        for _ in range(3):
+            bad = await client.post(
+                "/dashboard/login",
+                data={"api_key": "sk-janus-wrong"},
+                follow_redirects=False,
+            )
+            assert bad.status_code == 401
+        locked = await client.post(
+            "/dashboard/login",
+            data={"api_key": key, "next": "/dashboard/keys"},
+            follow_redirects=False,
+        )
+        assert locked.status_code == 429
+        assert "Too many failed login attempts" in locked.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_login_success_clears_failure_count(app, tmp_path, monkeypatch):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+    monkeypatch.setattr(login_throttle, "LOGIN_MAX_FAILURES", 2)
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="http://janus.test",
+    ) as client:
+        bad = await client.post(
+            "/dashboard/login", data={"api_key": "sk-janus-wrong"}, follow_redirects=False
+        )
+        assert bad.status_code == 401
+        first = await client.post("/dashboard/login", data={"api_key": key}, follow_redirects=False)
+        assert first.status_code == 303
+        bad = await client.post(
+            "/dashboard/login", data={"api_key": "sk-janus-wrong"}, follow_redirects=False
+        )
+        assert bad.status_code == 401
+        second = await client.post(
+            "/dashboard/login", data={"api_key": key}, follow_redirects=False
+        )
+        assert second.status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_dashboard_login_lockout_is_per_ip(app, tmp_path, monkeypatch):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+    monkeypatch.setattr(login_throttle, "LOGIN_MAX_FAILURES", 2)
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="http://janus.test",
+    ) as remote_client:
+        for _ in range(2):
+            bad = await remote_client.post(
+                "/dashboard/login", data={"api_key": "sk-janus-wrong"}, follow_redirects=False
+            )
+            assert bad.status_code == 401
+        locked = await remote_client.post(
+            "/dashboard/login", data={"api_key": key}, follow_redirects=False
+        )
+        assert locked.status_code == 429
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://janus.test"
+    ) as client:
+        other_ip = await client.post(
+            "/dashboard/login", data={"api_key": key}, follow_redirects=False
+        )
+        assert other_ip.status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_dashboard_mutations_reject_cross_origin_requests(app, tmp_path):
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key, _ = await create_key(db_path, "dashboard-user", can_login=True)
+    app.state._dashboard_db_ready = True
+
+    async with AsyncClient(
+        transport=_remote_transport(app),
+        base_url="http://janus.test",
+        cookies={"janus_dashboard_key": key},
+    ) as client:
+        cross_settings = await client.post(
+            "/dashboard/api/settings",
+            data={"key": "server_request_logging", "value": "true"},
+            headers={"Origin": "https://evil.test"},
+        )
+        assert cross_settings.status_code == 403
+        assert "Cross-origin" in cross_settings.json()["error"]
+
+        cross_login = await client.post(
+            "/dashboard/login",
+            data={"api_key": key},
+            headers={"Origin": "https://evil.test"},
+            follow_redirects=False,
+        )
+        assert cross_login.status_code == 403
+
+        same_settings = await client.post(
+            "/dashboard/api/settings",
+            data={"key": "server_request_logging", "value": "true"},
+            headers={"Origin": "http://janus.test"},
+        )
+        assert same_settings.status_code == 200
+
+        no_origin_settings = await client.post(
+            "/dashboard/api/settings",
+            data={"key": "server_request_logging", "value": "true"},
+        )
+        assert no_origin_settings.status_code == 200
+
+        cross_get = await client.get("/dashboard/login", headers={"Origin": "https://evil.test"})
+        assert cross_get.status_code == 200

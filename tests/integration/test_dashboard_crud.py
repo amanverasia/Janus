@@ -1,3 +1,6 @@
+import ipaddress
+import socket
+
 import httpx
 import pytest
 import respx
@@ -7,6 +10,26 @@ from httpx import ASGITransport, AsyncClient
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
 from tests.fixtures.dashboard_auth import with_dashboard_auth
+
+
+@pytest.fixture(autouse=True)
+def mock_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_getaddrinfo(
+        host: str,
+        port: object,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
+        del port, family, type, proto, flags
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            host = "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (host, 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 
 
 @pytest.fixture

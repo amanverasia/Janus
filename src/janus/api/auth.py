@@ -25,9 +25,11 @@ def extract_api_key(
         return x_goog_api_key
     if key_query:
         return key_query
-    cookie = request.cookies.get("janus_dashboard_key")
-    if cookie:
-        return cookie
+    path = request.url.path
+    if path == "/dashboard" or path.startswith("/dashboard/"):
+        cookie = request.cookies.get("janus_dashboard_key")
+        if cookie:
+            return cookie
     return None
 
 
