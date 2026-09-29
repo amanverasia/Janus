@@ -189,3 +189,21 @@ async def test_backfill_provider_keys_mirrors_existing(tmp_path):
 
     count_again = await backfill_provider_keys(db_path)
     assert count_again == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_provider_key_base_url_change_propagates(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    provider = _provider(api_key="sk-baseurl-drift-key-123456")
+    key_id = await sync_provider_key(db_path, provider=provider, schedule_recheck=False)
+    assert key_id is not None
+
+    provider["base_url"] = "https://api.example.com/v2"
+    second = await sync_provider_key(db_path, provider=provider, schedule_recheck=False)
+    assert second == key_id
+
+    keys = await list_upstream_keys(db_path)
+    assert len(keys) == 1
+    assert keys[0]["custom_base_url"] == "https://api.example.com/v2"
+    assert keys[0]["status"] == "pending_validation"

@@ -1009,3 +1009,15 @@ async def test_inventory_key_json_download_rejects_query_param_auth(client, app)
     assert query_only.status_code == 401
     assert secret not in query_only.text
     assert get_json.status_code == 405
+
+
+async def test_masked_list_and_detail_endpoints_send_no_store(client):
+    await _submit_inventory_key(client, "sk-proj-no-store-key-12345", "openai")
+    listing = await client.get("/dashboard/api/inventory/keys")
+    assert listing.status_code == 200
+    assert listing.headers["cache-control"] == "no-store"
+
+    key_id = listing.json()["keys"][0]["id"]
+    detail = await client.get(f"/dashboard/api/inventory/keys/{key_id}")
+    assert detail.status_code == 200
+    assert detail.headers["cache-control"] == "no-store"

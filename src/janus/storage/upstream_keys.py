@@ -276,8 +276,12 @@ def _list_filters(
         clauses.append("k.provider_id = ?")
         params.append(provider_id)
     if search:
-        clauses.append("(k.key_label LIKE ? OR k.key_masked LIKE ? OR k.provider_id LIKE ?)")
-        pattern = f"%{search}%"
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        clauses.append(
+            "(k.key_label LIKE ? ESCAPE '\\' OR k.key_masked LIKE ? ESCAPE '\\'"
+            " OR k.provider_id LIKE ? ESCAPE '\\')"
+        )
         params.extend([pattern, pattern, pattern])
     return " AND ".join(clauses), params
 
@@ -430,8 +434,12 @@ async def list_upstream_keys(
         clauses.append("status = ?")
         params.append(status)
     if search:
-        clauses.append("(key_label LIKE ? OR key_masked LIKE ? OR provider_id LIKE ?)")
-        pattern = f"%{search}%"
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        clauses.append(
+            "(key_label LIKE ? ESCAPE '\\' OR key_masked LIKE ? ESCAPE '\\'"
+            " OR provider_id LIKE ? ESCAPE '\\')"
+        )
         params.extend([pattern, pattern, pattern])
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
@@ -539,22 +547,29 @@ async def delete_upstream_key(db_path: str | Path, key_id: str) -> None:
         await db.commit()
 
 
+_DELETE_CHUNK = 400
+
+
 async def delete_upstream_keys(db_path: str | Path, key_ids: list[str]) -> int:
     if not key_ids:
         return 0
-    placeholders = ", ".join("?" for _ in key_ids)
+    deleted = 0
     async with get_connection(db_path) as db:
-        await db.execute(
-            f"DELETE FROM upstream_models WHERE upstream_key_id IN ({placeholders})",
-            key_ids,
-        )
-        await db.execute(
-            f"DELETE FROM upstream_key_history WHERE upstream_key_id IN ({placeholders})",
-            key_ids,
-        )
-        cur = await db.execute(f"DELETE FROM upstream_keys WHERE id IN ({placeholders})", key_ids)
+        for start in range(0, len(key_ids), _DELETE_CHUNK):
+            chunk = key_ids[start : start + _DELETE_CHUNK]
+            placeholders = ", ".join("?" for _ in chunk)
+            await db.execute(
+                f"DELETE FROM upstream_models WHERE upstream_key_id IN ({placeholders})",
+                chunk,
+            )
+            await db.execute(
+                f"DELETE FROM upstream_key_history WHERE upstream_key_id IN ({placeholders})",
+                chunk,
+            )
+            cur = await db.execute(f"DELETE FROM upstream_keys WHERE id IN ({placeholders})", chunk)
+            deleted += cur.rowcount if cur.rowcount is not None else 0
         await db.commit()
-    return cur.rowcount if cur.rowcount is not None else 0
+    return deleted
 
 
 async def archive_upstream_keys(

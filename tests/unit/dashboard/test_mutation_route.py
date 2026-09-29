@@ -27,7 +27,13 @@ def test_successful_dashboard_mutation_invalidates() -> None:
 
 def test_failed_dashboard_mutation_does_not_invalidate() -> None:
     assert not _should_invalidate(
-        _request("POST", "/dashboard/api/budgets"), Response(status_code=422)
+        _request("POST", "/dashboard/api/budgets"), Response(status_code=404)
+    )
+
+
+def test_partial_submit_422_still_invalidates() -> None:
+    assert _should_invalidate(
+        _request("POST", "/dashboard/api/inventory/submit"), Response(status_code=422)
     )
 
 
