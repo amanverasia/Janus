@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from .database import get_connection
+from .settings import get_reporting_timezone
 from .time_windows import current_reporting_day
 
 Dimension = Literal["model", "provider", "account", "client_key"]
@@ -23,6 +25,27 @@ async def get_spend_summary(
     days: int = 30,
     include_success: bool = False,
 ) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    timezone = ZoneInfo(await get_reporting_timezone(db_path))
+    first_day = (now - timedelta(days=days)).astimezone(timezone).date()
+    last_day = now.astimezone(timezone).date()
+    buckets: list[tuple[str, str, str]] = []
+    day = first_day
+    while day <= last_day:
+        start_local = datetime.combine(day, time.min, tzinfo=timezone)
+        end_local = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone)
+        start_utc = start_local.astimezone(UTC).replace(tzinfo=None)
+        end_utc = end_local.astimezone(UTC).replace(tzinfo=None)
+        buckets.append(
+            (
+                day.isoformat(),
+                start_utc.isoformat(sep=" ", timespec="seconds"),
+                end_utc.isoformat(sep=" ", timespec="seconds"),
+            )
+        )
+        day += timedelta(days=1)
+    bucket_values = ", ".join("(?, ?, ?)" for _ in buckets)
+    bucket_params = tuple(value for bucket in buckets for value in bucket)
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT COALESCE(SUM(input_tokens), 0) as inp,
@@ -38,30 +61,49 @@ async def get_spend_summary(
             assert row is not None
 
         async with db.execute(
-            """SELECT date(o.timestamp) as date,
-                      COUNT(o.id) as requests,
-                      SUM(CASE WHEN o.status >= 200 AND o.status < 300 THEN 1 ELSE 0 END) as s2xx,
-                      SUM(CASE WHEN o.status >= 400 AND o.status < 500 THEN 1 ELSE 0 END) as s4xx,
-                      SUM(CASE WHEN o.status >= 500 THEN 1 ELSE 0 END) as s5xx,
-                      COALESCE(u.cost, 0.0) as cost,
-                      COALESCE(u.input_tokens, 0) as input_tokens,
-                      COALESCE(u.output_tokens, 0) as output_tokens,
-                      COALESCE(u.input_tokens, 0)
-                        + COALESCE(u.output_tokens, 0) as tokens
-               FROM request_outcomes o
-               LEFT JOIN (
-                   SELECT date(timestamp) as date,
-                          SUM(cost) as cost,
-                          SUM(input_tokens) as input_tokens,
-                          SUM(output_tokens) as output_tokens
-                   FROM usage
-                   WHERE timestamp >= datetime('now', ?)
-                   GROUP BY date(timestamp)
-               ) u ON u.date = date(o.timestamp)
-               WHERE o.timestamp >= datetime('now', ?)
-               GROUP BY date(o.timestamp)
-               ORDER BY date(o.timestamp)""",
-            (f"-{days} days", f"-{days} days"),
+            f"""WITH days(day, start_utc, end_utc) AS (VALUES {bucket_values}),
+                outcome_daily AS (
+                    SELECT d.day,
+                           COUNT(o.id) AS requests,
+                           SUM(CASE WHEN o.status >= 200 AND o.status < 300 THEN 1 ELSE 0 END)
+                               AS s2xx,
+                           SUM(CASE WHEN o.status >= 400 AND o.status < 500 THEN 1 ELSE 0 END)
+                               AS s4xx,
+                           SUM(CASE WHEN o.status >= 500 THEN 1 ELSE 0 END) AS s5xx
+                    FROM days d
+                    JOIN request_outcomes o
+                      ON datetime(o.timestamp) >= d.start_utc
+                     AND datetime(o.timestamp) < d.end_utc
+                    WHERE o.timestamp >= datetime('now', ?)
+                      AND datetime(o.timestamp) >= datetime('now', ?)
+                    GROUP BY d.day
+                ),
+                usage_daily AS (
+                    SELECT d.day,
+                           SUM(u.cost) AS cost,
+                           SUM(u.input_tokens) AS input_tokens,
+                           SUM(u.output_tokens) AS output_tokens
+                    FROM days d
+                    JOIN usage u
+                      ON datetime(u.timestamp) >= d.start_utc
+                     AND datetime(u.timestamp) < d.end_utc
+                    WHERE u.timestamp >= datetime('now', ?)
+                      AND datetime(u.timestamp) >= datetime('now', ?)
+                    GROUP BY d.day
+                )
+                SELECT o.day AS date,
+                       o.requests,
+                       o.s2xx,
+                       o.s4xx,
+                       o.s5xx,
+                       COALESCE(u.cost, 0.0) AS cost,
+                       COALESCE(u.input_tokens, 0) AS input_tokens,
+                       COALESCE(u.output_tokens, 0) AS output_tokens,
+                       COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0) AS tokens
+                FROM outcome_daily o
+                LEFT JOIN usage_daily u ON u.day = o.day
+                ORDER BY o.day""",
+            (*bucket_params, f"-{days} days", f"-{days} days", f"-{days} days", f"-{days} days"),
         ) as cur:
             daily_rows = await cur.fetchall()
 

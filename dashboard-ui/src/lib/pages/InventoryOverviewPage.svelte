@@ -533,7 +533,7 @@
     text-overflow: ellipsis;
     color: var(--muted);
     font:
-      10px ui-monospace,
+      11px ui-monospace,
       monospace;
     white-space: nowrap;
   }

@@ -1048,7 +1048,7 @@ kbd {
   border-radius: 5px;
   background: var(--surface-soft);
   font:
-    9px ui-monospace,
+    11px ui-monospace,
     monospace;
   color: var(--muted);
 }

@@ -1059,7 +1059,7 @@
   }
   .credential-cell code {
     font:
-      10px ui-monospace,
+      11px ui-monospace,
       monospace;
     color: var(--text);
   }
@@ -1084,7 +1084,7 @@
     background: var(--surface-soft);
     color: var(--muted);
     font:
-      9px ui-monospace,
+      11px ui-monospace,
       monospace;
   }
   .checked-cell {
@@ -1177,7 +1177,7 @@
     text-overflow: ellipsis;
     color: var(--muted);
     font:
-      10px ui-monospace,
+      11px ui-monospace,
       monospace;
     white-space: nowrap;
   }
@@ -1262,7 +1262,7 @@
     border-radius: 8px;
     background: var(--surface-soft);
     font:
-      9px ui-monospace,
+      11px ui-monospace,
       monospace;
   }
   .detail-copy {

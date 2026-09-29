@@ -10,6 +10,7 @@ from janus.storage.analytics import (
     get_success_rate,
 )
 from janus.storage.database import init_db
+from janus.storage.settings import set_setting
 from tests.fixtures.usage_seed import seed_outcomes, seed_usage
 
 
@@ -341,6 +342,38 @@ async def test_get_spend_summary_request_totals_from_outcomes(tmp_path):
     assert today["requests"] == 3
     assert today["input_tokens"] == 100
     assert abs(today["cost"] - 0.01) < 0.0001
+
+
+@pytest.mark.asyncio
+async def test_spend_summary_daily_buckets_follow_reporting_timezone(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await set_setting(db_path, "server_reporting_timezone", "Asia/Kolkata")
+    utc_day = datetime.datetime.now(datetime.UTC).date() - datetime.timedelta(days=2)
+    timestamps = [
+        datetime.datetime.combine(utc_day, datetime.time(18, 29), tzinfo=datetime.UTC).isoformat(),
+        datetime.datetime.combine(utc_day, datetime.time(18, 31), tzinfo=datetime.UTC).isoformat(),
+    ]
+    await seed_usage(
+        db_path,
+        [
+            {
+                "timestamp": timestamp,
+                "model": "gpt-4o",
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cost": 0.01,
+                "status": 200,
+            }
+            for timestamp in timestamps
+        ],
+    )
+
+    result = await get_spend_summary(db_path, days=30)
+    daily = {row["date"]: row for row in result["daily"]}
+
+    assert daily[utc_day.isoformat()]["requests"] == 1
+    assert daily[(utc_day + datetime.timedelta(days=1)).isoformat()]["requests"] == 1
 
 
 @pytest.mark.asyncio

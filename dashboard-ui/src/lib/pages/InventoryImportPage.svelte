@@ -522,7 +522,7 @@
   .format-card code {
     color: var(--accent-strong);
     font:
-      10px ui-monospace,
+      11px ui-monospace,
       monospace;
   }
   .format-list {
@@ -602,7 +602,7 @@
     color: var(--muted);
     background: var(--surface-soft);
     font:
-      10px/1.65 ui-monospace,
+      11px/1.65 ui-monospace,
       monospace;
   }
   @media (max-width: 940px) {
