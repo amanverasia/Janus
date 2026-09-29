@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.22.0] - 2026-09-29
+### Security
+- **Dashboard session auth hardened** — the session cookie is now scoped to
+  `Path=/dashboard` and marked `Secure` on HTTPS requests, and can no longer
+  authenticate gateway `/v1/*` requests. `POST /dashboard/login` is throttled
+  per client IP (5 failures per 5 minutes → 429; success clears the counter),
+  and all mutating dashboard routes reject requests whose `Origin` header is
+  present and mismatches the request origin, as a CSRF backstop.
+  (#196)
+- **URL-guard SSRF hardening** — resolver failures in the dashboard URL guard
+  now reject the URL instead of allowing it; inventory probe/test connections
+  resolve and validate every redirect hop and pin each connection to the
+  validated address (original `Host` header and TLS SNI preserved), closing
+  the DNS-rebinding window; `Authorization`/credential headers are stripped
+  on cross-origin redirects and redirects to disallowed targets are refused.
+  (#198)
+
 ## [3.21.0] - 2026-09-29
 ### Fixed
 - **Aborted client streams no longer lose usage, cost, and request rows** —
