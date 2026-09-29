@@ -2049,8 +2049,57 @@ async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
 
 
 @router.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request, details: bool = False) -> dict[str, Any]:
+    if not details:
+        return {"status": "ok"}
+
+    from janus.inventory.scheduler import scheduler_enabled
+    from janus.storage.database import get_connection
+
+    database_reachable = True
+    last_checked_at: str | None = None
+    try:
+        async with get_connection(request.app.state.db_path) as db:
+            async with db.execute("SELECT MAX(last_checked_at) FROM upstream_keys") as cursor:
+                row = await cursor.fetchone()
+        if row is not None and row[0] is not None:
+            last_checked_at = str(row[0])
+    except Exception:
+        database_reachable = False
+
+    scheduler_task = getattr(request.app.state, "inventory_scheduler_task", None)
+    scheduler_alive = scheduler_task is not None and not scheduler_task.done()
+    if not scheduler_enabled():
+        scheduler_status = "disabled"
+    elif scheduler_task is None:
+        scheduler_status = "unknown"
+    elif scheduler_alive:
+        scheduler_status = "running"
+    else:
+        scheduler_status = "stopped"
+
+    last_check_age_s: float | None = None
+    if last_checked_at is not None:
+        try:
+            checked_at = datetime.datetime.fromisoformat(last_checked_at)
+            if checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=datetime.UTC)
+            last_check_age_s = max(
+                0.0, (datetime.datetime.now(datetime.UTC) - checked_at).total_seconds()
+            )
+        except ValueError:
+            last_check_age_s = None
+
+    return {
+        "status": "ok" if database_reachable else "degraded",
+        "database": {"reachable": database_reachable},
+        "providers": {"total": len(getattr(request.app.state, "providers", {}))},
+        "inventory_scheduler": {
+            "status": scheduler_status,
+            "alive": scheduler_alive if scheduler_task is not None else None,
+        },
+        "last_inventory_check_age_s": last_check_age_s,
+    }
 
 
 async def _read_json_body(request: Request, client_format: str) -> dict[str, Any] | Response:
