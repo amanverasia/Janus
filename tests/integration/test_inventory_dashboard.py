@@ -651,6 +651,8 @@ async def test_inventory_import_json_schedules_rechecks_and_reloads_routing(
     assert response.json() == {
         "ok": True,
         "imported_count": 1,
+        "duplicate_count": 0,
+        "skipped_count": 0,
         "recheck_count": 1,
         "verification": None,
     }
@@ -691,10 +693,51 @@ async def test_inventory_import_json_errors_are_safe_and_actionable(client):
     assert response.status_code == 422
     assert response.json() == {
         "ok": False,
-        "error": "The import contains an invalid field value.",
+        "error": "Row 1 contains an invalid field value. Nothing was imported.",
     }
     assert credential not in response.text
     assert invalid_field not in response.text
+
+
+async def test_inventory_import_is_atomic_and_idempotent(client, app, monkeypatch):
+    import json
+
+    from janus.storage.upstream_keys import count_upstream_keys
+
+    monkeypatch.setattr("janus.dashboard.inventory_routes._schedule_recheck", lambda *_: None)
+    await client.get("/dashboard/api/v2/state/inventory")
+    before = await count_upstream_keys(app.state.db_path)
+    rows = [
+        {"key_value": "sk-proj-atomic-route-first-value", "provider_id": "openai"},
+        {"key_value": "sk-proj-atomic-route-second-value", "provider_id": "openai"},
+    ]
+    broken = [*rows, {"key_value": "sk-proj-atomic-route-third-value", "priority": "high"}]
+
+    failed = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("export.json", json.dumps(broken), "application/json")},
+    )
+    assert failed.status_code == 422
+    assert failed.json()["error"] == "Row 3 contains an invalid field value. Nothing was imported."
+    assert await count_upstream_keys(app.state.db_path) == before
+
+    first = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("export.json", json.dumps(rows), "application/json")},
+    )
+    assert first.status_code == 200
+    assert first.json()["imported_count"] == 2
+    assert first.json()["duplicate_count"] == 0
+
+    again = await client.post(
+        "/dashboard/api/inventory/import",
+        files={"export_file": ("export.json", json.dumps(rows), "application/json")},
+    )
+    assert again.status_code == 200
+    assert again.json()["imported_count"] == 0
+    assert again.json()["duplicate_count"] == 2
+    assert again.json()["recheck_count"] == 0
+    assert await count_upstream_keys(app.state.db_path) == before + 2
 
 
 async def test_inventory_reclassify_preview(client):

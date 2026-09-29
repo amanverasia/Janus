@@ -19,9 +19,18 @@ from janus.dashboard.routes import _ensure_db
 from janus.inventory.account_value import refresh_account_value
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
-from janus.inventory.key_checker import check_all_upstream_keys, check_upstream_key
+from janus.inventory.key_checker import (
+    check_all_upstream_keys,
+    check_upstream_key,
+    is_recheck_eligible,
+)
 from janus.inventory.key_encryption import CredentialEncryptionError, encryption_enabled
-from janus.inventory.migrate import import_dashboard_json_with_ids, verify_inventory
+from janus.inventory.migrate import (
+    ImportOutcome,
+    ImportRowError,
+    import_dashboard_json_with_ids,
+    verify_inventory,
+)
 from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 from janus.inventory.reclassify import reclassify_upstream_keys
@@ -87,6 +96,8 @@ async def _run_all_keys(db_path: Path) -> None:
     try:
         keys = await list_upstream_keys(db_path)
         for key in keys:
+            if not is_recheck_eligible(key):
+                continue
             await update_upstream_key(
                 db_path,
                 key["id"],
@@ -588,12 +599,15 @@ async def api_inventory_import(
     db_path = await _ensure_db(request)
     data = await export_file.read()
     json_error: str | None = None
-    imported = 0
-    imported_ids: list[str] = []
+    outcome = ImportOutcome()
     try:
-        imported, imported_ids = await import_dashboard_json_with_ids(db_path, data, dry_run=False)
+        outcome = await import_dashboard_json_with_ids(
+            db_path, data, dry_run=False, reset_validation=True
+        )
     except json.JSONDecodeError:
         json_error = "The selected file is not valid JSON."
+    except ImportRowError as exc:
+        json_error = f"{exc} Nothing was imported."
     except ValueError as exc:
         if str(exc) == "Expected export JSON with a top-level 'keys' array or a bare array":
             json_error = str(exc)
@@ -604,20 +618,8 @@ async def api_inventory_import(
     except CredentialEncryptionError:
         json_error = "Credential storage encryption is not configured correctly."
 
-    if json_error is None and imported_ids:
-        for key_id in imported_ids:
-            await update_upstream_key(
-                db_path,
-                key_id,
-                {
-                    "status": "pending_validation",
-                    "is_valid": 0,
-                    "is_usable": 0,
-                    "last_error": None,
-                    "consecutive_failures": 0,
-                    "validation_paused_at": None,
-                },
-            )
+    if json_error is None and outcome.imported_ids:
+        for key_id in outcome.imported_ids:
             _schedule_recheck(key_id, db_path)
         from janus.dashboard.reload import reload_providers
 
@@ -629,13 +631,15 @@ async def api_inventory_import(
 
     if json_error is not None:
         return _json_error(json_error, status_code=422)
-    if imported == 0:
+    if outcome.imported == 0 and outcome.duplicates == 0:
         return _json_error("No importable credentials were found.", status_code=422)
     return JSONResponse(
         {
             "ok": True,
-            "imported_count": imported,
-            "recheck_count": len(imported_ids),
+            "imported_count": outcome.imported,
+            "duplicate_count": outcome.duplicates,
+            "skipped_count": outcome.skipped,
+            "recheck_count": len(outcome.imported_ids),
             "verification": verification,
         },
         headers=_NO_STORE_HEADERS,

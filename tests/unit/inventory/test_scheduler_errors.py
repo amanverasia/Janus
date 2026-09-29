@@ -65,3 +65,62 @@ async def test_recheck_all_task_is_tracked_until_done(tmp_path) -> None:
         await task
 
     assert task not in background.background_tasks()
+
+
+async def test_recheck_all_preserves_manual_review_state(tmp_path) -> None:
+    from janus.storage.database import init_db
+    from janus.storage.upstream_keys import (
+        create_upstream_key,
+        get_upstream_key,
+        update_upstream_key,
+    )
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    unidentified = await create_upstream_key(
+        db_path, provider_id="unidentified", key_value="mystery-credential-value-1"
+    )
+    await update_upstream_key(
+        db_path,
+        unidentified["id"],
+        {"status": "invalid", "last_error": "Provider could not be identified"},
+    )
+    paused = await create_upstream_key(
+        db_path, provider_id="openai", key_value="sk-proj-paused-credential-value"
+    )
+    await update_upstream_key(
+        db_path,
+        paused["id"],
+        {
+            "status": "validation_paused",
+            "last_error": "Paused after repeated failures",
+            "consecutive_failures": 5,
+            "validation_paused_at": "2026-09-28 00:00:00",
+        },
+    )
+    eligible = await create_upstream_key(
+        db_path, provider_id="openai", key_value="sk-proj-eligible-credential-value"
+    )
+    await update_upstream_key(db_path, eligible["id"], {"status": "invalid", "last_error": "stale"})
+
+    with patch(
+        "janus.dashboard.inventory_routes.check_all_upstream_keys", AsyncMock(return_value=1)
+    ):
+        await _run_all_keys(db_path)
+
+    kept_unidentified = await get_upstream_key(db_path, unidentified["id"])
+    assert kept_unidentified is not None
+    assert kept_unidentified["status"] == "invalid"
+    assert kept_unidentified["last_error"] == "Provider could not be identified"
+
+    kept_paused = await get_upstream_key(db_path, paused["id"])
+    assert kept_paused is not None
+    assert kept_paused["status"] == "validation_paused"
+    assert kept_paused["last_error"] == "Paused after repeated failures"
+    assert kept_paused["consecutive_failures"] == 5
+    assert kept_paused["validation_paused_at"] == "2026-09-28 00:00:00"
+
+    reset = await get_upstream_key(db_path, eligible["id"])
+    assert reset is not None
+    assert reset["status"] == "pending_validation"
+    assert reset["last_error"] is None

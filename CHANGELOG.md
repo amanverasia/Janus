@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.24.2] - 2026-09-29
+### Fixed
+- **Inventory import is atomic and idempotent** — every row is validated before
+  anything is written and all inserts share one transaction, so an invalid or
+  failing row leaves zero partial rows (the 422 names the offending row).
+  Rows whose credential already exists (non-revoked) or repeats earlier in the
+  file are skipped, so re-uploading an export creates no duplicates. The
+  response adds `duplicate_count` and `skipped_count`, and dashboard imports
+  land directly in `pending_validation` instead of briefly keeping the
+  exported routable status. (#202)
+- **"Recheck all" keeps manual-review state** — unidentified and
+  `validation_paused` credentials are no longer reset to `pending_validation`
+  with their error note wiped; the reset uses the same eligibility filter as
+  the checker. (#203)
+
 ## [3.24.1] - 2026-09-29
 ### Security
 - **Dashboard/inventory hardening batch** — the inventory push token is compared

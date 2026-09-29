@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +11,8 @@ from janus.storage.providers_db import count_provider_encryption_state
 from janus.storage.upstream_keys import (
     count_storage_encryption_state,
     count_upstream_keys,
-    create_upstream_key,
+    import_upstream_keys_atomic,
     list_upstream_keys,
-    update_upstream_key,
 )
 
 
@@ -86,8 +86,71 @@ async def import_dashboard_rows(
     *,
     dry_run: bool,
 ) -> int:
-    imported, _ = await import_dashboard_rows_with_ids(db_path, rows, dry_run=dry_run)
-    return imported
+    outcome = await import_dashboard_rows_with_ids(db_path, rows, dry_run=dry_run)
+    return outcome.imported
+
+
+class ImportRowError(ValueError):
+    def __init__(self, row_number: int) -> None:
+        super().__init__(f"Row {row_number} contains an invalid field value.")
+        self.row_number = row_number
+
+
+@dataclass
+class ImportOutcome:
+    imported_ids: list[str] = field(default_factory=list)
+    imported: int = 0
+    duplicates: int = 0
+    skipped: int = 0
+
+
+_SCALAR_TYPES = (str, int, float, type(None))
+_PASSTHROUGH_FIELDS = (
+    "key_label",
+    "custom_base_url",
+    "status",
+    "credits_remaining",
+    "credits_total",
+    "credits_used",
+    "health_status",
+    "usability_status",
+    "usability_note",
+    "last_checked_at",
+    "last_error",
+)
+
+
+def _prepare_import_row(row: dict[str, Any], row_number: int) -> dict[str, Any] | None:
+    key_value = row.get("key_value") or row.get("key")
+    if not key_value:
+        return None
+    if not isinstance(key_value, str):
+        raise ImportRowError(row_number)
+    provider_id = row.get("provider_id") or detect_provider_from_key(key_value) or "unidentified"
+    source_node = row.get("node_id") or row.get("source_node")
+    try:
+        priority = int(row.get("priority") or 0)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ImportRowError(row_number) from exc
+    record: dict[str, Any] = {
+        "provider_id": str(provider_id),
+        "key_value": key_value,
+        "source_node": source_node,
+        "priority": priority,
+        "metadata": row.get("metadata") if isinstance(row.get("metadata"), dict) else None,
+        "is_valid": int(bool(row.get("is_valid"))),
+        "is_usable": int(bool(row.get("is_usable"))),
+    }
+    for name in _PASSTHROUGH_FIELDS:
+        record[name] = row.get(name)
+    if record["status"] is None:
+        record["status"] = "pending_validation"
+    for name, value in record.items():
+        if name != "metadata" and not isinstance(value, _SCALAR_TYPES):
+            raise ImportRowError(row_number)
+        if isinstance(value, int) and not -(2**63) <= value < 2**63:
+            raise ImportRowError(row_number)
+    return record
 
 
 async def import_dashboard_rows_with_ids(
@@ -95,53 +158,26 @@ async def import_dashboard_rows_with_ids(
     rows: list[dict[str, Any]],
     *,
     dry_run: bool,
-) -> tuple[int, list[str]]:
-    if not dry_run:
-        await init_db(db_path)
-
-    imported = 0
-    imported_ids: list[str] = []
-    for row in rows:
-        key_value = row.get("key_value") or row.get("key")
-        if not key_value:
+    reset_validation: bool = False,
+) -> ImportOutcome:
+    outcome = ImportOutcome()
+    records: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=1):
+        record = _prepare_import_row(row, index)
+        if record is None:
+            outcome.skipped += 1
             continue
-        provider_id = (
-            row.get("provider_id") or detect_provider_from_key(str(key_value)) or "unidentified"
-        )
-        if dry_run:
-            imported += 1
-            continue
+        if reset_validation:
+            record.update(status="pending_validation", is_valid=0, is_usable=0, last_error=None)
+        records.append(record)
+    if dry_run:
+        outcome.imported = len(records)
+        return outcome
 
-        record = await create_upstream_key(
-            db_path,
-            provider_id=str(provider_id),
-            key_value=str(key_value),
-            key_label=row.get("key_label"),
-            custom_base_url=row.get("custom_base_url"),
-            source_node=row.get("node_id") or row.get("source_node"),
-            priority=int(row.get("priority") or 0),
-            metadata=row.get("metadata") if isinstance(row.get("metadata"), dict) else None,
-        )
-        await update_upstream_key(
-            db_path,
-            record["id"],
-            {
-                "status": row.get("status", "pending_validation"),
-                "is_valid": int(bool(row.get("is_valid"))),
-                "credits_remaining": row.get("credits_remaining"),
-                "credits_total": row.get("credits_total"),
-                "credits_used": row.get("credits_used"),
-                "health_status": row.get("health_status"),
-                "is_usable": int(bool(row.get("is_usable"))),
-                "usability_status": row.get("usability_status"),
-                "usability_note": row.get("usability_note"),
-                "last_checked_at": row.get("last_checked_at"),
-                "last_error": row.get("last_error"),
-            },
-        )
-        imported += 1
-        imported_ids.append(str(record["id"]))
-    return imported, imported_ids
+    await init_db(db_path)
+    outcome.imported_ids, outcome.duplicates = await import_upstream_keys_atomic(db_path, records)
+    outcome.imported = len(outcome.imported_ids)
+    return outcome
 
 
 async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: bool) -> int:
@@ -150,8 +186,8 @@ async def import_dashboard_export(db_path: Path, export_path: Path, *, dry_run: 
 
 
 async def import_dashboard_json(db_path: Path, data: bytes, *, dry_run: bool) -> int:
-    imported, _ = await import_dashboard_json_with_ids(db_path, data, dry_run=dry_run)
-    return imported
+    outcome = await import_dashboard_json_with_ids(db_path, data, dry_run=dry_run)
+    return outcome.imported
 
 
 async def import_dashboard_json_with_ids(
@@ -159,7 +195,10 @@ async def import_dashboard_json_with_ids(
     data: bytes,
     *,
     dry_run: bool,
-) -> tuple[int, list[str]]:
+    reset_validation: bool = False,
+) -> ImportOutcome:
     payload = json.loads(data)
     rows = _parse_export_payload(payload)
-    return await import_dashboard_rows_with_ids(db_path, rows, dry_run=dry_run)
+    return await import_dashboard_rows_with_ids(
+        db_path, rows, dry_run=dry_run, reset_validation=reset_validation
+    )

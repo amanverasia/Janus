@@ -1592,16 +1592,18 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
     schedule_reload_providers(db_path)
 
 
+def is_recheck_eligible(key: dict[str, Any]) -> bool:
+    return (
+        key.get("status") not in {"revoked", "validation_paused"}
+        and key.get("provider_id") != "unidentified"
+    )
+
+
 async def check_all_upstream_keys(db_path: str | Path) -> int:
     from janus.storage.upstream_keys import list_upstream_keys
 
     keys = await list_upstream_keys(db_path)
-    eligible = [
-        key
-        for key in keys
-        if key.get("status") not in {"revoked", "validation_paused"}
-        and key.get("provider_id") != "unidentified"
-    ]
+    eligible = [key for key in keys if is_recheck_eligible(key)]
     if not eligible:
         return 0
 

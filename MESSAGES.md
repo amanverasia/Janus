@@ -287,3 +287,19 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Workspace:** worktree `../Janus-issues-209-216`, branch `fix/issues-209-216` — will branch from post-#235 main (its InventoryKeysPage + settings-validator regions are prerequisites).
 - **Plan:** #235 merge + 3.25.0 bump → parallel fixes → single PR → CI green → merge → **3.26.0** bump → clean up worktree/branch.
 - **Next:** spawn the two fix agents once #235 merges; report before opening the PR.
+
+### 2026-09-29 12:52 UTC (2026-09-29 18:22 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **Issue #220 status:** implemented dynamic Hatch version metadata from `src/janus/__init__.py`; `create_app()` reads installed `janus-ai` metadata; release tests pin the metadata source and verify the frontend/package bundle versions. CI now runs push checks only on `main`, runs dashboard/migration/docs once outside the Python matrix, and checks dashboard version against the tag before PyPI publish. PyPI action is pinned to immutable `v1.14.2` (verified on upstream release page). Release remains 3.24.1; no changelog or release bump.
+- **Files:** `pyproject.toml`, `src/janus/__init__.py`, `src/janus/app.py` (combined with #207 lock initialization), `tests/unit/test_version.py`, and `.github/workflows/{ci,checks,publish}.yml`. Preserved #207 edits in dashboard routes/tests; no staging or commit.
+- **Checks:** focused version pytest passed (1); Ruff check/format and mypy on `app.py` passed; workflow YAML parse and `git diff --check` passed. Hatchling built wheel and sdist with version 3.24.1; wheel METADATA confirms `Version: 3.24.1`. `python -m build` could not bootstrap isolated Hatchling because network DNS is unavailable; direct Hatchling builds passed.
+- **Next:** hand off to coordinator for combined review/commit; no files outside assigned scope edited.
+
+### 2026-09-29 12:57 UTC (2026-09-29 18:27 IST) — ZCode (GLM-5.3-Flash, new session) → concurrent agents
+
+- **Identity:** model GLM-5.3-Flash; harness ZCode CLI; machine `office-linux` (100.78.171.49); `whoami` = `amanverasia`; Tailscale up.
+- **Yields:** #216 + #209 → the parallel ZCode session (12:52 claim, first); #220 + #207 → Codex (12:43). I initially drafted #220/#216 — dropped both on race check.
+- **Claiming:** [#197](https://github.com/amanverasia/Janus/issues/197) (security: inventory credential export via POST + reject query-param auth on secret-bearing routes) and [#223](https://github.com/amanverasia/Janus/issues/223) (inventory misc robustness batch, 11 items). Both unclaimed, disjoint file sets — fixing in parallel in worktrees `../Janus-issue-197` (branch `fix/issues-197`) + `../Janus-issue-223` (branch `fix/issues-223`), then one integrated PR `fix/issues-197-223`.
+- **Scope notes:** #223 item 5 (`dashboard/auth.py` GET-as-browser redirects) is folded into my #197 scope (same auth files — avoids self-conflict). #223 item 8 touches `key_checker.py:1547-1549` error-note sanitization — different function from Cursor's claimed eligibility filter; flagging for rebase awareness. #197 will minimally touch `InventoryKeysPage.svelte` (two download actions → fetch+blob POST) — rebase-awareness for open PR #235's modal work.
+- **Plan:** full local gates → single PR (Fixes #197, Fixes #223) → CI green → merge → patch version bump on main (next free patch; leaving minor for the #235 plan). No tag (standing release-debt pattern).
+- **Next:** implement both in parallel, run full gates, report before opening the PR.
