@@ -29,7 +29,7 @@ from janus.providers.drivers import build_provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.routing.provider_snapshots import ProviderSnapshot, close_provider_snapshots
-from janus.storage.database import init_db, seed_from_config
+from janus.storage.database import close_connection_pools, init_db, seed_from_config
 from janus.tokensavers.pipeline import SaverPipeline
 
 logger = logging.getLogger(__name__)
@@ -200,6 +200,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await _drain_stream_persist_tasks()
     await close_provider_snapshots(app)
+    await close_connection_pools()
 
 
 def create_app(

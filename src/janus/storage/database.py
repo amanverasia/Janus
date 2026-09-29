@@ -1,6 +1,15 @@
+"""SQLite access helpers.
+
+Foreign key enforcement remains disabled because existing non-cascading relationships
+are not yet guaranteed compatible with every legacy delete path.
+"""
+
 from __future__ import annotations
 
+import asyncio
 import json
+import queue
+import threading
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -267,6 +276,103 @@ CREATE TABLE IF NOT EXISTS request_logs (
 
 CREATE INDEX IF NOT EXISTS idx_request_logs_ts ON request_logs(timestamp);
 """
+
+_SQLITE_BUSY_TIMEOUT_MS = 5_000
+_SQLITE_MAX_CONNECTIONS = 4
+_SQLITE_FOREIGN_KEYS_ENABLED = False
+_SQLITE_MAX_IDLE_CONNECTIONS = 1
+_pool_registry_lock = threading.RLock()
+_connection_pools: dict[str, _ConnectionPool] = {}
+
+
+class _ConnectionPool:
+    def __init__(self, db_path: str) -> None:
+        self.db_path = db_path
+        self.available: queue.LifoQueue[aiosqlite.Connection] = queue.LifoQueue(
+            maxsize=_SQLITE_MAX_IDLE_CONNECTIONS
+        )
+        self.capacity = threading.BoundedSemaphore(_SQLITE_MAX_CONNECTIONS)
+
+    async def _acquire_slot(self) -> None:
+        if self.capacity.acquire(blocking=False):
+            return
+        task = asyncio.create_task(asyncio.to_thread(self.capacity.acquire))
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            task.add_done_callback(lambda _: self.capacity.release())
+            raise
+
+    async def acquire(self) -> aiosqlite.Connection:
+        await self._acquire_slot()
+        db: aiosqlite.Connection | None = None
+        try:
+            return self.available.get_nowait()
+        except queue.Empty:
+            try:
+                db = await aiosqlite.connect(
+                    self.db_path,
+                    timeout=_SQLITE_BUSY_TIMEOUT_MS / 1000,
+                )
+                async with db.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}"):
+                    pass
+                async with db.execute(f"PRAGMA foreign_keys = {int(_SQLITE_FOREIGN_KEYS_ENABLED)}"):
+                    pass
+                db.row_factory = aiosqlite.Row
+                return db
+            except BaseException:
+                try:
+                    if db is not None:
+                        await asyncio.shield(db.close())
+                finally:
+                    self.capacity.release()
+                raise
+
+    async def release(self, db: aiosqlite.Connection) -> None:
+        try:
+            if db.in_transaction:
+                await db.rollback()
+            try:
+                self.available.put_nowait(db)
+            except queue.Full:
+                await asyncio.shield(db.close())
+        except BaseException:
+            await asyncio.shield(db.close())
+            raise
+        finally:
+            self.capacity.release()
+
+    async def close(self) -> None:
+        acquired = 0
+        try:
+            for _ in range(_SQLITE_MAX_CONNECTIONS):
+                await self._acquire_slot()
+                acquired += 1
+        except BaseException:
+            for _ in range(acquired):
+                self.capacity.release()
+            raise
+        try:
+            while True:
+                try:
+                    db = self.available.get_nowait()
+                except queue.Empty:
+                    break
+                await asyncio.shield(db.close())
+        finally:
+            for _ in range(acquired):
+                self.capacity.release()
+
+
+def _pool_for(db_path: str | Path) -> _ConnectionPool:
+    path = str(Path(db_path).resolve())
+    with _pool_registry_lock:
+        pool = _connection_pools.get(path)
+        if pool is None:
+            pool = _ConnectionPool(path)
+            _connection_pools[path] = pool
+        return pool
+
 
 _UPSTREAM_KEY_NEW_COLUMNS = [
     ("key_hash", "TEXT"),
@@ -678,7 +784,13 @@ async def _backfill_request_outcomes(db: aiosqlite.Connection) -> None:
 async def init_db(db_path: str | Path) -> None:
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(str(db_path)) as db:
+    async with aiosqlite.connect(str(db_path), timeout=_SQLITE_BUSY_TIMEOUT_MS / 1000) as db:
+        async with db.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}"):
+            pass
+        async with db.execute("PRAGMA journal_mode = WAL") as cursor:
+            await cursor.fetchone()
+        async with db.execute(f"PRAGMA foreign_keys = {int(_SQLITE_FOREIGN_KEYS_ENABLED)}"):
+            pass
         await db.executescript(_SCHEMA)
         await _migrate_usage_columns(db)
         await _migrate_provider_columns(db)
@@ -702,9 +814,27 @@ async def init_db(db_path: str | Path) -> None:
 
 @asynccontextmanager
 async def get_connection(db_path: str | Path) -> AsyncIterator[aiosqlite.Connection]:
-    async with aiosqlite.connect(str(db_path)) as db:
-        db.row_factory = aiosqlite.Row
+    pool = _pool_for(db_path)
+    db = await pool.acquire()
+    try:
         yield db
+    finally:
+        await pool.release(db)
+
+
+async def close_connection_pools(db_path: str | Path | None = None) -> None:
+    """Close pooled database connections, optionally for one database file."""
+    with _pool_registry_lock:
+        if db_path is None:
+            closing = list(_connection_pools.items())
+        else:
+            normalized_path = str(Path(db_path).resolve())
+            pool = _connection_pools.get(normalized_path)
+            closing = [(normalized_path, pool)] if pool is not None else []
+    for path, pool in closing:
+        await pool.close()
+        with _pool_registry_lock:
+            _connection_pools.pop(path, None)
 
 
 async def _table_is_empty(db: aiosqlite.Connection, table: str) -> bool:
