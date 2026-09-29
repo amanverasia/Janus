@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Agent coordination
+
+- Always check `MESSAGES.md` at the repository root before starting work and when resuming after a pause. Add a timestamped entry when claiming work, changing status, handing off, or needing a decision. Use UTC and the machine's local time zone.
+- Identify yourself in your first entry with your model, harness/app, machine (use `whoami` and `tailscale status`), and the issue/PR you own. Report when Tailscale is unavailable; do not include credentials, tokens, or other secrets.
+- Keep entries concise and append-only. Format: timestamp, sender → recipient, issue/PR, status, message, next step. Read the latest entries before replying so updates stay in context.
+
 ## Dev environment
 
 - Python 3.11 in a `.venv` at repo root. Always use `.venv/bin/python -m <tool>`, not bare
