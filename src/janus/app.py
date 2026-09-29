@@ -15,7 +15,12 @@ from starlette.responses import Response
 from starlette.staticfiles import PathLike
 from starlette.types import Scope
 
-from janus.api.routes import gemini_router, ollama_router, router
+from janus.api.routes import (
+    _drain_stream_persist_tasks,
+    gemini_router,
+    ollama_router,
+    router,
+)
 from janus.config.schema import JanusConfig, ProviderConfig
 from janus.inventory.key_encryption import CredentialEncryptionError
 from janus.pricing.registry import PricingRegistry
@@ -193,6 +198,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except asyncio.CancelledError:
             pass
 
+    await _drain_stream_persist_tasks()
     await close_provider_snapshots(app)
 
 

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
 import time
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Coroutine, Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NoReturn
@@ -619,6 +620,105 @@ class _OutcomeRecorder:
         )
 
 
+_CLIENT_ABORTED_STATUS = 499
+
+_stream_persist_tasks: set[asyncio.Task[None]] = set()
+
+
+def _on_stream_persist_done(task: asyncio.Task[None]) -> None:
+    _stream_persist_tasks.discard(task)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logger.warning("Stream persistence failed: %s", error, exc_info=error)
+
+
+def _schedule_stream_persist(persist: Coroutine[Any, Any, None]) -> None:
+    """Run aborted-stream bookkeeping outside the streaming task's cancel scope.
+
+    A client abort unwinds the stream inside a cancelled task group where the
+    first suspending await re-raises CancelledError, so the persistence calls
+    must run in a fresh tracked task (untracked references can be GC'd).
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        persist.close()
+        return
+    task = loop.create_task(persist)
+    _stream_persist_tasks.add(task)
+    task.add_done_callback(_on_stream_persist_done)
+
+
+async def _drain_stream_persist_tasks() -> None:
+    while _stream_persist_tasks:
+        pending = list(_stream_persist_tasks)
+        _stream_persist_tasks.clear()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _persist_stream_telemetry(
+    *,
+    db_path: str | Path,
+    outcome: _OutcomeRecorder,
+    handler: FallbackHandler,
+    target: ResolvedTarget,
+    usage: Usage,
+    cost: float,
+    final_status: int,
+    client_format: str,
+    client_model: str,
+    request_body: str | None,
+    client_key_id: int | None,
+    client_key_label: str | None,
+    log_requests: bool,
+    retention: int,
+    mark_success: bool,
+    attempts: int,
+) -> None:
+    await record_usage(
+        db_path,
+        provider_id=target.provider_config.id,
+        model=target.model,
+        account_id=target.account_id,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        cache_creation_tokens=usage.cache_creation_input_tokens,
+        cache_read_tokens=usage.cache_read_input_tokens,
+        status=final_status,
+        client_key_id=client_key_id,
+        client_key_label=client_key_label,
+        cost=cost,
+    )
+    if log_requests:
+        await record_request_log(
+            db_path,
+            client_format=client_format,
+            model=client_model,
+            provider_id=target.provider_config.id,
+            account_id=target.account_id,
+            status=final_status,
+            duration_ms=outcome.elapsed_ms(),
+            streamed=True,
+            request_body=request_body,
+            client_key_id=client_key_id,
+            client_key_label=client_key_label,
+            max_rows=retention,
+        )
+    if mark_success:
+        handler.mark_success(target.account_id, target.model)
+    await outcome.record(
+        status=final_status,
+        model=target.model,
+        provider_id=target.provider_config.id,
+        account_id=target.account_id,
+        duration_ms=outcome.elapsed_ms(),
+        streamed=True,
+        attempts=attempts,
+    )
+
+
 async def _handle(
     client_format: str,
     body: dict[str, Any],
@@ -1114,6 +1214,7 @@ async def _handle_with_snapshot(
                     async def _pt_stream() -> AsyncIterator[bytes]:
                         stream_ok = False
                         upstream_failure = False
+                        client_aborted = False
                         try:
                             if _pt_is_openai:
                                 async for chunk in openai_passthrough_stream(
@@ -1129,12 +1230,21 @@ async def _handle_with_snapshot(
                                 ):
                                     yield chunk
                             stream_ok = True
+                        except asyncio.CancelledError:
+                            client_aborted = True
+                            raise
+                        except GeneratorExit:
+                            client_aborted = True
+                            raise
                         except httpx.RequestError:
                             upstream_failure = True
                         except Exception:
                             pass
                         finally:
-                            final_status = 200 if stream_ok else 502
+                            if client_aborted:
+                                final_status = _CLIENT_ABORTED_STATUS
+                            else:
+                                final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
@@ -1144,46 +1254,28 @@ async def _handle_with_snapshot(
                                 handler.mark_cooldown(
                                     target.account_id, "network", model=target.model
                                 )
-                            await record_usage(
-                                db_path,
-                                provider_id=target.provider_config.id,
-                                model=target.model,
-                                account_id=target.account_id,
-                                input_tokens=usage.input_tokens,
-                                output_tokens=usage.output_tokens,
-                                cache_creation_tokens=usage.cache_creation_input_tokens,
-                                cache_read_tokens=usage.cache_read_input_tokens,
-                                status=final_status,
+                            persist = _persist_stream_telemetry(
+                                db_path=db_path,
+                                outcome=outcome,
+                                handler=handler,
+                                target=target,
+                                usage=usage,
+                                cost=cost,
+                                final_status=final_status,
+                                client_format=client_format,
+                                client_model=canonical_req.model,
+                                request_body=logged_request_body,
                                 client_key_id=client_key_id,
                                 client_key_label=client_key_label,
-                                cost=cost,
-                            )
-                            if log_requests:
-                                await record_request_log(
-                                    db_path,
-                                    client_format=client_format,
-                                    model=canonical_req.model,
-                                    provider_id=target.provider_config.id,
-                                    account_id=target.account_id,
-                                    status=final_status,
-                                    duration_ms=_elapsed_ms(),
-                                    streamed=True,
-                                    request_body=logged_request_body,
-                                    client_key_id=client_key_id,
-                                    client_key_label=client_key_label,
-                                    max_rows=retention,
-                                )
-                            if stream_ok:
-                                handler.mark_success(target.account_id, target.model)
-                            await outcome.record(
-                                status=final_status,
-                                model=target.model,
-                                provider_id=target.provider_config.id,
-                                account_id=target.account_id,
-                                duration_ms=_elapsed_ms(),
-                                streamed=True,
+                                log_requests=log_requests,
+                                retention=retention,
+                                mark_success=stream_ok or (client_aborted and not upstream_failure),
                                 attempts=len(attempt_errors) + 1,
                             )
+                            if client_aborted:
+                                _schedule_stream_persist(persist)
+                            else:
+                                await persist
 
                     return StreamingResponse(
                         _pt_stream(),
@@ -1377,6 +1469,7 @@ async def _handle_with_snapshot(
                     async def _native_stream() -> AsyncIterator[bytes]:
                         stream_ok = False
                         upstream_failure = False
+                        client_aborted = False
                         try:
                             if _native_is_openai:
                                 async for chunk in openai_passthrough_stream(
@@ -1392,12 +1485,21 @@ async def _handle_with_snapshot(
                                 ):
                                     yield chunk
                             stream_ok = True
+                        except asyncio.CancelledError:
+                            client_aborted = True
+                            raise
+                        except GeneratorExit:
+                            client_aborted = True
+                            raise
                         except httpx.RequestError:
                             upstream_failure = True
                         except Exception:
                             pass
                         finally:
-                            final_status = 200 if stream_ok else 502
+                            if client_aborted:
+                                final_status = _CLIENT_ABORTED_STATUS
+                            else:
+                                final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
@@ -1407,46 +1509,28 @@ async def _handle_with_snapshot(
                                 handler.mark_cooldown(
                                     target.account_id, "network", model=target.model
                                 )
-                            await record_usage(
-                                db_path,
-                                provider_id=target.provider_config.id,
-                                model=target.model,
-                                account_id=target.account_id,
-                                input_tokens=usage.input_tokens,
-                                output_tokens=usage.output_tokens,
-                                cache_creation_tokens=usage.cache_creation_input_tokens,
-                                cache_read_tokens=usage.cache_read_input_tokens,
-                                status=final_status,
+                            persist = _persist_stream_telemetry(
+                                db_path=db_path,
+                                outcome=outcome,
+                                handler=handler,
+                                target=target,
+                                usage=usage,
+                                cost=cost,
+                                final_status=final_status,
+                                client_format=client_format,
+                                client_model=canonical_req.model,
+                                request_body=logged_request_body,
                                 client_key_id=client_key_id,
                                 client_key_label=client_key_label,
-                                cost=cost,
-                            )
-                            if log_requests:
-                                await record_request_log(
-                                    db_path,
-                                    client_format=client_format,
-                                    model=canonical_req.model,
-                                    provider_id=target.provider_config.id,
-                                    account_id=target.account_id,
-                                    status=final_status,
-                                    duration_ms=_elapsed_ms(),
-                                    streamed=True,
-                                    request_body=logged_request_body,
-                                    client_key_id=client_key_id,
-                                    client_key_label=client_key_label,
-                                    max_rows=retention,
-                                )
-                            if stream_ok:
-                                handler.mark_success(target.account_id, target.model)
-                            await outcome.record(
-                                status=final_status,
-                                model=target.model,
-                                provider_id=target.provider_config.id,
-                                account_id=target.account_id,
-                                duration_ms=_elapsed_ms(),
-                                streamed=True,
+                                log_requests=log_requests,
+                                retention=retention,
+                                mark_success=stream_ok or (client_aborted and not upstream_failure),
                                 attempts=len(attempt_errors) + 1,
                             )
+                            if client_aborted:
+                                _schedule_stream_persist(persist)
+                            else:
+                                await persist
 
                     return StreamingResponse(
                         _native_stream(),
@@ -1619,6 +1703,7 @@ async def _handle_with_snapshot(
                     stream_ok = False
                     upstream_failure = False
                     produced_output = False
+                    client_aborted = False
                     try:
                         async for raw_line in lines:
                             if not raw_line or not raw_line.strip():
@@ -1641,12 +1726,21 @@ async def _handle_with_snapshot(
                         for chunk in emitter.finish():
                             yield chunk
                         stream_ok = True
+                    except asyncio.CancelledError:
+                        client_aborted = True
+                        raise
+                    except GeneratorExit:
+                        client_aborted = True
+                        raise
                     except httpx.RequestError:
                         upstream_failure = True
                     except Exception:
                         pass
                     finally:
-                        final_status = 200 if stream_ok else 502
+                        if client_aborted:
+                            final_status = _CLIENT_ABORTED_STATUS
+                        else:
+                            final_status = 200 if stream_ok else 502
                         usage = tracker.get_usage()
                         cost = attempt_cost(usage, target, pricing_registry)
                         handler.record_quota_tokens(
@@ -1663,46 +1757,29 @@ async def _handle_with_snapshot(
                             )
                         elif upstream_failure and not stream_ok:
                             handler.mark_cooldown(target.account_id, "network", model=target.model)
-                        await record_usage(
-                            db_path,
-                            provider_id=target.provider_config.id,
-                            model=target.model,
-                            account_id=target.account_id,
-                            input_tokens=usage.input_tokens,
-                            output_tokens=usage.output_tokens,
-                            cache_creation_tokens=usage.cache_creation_input_tokens,
-                            cache_read_tokens=usage.cache_read_input_tokens,
-                            status=final_status,
+                        persist = _persist_stream_telemetry(
+                            db_path=db_path,
+                            outcome=outcome,
+                            handler=handler,
+                            target=target,
+                            usage=usage,
+                            cost=cost,
+                            final_status=final_status,
+                            client_format=client_format,
+                            client_model=canonical_req.model,
+                            request_body=logged_request_body,
                             client_key_id=client_key_id,
                             client_key_label=client_key_label,
-                            cost=cost,
-                        )
-                        if log_requests:
-                            await record_request_log(
-                                db_path,
-                                client_format=client_format,
-                                model=canonical_req.model,
-                                provider_id=target.provider_config.id,
-                                account_id=target.account_id,
-                                status=final_status,
-                                duration_ms=_elapsed_ms(),
-                                streamed=True,
-                                request_body=logged_request_body,
-                                client_key_id=client_key_id,
-                                client_key_label=client_key_label,
-                                max_rows=retention,
-                            )
-                        if stream_ok and produced_output:
-                            handler.mark_success(target.account_id, target.model)
-                        await outcome.record(
-                            status=final_status,
-                            model=target.model,
-                            provider_id=target.provider_config.id,
-                            account_id=target.account_id,
-                            duration_ms=_elapsed_ms(),
-                            streamed=True,
+                            log_requests=log_requests,
+                            retention=retention,
+                            mark_success=produced_output
+                            and (stream_ok or (client_aborted and not upstream_failure)),
                             attempts=len(attempt_errors) + 1,
                         )
+                        if client_aborted:
+                            _schedule_stream_persist(persist)
+                        else:
+                            await persist
 
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 return StreamingResponse(
