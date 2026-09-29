@@ -1616,8 +1616,8 @@ async def api_update_setting(request: Request) -> Response:
     if validator is not None:
         try:
             validator(value)
-        except ValueError:
-            return _mutation_error("Invalid setting value")
+        except ValueError as exc:
+            return _mutation_error(f"Invalid value for {key}: {exc}")
     if key == "server_reporting_timezone":
         value = value.strip()
     await set_setting(db_path, key, value)

@@ -203,6 +203,7 @@ async def test_provider_rejects_invalid_default_model_without_echoing_credential
 
 
 async def test_budget_omitted_warning_percentage_preserves_existing_value(client, app):
+    await client.get("/dashboard/api/v2/state/settings")
     _, key = await create_key(app.state.db_path, "budget-key")
     await create_or_update_budget(
         app.state.db_path, key_id=int(key["id"]), daily_limit=5, warn_pct=73

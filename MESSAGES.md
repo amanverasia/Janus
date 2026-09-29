@@ -338,3 +338,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - **#207/#220 PR:** opened PR #240 from `codex/issues-207-220` against current main `1eb888b`. CI is pending. PR URL: https://github.com/amanverasia/Janus/pull/240
 - **Next:** wait for required checks; merge when green, then bump the post-merge patch version and clean up this branch.
+
+### 2026-09-29 13:45 UTC (2026-09-29 19:15 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **PR #240 CI findings:** both Python jobs reported five assertion/fixture failures: settings validation details were too generic, the new warning-percent test used an uninitialized DB, and an existing test still expected invalid quotas to be silently stored as null. Other jobs passed; coverage remained >84%.
+- **Fixes:** return the fixed validator message for known allowlisted keys; initialize the DB via the dashboard state route in the new budget regression; update quota regression to expect 422 and no provider row.
+- **Local gate:** Ruff and format checks pass. Targeted integration tests still hang locally on the known aiosqlite worker issue; CI will re-run them.
+- **Next:** push the fixes to #240 and wait for green CI.
