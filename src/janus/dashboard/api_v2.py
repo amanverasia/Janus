@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -488,19 +489,10 @@ async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
     }
 
 
-async def _models_data(
-    request: Request,
-    db_path: Path,
-    *,
-    limit: int,
-    offset: int,
-    provider: str,
-    search: str,
-) -> dict[str, Any]:
+async def _model_providers(db_path: Path) -> list[dict[str, Any]]:
     from janus.dashboard.catalog import get_catalog
     from janus.storage.providers_db import list_providers
 
-    rows = list(request.app.state.provider_snapshot.model_catalog)
     catalog = get_catalog()
     providers: list[dict[str, Any]] = []
     for provider_row in await list_providers(db_path):
@@ -514,12 +506,12 @@ async def _models_data(
                 "is_enabled": bool(provider_row.get("is_enabled", 1)),
             }
         )
-    # The catalog reached ~4,828 rows in production. Page it server-side so the
-    # browser stops building and parsing the whole table on every request.
-    # Pagination is over models (fixed page size), not whole provider groups —
-    # a large prefix must not consume an entire page by itself. The Models UI
-    # only renders groups that have rows on the current page, so empty
-    # "No models cached yet" orphans do not appear for off-page providers.
+    return providers
+
+
+def _filter_models(
+    rows: list[dict[str, Any]], *, provider: str, search: str
+) -> list[dict[str, Any]]:
     filtered = rows
     if provider:
         filtered = [r for r in filtered if str(r.get("prefix") or "") == provider]
@@ -532,13 +524,27 @@ async def _models_data(
             or needle in str(r.get("display_name") or "").lower()
             or needle in str(r.get("namespaced") or "").lower()
         ]
-    filtered = sorted(
+    return sorted(
         filtered,
         key=lambda row: (
             str(row.get("prefix") or ""),
             str(row.get("namespaced") or row.get("id") or ""),
         ),
     )
+
+
+async def _models_data(
+    request: Request,
+    db_path: Path,
+    *,
+    limit: int,
+    offset: int,
+    provider: str,
+    search: str,
+) -> dict[str, Any]:
+    rows = list(request.app.state.provider_snapshot.model_catalog)
+    providers = await _model_providers(db_path)
+    filtered = _filter_models(rows, provider=provider, search=search)
     total = len(filtered)
     page = filtered[offset : offset + limit] if limit else filtered
     visible_total = sum(1 for r in filtered if not r.get("disabled"))
@@ -547,6 +553,70 @@ async def _models_data(
         "providers": providers,
         "model_total": total,
         "visible_total": visible_total,
+    }
+
+
+_MODELS_STATE_SEARCH_LIMIT = 250
+_MODELS_STATE_DROPPED_FIELDS = ("capabilities", "selected")
+
+
+def _toggleable_model(row: Mapping[str, Any]) -> bool:
+    return bool(row.get("provider_enabled", True)) and bool(row.get("custom_enabled", True))
+
+
+async def _models_state_data(
+    request: Request, db_path: Path, *, provider: str, search: str
+) -> dict[str, Any]:
+    # The Models page is grouped by provider, so the state section never pages
+    # across providers (#245). The overview ships per-provider counts only;
+    # model rows travel for one selected provider (whole) or for a search
+    # (capped, grouped client-side), slimmed to the fields the page renders.
+    rows = list(request.app.state.provider_snapshot.model_catalog)
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        bucket = counts.setdefault(
+            str(row.get("prefix") or ""),
+            {
+                "model_count": 0,
+                "visible_model_count": 0,
+                "toggleable_model_count": 0,
+                "toggleable_visible_count": 0,
+            },
+        )
+        visible = not row.get("disabled")
+        toggleable = _toggleable_model(row)
+        bucket["model_count"] += 1
+        bucket["visible_model_count"] += int(visible)
+        bucket["toggleable_model_count"] += int(toggleable)
+        bucket["toggleable_visible_count"] += int(visible and toggleable)
+    providers = await _model_providers(db_path)
+    empty = dict.fromkeys(
+        (
+            "model_count",
+            "visible_model_count",
+            "toggleable_model_count",
+            "toggleable_visible_count",
+        ),
+        0,
+    )
+    for entry in providers:
+        entry.update(counts.get(entry["prefix"], empty))
+
+    matches: list[dict[str, Any]] = []
+    if provider or search.strip():
+        matches = _filter_models(rows, provider=provider, search=search)
+    cap = None if provider else _MODELS_STATE_SEARCH_LIMIT
+    shipped = matches if cap is None else matches[:cap]
+    return {
+        "models": [
+            {k: v for k, v in row.items() if k not in _MODELS_STATE_DROPPED_FIELDS}
+            for row in shipped
+        ],
+        "providers": providers,
+        "model_total": len(rows),
+        "visible_total": sum(1 for r in rows if not r.get("disabled")),
+        "match_total": len(matches),
+        "truncated": len(shipped) < len(matches),
     }
 
 
@@ -1096,25 +1166,13 @@ async def get_dashboard_state(
         )
         return await _response(request, db_path, section, data, meta=meta)
     if section == "models":
-        models_data = await _models_data(
-            request, db_path, limit=limit, offset=offset, provider=provider, search=search
-        )
-        models_total = int(models_data.pop("model_total", 0))
+        models_data = await _models_state_data(request, db_path, provider=provider, search=search)
         return await _response(
             request,
             db_path,
             section,
             models_data,
-            meta={
-                "pagination": {
-                    "total": models_total,
-                    "limit": limit,
-                    "offset": offset,
-                    "page": (offset // limit) + 1,
-                    "total_pages": max(1, -(-models_total // limit)),
-                },
-                "query": {"provider": provider, "search": search},
-            },
+            meta={"query": {"provider": provider, "search": search}},
         )
     if section == "providers":
         return await _response(request, db_path, section, await _providers_data(request, db_path))

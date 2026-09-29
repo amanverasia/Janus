@@ -3,7 +3,6 @@
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import Pagination from '$lib/components/Pagination.svelte';
   import { bool, firstList, number, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
@@ -46,16 +45,21 @@
   $: models = firstList(data, 'models', 'items');
   $: providers = firstList(data, 'providers');
   $: allGroups = buildGroups(models, providers);
-  // Paginated "all providers" views only materialize groups present on this page.
-  // Empty seeded providers would otherwise render as "No models cached yet".
-  $: groups =
-    selectedGroupKey === 'all'
-      ? allGroups.filter((group) => group.rows.length > 0)
-      : allGroups.filter((group) => group.key === selectedGroupKey);
-  $: catalogTotal = number(data.total, models.length);
+  $: catalogTotal = number(data.model_total, models.length);
   $: visibleCount = number(data.visible_total, models.filter(isVisible).length);
+  $: matchTotal = number(data.match_total, models.length);
+  $: truncated = bool(data.truncated);
   $: appliedSearch = text(data.search, '');
   $: urlProvider = text(data.provider, '');
+  // The server ships model rows only for a selected provider or a search; the
+  // unfiltered view is a provider overview built from per-provider counts.
+  $: browsing = selectedGroupKey !== 'all' || !!appliedSearch.trim();
+  $: groups =
+    selectedGroupKey !== 'all'
+      ? allGroups.filter((group) => group.key === selectedGroupKey)
+      : appliedSearch.trim()
+        ? allGroups.filter((group) => group.rows.length > 0)
+        : allGroups;
   $: if (appliedSearch !== searchInput && !searchDirty) searchInput = appliedSearch;
   $: if (urlProvider !== appliedProviderKey) {
     appliedProviderKey = urlProvider;
@@ -138,17 +142,24 @@
     return Array.isArray(value) ? value.map((item) => text(item, '')).filter(Boolean) : [];
   }
 
+  // Provider-wide counts come from the server so they never depend on which
+  // rows happen to be loaded; loaded rows are only a fallback.
+  function groupCount(group: ModelGroup, key: string, fallback: number): number {
+    const source = group.providerRows.find((provider) => provider[key] !== undefined);
+    return source ? number(source[key]) : fallback;
+  }
+
+  function groupTotal(group: ModelGroup): number {
+    return groupCount(group, 'model_count', group.rows.length);
+  }
+
   function groupVisibleCount(group: ModelGroup): number {
-    return group.rows.filter(isVisible).length;
+    return groupCount(group, 'visible_model_count', group.rows.filter(isVisible).length);
   }
 
   function isCollapsed(group: ModelGroup): boolean {
-    if (appliedSearch.trim()) return false;
-    // The selected group defaults to open, but an explicit toggle still wins --
-    // otherwise its header chevron did nothing and "Collapse all" left it open.
-    const explicit = collapsed[group.key];
-    if (explicit !== undefined) return explicit;
-    return group.key !== selectedGroupKey;
+    if (!browsing) return true;
+    return collapsed[group.key] ?? false;
   }
 
   function toggleCollapsed(group: ModelGroup) {
@@ -174,8 +185,20 @@
     return '';
   }
 
+  function toggleableRows(group: ModelGroup): JsonObject[] {
+    return group.rows.filter((model) => !modelBlockedReason(group, model));
+  }
+
   function groupActionable(group: ModelGroup): boolean {
-    return group.rows.some((model) => !modelBlockedReason(group, model));
+    if (!groupEnabled(group)) return false;
+    return groupCount(group, 'toggleable_model_count', toggleableRows(group).length) > 0;
+  }
+
+  function groupAllVisible(group: ModelGroup): boolean {
+    const rows = toggleableRows(group);
+    const toggleable = groupCount(group, 'toggleable_model_count', rows.length);
+    const visible = groupCount(group, 'toggleable_visible_count', rows.filter(isVisible).length);
+    return toggleable > 0 && visible === toggleable;
   }
 
   function providerContext(group: ModelGroup): string {
@@ -223,7 +246,9 @@
           scope: 'provider',
           provider: group.prefix,
           provider_kind: 'prefix',
-          targets: group.rows.map((model) => ({ id: text(model.id, ''), native: false })),
+          // Provider scope flips every model of the provider server-side,
+          // whichever rows are loaded here.
+          targets: [],
           enabled
         },
         success: enabled
@@ -332,7 +357,7 @@
       </span>
       <Icon name="arrow" size={14} />
     </button>
-    {#each selectedGroupKey === 'all' ? groups : allGroups as group}
+    {#each allGroups as group}
       <button
         type="button"
         class:active={selectedGroupKey === group.key}
@@ -342,9 +367,9 @@
         <span>
           <strong>{group.label}</strong>
           <small>
-            {group.rows.length
-              ? `${groupVisibleCount(group)}/${group.rows.length} visible`
-              : 'Open to browse'}
+            {groupTotal(group)
+              ? `${groupVisibleCount(group)}/${groupTotal(group)} visible`
+              : 'No models yet'}
           </small>
         </span>
         <span
@@ -395,31 +420,42 @@
           Clear
         </button>
       {/if}
-      <button class="button ghost" on:click={() => setAllCollapsed(true)}>Collapse all</button>
-      <button class="button ghost" on:click={() => setAllCollapsed(false)}>Expand all</button>
+      {#if browsing && groups.length > 1}
+        <button class="button ghost" on:click={() => setAllCollapsed(true)}>Collapse all</button>
+        <button class="button ghost" on:click={() => setAllCollapsed(false)}>Expand all</button>
+      {/if}
     </div>
+
+    {#if appliedSearch.trim()}
+      <p class="model-search-summary" role="status">
+        {truncated
+          ? `Showing the first ${models.length} of ${matchTotal} matches. Narrow the search or pick a provider to see the rest.`
+          : `${matchTotal} ${matchTotal === 1 ? 'match' : 'matches'}`}
+      </p>
+    {/if}
 
     {#if groups.length}
       <div class="model-groups">
         {#each groups as group}
           {@const visible = groupVisibleCount(group)}
-          {@const actionableRows = group.rows.filter((model) => !modelBlockedReason(group, model))}
-          {@const allVisible =
-            actionableRows.length > 0 && actionableRows.every((model) => isVisible(model))}
+          {@const total = groupTotal(group)}
+          {@const allVisible = groupAllVisible(group)}
           <section class="model-provider panel">
             <header class="model-provider-header">
               <button
                 type="button"
                 class="model-provider-title"
-                aria-expanded={!isCollapsed(group)}
-                on:click={() => toggleCollapsed(group)}
+                aria-expanded={browsing ? !isCollapsed(group) : undefined}
+                title={browsing ? undefined : `Browse ${group.label} models`}
+                on:click={() => (browsing ? toggleCollapsed(group) : selectGroup(group.key))}
               >
                 <span class="provider-mark">{group.label.slice(0, 1).toUpperCase()}</span>
                 <span>
                   <strong>{group.label}</strong>
                   <small>
-                    {group.prefix} · {visible}/{group.rows.length} visible{group.providerRows
-                      .length > 1
+                    {group.prefix} · {visible}/{total} visible{appliedSearch.trim()
+                      ? ` · ${group.rows.length} ${group.rows.length === 1 ? 'match' : 'matches'}`
+                      : ''}{group.providerRows.length > 1
                       ? ` · ${group.providerRows.length} gateway connections`
                       : ''}
                   </small>
@@ -437,7 +473,12 @@
                 >
                   <Icon name="plus" size={14} />Add custom model
                 </button>
-                {#if group.rows.length}
+                {#if !browsing && total}
+                  <button class="button ghost" on:click={() => selectGroup(group.key)}>
+                    Browse {total} models
+                  </button>
+                {/if}
+                {#if total}
                   <button
                     class="button"
                     disabled={busy.has(`provider:${group.key}`) || !groupActionable(group)}
@@ -454,7 +495,7 @@
               </div>
             </header>
 
-            {#if !isCollapsed(group)}
+            {#if !isCollapsed(group) || !total}
               {#if group.rows.length}
                 <div class="model-list">
                   {#each group.rows as model}
@@ -517,6 +558,14 @@
                     </article>
                   {/each}
                 </div>
+              {:else if appliedSearch.trim()}
+                <div class="model-provider-empty">
+                  <Icon name="search" size={18} />
+                  <div>
+                    <strong>No models match</strong>
+                    <p>No {group.label} model IDs match “{appliedSearch}”.</p>
+                  </div>
+                </div>
               {:else}
                 <div class="model-provider-empty">
                   <Icon name={groupEnabled(group) ? 'refresh' : 'warning'} size={18} />
@@ -550,7 +599,6 @@
         />
       </section>
     {/if}
-    <Pagination {data} {navigateQuery} label="models" />
   </main>
 </div>
 

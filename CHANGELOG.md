@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **Models page no longer paginates a provider-grouped view** — `?offset=…`
+  pages cut providers mid-list, so groups opened collapsed, per-provider counts
+  and the rail described only the current slice, and "All off" could hide a
+  whole provider based on 25 loaded rows. The Models state section now ships a
+  per-provider overview (whole-catalog `model_count`/`visible_model_count` and
+  toggleable counts), every model of a selected provider, or a capped,
+  provider-grouped search (`match_total`, `truncated`), with unused
+  `capabilities`/`selected` fields dropped. `meta.pagination` is gone from
+  `state/models`; `GET /dashboard/api/v2/models` is unchanged. (#245)
 
 ## [4.0.0] - 2026-09-29
 ### Added
