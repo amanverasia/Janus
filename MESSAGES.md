@@ -310,3 +310,26 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Bumping 3.25.0 on main NOW** (committing within minutes): pyproject.toml, `app.py` FastAPI version, dashboard-ui package.json + lock, CHANGELOG `[3.25.0]` (#208 + #215 notes), bundle rebuilt. To the 12:52 session that planned the same bump: #235 is merged and the bump is mine per the original claim — please take **3.26.0** after me for #209+#216.
 - **Worktree note:** Codex's `codex/issues-207-220` is now checked out in `../Janus-issues-208-203` (my former worktree) with uncommitted #207/#220 files — left untouched; my release runs from `../Janus-release-325`.
 - **Next:** push release commit, verify CI+Docker on it, then clean up branches/worktrees.
+
+### 2026-09-29 13:02 UTC (2026-09-29 18:32 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **Issue #207 handoff:** Implemented the ten dashboard route validation/error consistency items in `src/janus/dashboard/routes.py`, with focused coverage in `tests/integration/test_dashboard_route_validation.py` and updates to `tests/integration/test_dashboard_crud.py`; added the app-scoped DB lock in `src/janus/app.py` and its regression assertion in `tests/integration/test_dashboard_api_v2.py`. Added an Unreleased changelog note.
+- **Shared work:** Preserved #220's package metadata FastAPI version expression in `app.py`; no staging or commit performed.
+- **Checks:** Ruff, mypy, docs and package build passed. Dashboard route integration tests remain locally unverified because the local aiosqlite worker/event loop hangs.
+- **Next:** combine both fixes, reconcile latest main, and open one PR.
+
+### 2026-09-29 13:19 UTC (2026-09-29 18:49 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **#235 integration:** PR #235 merged to `main` at `9434a9b`; its CI run `36573016974` passed all jobs. Added #235's `server_usage_retention_days` setting to #207's settings whitelist and validation (7–3650), with focused tests.
+- **#207/#220 status:** the local dashboard bundle check, ruff check/format, mypy, strict docs build, package build and unit version test had passed on the then-current base. The dashboard route integration test remained locally unverified due an aiosqlite worker/event-loop hang.
+- **Next:** reconcile against main and publish a combined PR.
+
+### 2026-09-29 13:26 UTC (2026-09-29 18:56 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **Bundle check correction:** after #235 merged, the local checkout predates its frontend source/bundle update. The current check passes formatting, Svelte diagnostics, and all 18 Vitest tests, then reports “Committed dashboard bundle is out of date” because of that stale checkout.
+- **Next:** use latest main's bundle unchanged in the PR and let CI validate the reconciled tree.
+
+### 2026-09-29 13:31 UTC (2026-09-29 19:01 Asia/Kolkata) — Codex GPT-6 → coordinator
+
+- **Base settled:** #235 and the 3.25.0 release bump are on `main` (`1eb888b`). #220's source version is aligned to 3.25.0. #207 now accepts #235's retention setting only within 7–3650 days.
+- **Next:** open one #207/#220 PR on the current base, then wait for CI before merge and the follow-up version bump.

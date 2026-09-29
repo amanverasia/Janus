@@ -46,6 +46,8 @@ from janus.storage.budgets import (
 from janus.storage.database import init_db
 from janus.storage.key_access import parse_models_input
 from janus.storage.settings import (
+    SAVER_SETTING_DEFAULTS,
+    SERVER_SETTING_DEFAULTS,
     VALID_COMBO_STRATEGIES,
     get_setting,
     validate_reporting_timezone,
@@ -116,6 +118,10 @@ _templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 def _api_v1_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/") + "/v1"
+
+
+def _mutation_error(detail: str, status_code: int = 400) -> JSONResponse:
+    return JSONResponse({"detail": detail}, status_code=status_code)
 
 
 async def _read_form_params(
@@ -451,7 +457,7 @@ async def create_budget(
     key_select: str = Form(""),
     daily_limit: str = Form(""),
     absolute_limit: str = Form(""),
-    warn_pct: str = Form("80"),
+    warn_pct: str = Form(""),
 ) -> Response:
     db_path = await _ensure_db(request)
     selected = key_select.strip()
@@ -470,12 +476,14 @@ async def create_budget(
         return _budget_validation_error(str(exc))
     if parsed_absolute_limit is not None and key_id is None:
         return _budget_validation_error("Absolute budgets require a specific API key.")
-    try:
-        parsed_warn_pct = float(warn_pct)
-    except ValueError:
-        return _budget_validation_error("Warning percentage must be between 1 and 100.")
-    if not math.isfinite(parsed_warn_pct) or not 1 <= parsed_warn_pct <= 100:
-        return _budget_validation_error("Warning percentage must be between 1 and 100.")
+    parsed_warn_pct: float | None = None
+    if warn_pct.strip():
+        try:
+            parsed_warn_pct = float(warn_pct)
+        except ValueError:
+            return _budget_validation_error("Warning percentage must be between 1 and 100.")
+        if not math.isfinite(parsed_warn_pct) or not 1 <= parsed_warn_pct <= 100:
+            return _budget_validation_error("Warning percentage must be between 1 and 100.")
     form = await request.form()
     limits: dict[str, Any] = {}
     if "daily_limit" in form:
@@ -504,7 +512,8 @@ def _budget_validation_error(message: str) -> JSONResponse:
 @router.delete("/api/budgets/{budget_id}")
 async def delete_budget_endpoint(request: Request, budget_id: int) -> JSONResponse:
     db_path = await _ensure_db(request)
-    await delete_budget(db_path, budget_id)
+    if not await delete_budget(db_path, budget_id):
+        return _mutation_error("Budget not found", 404)
     return JSONResponse({"ok": True})
 
 
@@ -577,6 +586,8 @@ async def update_api_key(
 @router.delete("/api/keys/{key_id}")
 async def revoke_api_key(request: Request, key_id: int) -> JSONResponse:
     db_path = await _ensure_db(request)
+    if not any(key["id"] == key_id for key in await list_keys(db_path)):
+        return _mutation_error("API key not found", 404)
     await revoke_key(db_path, key_id)
     return JSONResponse({"ok": True})
 
@@ -587,14 +598,11 @@ async def revoke_api_key(request: Request, key_id: int) -> JSONResponse:
 _SUPPORTED_PROVIDER_API_TYPES = supported_api_types()
 
 
-def _provider_api_type_error(api_type: str) -> HTMLResponse | None:
+def _provider_api_type_error(api_type: str) -> JSONResponse | None:
     if not api_type:
-        return HTMLResponse(content="Missing required field: api_type", status_code=400)
+        return _mutation_error("Missing required field: api_type")
     if api_type not in _SUPPORTED_PROVIDER_API_TYPES:
-        return HTMLResponse(
-            content="Unsupported API type. Choose a supported Janus executor.",
-            status_code=422,
-        )
+        return _mutation_error("Unsupported API type. Choose a supported Janus executor.", 422)
     return None
 
 
@@ -604,13 +612,26 @@ def _parse_quota_params(params: dict[str, list[str]]) -> dict[str, Any]:
     window = params.get("quota_window", [""])[0].strip()
     limit_str = params.get("quota_limit", [""])[0].strip()
     metric = params.get("quota_metric", ["requests"])[0].strip()
-    limit = int(limit_str) if limit_str.isdigit() and int(limit_str) > 0 else None
-    if window not in QUOTA_WINDOWS or limit is None:
+    if metric not in ("requests", "tokens"):
+        raise ValueError("Quota metric must be requests or tokens")
+    if not window and not limit_str and metric == "requests":
         return {"quota_window": None, "quota_limit": None, "quota_metric": "requests"}
+    if window not in QUOTA_WINDOWS:
+        raise ValueError("Quota window is invalid")
+    if (
+        not limit_str.isascii()
+        or not limit_str.isdigit()
+        or len(limit_str) > 19
+        or int(limit_str) <= 0
+    ):
+        raise ValueError("Quota limit must be a positive integer")
+    limit = int(limit_str)
+    if limit > 2**63 - 1:
+        raise ValueError("Quota limit must be a positive integer")
     return {
         "quota_window": window,
         "quota_limit": limit,
-        "quota_metric": metric if metric in ("requests", "tokens") else "requests",
+        "quota_metric": metric,
     }
 
 
@@ -688,6 +709,8 @@ def _provider_form_data(
     default_model = params.get("default_model", [str((preset or {}).get("default_model") or "")])[
         0
     ].strip()
+    if len(default_model) > 300 or any(ord(char) < 32 for char in default_model):
+        raise ValueError("Model IDs must be 300 characters or fewer")
     if default_model and default_model not in models:
         models.append(default_model)
     live_default = bool((preset or {}).get("live_models", True))
@@ -712,7 +735,16 @@ def _provider_form_data(
         "default_model": default_model or None,
         "live_models": _form_bool(params, "live_models", live_default),
         "transports": transports,
-        **_parse_quota_params(params),
+        **(
+            {
+                "quota_window": existing.get("quota_window"),
+                "quota_limit": existing.get("quota_limit"),
+                "quota_metric": existing.get("quota_metric") or "requests",
+            }
+            if existing is not None
+            and not any(key in params for key in ("quota_window", "quota_limit", "quota_metric"))
+            else _parse_quota_params(params)
+        ),
     }
 
 
@@ -726,7 +758,7 @@ async def api_create_provider(request: Request) -> Response:
         not params.get("api_type", [""])[0].strip()
         and not params.get("catalog_id", [""])[0].strip()
     ):
-        return HTMLResponse(content="Missing required field: api_type", status_code=400)
+        return _mutation_error("Missing required field: api_type")
     try:
         provider_id = params["id"][0].strip()
         data = _provider_form_data(params, provider_id=provider_id)
@@ -737,11 +769,13 @@ async def api_create_provider(request: Request) -> Response:
             data,
         )
     except KeyError:
-        return HTMLResponse(content="Missing required field", status_code=400)
+        return _mutation_error("Missing required field")
     except ValueError as exc:
-        return HTMLResponse(content=str(exc), status_code=422)
-    except Exception as e:
-        return HTMLResponse(content=str(type(e).__name__), status_code=400)
+        return _mutation_error(str(exc), 422)
+    except sqlite3.IntegrityError:
+        return _mutation_error("Provider conflicts with an existing record", 409)
+    except Exception:
+        return _mutation_error("Provider could not be created", 400)
     from janus.dashboard.reload import reload_providers
 
     await _sync_provider_key_safe(
@@ -767,9 +801,9 @@ async def api_update_provider(request: Request, provider_id: str) -> Response:
 
     existing = await get_provider(db_path, provider_id)
     if existing is None:
-        return HTMLResponse(content="Provider not found", status_code=404)
+        return _mutation_error("Provider not found", 404)
     if not params.get("api_type", [""])[0].strip() and not existing.get("api_type"):
-        return HTMLResponse(content="Missing required field: api_type", status_code=400)
+        return _mutation_error("Missing required field: api_type")
     new_key = params.get("api_key", [""])[0] or None
     if not new_key:
         new_key = existing["api_key"]
@@ -782,18 +816,17 @@ async def api_update_provider(request: Request, provider_id: str) -> Response:
             data,
         )
     except KeyError:
-        return HTMLResponse(content="Missing required field", status_code=400)
+        return _mutation_error("Missing required field")
     except ValueError as exc:
-        return HTMLResponse(content=str(exc), status_code=422)
+        return _mutation_error(str(exc), 422)
     except sqlite3.IntegrityError as exc:
         if "custom_models.provider_prefix, custom_models.model_id" in str(exc):
-            return HTMLResponse(
-                content="The destination prefix already has a custom model with the same ID",
-                status_code=409,
+            return _mutation_error(
+                "The destination prefix already has a custom model with the same ID", 409
             )
-        return HTMLResponse(content="Provider update violates a data constraint", status_code=409)
-    except Exception as e:
-        return HTMLResponse(content=str(type(e).__name__), status_code=400)
+        return _mutation_error("Provider update violates a data constraint", 409)
+    except Exception:
+        return _mutation_error("Provider could not be updated", 400)
     from janus.dashboard.reload import reload_providers
 
     await _sync_provider_key_safe(
@@ -812,8 +845,10 @@ async def api_update_provider(request: Request, provider_id: str) -> Response:
 @router.patch("/api/providers/{provider_id}/toggle")
 async def api_toggle_provider(request: Request, provider_id: str) -> JSONResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.providers_db import toggle_provider
+    from janus.storage.providers_db import get_provider, toggle_provider
 
+    if await get_provider(db_path, provider_id) is None:
+        return _mutation_error("Provider not found", 404)
     await toggle_provider(db_path, provider_id)
     from janus.dashboard.reload import reload_providers
 
@@ -824,8 +859,10 @@ async def api_toggle_provider(request: Request, provider_id: str) -> JSONRespons
 @router.delete("/api/providers/{provider_id}")
 async def api_delete_provider(request: Request, provider_id: str) -> JSONResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.providers_db import delete_provider
+    from janus.storage.providers_db import delete_provider, get_provider
 
+    if await get_provider(db_path, provider_id) is None:
+        return _mutation_error("Provider not found", 404)
     await delete_provider(db_path, provider_id)
     await _delete_mirrored_provider_key_safe(db_path, provider_id)
     from janus.dashboard.reload import reload_providers
@@ -1183,6 +1220,25 @@ async def api_test_connection(
     model: str = Query("", max_length=200),
     account: str = Query("", max_length=100),
 ) -> JSONResponse:
+    try:
+        return await _api_test_connection_impl(
+            request,
+            provider_id=provider_id,
+            model=model,
+            account=account,
+        )
+    except Exception as exc:
+        logger.warning("Provider connection test failed (%s)", type(exc).__name__)
+        return JSONResponse({"error": "Connection test failed", "ok": False}, status_code=502)
+
+
+async def _api_test_connection_impl(
+    request: Request,
+    *,
+    provider_id: str,
+    model: str,
+    account: str,
+) -> JSONResponse:
     """Representative connection probe for a provider row.
 
     Builds the same executor and the same upstream payload format the gateway
@@ -1373,12 +1429,14 @@ async def api_create_combo(request: Request) -> Response:
     params = await _read_form_params(request)
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    if not models:
+        return _mutation_error("A combo must include at least one model", 422)
     try:
         await create_combo(db_path, {"name": params["name"][0], "models": models})
     except KeyError:
-        return HTMLResponse(content="Missing required field", status_code=400)
-    except Exception as e:
-        return HTMLResponse(content=str(type(e).__name__), status_code=400)
+        return _mutation_error("Missing required field")
+    except Exception:
+        return _mutation_error("Combo could not be created", 400)
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
@@ -1391,14 +1449,20 @@ async def api_update_combo(request: Request, combo_id: int) -> Response:
     from janus.storage.combos_db import update_combo
 
     params = await _read_form_params(request)
+    from janus.storage.combos_db import get_combo
+
+    if await get_combo(db_path, combo_id) is None:
+        return _mutation_error("Combo not found", 404)
     models_str = params.get("models", [""])[0]
     models = [m.strip() for m in models_str.split(",") if m.strip()]
+    if not models:
+        return _mutation_error("A combo must include at least one model", 422)
     try:
         await update_combo(db_path, combo_id, {"name": params["name"][0], "models": models})
     except KeyError:
-        return HTMLResponse(content="Missing required field", status_code=400)
-    except Exception as e:
-        return HTMLResponse(content=str(type(e).__name__), status_code=400)
+        return _mutation_error("Missing required field")
+    except Exception:
+        return _mutation_error("Combo could not be updated", 400)
     from janus.dashboard.reload import reload_combos
 
     await reload_combos(request.app)
@@ -1408,8 +1472,10 @@ async def api_update_combo(request: Request, combo_id: int) -> Response:
 @router.delete("/api/combos/{combo_id}")
 async def api_delete_combo(request: Request, combo_id: int) -> JSONResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.combos_db import delete_combo
+    from janus.storage.combos_db import delete_combo, get_combo
 
+    if await get_combo(db_path, combo_id) is None:
+        return _mutation_error("Combo not found", 404)
     await delete_combo(db_path, combo_id)
     from janus.dashboard.reload import reload_combos
 
@@ -1460,6 +1526,7 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
 
 
 VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})
+_USAGE_RETENTION_SETTING_KEY = "server_usage_retention_days"
 
 # Settings keys that require server-side validation before being persisted. Each
 # validator raises ValueError on bad input; the POST handler rejects with 400 and
@@ -1475,8 +1542,19 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
     "server_sticky_limit": lambda v: _require_int(v, min_value=1),
     "server_gateway_rate_limit_rpm": lambda v: _require_int(v, min_value=0, max_value=100_000),
+    "server_request_log_retention": lambda v: _require_int(v, min_value=50, max_value=5000),
+    _USAGE_RETENTION_SETTING_KEY: lambda v: _require_int(v, min_value=7, max_value=3650),
     "server_reporting_timezone": lambda v: _require_reporting_timezone(v),
 }
+_ALLOWED_SETTINGS = (
+    frozenset(SERVER_SETTING_DEFAULTS)
+    | frozenset(SAVER_SETTING_DEFAULTS)
+    | {
+        "combo_strategy",
+        "combo_sticky_limit",
+        _USAGE_RETENTION_SETTING_KEY,
+    }
+)
 
 
 def _require_choice(value: str, choices: frozenset[str]) -> None:
@@ -1531,13 +1609,15 @@ async def api_update_setting(request: Request) -> Response:
         key = params["key"][0]
         value = params["value"][0]
     except KeyError:
-        return HTMLResponse(content="Missing key or value", status_code=400)
+        return _mutation_error("Missing key or value")
+    if key not in _ALLOWED_SETTINGS:
+        return _mutation_error("Unknown setting key")
     validator = _SETTINGS_VALIDATORS.get(key)
     if validator is not None:
         try:
             validator(value)
-        except ValueError as e:
-            return HTMLResponse(content=f"Invalid value for {key}: {e}", status_code=400)
+        except ValueError:
+            return _mutation_error("Invalid setting value")
     if key == "server_reporting_timezone":
         value = value.strip()
     await set_setting(db_path, key, value)
@@ -1690,8 +1770,8 @@ async def api_create_pricing(request: Request) -> Response:
                 "cache_read_per_mtok": float(params.get("cache_read_per_mtok", ["0"])[0]),
             },
         )
-    except (KeyError, ValueError) as e:
-        return HTMLResponse(content=f"Invalid input: {e}", status_code=400)
+    except (KeyError, ValueError):
+        return _mutation_error("Invalid pricing input")
     from janus.dashboard.reload import reload_pricing
 
     await reload_pricing(request.app)
