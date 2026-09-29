@@ -6,6 +6,7 @@
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
   import { dashboardFetch } from '$lib/api';
+  import { downloadAttachment, downloadInventoryExport } from '$lib/download';
   import { compact, dateTime, firstList, idOf, list, money, number, object, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
@@ -39,6 +40,8 @@
   let reclassifying = false;
   let reclassifyPreview: JsonObject | undefined;
   let refreshingValue = '';
+  let exporting = false;
+  let downloadingJson = false;
 
   $: rows = firstList(data, 'keys', 'items');
   $: filters = object(data.filters);
@@ -298,6 +301,30 @@
     if (revealedDetail) await copyText(revealedDetail);
   }
 
+  async function exportKeys() {
+    exporting = true;
+    try {
+      await downloadInventoryExport();
+    } finally {
+      exporting = false;
+    }
+  }
+
+  async function downloadDetailJson() {
+    if (!detail) return;
+    downloadingJson = true;
+    try {
+      const id = encodeURIComponent(idOf(detail));
+      await downloadAttachment(
+        `/dashboard/api/inventory/keys/${id}/json`,
+        { method: 'POST', headers: { Accept: 'application/json' } },
+        `janus-key-${idOf(detail)}.json`
+      );
+    } finally {
+      downloadingJson = false;
+    }
+  }
+
   async function savePriority() {
     if (!detail || savingPriority) return;
     const id = idOf(detail);
@@ -350,9 +377,9 @@
   title="Upstream credentials"
   description="Search, validate, and manage every account Janus can use for upstream routing."
 >
-  <a class="button" href="/dashboard/api/inventory/export" download>
-    <Icon name="download" />Export
-  </a>
+  <button class="button" disabled={exporting} on:click={exportKeys}>
+    <Icon name="download" />{exporting ? 'Exporting…' : 'Export'}
+  </button>
   <button class="button" disabled={recheckingAll} on:click={recheckAll}>
     <Icon name="refresh" />{recheckingAll ? 'Rechecking…' : 'Recheck all'}
   </button>
@@ -773,13 +800,9 @@
       <button class="button" disabled={!revealedDetail} on:click={copyRevealedDetail}>
         <Icon name="copy" size={15} />Copy
       </button>
-      <a
-        class="button"
-        href={`/dashboard/api/inventory/keys/${encodeURIComponent(idOf(detail))}/json`}
-        download
-      >
+      <button class="button" disabled={downloadingJson} on:click={downloadDetailJson}>
         Download JSON
-      </a>
+      </button>
     </div>
     <div class="detail-metrics">
       <div>

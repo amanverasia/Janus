@@ -11,7 +11,10 @@ from fastapi import HTTPException
 from starlette.datastructures import Address
 
 from janus.config.schema import JanusConfig, ServerSettings
-from janus.dashboard.auth import require_dashboard_access
+from janus.dashboard.auth import (
+    require_dashboard_access,
+    require_dashboard_access_no_query_key,
+)
 from janus.storage.api_keys import create_key
 from janus.storage.database import init_db
 from janus.storage.settings import set_setting
@@ -117,3 +120,37 @@ async def test_require_dashboard_rejects_valid_legacy_session_cookie(tmp_path) -
     with pytest.raises(HTTPException) as exc:
         await require_dashboard_access(request, authorization="", x_goog_api_key="", key_query="")
     assert exc.value.status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_require_dashboard_no_query_key_rejects_query_only_key(tmp_path) -> None:
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    full_key, _ = await create_key(db_path, "admin-key", can_login=True)
+    request = _request(db_path=db_path, method="POST", accept="application/json")
+
+    with pytest.raises(HTTPException) as exc:
+        await require_dashboard_access_no_query_key(
+            request,
+            authorization="",
+            x_goog_api_key="",
+            key_query=full_key,
+        )
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_require_dashboard_no_query_key_allows_cookie_key(tmp_path) -> None:
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    full_key, _ = await create_key(db_path, "admin-key", can_login=True)
+    request = _request(
+        db_path=db_path,
+        cookies={"janus_dashboard_key": full_key},
+        method="POST",
+        accept="application/json",
+    )
+
+    await require_dashboard_access_no_query_key(
+        request, authorization="", x_goog_api_key="", key_query=""
+    )

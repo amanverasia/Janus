@@ -207,6 +207,27 @@ async def test_dashboard_loopback_access_requires_api_key(app):
 
 
 @pytest.mark.asyncio
+async def test_unauthenticated_api_get_returns_401_but_html_page_get_redirects(app):
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("127.0.0.1", 43210)),
+        base_url="http://127.0.0.1",
+    ) as client:
+        api_response = await client.get(
+            "/dashboard/api/inventory/keys",
+            headers={"Accept": "application/json"},
+        )
+        assert api_response.status_code == 401
+
+        page_response = await client.get(
+            "/dashboard",
+            headers={"Accept": "text/html"},
+            follow_redirects=False,
+        )
+        assert page_response.status_code == 303
+        assert page_response.headers["location"].startswith("/dashboard/login")
+
+
+@pytest.mark.asyncio
 async def test_dashboard_username_password_submission_never_authenticates(app, tmp_path):
     db_path = tmp_path / "janus.db"
     await init_db(db_path)
@@ -247,7 +268,9 @@ async def test_dashboard_legacy_session_cookie_never_authenticates(app, tmp_path
         base_url="http://janus.test",
         cookies={"janus_dashboard_session": _legacy_session_token(secret, "hett")},
     ) as client:
-        response = await client.get("/dashboard", follow_redirects=False)
+        response = await client.get(
+            "/dashboard", headers={"Accept": "text/html"}, follow_redirects=False
+        )
         assert response.status_code == 303
         assert response.headers["location"].startswith("/dashboard/login")
 

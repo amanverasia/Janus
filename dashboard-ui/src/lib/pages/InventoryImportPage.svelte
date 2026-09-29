@@ -2,6 +2,7 @@
   import type { ValidatedMutationOptions } from '$lib/api';
   import Icon from '$lib/components/Icon.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import { downloadInventoryExport } from '$lib/download';
   import { compact, number, object, text } from '$lib/data';
   import type { JsonObject } from '$lib/types';
 
@@ -19,6 +20,20 @@
   let previewCount: number | undefined;
   let previewError = '';
   let importError = '';
+  let exporting = false;
+  let exportError = '';
+
+  async function exportInventory() {
+    exporting = true;
+    exportError = '';
+    try {
+      await downloadInventoryExport();
+    } catch (error) {
+      exportError = error instanceof Error ? error.message : 'Export failed.';
+    } finally {
+      exporting = false;
+    }
+  }
 
   $: summary = object(data.summary);
 
@@ -142,10 +157,17 @@
   title="Restore from a backup"
   description="Bring a JSON export from another Janus node or compatible key manager into this inventory."
 >
-  <a class="button" href="/dashboard/api/inventory/export" download>
-    <Icon name="download" />Export current inventory
-  </a>
+  <button type="button" class="button" disabled={exporting} on:click={exportInventory}>
+    <Icon name="download" />{exporting ? 'Exporting…' : 'Export current inventory'}
+  </button>
 </PageHeader>
+{#if exportError}<div class="file-error" role="alert">
+    <Icon name="warning" size={16} />
+    <span>
+      <strong>Export failed</strong>
+      {exportError}
+    </span>
+  </div>{/if}
 
 {#if importedFilename}
   <section class="success-banner">

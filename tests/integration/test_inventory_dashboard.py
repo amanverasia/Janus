@@ -7,7 +7,11 @@ from httpx import ASGITransport, AsyncClient, Response
 
 from janus.app import create_app
 from janus.config.schema import JanusConfig, ServerSettings
-from tests.fixtures.dashboard_auth import DASHBOARD_TEST_ANONYMOUS_HEADERS, with_dashboard_auth
+from tests.fixtures.dashboard_auth import (
+    DASHBOARD_TEST_ANONYMOUS_HEADERS,
+    DASHBOARD_TEST_API_KEY,
+    with_dashboard_auth,
+)
 from tests.fixtures.url_mock import mocked_route
 
 
@@ -216,7 +220,7 @@ async def test_inventory_submit_json_uses_error_statuses(client, monkeypatch):
 
 
 async def test_inventory_import_page(client):
-    r = await client.get("/dashboard/api/inventory/export")
+    r = await client.post("/dashboard/api/inventory/export")
     assert r.status_code == 200
     assert "keys" in r.json()
     assert "count" in r.json()
@@ -589,7 +593,7 @@ async def test_inventory_keys_has_reidentify_and_import_links(client):
     r = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert r.status_code == 200
     assert "filters" in r.json()["data"]
-    import_endpoint = await client.get("/dashboard/api/inventory/export")
+    import_endpoint = await client.post("/dashboard/api/inventory/export")
     assert import_endpoint.status_code == 200
 
 
@@ -765,7 +769,7 @@ async def test_inventory_keys_json_pagination(client):
 async def test_inventory_key_detail_endpoints(client):
     secret = "sk-proj-detail-endpoint-key"
     await _submit_inventory_key(client, secret, "openai")
-    export = await client.get("/dashboard/api/inventory/export")
+    export = await client.post("/dashboard/api/inventory/export")
     key_id = export.json()["keys"][0]["id"]
 
     detail = await client.get(f"/dashboard/api/inventory/keys/{key_id}")
@@ -777,7 +781,7 @@ async def test_inventory_key_detail_endpoints(client):
     assert "key_value" not in body
     assert secret not in detail.text
 
-    agent = await client.get(f"/dashboard/api/inventory/keys/{key_id}/json")
+    agent = await client.post(f"/dashboard/api/inventory/keys/{key_id}/json")
     assert agent.status_code == 200
     assert agent.json()["key_value"] == secret
     assert agent.headers["cache-control"] == "no-store"
@@ -875,7 +879,7 @@ async def test_inventory_key_reveal_error_is_non_cacheable_and_does_not_leak(
 async def test_inventory_export_provider_filter(client):
     await _submit_inventory_key(client, "gsk_" + "y" * 16, "groq")
     await _submit_inventory_key(client, "sk-proj-" + "z" * 16, "openai")
-    export = await client.get("/dashboard/api/inventory/export?provider_id=groq")
+    export = await client.post("/dashboard/api/inventory/export", params={"provider_id": "groq"})
     assert export.status_code == 200
     payload = export.json()
     assert payload["count"] == 1
@@ -904,7 +908,7 @@ async def test_inventory_submit_key(client):
     assert payload["queued_count"] == 1
     assert payload["results"][0]["status"] == "pending_validation"
 
-    export = await client.get("/dashboard/api/inventory/export")
+    export = await client.post("/dashboard/api/inventory/export")
     assert export.status_code == 200
     payload = export.json()
     assert payload["count"] == 1
@@ -916,20 +920,20 @@ async def test_inventory_delete_key(client):
     keys_page = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert keys_page.status_code == 200
 
-    export_before = await client.get("/dashboard/api/inventory/export")
+    export_before = await client.post("/dashboard/api/inventory/export")
     key_id = export_before.json()["keys"][0]["id"]
 
     delete = await client.delete(f"/dashboard/api/inventory/keys/{key_id}")
     assert delete.status_code == 200
     assert delete.json() == {"ok": True, "key_id": key_id}
 
-    export_after = await client.get("/dashboard/api/inventory/export")
+    export_after = await client.post("/dashboard/api/inventory/export")
     assert export_after.json()["count"] == 0
 
 
 async def test_inventory_key_detail_omits_key_hash(client):
     await _submit_inventory_key(client, "sk-proj-hash-detail-key", "openai")
-    export = await client.get("/dashboard/api/inventory/export")
+    export = await client.post("/dashboard/api/inventory/export")
     key_id = export.json()["keys"][0]["id"]
     detail = await client.get(f"/dashboard/api/inventory/keys/{key_id}")
     assert detail.status_code == 200
@@ -941,7 +945,7 @@ async def test_inventory_key_detail_omits_key_hash(client):
 
 @pytest.mark.parametrize("provider_id", ['open"ai', "open ai", "open\\ai", "../x", "a;b"])
 async def test_inventory_export_rejects_unsafe_provider_id(client, provider_id):
-    response = await client.get(
+    response = await client.post(
         "/dashboard/api/inventory/export", params={"provider_id": provider_id}
     )
     assert response.status_code == 422
@@ -949,7 +953,7 @@ async def test_inventory_export_rejects_unsafe_provider_id(client, provider_id):
 
 
 async def test_inventory_export_accepts_safe_provider_id(client):
-    response = await client.get(
+    response = await client.post(
         "/dashboard/api/inventory/export", params={"provider_id": "open-ai_v1.2"}
     )
     assert response.status_code == 200
@@ -963,6 +967,57 @@ async def test_inventory_export_accepts_safe_provider_id(client):
 async def test_inventory_key_json_rejects_unsafe_key_id(client, key_id):
     from urllib.parse import quote
 
-    response = await client.get(f"/dashboard/api/inventory/keys/{quote(key_id)}/json")
+    response = await client.post(f"/dashboard/api/inventory/keys/{quote(key_id)}/json")
     assert response.status_code == 422
     assert "content-disposition" not in response.headers
+
+
+async def test_inventory_export_rejects_query_param_auth(client, app):
+    secret = "sk-proj-export-query-secret"
+    await _seed_upstream_key(app, "openai", secret)
+
+    query_only = await client.post(
+        "/dashboard/api/inventory/export",
+        params={"key": DASHBOARD_TEST_API_KEY},
+    )
+    header_and_query = await client.post(
+        "/dashboard/api/inventory/export",
+        params={"key": "sk-janus-untrusted"},
+        headers={"Authorization": f"Bearer {DASHBOARD_TEST_API_KEY}"},
+    )
+    get_export = await client.get("/dashboard/api/inventory/export")
+
+    assert query_only.status_code == 401
+    assert secret not in query_only.text
+    assert header_and_query.status_code == 200
+    assert header_and_query.headers["cache-control"] == "no-store"
+    assert get_export.status_code == 405
+
+
+async def test_inventory_key_json_download_rejects_query_param_auth(client, app):
+    secret = "sk-proj-json-query-secret"
+    await _seed_upstream_key(app, "openai", secret)
+    export = await client.post("/dashboard/api/inventory/export")
+    key_id = export.json()["keys"][0]["id"]
+
+    query_only = await client.post(
+        f"/dashboard/api/inventory/keys/{key_id}/json",
+        params={"key": DASHBOARD_TEST_API_KEY},
+    )
+    get_json = await client.get(f"/dashboard/api/inventory/keys/{key_id}/json")
+
+    assert query_only.status_code == 401
+    assert secret not in query_only.text
+    assert get_json.status_code == 405
+
+
+async def test_masked_list_and_detail_endpoints_send_no_store(client):
+    await _submit_inventory_key(client, "sk-proj-no-store-key-12345", "openai")
+    listing = await client.get("/dashboard/api/inventory/keys")
+    assert listing.status_code == 200
+    assert listing.headers["cache-control"] == "no-store"
+
+    key_id = listing.json()["keys"][0]["id"]
+    detail = await client.get(f"/dashboard/api/inventory/keys/{key_id}")
+    assert detail.status_code == 200
+    assert detail.headers["cache-control"] == "no-store"

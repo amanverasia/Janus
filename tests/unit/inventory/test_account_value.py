@@ -587,3 +587,40 @@ async def test_refresh_missing_key_returns_none(tmp_path) -> None:
     db_path = tmp_path / "janus.db"
     await init_db(db_path)
     assert await refresh_account_value(str(db_path), "nope") is None
+
+
+async def test_cowaiter_falls_back_to_stored_state_on_leader_failure(tmp_path):
+    import asyncio
+
+    from janus.inventory import account_value as av
+    from janus.storage.database import init_db
+    from janus.storage.upstream_keys import create_upstream_key
+
+    db_path = tmp_path / "janus.db"
+    await init_db(db_path)
+    key = await create_upstream_key(
+        db_path, provider_id="openai", key_value="sk-proj-cowait-key-12345678"
+    )
+
+    async def failing_leader() -> None:
+        raise RuntimeError("leader db error")
+
+    av._inflight[key["id"]] = asyncio.create_task(failing_leader())
+    try:
+        state = await av.refresh_account_value(db_path, key["id"], force=True)
+    finally:
+        av._inflight.pop(key["id"], None)
+
+    assert state is not None
+
+
+def test_finite_rejects_non_finite_numbers() -> None:
+    from janus.inventory.account_value import _finite
+
+    assert _finite(float("nan")) is None
+    assert _finite(float("inf")) is None
+    assert _finite("nan") is None
+    assert _finite("-inf") is None
+    assert _finite(3) == 3.0
+    assert _finite("2.5") == 2.5
+    assert _finite(True) is None

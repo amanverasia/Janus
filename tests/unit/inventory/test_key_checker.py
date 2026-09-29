@@ -638,3 +638,13 @@ def test_multi_base_candidates_minimax_and_moonshot() -> None:
     assert "moonshot" in MULTI_BASE_CANDIDATES
     # Coding host is a separate gateway — not an inventory multi-base candidate.
     assert not any("kimi.com" in b for b in MULTI_BASE_CANDIDATES["moonshot"])
+
+
+def test_safe_error_note_strips_urls_and_truncates():
+    from janus.inventory.key_checker import _safe_error_note
+
+    note = _safe_error_note("Connect to https://internal.example.com/secret/path failed")
+    assert "internal.example.com" not in note
+    assert "<url>" in note
+    assert len(_safe_error_note("x" * 500)) == 200
+    assert _safe_error_note(None) == "Unknown error"

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
+from janus.dashboard.inventory_routes import _safe_ingest_error
 from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
@@ -91,6 +92,10 @@ async def api_inventory_push(request: Request, body: PushRequestBody) -> JSONRes
         if result["status"] in {"registered", "updated"} and result.get("id"):
             schedule_upstream_recheck(result["id"], db_path)
         results.append(result)
+
+    for result in results:
+        if result.get("error") is not None:
+            result["error"] = _safe_ingest_error(result.get("error"))
 
     summary = {
         "registered": sum(1 for item in results if item["status"] == "registered"),

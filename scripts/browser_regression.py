@@ -215,6 +215,22 @@ def scenario_connect_preview_without_import(page: Page) -> list[str]:
     return failures
 
 
+def scenario_restore_export_download(page: Page) -> list[str]:
+    failures: list[str] = []
+    try:
+        _visit(page, "/dashboard/ui/connect/restore")
+        with page.expect_download(timeout=ROUTE_WAIT_MS) as download_info:
+            page.get_by_role("button", name="Export current inventory").click()
+        download = download_info.value
+        if not download.suggested_filename.endswith(".json"):
+            failures.append(f"restore export filename: {download.suggested_filename}")
+        else:
+            print(f"  restore export downloaded {download.suggested_filename}")
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"restore export: {type(exc).__name__}: {exc}")
+    return failures
+
+
 def scenario_back_forward_navigation(page: Page) -> list[str]:
     failures: list[str] = []
     try:
@@ -354,6 +370,7 @@ SCENARIOS: list[tuple[str, Callable[[Page], list[str]]]] = [
     ("hub section tabs", scenario_hub_tabs),
     ("legacy redirects", scenario_legacy_redirects),
     ("connect preview without import", scenario_connect_preview_without_import),
+    ("restore export download", scenario_restore_export_download),
     ("back/forward navigation", scenario_back_forward_navigation),
     ("filter + empty state", scenario_filter_and_empty_state),
     ("pagination", scenario_pagination),

@@ -245,8 +245,12 @@ janus inventory migrate export.json --verify
 Download inventory keys as JSON from the dashboard or:
 
 ```
-GET /dashboard/api/inventory/export
+POST /dashboard/api/inventory/export
 ```
 
+The export (and the per-key `POST /dashboard/api/inventory/keys/{key_id}/json`
+download) is POST-only so a decrypted credential can never be fetched by a
+plain GET link, and query-param (`?key=`) authentication is not accepted on
+these routes — use the `Authorization` header or the dashboard cookie.
 Requires dashboard authentication when accessing remotely (see
 [Dashboard — Authentication](dashboard.md#authentication)).

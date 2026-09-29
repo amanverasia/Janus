@@ -24,7 +24,7 @@ def _should_invalidate(request: Request, response: Response) -> bool:
     path = request.url.path
     if request.method not in _MUTATION_METHODS or not path.startswith("/dashboard/api/"):
         return False
-    if response.status_code >= 400:
+    if response.status_code >= 400 and response.status_code != 422:
         return False
     if request.method == "POST" and path in _READ_ONLY_POST_PATHS:
         return False

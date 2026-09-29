@@ -14,7 +14,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from janus.background import spawn_background
-from janus.dashboard.auth import require_dashboard_access
+from janus.dashboard.auth import (
+    require_dashboard_access,
+    require_dashboard_access_no_query_key,
+)
 from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
 from janus.inventory.account_value import refresh_account_value
@@ -813,7 +816,10 @@ async def api_inventory_import(
     )
 
 
-@router.get("/api/inventory/export")
+@router.post(
+    "/api/inventory/export",
+    dependencies=[Depends(require_dashboard_access_no_query_key)],
+)
 async def api_export_upstream_keys(
     request: Request,
     provider_id: str | None = None,
@@ -878,7 +884,8 @@ async def api_list_upstream_keys_json(
             "limit": page_size,
             "offset": offset,
             "providers": providers,
-        }
+        },
+        headers=_NO_STORE_HEADERS,
     )
 
 
@@ -900,7 +907,8 @@ async def api_get_upstream_key_json(request: Request, key_id: str) -> JSONRespon
             **detail,
             "models": models,
             "history": history,
-        }
+        },
+        headers=_NO_STORE_HEADERS,
     )
 
 
@@ -955,7 +963,10 @@ async def api_update_upstream_key_priority(
     )
 
 
-@router.get("/api/inventory/keys/{key_id}/json")
+@router.post(
+    "/api/inventory/keys/{key_id}/json",
+    dependencies=[Depends(require_dashboard_access_no_query_key)],
+)
 async def api_upstream_key_agent_json(request: Request, key_id: str) -> JSONResponse:
     _safe_filename_part(key_id, "key_id")
     db_path = await _ensure_db(request)

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.26.1] - 2026-09-29
+
+- Security (#197): inventory credential exports (bulk export and per-key agent JSON) are POST-only with query-param auth rejected; unauthenticated dashboard API GETs return 401 instead of a login redirect reserved for HTML requests.
+- Inventory robustness (#223): provider base_url edits propagate to mirrored keys; scheduler interval clamped to >=1h with a startup check; account-value co-waiters fall back to stored state on leader failure and NaN/inf are rejected; push ingest errors sanitized; masked list/detail GETs send no-store; partial 422 submits invalidate the alert cache; persisted error notes are URL-stripped and truncated; LIKE search escapes wildcards; bulk delete chunks host parameters; leaderboard and client breakdown group by key id.
+
 ## [3.26.0] - 2026-09-29
 ### Fixed
 - **In-flight guards on all mutating dashboard forms** — double-clicks can no

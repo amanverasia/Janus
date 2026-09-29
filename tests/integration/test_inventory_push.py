@@ -61,3 +61,19 @@ def test_push_token_uses_constant_time_comparison():
     source = inspect.getsource(push_auth.require_inventory_push_token)
     assert "compare_digest" in source
     assert "token != expected" not in source
+
+
+@pytest.mark.asyncio
+async def test_push_errors_are_sanitized(client):
+    response = await client.post(
+        "/dashboard/api/inventory/push",
+        headers={"Authorization": "Bearer test-push-token"},
+        json={"key": "sk-proj-" + "c" * 16, "provider": "nosuchprovider"},
+    )
+    assert response.status_code in {200, 201}
+    payload = response.json()
+    rejected = [r for r in payload["results"] if r["status"] == "rejected"]
+    assert rejected
+    message = str(rejected[0].get("error"))
+    assert "nosuchprovider" not in message
+    assert "Provider is not recognized." in message
