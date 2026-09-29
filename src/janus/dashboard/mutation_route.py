@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
 from janus.dashboard.alerts import invalidate_dashboard_alerts
@@ -36,11 +38,34 @@ def _should_invalidate(request: Request, response: Response) -> bool:
     return True
 
 
+def _is_same_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    try:
+        origin_parts = urlsplit(origin)
+        request_parts = urlsplit(str(request.base_url))
+    except ValueError:
+        return False
+    return (
+        origin_parts.scheme == request_parts.scheme
+        and origin_parts.netloc.lower() == request_parts.netloc.lower()
+    )
+
+
 class DashboardMutationRoute(APIRoute):
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         original = super().get_route_handler()
 
         async def route_handler(request: Request) -> Response:
+            if (
+                request.method in _MUTATION_METHODS
+                and request.url.path.startswith("/dashboard/")
+                and not _is_same_origin(request)
+            ):
+                return JSONResponse(
+                    {"error": "Cross-origin dashboard request rejected"}, status_code=403
+                )
             response = await original(request)
             if _should_invalidate(request, response):
                 invalidate_dashboard_alerts(request.app)
