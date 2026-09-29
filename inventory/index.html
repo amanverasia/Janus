@@ -767,10 +767,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#overview-dashboardinventory" class="md-nav__link">
+  <a href="#overview-dashboarduiinventory" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview — /dashboard/inventory
+        Overview — /dashboard/ui/inventory
       
     </span>
   </a>
@@ -778,10 +778,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#key-list-dashboardinventorykeys" class="md-nav__link">
+  <a href="#keys-dashboarduiinventorykeys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key list — /dashboard/inventory/keys
+        Keys — /dashboard/ui/inventory/keys
       
     </span>
   </a>
@@ -789,10 +789,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#add-keys-dashboardinventoryadd" class="md-nav__link">
+  <a href="#connect-paste-or-drop-credentials" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Add keys — /dashboard/inventory/add
+        Connect: paste or drop credentials
       
     </span>
   </a>
@@ -800,10 +800,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#import-dashboardinventoryimport" class="md-nav__link">
+  <a href="#restore-backup-dashboarduiconnectrestore" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Import — /dashboard/inventory/import
+        Restore backup — /dashboard/ui/connect/restore
       
     </span>
   </a>
@@ -812,6 +812,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-credential-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported credential formats
+      
+    </span>
+  </a>
   
 </li>
       
@@ -848,6 +859,17 @@
     <span class="md-ellipsis">
       
         Encryption at rest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preview-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preview API
       
     </span>
   </a>
@@ -1377,10 +1399,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#overview-dashboardinventory" class="md-nav__link">
+  <a href="#overview-dashboarduiinventory" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview — /dashboard/inventory
+        Overview — /dashboard/ui/inventory
       
     </span>
   </a>
@@ -1388,10 +1410,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#key-list-dashboardinventorykeys" class="md-nav__link">
+  <a href="#keys-dashboarduiinventorykeys" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key list — /dashboard/inventory/keys
+        Keys — /dashboard/ui/inventory/keys
       
     </span>
   </a>
@@ -1399,10 +1421,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#add-keys-dashboardinventoryadd" class="md-nav__link">
+  <a href="#connect-paste-or-drop-credentials" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Add keys — /dashboard/inventory/add
+        Connect: paste or drop credentials
       
     </span>
   </a>
@@ -1410,10 +1432,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#import-dashboardinventoryimport" class="md-nav__link">
+  <a href="#restore-backup-dashboarduiconnectrestore" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Import — /dashboard/inventory/import
+        Restore backup — /dashboard/ui/connect/restore
       
     </span>
   </a>
@@ -1422,6 +1444,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-credential-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported credential formats
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1458,6 +1491,17 @@
     <span class="md-ellipsis">
       
         Encryption at rest
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preview-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preview API
       
     </span>
   </a>
@@ -1583,10 +1627,13 @@
 validating, and routing with many API keys across 27+ providers. Keys are checked
 for validity, credit balance (where supported), and model access, then wired into
 gateway routing as multi-account pools.</p>
-<p>Open the dashboard at <code>/dashboard/inventory</code> or use the CLI (<code>janus inventory</code>).</p>
+<p>Add credentials on the dashboard's <strong>Connect</strong> screen (<code>/dashboard/ui/connect</code>) and
+manage them under <strong>Inventory</strong> (<code>/dashboard/ui/inventory</code>). For headless setups,
+use the <a href="#push-api">Push API</a> or the CLI (<code>janus inventory</code>).</p>
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h2>
 <ol>
-<li><strong>Add keys</strong> — paste keys in bulk, import a JSON export, or push via API.</li>
+<li><strong>Add keys</strong> — paste or drop credentials on <strong>Connect</strong>, restore a JSON export,
+   or push via API. Connect previews every entry before anything is stored.</li>
 <li><strong>Auto-detect provider</strong> — Janus probes each key and assigns a provider (or
    marks it <code>unidentified</code>).</li>
 <li><strong>Validate &amp; recheck</strong> — keys are checked on ingest and on a background schedule
@@ -1616,30 +1663,96 @@ stored per inventory provider ID. Most prefixes map 1:1; the exception:</p>
 provider's static <code>api_key</code> and expand into multiple accounts. If no routable keys
 exist, the gateway provider's configured <code>api_key</code> is used as before.</p>
 <h2 id="dashboard-pages">Dashboard pages<a class="headerlink" href="#dashboard-pages" title="Permanent link">&para;</a></h2>
-<h3 id="overview-dashboardinventory">Overview — <code>/dashboard/inventory</code><a class="headerlink" href="#overview-dashboardinventory" title="Permanent link">&para;</a></h3>
+<h3 id="overview-dashboarduiinventory">Overview — <code>/dashboard/ui/inventory</code><a class="headerlink" href="#overview-dashboarduiinventory" title="Permanent link">&para;</a></h3>
 <p>Credit summary, provider cards, best keys, recent activity, and encryption status.</p>
-<h3 id="key-list-dashboardinventorykeys">Key list — <code>/dashboard/inventory/keys</code><a class="headerlink" href="#key-list-dashboardinventorykeys" title="Permanent link">&para;</a></h3>
+<h3 id="keys-dashboarduiinventorykeys">Keys — <code>/dashboard/ui/inventory/keys</code><a class="headerlink" href="#keys-dashboarduiinventorykeys" title="Permanent link">&para;</a></h3>
 <p>Filter by provider or status, search, sort, and paginate. Per-key actions:</p>
 <ul>
 <li><strong>Recheck</strong> — re-validate a single key</li>
 <li><strong>Delete</strong> — remove from inventory</li>
 <li><strong>Reclassify</strong> — fix misidentified provider assignments (bulk action on overview)</li>
 </ul>
-<h3 id="add-keys-dashboardinventoryadd">Add keys — <code>/dashboard/inventory/add</code><a class="headerlink" href="#add-keys-dashboardinventoryadd" title="Permanent link">&para;</a></h3>
-<p>Paste one or many keys (one per line). Optionally set a label, pick a provider, or
-provide a custom base URL. Keys are auto-detected when provider is omitted.</p>
-<h3 id="import-dashboardinventoryimport">Import — <code>/dashboard/inventory/import</code><a class="headerlink" href="#import-dashboardinventoryimport" title="Permanent link">&para;</a></h3>
+<h3 id="connect-paste-or-drop-credentials">Connect: paste or drop credentials<a class="headerlink" href="#connect-paste-or-drop-credentials" title="Permanent link">&para;</a></h3>
+<p><strong>Connect → Keys and logins</strong> (<code>/dashboard/ui/connect</code>) replaces the former Add keys
+screen; <code>/dashboard/ui/inventory/add</code> redirects there.</p>
+<ol>
+<li>Paste keys (one per line) or a credential JSON export, or drop files onto the
+   page. Files are read in the browser with no upload step.</li>
+<li>Leave the provider on <strong>Auto</strong>, or pick a provider. Auto recognizes the
+   credential files listed under <a href="#supported-credential-formats">Supported credential formats</a>;
+   pick the provider yourself for bare OAuth access tokens. An optional custom
+   base URL is under <strong>Advanced</strong>.</li>
+<li><strong>Preview</strong> classifies every entry through the <a href="#preview-api">Preview API</a>:
+   per-provider counts plus a masked table where each entry is <code>new</code>, <code>exists</code>,
+   or <code>rejected</code>. Nothing is written to the database.</li>
+<li><strong>Import</strong> is enabled when at least one entry is <code>new</code>. It submits through
+   <code>POST /dashboard/api/inventory/submit</code> with <strong>Make these routable</strong>
+   (<code>provision_routing=true</code>) on by default, which creates the matching gateway
+   routing provider when one is missing. Imported keys are validated in the
+   background; the page refreshes until validation settles.</li>
+</ol>
+<h3 id="restore-backup-dashboarduiconnectrestore">Restore backup — <code>/dashboard/ui/connect/restore</code><a class="headerlink" href="#restore-backup-dashboarduiconnectrestore" title="Permanent link">&para;</a></h3>
 <p>Import a <strong>Dashboard_For_Apis</strong> JSON export. Use this when migrating from another
-key-management tool.</p>
+Janus node or key-management tool. <code>/dashboard/ui/inventory/import</code> redirects
+here.</p>
+<h2 id="supported-credential-formats">Supported credential formats<a class="headerlink" href="#supported-credential-formats" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Input</th>
+<th>Provider selection</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raw provider API keys, one per line</td>
+<td><strong>Auto</strong></td>
+<td>Keys with a distinctive prefix (<code>gsk_</code>, <code>nvapi-</code>, <code>sk-ant-</code>, <code>sk-proj-</code>, <code>sk-or-v1-</code>, <code>xai-</code>, …) are assigned by prefix, and preview and import always agree. Generic <code>sk-…</code> and prefix-less keys show as <em>Detected on import</em> in the preview; import identifies them by probing providers. Keys that no provider accepts are stored as <code>unidentified</code> for review.</td>
+</tr>
+<tr>
+<td>Codex CLI <code>~/.codex/auth.json</code></td>
+<td><strong>Auto</strong></td>
+<td>The nested <code>tokens</code> object (access, refresh, id token, account id) is flattened into a Codex credential.</td>
+</tr>
+<tr>
+<td>Codex (ChatGPT) OAuth JSON</td>
+<td><strong>Auto</strong> or <strong>Codex (ChatGPT)</strong></td>
+<td>See <a href="#codex-chatgpt-oauth">Codex / ChatGPT OAuth</a>. A 9router <code>providerConnections</code> export with several accounts becomes one inventory entry per Codex connection.</td>
+</tr>
+<tr>
+<td>Cline account</td>
+<td><strong>Auto</strong> or <strong>Cline</strong></td>
+<td>A WorkOS access token with the <code>workos:</code> prefix, a JSON object with <code>"provider": "cline"</code> plus <code>accessToken</code> / <code>refreshToken</code>, or Cline entries in a <code>providerConnections</code> export. The refresh token is kept so Janus can renew the ~1 hour access token. Pick <strong>Cline</strong> for a token without the <code>workos:</code> prefix.</td>
+</tr>
+<tr>
+<td>Antigravity (Google) OAuth JSON</td>
+<td><strong>Auto</strong> or <strong>Antigravity (Google)</strong></td>
+<td>Needs an access token (<code>access_token</code> or <code>accessToken</code>); refresh token, expiry, and <code>projectId</code> are kept when present. Auto needs <code>projectId</code>; pick the provider for a bare access token.</td>
+</tr>
+<tr>
+<td>Kiro (AWS) OAuth JSON</td>
+<td><strong>Auto</strong> or <strong>Kiro (AWS)</strong></td>
+<td>A credential blob containing <code>accessToken</code> and <code>refreshToken</code>. Auto needs <code>profileArn</code> or <code>authMethod</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Claude Code <code>~/.claude/.credentials.json</code> is recognized but not stored in the
+inventory: the preview rejects it with a pointer to <strong>Routing → Providers</strong>, where
+it can be added as a Claude OAuth provider (see
+<a href="../client-setup/#subscription-oauth-providers">Subscription / OAuth providers</a>).
+Other credential files are not supported and come back from the preview as
+<code>rejected</code> with an "unsupported credential format" message. Gemini CLI
+<code>oauth_creds.json</code> is one example.</p>
 <h2 id="supported-inventory-providers">Supported inventory providers<a class="headerlink" href="#supported-inventory-providers" title="Permanent link">&para;</a></h2>
 <p>Janus recognizes keys for these providers (auto-detection probes each):</p>
 <p>OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
-Firecrawl, fal.ai, Exa, Brave Search, <strong>Codex (ChatGPT)</strong> (OAuth blobs — select
-explicitly), plus <strong>custom</strong> and <strong>unidentified</strong> fallbacks.</p>
+Firecrawl, fal.ai, Exa, Brave Search, <strong>Codex (ChatGPT)</strong>, <strong>Cline</strong>, <strong>Antigravity</strong>,
+and <strong>Kiro</strong> (OAuth credentials), plus <strong>custom</strong> and <strong>unidentified</strong> fallbacks.</p>
 <h3 id="codex-chatgpt-oauth">Codex / ChatGPT OAuth<a class="headerlink" href="#codex-chatgpt-oauth" title="Permanent link">&para;</a></h3>
-<p>Paste one of the following into <strong>Add keys</strong>, then choose provider <strong>Codex (ChatGPT)</strong>:</p>
+<p>Paste or drop one of the following on <strong>Connect</strong>, then choose provider <strong>Codex (ChatGPT)</strong>:</p>
 <ul>
 <li>A Janus credential JSON blob (<code>access_token</code> / <code>refresh_token</code> / optional
   <code>extra.workspaceId</code>)</li>
@@ -1670,6 +1783,24 @@ be used without the same Fernet key.</p>
 one <strong>Encrypt credentials</strong> action when <code>INVENTORY_ENCRYPTION_KEY</code> is set. Dashboard
 configuration export remains a portable plaintext YAML export; protect exported files
 accordingly. For encrypted backups, copy the SQLite database and retain the Fernet key.</p>
+<h2 id="preview-api">Preview API<a class="headerlink" href="#preview-api" title="Permanent link">&para;</a></h2>
+<p><code>POST /dashboard/api/inventory/preview</code> is the read-only half of
+<code>/dashboard/api/inventory/submit</code>. <strong>Connect</strong> uses it, and scripts can call it
+with dashboard authentication to check a paste before importing it.</p>
+<ul>
+<li><strong>Input:</strong> the same form fields as <code>submit</code> — <code>keys_text</code> plus an optional
+  <code>provider_id</code> (default <code>auto</code>). Input is parsed the same way, so a Codex
+  <code>providerConnections</code> export expands to one entry per connection.</li>
+<li><strong>Output:</strong> per-provider summary counts and one row per entry with the provider,
+  masked key, label, and a status of <code>new</code>, <code>exists</code>, or <code>rejected</code> (with an
+  error message). Raw keys and token values are never returned, and responses
+  are sent with <code>Cache-Control: no-store</code>.</li>
+<li><strong>No writes:</strong> previewing never creates, updates, or reclassifies inventory
+  rows.</li>
+<li><strong>Limits:</strong> the submit batch cap (<code>INVENTORY_MAX_SUBMIT_BATCH</code>) and rate limiter
+  apply, and the request body is capped at 1 MiB. Empty or oversized input returns
+  <code>422</code>; a rate-limited request returns <code>429</code>.</li>
+</ul>
 <h2 id="push-api">Push API<a class="headerlink" href="#push-api" title="Permanent link">&para;</a></h2>
 <p>Programmatically ingest keys from scripts or other nodes:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:20128/dashboard/api/inventory/push<span class="w"> </span><span class="se">\</span>

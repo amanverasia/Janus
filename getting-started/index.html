@@ -570,6 +570,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#open-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open the dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#your-first-request" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1292,6 +1303,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#open-the-dashboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open the dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#your-first-request" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1369,7 +1391,10 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <p>Generate a default config file:</p>
 <div class="highlight"><pre><span></span><code>janus<span class="w"> </span>config-init
 </code></pre></div>
-<p>This creates <code>~/.janus/config.yaml</code>. Edit it to add your API keys:</p>
+<p>This creates <code>~/.janus/config.yaml</code>. It only needs to exist: the easiest way to
+add credentials is the dashboard's <strong>Connect</strong> screen (see
+<a href="#open-the-dashboard">Open the dashboard</a> below). For file-based or headless
+setup, add providers to the YAML instead:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">server</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20128</span>
 <span class="w">  </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">127.0.0.1</span>
@@ -1411,8 +1436,27 @@ truth</strong>. Editing YAML and restarting will <strong>not</strong> re-apply c
 <span class="c1"># {"status": "ok"}</span>
 </code></pre></div>
 <p>The root URL <code>/</code> redirects to the Cloudline dashboard at <code>/dashboard/ui</code>.</p>
+<h2 id="open-the-dashboard">Open the dashboard<a class="headerlink" href="#open-the-dashboard" title="Permanent link">&para;</a></h2>
+<p>The dashboard always requires a Janus API key, including on localhost. Create
+your first one (the full <code>sk-janus-...</code> value is shown once):</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>admin
+</code></pre></div>
+<p>Then run <code>janus dashboard</code> (or visit <code>http://localhost:20128/dashboard/ui</code>) and
+sign in with that key.</p>
+<ol>
+<li><strong>Home</strong> shows a three-step checklist while setup is incomplete: connect
+   credentials, create a client key, and send a first request.</li>
+<li><strong>Connect</strong> takes pasted API keys or dropped credential files, previews them
+   with masked values, and imports the new ones with <strong>Make these routable</strong> on.
+   See <a href="../inventory/#connect-paste-or-drop-credentials">Key Inventory — Connect</a>.</li>
+<li>The <strong>Your endpoint</strong> card on Home shows your base URL and a copyable <code>curl</code>
+   snippet. <strong>Settings → Tools</strong> has per-client setup for Claude Code, Codex,
+   Cursor, and Cline.</li>
+</ol>
+<p>See <a href="../dashboard/">Dashboard</a> for every section and tab.</p>
 <h2 id="your-first-request">Your First Request<a class="headerlink" href="#your-first-request" title="Permanent link">&para;</a></h2>
-<p>Send an OpenAI-format request to Janus:</p>
+<p>Send an OpenAI-format request to Janus. If <strong>Require API key</strong> is on, add
+<code>-H "Authorization: Bearer sk-janus-yourkey"</code>:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/chat/completions<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>

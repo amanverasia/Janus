@@ -487,6 +487,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headless-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headless / automation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1281,6 +1298,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#headless-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headless / automation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1454,21 +1488,42 @@ either side needing to know the other exists.</p>
 <li><strong>No cloud, no telemetry</strong> — runs entirely on your machine, your keys never leave your system</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+<p>Janus is operated from its dashboard, Cloudline. Start the server, sign in, and
+connect your credentials there.</p>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>janus-ai
 janus<span class="w"> </span>config-init
 janus<span class="w"> </span>serve<span class="w"> </span>--port<span class="w"> </span><span class="m">20128</span>
+janus<span class="w"> </span>keys<span class="w"> </span>create<span class="w"> </span>--name<span class="w"> </span>admin<span class="w">   </span><span class="c1"># in a second terminal: your sign-in key, shown once</span>
 </code></pre></div>
-<p>Run <code>janus dashboard</code> to open the Cloudline UI, add your providers and keys there,
-then point your coding tool at <code>http://localhost:20128/v1</code> and start routing.</p>
+<ol>
+<li><strong>Open the dashboard.</strong> Run <code>janus dashboard</code> or visit
+   <code>http://localhost:20128/dashboard/ui</code>, then sign in with the <code>sk-janus-...</code> key.
+   While setup is incomplete, <strong>Home</strong> shows a three-step checklist that links to
+   each screen.</li>
+<li><strong>Connect credentials.</strong> On <strong>Connect</strong>, paste provider API keys or drop
+   credential files. Janus previews each entry with masked values and a
+   new / exists / rejected status before anything is stored. Import them with
+   <strong>Make these routable</strong> on (the default). See
+   <a href="inventory/#connect-paste-or-drop-credentials">Key Inventory — Connect</a>.</li>
+<li><strong>Point your client at the endpoint.</strong> The <strong>Your endpoint</strong> card on Home shows
+   the base URL (<code>http://localhost:20128/v1</code>) and a copyable <code>curl</code> request.
+   <strong>Settings → Tools</strong> has ready-made settings for Claude Code, Codex, Cursor, and
+   Cline.</li>
+</ol>
 <div class="admonition tip">
 <p class="admonition-title">What next?</p>
 <ul>
+<li><a href="dashboard/">Dashboard</a> — the six sections and every tab</li>
 <li><a href="getting-started/">Getting Started</a> — full install and first-request walkthrough</li>
-<li><a href="configuration/">Configuration</a> — YAML config reference and DB-driven config</li>
-<li><a href="providers/">Providers</a> — setup guides for all supported providers</li>
 <li><a href="client-setup/">Client Setup</a> — connect Claude Code, Codex, Cursor, and more</li>
+<li><a href="providers/">Providers</a> — setup guides for all supported providers</li>
 </ul>
 </div>
+<h3 id="headless-automation">Headless / automation<a class="headerlink" href="#headless-automation" title="Permanent link">&para;</a></h3>
+<p>On a server without a browser, or for scripted setup, seed providers from YAML
+(<a href="configuration/">Configuration</a>), manage keys and budgets with the
+<a href="cli/">CLI</a>, and push upstream keys through the
+<a href="inventory/#push-api">inventory Push API</a>.</p>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
 <h3 id="fallback-routing">Fallback Routing<a class="headerlink" href="#fallback-routing" title="Permanent link">&para;</a></h3>
 <p>Multi-account rotation with intelligent cooldowns. When a provider returns 429, 5xx, auth, or network errors, Janus automatically tries the next available account or model. Cooldown state persists across restarts in SQLite.</p>
@@ -1490,14 +1545,13 @@ then point your coding tool at <code>http://localhost:20128/v1</code> and start 
 <h3 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h3>
 <p>Cost tracking, spend trends, success rates, and breakdowns by model, provider, account, or client key. Visualized in the dashboard with Chart.js.</p>
 <h3 id="dashboard">Dashboard<a class="headerlink" href="#dashboard" title="Permanent link">&para;</a></h3>
-<p>Cloudline is the single dashboard UI — and the primary interface for operating
-Janus. It is a responsive Svelte control plane at <code>/dashboard/ui</code> (open it with
-<code>janus dashboard</code>) with light/dark/system themes, deep links, and a command
-palette. It provides monitoring, provider and model routing, key inventory with
-per-account usage tracking, budgets, API keys, pricing, and settings. Changes
-hot-reload without a server restart. The CLI remains for scripting and
-automation. <code>/dashboard</code> and former page URLs are compatibility redirects to
-Cloudline.</p>
+<p>Cloudline is the single dashboard UI and the primary way to operate Janus. It is
+a responsive Svelte control plane at <code>/dashboard/ui</code> with six sidebar sections
+(Home, Connect, Inventory, Routing, Usage, Settings). Each section groups its
+pages as tabs, and every page keeps a deep link. It also has light/dark/system
+themes and a command palette. Changes hot-reload without a server restart.
+<code>/dashboard</code> and former page URLs are compatibility redirects to Cloudline. See
+<a href="dashboard/">Dashboard</a>.</p>
 <h2 id="tech-stack">Tech Stack<a class="headerlink" href="#tech-stack" title="Permanent link">&para;</a></h2>
 <p>Python 3.11+ / FastAPI / httpx / Pydantic v2 / aiosqlite / SvelteKit 2 / Svelte 5 / TypeScript</p>
 <h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
