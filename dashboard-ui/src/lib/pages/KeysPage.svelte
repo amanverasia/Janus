@@ -13,6 +13,8 @@
 
   let open = false;
   let editing: JsonObject | undefined;
+  let saving = false;
+  let revoking = new Set<string>();
   let revealed = '';
   let copied = '';
   let copyError = '';
@@ -61,6 +63,7 @@
   ];
 
   async function submit(event: SubmitEvent) {
+    if (saving) return;
     const form = event.currentTarget as HTMLFormElement;
     const formData = new FormData(form);
     formData.set('login_field', '1');
@@ -68,6 +71,7 @@
       formData.set('models_field', '1');
       formData.set('budget_fields', '1');
     }
+    saving = true;
     try {
       const result = await action(
         editing ? `/dashboard/api/keys/${idOf(editing)}` : '/dashboard/api/v2/keys',
@@ -83,6 +87,8 @@
       }
     } catch {
       return;
+    } finally {
+      saving = false;
     }
     open = false;
   }
@@ -104,6 +110,23 @@
 
   async function copyKey() {
     if (revealed) await copy(revealed, 'new-key');
+  }
+
+  async function revoke(row: JsonObject) {
+    const id = idOf(row);
+    if (!id || revoking.has(id)) return;
+    if (!confirm('Revoke this key?')) return;
+    revoking = new Set(revoking).add(id);
+    try {
+      await action(`/dashboard/api/keys/${id}`, {
+        method: 'DELETE',
+        success: 'API key revoked'
+      });
+    } finally {
+      const next = new Set(revoking);
+      next.delete(id);
+      revoking = next;
+    }
   }
 
   async function copyPrefix(row: JsonObject) {
@@ -172,12 +195,8 @@
       {#if bool(row.is_active, true)}<button
           class="icon-button"
           title="Revoke"
-          on:click={() =>
-            confirm('Revoke this key?') &&
-            action(`/dashboard/api/keys/${idOf(row)}`, {
-              method: 'DELETE',
-              success: 'API key revoked'
-            })}
+          disabled={revoking.has(idOf(row))}
+          on:click={() => revoke(row)}
         >
           <Icon name="trash" size={15} />
         </button>{/if}
@@ -245,7 +264,9 @@
     </div>
     <div class="form-actions">
       <button type="button" class="button" on:click={() => (open = false)}>Cancel</button>
-      <button class="button primary">{editing ? 'Save changes' : 'Create key'}</button>
+      <button class="button primary" disabled={saving}>
+        {editing ? 'Save changes' : 'Create key'}
+      </button>
     </div>
   </form>
 </Modal>
