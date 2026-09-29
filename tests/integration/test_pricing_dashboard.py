@@ -68,6 +68,34 @@ async def test_pricing_page_lists_unpriced_models(app):
 
 
 @pytest.mark.asyncio
+async def test_pricing_page_caps_unpriced_models_at_top_tokens(app):
+    from janus.dashboard.routes import UNPRICED_MODELS_CAP
+    from janus.storage.database import init_db
+
+    db_path = app.state.db_path
+    await init_db(db_path)
+    for index in range(30):
+        await record_usage(
+            db_path,
+            provider_id="p",
+            model=f"unknown/model-{index:02d}",
+            input_tokens=(index + 1) * 100,
+            output_tokens=0,
+            status=200,
+            cost=0.0,
+        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/api/v2/state/pricing")
+        assert r.status_code == 200
+        rows = r.json()["data"]["unpriced"]
+        assert len(rows) == UNPRICED_MODELS_CAP
+        tokens = [row["input_tokens"] + row["output_tokens"] for row in rows]
+        assert tokens == sorted(tokens, reverse=True)
+        assert rows[0]["model"] == "unknown/model-29"
+        assert all(row["model"] != "unknown/model-00" for row in rows)
+
+
+@pytest.mark.asyncio
 async def test_pricing_page_excludes_priced_models_from_unpriced_table(app):
     db_path = app.state.db_path
     from janus.storage.database import init_db

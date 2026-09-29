@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 from typing import Any
 
 from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
-from janus.storage.combos_db import list_combos
 from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.providers_db import list_providers
 from janus.storage.quotas import describe_reset, get_window_usages, quota_status
@@ -46,7 +44,6 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
     for row in provider_rows:
         inventory_id = inventory_provider_id_for_prefix(row["prefix"])
         routable = routable_by_provider[inventory_id]
-        models = json.loads(row["models"]) if row["models"] else []
 
         quota: dict[str, Any] | None = None
         if row.get("quota_window") and row.get("quota_limit"):
@@ -113,17 +110,11 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
                 "id": row["id"],
                 "prefix": row["prefix"],
                 "inventory_provider_id": inventory_id,
-                "models": models,
                 "account_count": len(accounts),
                 "accounts": accounts,
                 "quota": quota,
             }
         )
-
-    combos: list[dict[str, Any]] = []
-    for combo_row in await list_combos(db_path):
-        models = json.loads(combo_row["models"]) if combo_row["models"] else []
-        combos.append({"name": combo_row["name"], "models": models})
 
     cooled_accounts = {
         combined.rpartition("::")[0]
@@ -132,21 +123,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
     }
     cooled_count = len(cooled_accounts)
 
-    quota_warnings = [
-        p for p in providers if p.get("quota") and p["quota"]["status"] in ("warning", "exhausted")
-    ]
-
     return {
         "providers": providers,
-        "combos": combos,
         "cooldown_count": cooled_count,
-        "quota_warnings": quota_warnings,
-        "rotation_note": (
-            "Within each provider prefix, Janus tries accounts in the order shown "
-            "(priority DESC, then credits). Account strategy (fill-first / round-robin / "
-            "sticky round-robin) controls rotation. Sticky client-key routing only pins a "
-            "Janus API key to one upstream account under fill-first; with round-robin it "
-            "staggers each client's start offset but still rotates the multi-key pool. "
-            "On 429/5xx/auth errors, the account is cooled down and the next is tried."
-        ),
     }

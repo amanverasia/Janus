@@ -34,7 +34,7 @@ async def test_dashboard_overview(app):
         r = await client.get("/dashboard/api/v2/state/overview")
         assert r.status_code == 200
         assert r.json()["section"] == "overview"
-        assert r.json()["data"]["base_url"] == "http://test/v1"
+        assert isinstance(r.json()["data"]["live_inflight"], int)
         assert set(r.json()["data"]["setup_checklist"]) == {
             "has_providers",
             "has_keys",
