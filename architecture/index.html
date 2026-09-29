@@ -1843,7 +1843,7 @@ succeeds:</p>
 <tr>
 <td><strong>Translate</strong></td>
 <td>Client format ≠ provider format</td>
-<td><code>streaming/translator.py</code> → <code>translate_stream</code> via parser + emitter</td>
+<td><code>api/routes.py</code> <code>_streaming_generator</code> → provider parser + client emitter</td>
 </tr>
 </tbody>
 </table>
@@ -1869,10 +1869,11 @@ succeeds:</p>
 <p>This is what fixed pi/opencode's <code>Stream ended without finish_reason</code> on
 DeepSeek V4 Pro native passthrough.</p>
 <h3 id="translate-path">Translate path<a class="headerlink" href="#translate-path" title="Permanent link">&para;</a></h3>
-<p>Cross-format streams use <code>translate_stream(upstream_lines, parser, emitter)</code>:</p>
-<div class="highlight"><pre><span></span><code>upstream SSE line → StreamParser.feed → CanonicalEvent(s)
-                  → StreamEmitter.feed → client SSE bytes
-stream end        → parser.finish + emitter.finish (includes [DONE] for OpenAI)
+<p>Cross-format streams run the canonical round-trip inline in <code>_handle()</code>'s
+<code>_streaming_generator</code> (provider adapter's parser, client adapter's emitter):</p>
+<div class="highlight"><pre><span></span><code>upstream SSE line → provider StreamParser.feed → CanonicalEvent(s)
+                  → StreamUsageTracker → client StreamEmitter.feed → client SSE bytes
+stream end        → tracker/parser finish + emitter.finish (includes [DONE] for OpenAI)
 </code></pre></div>
 <p>OpenAI client emitters always end with <code>data: [DONE]\n\n</code> via <code>emitter.finish()</code>.</p>
 <h3 id="lifecycle-on-stream-complete">Lifecycle on stream complete<a class="headerlink" href="#lifecycle-on-stream-complete" title="Permanent link">&para;</a></h3>
