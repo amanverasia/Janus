@@ -211,6 +211,7 @@ async def _response(
             "Cache-Control": "private, no-store",
             "Expires": "0",
             "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
         },
     )
 
@@ -690,7 +691,8 @@ async def _settings_data(db_path: Path) -> dict[str, Any]:
             "available": True,
             "method": "GET",
             "url": "/dashboard/api/export",
-            "contains_credentials": True,
+            "contains_credentials": False,
+            "secrets_url": "/dashboard/api/export?include_secrets=true",
         },
     }
 
