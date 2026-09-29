@@ -30,13 +30,13 @@ from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard
 # un-pagination regression (~700 KB models / ~110 KB routing) fails here.
 RAW_BUDGETS: dict[str, int] = {
     "models": 80_000,
-    "routing": 100_000,
+    "routing": 25_000,
     "providers": 130_000,
     "pricing": 40_000,
 }
 GZIP_BUDGETS: dict[str, int] = {
     "models": 15_000,
-    "routing": 12_000,
+    "routing": 4_000,
     "providers": 35_000,
     "pricing": 12_000,
 }

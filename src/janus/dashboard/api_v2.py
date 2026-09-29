@@ -38,7 +38,7 @@ from janus.storage.analytics import (
     get_spend_summary,
 )
 from janus.storage.api_keys import create_key, list_keys
-from janus.storage.budgets import create_or_update_budget, get_budget_status, get_budget_statuses
+from janus.storage.budgets import create_or_update_budget, get_budget_statuses
 from janus.storage.combos_db import list_combos
 from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.inventory_overview import (
@@ -243,17 +243,16 @@ async def _usage_stats_data(
     }
 
 
-async def _overview_data(request: Request, db_path: Path, *, days: int) -> dict[str, Any]:
+async def _overview_data(db_path: Path, *, days: int) -> dict[str, Any]:
     from janus.dashboard.live import get_bus
     from janus.storage.providers_db import list_providers
 
     lifetime = await _get_usage_stats_safe(db_path)
     stats = await _usage_stats_data(db_path, days=days, lifetime=lifetime)
+    stats.pop("by_model", None)
     providers = await list_providers(db_path, enabled_only=True)
     keys = await list_keys(db_path)
-    reporting_now = datetime.now(UTC)
-    summary = await get_calendar_day_spend_summary(db_path, now=reporting_now)
-    global_budget = await get_budget_status(db_path, key_id=None, now=reporting_now)
+    summary = await get_calendar_day_spend_summary(db_path, now=datetime.now(UTC))
     cooldowns = await get_active_cooldowns(db_path)
     now = datetime.now(UTC).timestamp()
     cooled_accounts = {
@@ -261,17 +260,12 @@ async def _overview_data(request: Request, db_path: Path, *, days: int) -> dict[
         for combined, (expires_at, _level) in cooldowns.items()
         if expires_at > now
     }
-    live = get_bus().snapshot()
-    registry = request.app.state.registry
     return {
         "stats": stats,
         "provider_count": len(providers),
-        "combos": registry.combos,
         "today_cost": summary["total_cost"],
         "reporting_timezone": summary["reporting_timezone"],
-        "global_budget": global_budget,
-        "base_url": _api_v1_base_url(request),
-        "live": live,
+        "live_inflight": get_bus().inflight_count(),
         "cooldown_count": len(cooled_accounts),
         "setup_checklist": {
             "has_providers": bool(providers),
@@ -810,12 +804,18 @@ async def _authorized_custom_target(
     return provider
 
 
+_MODELS_DEFAULT_LIMIT = 200
+_MODELS_MAX_LIMIT = 2000
+
+
 @router.get("/api/v2/models")
-async def get_models(request: Request) -> JSONResponse:
+async def get_models(
+    request: Request,
+    limit: int = Query(_MODELS_DEFAULT_LIMIT, ge=1, le=_MODELS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+) -> JSONResponse:
     db_path = await _ensure_db(request)
-    data = await _models_data(request, db_path, limit=0, offset=0, provider="", search="")
-    data.pop("model_total", None)
-    data.pop("visible_total", None)
+    data = await _models_data(request, db_path, limit=limit, offset=offset, provider="", search="")
     return _no_store_json(data)
 
 
@@ -1044,7 +1044,7 @@ async def get_dashboard_state(
             request,
             db_path,
             section,
-            await _overview_data(request, db_path, days=days),
+            await _overview_data(db_path, days=days),
             meta={"query": {"days": days}},
         )
     if section == "usage":
