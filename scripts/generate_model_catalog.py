@@ -6,6 +6,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = (
@@ -57,14 +58,65 @@ def _extract_array_text(source: str) -> str:
     raise ValueError("Could not find MODEL_CATALOG array end")
 
 
+def _strip_comments(text: str) -> str:
+    stripped: list[str] = []
+    quote: str | None = None
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote is not None:
+            stripped.append(char)
+            if char == "\\" and index + 1 < len(text):
+                stripped.append(text[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            stripped.append(char)
+            index += 1
+            continue
+        if char == "#" or (char == "/" and text[index + 1 : index + 2] == "/"):
+            while index < len(text) and text[index] != "\n":
+                index += 1
+            continue
+        if char == "/" and text[index + 1 : index + 2] == "*":
+            end = text.find("*/", index + 2)
+            index = len(text) if end == -1 else end + 2
+            continue
+        stripped.append(char)
+        index += 1
+    return "".join(stripped)
+
+
 def _ts_array_to_json(text: str) -> str:
-    without_comments = re.sub(r"//[^\n]*", "", text)
-    without_comments = re.sub(r"/\*.*?\*/", "", without_comments, flags=re.DOTALL)
+    without_comments = _strip_comments(text)
     normalized = re.sub(r"(?<=\d)_(?=\d)", "", without_comments)
     normalized = re.sub(r"'([^'\\]*(?:\\.[^'\\]*)*)'", r'"\1"', normalized)
     normalized = re.sub(r"(\s)([a-zA-Z_][a-zA-Z0-9_]*)(\s*):", r'\1"\2"\3:', normalized)
     normalized = re.sub(r",(\s*[}\]])", r"\1", normalized)
     return normalized
+
+
+def _validate_catalog(catalog: Any) -> list[dict[str, Any]]:
+    if not isinstance(catalog, list) or not catalog:
+        raise ValueError("MODEL_CATALOG must parse to a non-empty array of objects")
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(catalog):
+        if not isinstance(entry, dict):
+            raise ValueError(f"catalog entry {index} did not parse to an object")
+        for field in ("model_id", "provider_id"):
+            value = entry.get(field)
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"catalog entry {index} is missing required field {field!r}")
+        key = (str(entry["model_id"]), str(entry["provider_id"]))
+        if key in seen:
+            raise ValueError(f"duplicate catalog entry for {key}")
+        seen.add(key)
+    return catalog
 
 
 def main() -> None:
@@ -87,7 +139,7 @@ def main() -> None:
     source_text = source.read_text()
     array_text = _extract_array_text(source_text)
     json_text = _ts_array_to_json(array_text)
-    catalog = json.loads(json_text)
+    catalog = _validate_catalog(json.loads(json_text))
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_JSON.write_text(json.dumps(catalog, indent=2) + "\n")

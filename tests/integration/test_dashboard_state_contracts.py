@@ -1,8 +1,9 @@
 """Typed dashboard state contracts (#110), two tiers.
 
-Stable sections are byte-pinned: fetched from a deterministic seeded app and
-compared against a committed fixture under ``dashboard-ui/src/lib/contract-fixtures/``,
-which the Svelte side type-checks against the ``$lib/contracts`` interfaces via
+Stable sections are value-pinned (JSON-pinned): fetched from a deterministic
+seeded app, parsed as JSON, and compared for value equality against a
+committed fixture under ``dashboard-ui/src/lib/contract-fixtures/``, which the
+Svelte side type-checks against the ``$lib/contracts`` interfaces via
 ``contracts-check.ts`` during ``scripts/build_dashboard_ui.py --check``.
 
 Volatile sections -- the ones actively reshaped by payload-size work (pricing
