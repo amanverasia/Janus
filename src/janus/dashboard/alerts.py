@@ -11,7 +11,7 @@ from typing import Any, Literal, cast
 from fastapi import FastAPI, Request
 
 from janus.storage.api_keys import list_keys
-from janus.storage.budgets import get_budget_status, get_budgets
+from janus.storage.budgets import get_budget_statuses, get_budgets
 from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.database import get_connection
 from janus.storage.providers_db import list_providers
@@ -58,6 +58,19 @@ async def collect_dashboard_alerts(db_path: Path, request: Request) -> dict[str,
 async def _collect_dashboard_alerts_with_status(
     db_path: Path, request: Request
 ) -> tuple[dict[str, Any], bool]:
+    input_values = await asyncio.gather(
+        list_keys(db_path),
+        list_providers(db_path, enabled_only=True),
+        get_budgets(db_path),
+        get_budget_statuses(db_path),
+        return_exceptions=True,
+    )
+    input_names = ("keys", "providers", "budgets", "budget_statuses")
+    request.state._dashboard_alert_inputs = {
+        name: value
+        for name, value in zip(input_names, input_values, strict=True)
+        if not isinstance(value, BaseException)
+    }
     alerts: list[DashboardAlert] = []
     collectors = (
         _budget_alerts,
@@ -82,6 +95,13 @@ async def _collect_dashboard_alerts_with_status(
         "warning": sum(1 for a in alerts if a.severity == "warning"),
     }
     return {"alerts": alerts, "summary": summary, "counts": counts}, complete
+
+
+async def _alert_input(request: Request, name: str, loader: Callable[[], Awaitable[Any]]) -> Any:
+    inputs = getattr(request.state, "_dashboard_alert_inputs", None)
+    if isinstance(inputs, dict) and name in inputs:
+        return inputs[name]
+    return await loader()
 
 
 async def _collect_safely(
@@ -158,19 +178,19 @@ def _summarize(alerts: list[DashboardAlert]) -> Summary:
 
 
 async def _budget_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
-    del request
     alerts: list[DashboardAlert] = []
-    keys = await list_keys(db_path)
+    keys = await _alert_input(request, "keys", lambda: list_keys(db_path))
     key_names = {int(k["id"]): str(k["name"]) for k in keys if k.get("is_active", 1)}
 
-    budgets = await get_budgets(db_path)
+    budgets = await _alert_input(request, "budgets", lambda: get_budgets(db_path))
+    statuses = await _alert_input(request, "budget_statuses", lambda: get_budget_statuses(db_path))
     seen_key_ids: set[int | None] = set()
     for budget in budgets:
         key_id = budget["key_id"]
         if key_id in seen_key_ids:
             continue
         seen_key_ids.add(key_id)
-        status = await get_budget_status(db_path, key_id=key_id)
+        status = statuses.get(key_id)
         if status is None:
             continue
         budget_status = status["status"]
@@ -210,37 +230,26 @@ async def _budget_alerts(db_path: Path, request: Request) -> list[DashboardAlert
             )
         )
 
-    if None not in seen_key_ids:
-        status = await get_budget_status(db_path, key_id=None)
-        if status is not None and status["status"] in ("warning", "exceeded"):
-            pct_used = status["pct_used"]
-            severity = "critical" if status["status"] == "exceeded" else "warning"
-            alerts.append(
-                DashboardAlert(
-                    id="budget:global",
-                    severity=severity,
-                    title="Global daily budget",
-                    detail=(
-                        f"Spend is at {pct_used:.0f}% of the daily limit "
-                        f"(${status['today_spend']:.2f} / ${status['daily_limit']:.2f})."
-                    ),
-                    href="/dashboard/ui/budgets",
-                )
-            )
-
     return alerts
 
 
 async def _quota_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
-    del request
-    from janus.storage.quotas import describe_reset, get_window_usage, quota_status
+    from janus.storage.quotas import describe_reset, get_window_usages, quota_status
 
     alerts: list[DashboardAlert] = []
-    providers = await list_providers(db_path, enabled_only=True)
+    providers = await _alert_input(
+        request, "providers", lambda: list_providers(db_path, enabled_only=True)
+    )
+    quota_providers = [
+        (str(provider["id"]), str(provider["quota_window"]))
+        for provider in providers
+        if provider.get("quota_window") and provider.get("quota_limit")
+    ]
+    usages = await get_window_usages(db_path, quota_providers)
     for provider in providers:
         if not provider.get("quota_window") or not provider.get("quota_limit"):
             continue
-        usage = await get_window_usage(db_path, str(provider["id"]), str(provider["quota_window"]))
+        usage = usages[str(provider["id"])]
         metric = provider.get("quota_metric") or "requests"
         used = usage["tokens"] if metric == "tokens" else usage["requests"]
         limit = int(provider["quota_limit"])
@@ -423,9 +432,10 @@ async def _unpriced_alerts(db_path: Path, request: Request) -> list[DashboardAle
 
 
 async def _setup_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
-    del request
     alerts: list[DashboardAlert] = []
-    enabled_providers = await list_providers(db_path, enabled_only=True)
+    enabled_providers = await _alert_input(
+        request, "providers", lambda: list_providers(db_path, enabled_only=True)
+    )
     if not enabled_providers:
         alerts.append(
             DashboardAlert(
@@ -436,7 +446,7 @@ async def _setup_alerts(db_path: Path, request: Request) -> list[DashboardAlert]
                 href="/dashboard/ui/providers",
             )
         )
-    keys = await list_keys(db_path)
+    keys = await _alert_input(request, "keys", lambda: list_keys(db_path))
     active_keys = [k for k in keys if k.get("is_active", 1)]
     if not active_keys:
         alerts.append(

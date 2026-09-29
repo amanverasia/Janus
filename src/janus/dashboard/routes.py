@@ -33,7 +33,7 @@ from janus.storage.api_keys import list_keys, revoke_key, update_key
 from janus.storage.budgets import (
     create_or_update_budget,
     delete_budget,
-    get_budget_status,
+    get_budget_statuses,
     get_budgets,
 )
 from janus.storage.database import init_db
@@ -334,7 +334,11 @@ def _clamp_page_size(limit: int) -> int:
 
 
 async def _request_logs_context(
-    db_path: Path, *, limit: int = 100, offset: int = 0
+    db_path: Path,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+    settings: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     from janus.storage.request_logs import count_request_logs, list_request_logs
     from janus.storage.settings import get_all_settings, resolve_request_log_retention
@@ -346,7 +350,8 @@ async def _request_logs_context(
     if total and offset >= total:
         offset = max(0, ((total - 1) // limit) * limit)
     logs = await list_request_logs(db_path, limit=limit, offset=offset)
-    settings = await get_all_settings(db_path)
+    if settings is None:
+        settings = await get_all_settings(db_path)
     return {
         "logs": logs,
         "total": total,
@@ -476,9 +481,10 @@ async def _build_budget_statuses(
     reporting_now = now or datetime.now(UTC)
     budgets = await get_budgets(db_path)
     keys = await list_keys(db_path)
+    statuses = await get_budget_statuses(db_path, now=reporting_now)
     budget_statuses: list[dict[str, Any]] = []
     for b in budgets:
-        status = await get_budget_status(db_path, key_id=b["key_id"], now=reporting_now)
+        status = statuses.get(b["key_id"])
         key_name = "Global"
         if b["key_id"] is not None:
             key_name = next(
@@ -832,9 +838,23 @@ async def _resolve_provider_api_key(db_path: Path, provider: dict[str, Any]) -> 
 async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
     from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
     from janus.storage.providers_db import list_providers
-    from janus.storage.upstream_keys import summarize_upstream_keys_for_inventory
+    from janus.storage.quotas import describe_reset, get_window_usages, quota_status
+    from janus.storage.upstream_keys import summarize_upstream_keys_for_inventories
 
     providers_raw = await list_providers(db_path)
+    inventory_ids = list(
+        dict.fromkeys(
+            inventory_provider_id_for_prefix(str(provider["prefix"])) for provider in providers_raw
+        )
+    )
+    inventory_summaries = await summarize_upstream_keys_for_inventories(db_path, inventory_ids)
+
+    quota_providers = [
+        (str(provider["id"]), str(provider["quota_window"]))
+        for provider in providers_raw
+        if provider.get("quota_window") and provider.get("quota_limit")
+    ]
+    quota_usages = await get_window_usages(db_path, quota_providers)
     providers: list[dict[str, Any]] = []
     for p in providers_raw:
         parsed = dict(p)
@@ -844,22 +864,16 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
         )
         inventory_id = inventory_provider_id_for_prefix(str(parsed["prefix"]))
         parsed["inventory_provider_id"] = inventory_id
-        parsed["inventory_keys"] = await summarize_upstream_keys_for_inventory(
-            db_path, inventory_id
-        )
-        parsed["quota"] = None
+        parsed["inventory_keys"] = inventory_summaries[inventory_id]
+        quota: dict[str, Any] | None = None
         if parsed.get("quota_window") and parsed.get("quota_limit"):
-            from janus.storage.quotas import describe_reset, get_window_usage, quota_status
-
             try:
-                usage = await get_window_usage(
-                    db_path, str(parsed["id"]), str(parsed["quota_window"])
-                )
+                usage = quota_usages[str(parsed["id"])]
                 metric = parsed.get("quota_metric") or "requests"
                 used = usage["tokens"] if metric == "tokens" else usage["requests"]
                 limit = int(parsed["quota_limit"])
                 status = quota_status(used, limit)
-                parsed["quota"] = {
+                quota = {
                     "used": used,
                     "limit": limit,
                     "metric": metric,
@@ -870,7 +884,8 @@ async def _enrich_providers(db_path: Path) -> list[dict[str, Any]]:
                     **describe_reset(str(parsed["quota_window"])),
                 }
             except Exception:
-                parsed["quota"] = None
+                quota = None
+        parsed["quota"] = quota
         providers.append(parsed)
     return providers
 

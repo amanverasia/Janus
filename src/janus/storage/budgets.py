@@ -102,46 +102,65 @@ async def get_budget_status(
     key_id: int | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
+    statuses = await get_budget_statuses(db_path, now=now)
+    return statuses.get(key_id)
+
+
+async def get_budget_statuses(
+    db_path: str | Path,
+    *,
+    now: datetime | None = None,
+) -> dict[int | None, dict[str, Any]]:
+    """Return statuses for every active budget using a fixed number of queries."""
     window = await current_reporting_day(db_path, now=now)
     start_utc, end_utc = window.query_bounds
-    total_spend: float | None = None
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT daily_limit, absolute_limit, warn_pct FROM budgets "
-            "WHERE key_id IS ? AND is_active = 1 ORDER BY id LIMIT 1",
-            (key_id,),
+            "SELECT key_id, daily_limit, absolute_limit, warn_pct FROM budgets "
+            "WHERE is_active = 1 ORDER BY id",
         ) as cur:
-            row = await cur.fetchone()
-        if row is None:
-            return None
-        if key_id is not None:
-            async with db.execute(
-                "SELECT COALESCE(SUM(cost), 0.0) as spent FROM usage "
-                "WHERE client_key_id = ? AND timestamp >= ? AND timestamp < ?",
-                (key_id, start_utc, end_utc),
-            ) as cur:
-                spent_row = await cur.fetchone()
-        else:
-            async with db.execute(
-                "SELECT COALESCE(SUM(cost), 0.0) as spent FROM usage "
-                "WHERE timestamp >= ? AND timestamp < ?",
-                (start_utc, end_utc),
-            ) as cur:
-                spent_row = await cur.fetchone()
-        if row["absolute_limit"] is not None:
-            async with db.execute(
-                "SELECT COALESCE(SUM(cost), 0.0) as spent FROM usage WHERE client_key_id = ?",
-                (key_id,),
-            ) as cur:
-                total_row = await cur.fetchone()
-            assert total_row is not None
-            total_spend = float(total_row["spent"])
+            budget_rows = await cur.fetchall()
+        if not budget_rows:
+            return {}
+        async with db.execute(
+            "SELECT client_key_id, COALESCE(SUM(cost), 0.0) AS spent FROM usage "
+            "WHERE timestamp >= ? AND timestamp < ? GROUP BY client_key_id",
+            (start_utc, end_utc),
+        ) as cur:
+            daily_rows = await cur.fetchall()
+        async with db.execute(
+            "SELECT client_key_id, COALESCE(SUM(cost), 0.0) AS spent FROM usage "
+            "GROUP BY client_key_id",
+        ) as cur:
+            lifetime_rows = await cur.fetchall()
 
-    assert spent_row is not None
+    daily_by_key = {row["client_key_id"]: float(row["spent"]) for row in daily_rows}
+    lifetime_by_key = {row["client_key_id"]: float(row["spent"]) for row in lifetime_rows}
+    statuses: dict[int | None, dict[str, Any]] = {}
+    for row in budget_rows:
+        key_id = int(row["key_id"]) if row["key_id"] is not None else None
+        today_spend = (
+            sum(daily_by_key.values()) if key_id is None else daily_by_key.get(key_id, 0.0)
+        )
+        total_spend = (
+            lifetime_by_key.get(key_id, 0.0) if row["absolute_limit"] is not None else None
+        )
+        statuses.setdefault(
+            key_id,
+            _format_budget_status(row, today_spend, total_spend, window),
+        )
+    return statuses
+
+
+def _format_budget_status(
+    row: Any,
+    today_spend: float,
+    total_spend: float | None,
+    window: Any,
+) -> dict[str, Any]:
     daily_limit = float(row["daily_limit"]) if row["daily_limit"] is not None else None
     absolute_limit = float(row["absolute_limit"]) if row["absolute_limit"] is not None else None
     warn_pct = float(row["warn_pct"])
-    today_spend = float(spent_row["spent"])
     pct_used = 0.0
     daily_status: str | None = None
     if daily_limit is not None:
