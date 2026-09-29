@@ -1378,7 +1378,9 @@ will not re-apply providers, combos, savers, or pricing.</p>
 <p>To manage runtime config:</p>
 <ul>
 <li>Use the <a href="../dashboard/">dashboard</a> — changes hot-reload immediately</li>
-<li><strong>Export Config</strong> (<code>GET /dashboard/api/export</code>) — download current DB state as YAML</li>
+<li><strong>Export Config</strong> (<code>GET /dashboard/api/export</code>) — download current DB state as YAML.
+  Provider API keys are omitted unless you pass <code>?include_secrets=true</code> (the Settings
+  page "Export secrets" button does this after a confirmation); secret exports are logged.</li>
 <li><strong>Reset to Defaults</strong> (Settings page) — wipe DB tables and re-seed from YAML</li>
 </ul>
 <p>Static <code>api_keys</code> in YAML are <strong>not</strong> seeded — they remain in the config file and
