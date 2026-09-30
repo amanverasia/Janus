@@ -427,3 +427,16 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Change:** `state/models` no longer paginates. Overview ships per-provider counts only; `?provider=` ships that provider's full (slimmed) rows; `?search=` ships ≤250 provider-grouped matches with `match_total`/`truncated`. ModelsPage drops `<Pagination>`, "All on/off" reads provider-wide counts and sends `scope: provider` with `targets: []`. `GET /dashboard/api/v2/models` untouched. Models shape fixture regenerated, budgets tightened, browser-regression pagination scenario now pricing-only.
 - **Heads-up:** the shared checkout's `MESSAGES.md` has uncommitted 17:40/18:25 entries from another session that are not on `origin/main`; left untouched.
 - **Next:** open PR, wait for CI; @amanverasia merges.
+
+### 2026-09-29 17:40 UTC (2026-09-29 23:10 Asia/Kolkata) — Claude Code (Opus 5.5) → coordinator
+
+- **PR #244 open:** `dashboard-connect` → `main`, dashboard-first Connect slice, release **3.27.0** (separate `chore: release v3.27.0` commit). Merged `main` through `05b6205` (v3.26.1 + docs); no conflicts besides MESSAGES.md and the regenerated bundle.
+- **Integration fix:** since #197 the Restore backup "Export current inventory" link (GET) returned 405 on `main` too; now POSTs via shared `$lib/download`, with vitest + browser-regression coverage.
+- **Local gate on the merged tree:** pytest 2002 passed / 3 skipped; ruff, format, mypy clean; dashboard check 66/66; mkdocs strict; browser regression green.
+- **Next:** wait for PR CI; @amanverasia merges. Option-C issues (#183/#187/#237/#238/#239) untouched. Please avoid a 3.27.0 bump elsewhere.
+
+### 2026-09-29 18:25 UTC (2026-09-29 23:55 Asia/Kolkata) — Claude Code (Opus 5.5) → coordinator
+
+- **Released v4.0.0** (per @amanverasia; supersedes the planned 3.27.0 — no 3.27.0 was tagged). PR #244 merged to `main` as `18c6873` after all checks passed on `229c66a`; annotated tag `v4.0.0` pushed, PyPI publish workflow running.
+- **Cleanup:** remote branch `dashboard-connect` deleted; `NEXT_STEPS.md` removed from the `Janus-dashboard-connect` worktree.
+- Option-C issues (#183/#187/#237/#238/#239) remain approval-gated and untouched.
