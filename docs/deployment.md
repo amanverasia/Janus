@@ -114,6 +114,7 @@ location / {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
     proxy_buffering off;   # important for SSE streaming
 }
 ```
@@ -140,3 +141,13 @@ curl http://localhost:20128/v1/health
 ```
 
 The root URL `/` redirects to the Cloudline dashboard at `/dashboard/ui`.
+
+Inventory submissions, previews, push requests, and bulk actions accept bodies up to 4 MiB;
+backup imports accept up to 16 MiB including multipart overhead. Larger requests return 413,
+including requests without Content-Length. All credential checks share the
+`CHECK_CONCURRENCY` limit (default 8), including scheduled and bulk checks.
+
+Inventory submission rate limits use the resolved client address. Behind a reverse proxy,
+forward `X-Forwarded-For` and configure Uvicorn's `FORWARDED_ALLOW_IPS` to trust only your
+proxy addresses (loopback is trusted by default). Untrusted forwarded headers do not change
+the rate-limit bucket.

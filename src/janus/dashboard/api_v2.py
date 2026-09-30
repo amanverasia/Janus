@@ -870,7 +870,7 @@ async def _authorized_custom_target(
     del request, model_id
     from janus.storage.providers_db import get_provider
 
-    provider = await get_provider(db_path, provider_id)
+    provider = await get_provider(db_path, provider_id, include_secret=False)
     if provider is None:
         raise HTTPException(status_code=422, detail="Unknown provider_id")
     return provider

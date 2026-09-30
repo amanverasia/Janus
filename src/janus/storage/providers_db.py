@@ -13,6 +13,34 @@ from janus.inventory.key_encryption import (
 
 from .database import get_connection
 
+_PROVIDER_PUBLIC_COLUMNS = (
+    "id",
+    "catalog_id",
+    "prefix",
+    "api_type",
+    "base_url",
+    "models",
+    "default_model",
+    "live_models",
+    "selected_models",
+    "is_enabled",
+    "created_at",
+    "updated_at",
+    "quota_window",
+    "quota_limit",
+    "quota_metric",
+    "transports",
+    "allowed_models",
+)
+
+
+def _provider_projection(include_secret: bool) -> str:
+    if include_secret:
+        return "*"
+    return ", ".join(_PROVIDER_PUBLIC_COLUMNS) + (
+        ", CASE WHEN api_key IS NULL THEN NULL WHEN api_key = '' THEN '' ELSE '*' END AS api_key"
+    )
+
 
 def _stored_api_key(value: Any) -> Any:
     if isinstance(value, str) and value:
@@ -50,30 +78,37 @@ def _bool_int(value: Any, *, default: bool) -> int:
     return int(bool(value))
 
 
-def _decode_provider_row(row: Any) -> dict[str, Any]:
+def _decode_provider_row(row: Any, *, include_secret: bool = True) -> dict[str, Any]:
     item = dict(row)
     api_key = item.get("api_key")
-    if isinstance(api_key, str) and api_key:
+    if include_secret and isinstance(api_key, str) and api_key:
         item["api_key"] = decrypt_key_value(api_key)
     return item
 
 
-async def list_providers(db_path: str | Path, enabled_only: bool = False) -> list[dict[str, Any]]:
-    query = "SELECT * FROM providers"
+async def list_providers(
+    db_path: str | Path, enabled_only: bool = False, *, include_secret: bool = False
+) -> list[dict[str, Any]]:
+    query = f"SELECT {_provider_projection(include_secret)} FROM providers"
     if enabled_only:
         query += " WHERE is_enabled = 1"
     query += " ORDER BY id"
     async with get_connection(db_path) as db:
         async with db.execute(query) as cur:
             rows = await cur.fetchall()
-    return [_decode_provider_row(row) for row in rows]
+    return [_decode_provider_row(row, include_secret=include_secret) for row in rows]
 
 
-async def get_provider(db_path: str | Path, provider_id: str) -> dict[str, Any] | None:
+async def get_provider(
+    db_path: str | Path, provider_id: str, *, include_secret: bool = True
+) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
-        async with db.execute("SELECT * FROM providers WHERE id = ?", (provider_id,)) as cur:
+        async with db.execute(
+            f"SELECT {_provider_projection(include_secret)} FROM providers WHERE id = ?",
+            (provider_id,),
+        ) as cur:
             row = await cur.fetchone()
-    return _decode_provider_row(row) if row else None
+    return _decode_provider_row(row, include_secret=include_secret) if row else None
 
 
 async def create_provider(db_path: str | Path, data: dict[str, Any]) -> None:
@@ -107,7 +142,10 @@ async def create_provider(db_path: str | Path, data: dict[str, Any]) -> None:
 
 async def update_provider(db_path: str | Path, provider_id: str, data: dict[str, Any]) -> None:
     async with get_connection(db_path) as db:
-        async with db.execute("SELECT * FROM providers WHERE id = ?", (provider_id,)) as cur:
+        async with db.execute(
+            "SELECT * FROM providers WHERE id = ?",
+            (provider_id,),
+        ) as cur:
             existing = await cur.fetchone()
         if existing is None:
             return
@@ -185,20 +223,17 @@ async def reencrypt_plaintext_provider_keys(db_path: str | Path) -> int:
 
 
 async def count_provider_encryption_state(db_path: str | Path) -> dict[str, int]:
-    encrypted = 0
-    plaintext = 0
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT api_key FROM providers WHERE api_key IS NOT NULL AND api_key != ''"
+            "SELECT COUNT(*) AS total, "
+            "COALESCE(SUM(substr(api_key, 1, 7) = 'enc:v1:'), 0) AS encrypted "
+            "FROM providers WHERE api_key IS NOT NULL AND api_key != ''"
         ) as cur:
-            rows = await cur.fetchall()
-    for row in rows:
-        stored = row["api_key"]
-        if isinstance(stored, str) and is_encrypted_value(stored):
-            encrypted += 1
-        else:
-            plaintext += 1
-    return {"encrypted": encrypted, "plaintext": plaintext, "total": encrypted + plaintext}
+            row = await cur.fetchone()
+    assert row is not None
+    total = int(row["total"])
+    encrypted = int(row["encrypted"])
+    return {"encrypted": encrypted, "plaintext": total - encrypted, "total": total}
 
 
 async def toggle_provider(db_path: str | Path, provider_id: str) -> None:

@@ -33,7 +33,7 @@ from janus.storage.settings import (
     get_all_settings,
     resolve_saver_settings,
 )
-from janus.storage.upstream_keys import list_routable_upstream_keys
+from janus.storage.upstream_keys import get_upstream_keys_by_ids, list_routable_upstream_keys
 from janus.storage.upstream_models import list_model_ids_for_keys
 from janus.storage.usage import invalidate_unpriced_models_cache
 from janus.tokensavers.base import AsyncTokenSaver, TokenSaver
@@ -132,7 +132,7 @@ async def reload_providers(app: FastAPI) -> None:
 
 async def _reload_providers_locked(app: FastAPI) -> None:
     db_path: Path = app.state.db_path
-    rows = await list_providers(db_path, enabled_only=True)
+    rows = await list_providers(db_path, enabled_only=True, include_secret=True)
     old_providers: dict[str, Provider] = getattr(app.state, "providers", {})
     old_registry: ProviderRegistry | None = getattr(app.state, "registry", None)
     old_configs = (
@@ -153,11 +153,26 @@ async def _reload_providers_locked(app: FastAPI) -> None:
     routed_identities_by_inventory: dict[str, set[str]] = {}
     all_key_ids: list[str] = []
     for inventory_id, inventory_rows in rows_by_inventory.items():
-        keys = await list_routable_upstream_keys(db_path, inventory_id)
+        keys = await list_routable_upstream_keys(db_path, inventory_id, include_hash=True)
+        legacy_ids = [
+            str(key["id"]) for key in keys if _credential_identity(key).startswith("key-id:")
+        ]
+        if legacy_ids:
+            legacy_rows = await get_upstream_keys_by_ids(db_path, legacy_ids)
+            legacy_by_id = {str(key["id"]): key for key in legacy_rows}
+            for key in keys:
+                key.update(legacy_by_id.get(str(key["id"]), {}))
         assignments, routed_identities = _assign_inventory_keys(inventory_rows, keys)
         keys_by_provider.update(assignments)
         routed_identities_by_inventory[inventory_id] = routed_identities
         all_key_ids.extend(str(key["id"]) for assigned in assignments.values() for key in assigned)
+    selected_keys = [key for keys in keys_by_provider.values() for key in keys]
+    secret_rows = await get_upstream_keys_by_ids(
+        db_path, [str(key["id"]) for key in selected_keys if "key_value" not in key]
+    )
+    secrets_by_id = {str(key["id"]): key for key in secret_rows}
+    for key in selected_keys:
+        key.update(secrets_by_id.get(str(key["id"]), {}))
     discoveries = await list_model_ids_for_keys(db_path, all_key_ids)
     provider_prefixes = {str(row["id"]): str(row["prefix"]) for row in rows}
     custom_by_prefix: dict[str, list[str]] = {}

@@ -285,7 +285,7 @@ async def test_preview_input_errors(client, monkeypatch):
         PREVIEW_URL,
         files={"keys_text": (None, "y" * (5 * 1024 * 1024))},
     )
-    assert oversized_upload.status_code == 422
+    assert oversized_upload.status_code == 413
     assert "too large" in oversized_upload.json()["error"]
 
     multipart = await client.post(
@@ -392,7 +392,7 @@ async def test_cline_export_previews_and_imports_with_refresh_metadata(client, a
     for body in (json.dumps(preview), submitted.text):
         assert CLINE_AT not in body
         assert CLINE_RT not in body
-    (stored,) = await list_upstream_keys(app.state.db_path)
+    (stored,) = await list_upstream_keys(app.state.db_path, include_secret=True)
     assert stored["provider_id"] == "cline"
     assert stored["key_value"] == f"workos:{CLINE_AT}"
     assert json.loads(stored["metadata"])["refresh_token"] == CLINE_RT

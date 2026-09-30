@@ -6,15 +6,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
+from janus.dashboard.inventory_request import InventoryMutationRoute
 from janus.dashboard.inventory_routes import _safe_ingest_error
-from janus.dashboard.mutation_route import DashboardMutationRoute
 from janus.dashboard.routes import _ensure_db
 from janus.inventory.ingestion import KeyIngestEntry, enforce_batch_size, ingest_upstream_key
 from janus.inventory.push_auth import require_inventory_push_token
 from janus.inventory.rate_limit import get_submit_rate_limiter
 from janus.inventory.recheck_scheduler import schedule_upstream_recheck
 
-router = APIRouter(route_class=DashboardMutationRoute)
+router = APIRouter(route_class=InventoryMutationRoute)
 
 
 class PushKeyEntry(BaseModel):

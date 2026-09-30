@@ -173,7 +173,7 @@ async def backfill_provider_keys(db_path: str | Path) -> int:
     from janus.storage.providers_db import list_providers
 
     mirrored = 0
-    for provider in await list_providers(db_path):
+    for provider in await list_providers(db_path, include_secret=True):
         api_key = provider.get("api_key")
         if not isinstance(api_key, str) or not api_key:
             continue

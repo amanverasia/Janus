@@ -18,7 +18,7 @@ from janus.dashboard.auth import (
     require_dashboard_access,
     require_dashboard_access_no_query_key,
 )
-from janus.dashboard.mutation_route import DashboardMutationRoute
+from janus.dashboard.inventory_request import InventoryMutationRoute
 from janus.dashboard.routes import _ensure_db
 from janus.inventory.account_value import refresh_account_value
 from janus.inventory.catalog import get_inventory_providers
@@ -57,6 +57,7 @@ from janus.storage.upstream_keys import (
     DEFAULT_PAGE_SIZE,
     archive_upstream_keys,
     count_storage_encryption_state,
+    count_upstream_keys,
     count_upstream_keys_filtered,
     delete_upstream_key,
     delete_upstream_keys,
@@ -74,7 +75,7 @@ from janus.storage.upstream_models import list_models_for_key
 
 router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
-    route_class=DashboardMutationRoute,
+    route_class=InventoryMutationRoute,
 )
 logger = logging.getLogger(__name__)
 _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
@@ -708,10 +709,10 @@ async def api_restore_upstream_key(
 @router.post("/api/inventory/recheck-all")
 async def api_recheck_all_upstream_keys(request: Request) -> JSONResponse:
     db_path = await _ensure_db(request)
-    keys = await list_upstream_keys(db_path)
+    count = await count_upstream_keys(db_path)
     _schedule_recheck_all(db_path)
     return JSONResponse(
-        {"ok": True, "count": len(keys), "queued_count": len(keys)},
+        {"ok": True, "count": count, "queued_count": count},
         headers=_NO_STORE_HEADERS,
     )
 
