@@ -52,20 +52,25 @@
   let healthAt = 0;
   let healthOffline = false;
   let nowTs = Date.now();
+  let healthRequest = 0;
   const viewCache = new Map<string, CachedView>();
   const latestPathCache = new Map<string, CachedView>();
+  const toastTimers = new Map<number, number>();
 
   $: busy = loading || mutationCount > 0;
   $: activeHub = hubFor(active.href);
   $: healthAgeMs = healthAt ? nowTs - healthAt : Infinity;
 
   async function refreshHealth() {
+    const token = ++healthRequest;
     try {
-      health = await getHealth();
+      const nextHealth = await getHealth();
+      if (token !== healthRequest) return;
+      health = nextHealth;
       healthAt = Date.now();
       healthOffline = false;
     } catch {
-      healthOffline = true;
+      if (token === healthRequest) healthOffline = true;
     }
   }
 
@@ -87,6 +92,11 @@
   const TOAST_LIMIT = 4;
 
   function dismissToast(id: number) {
+    const timer = toastTimers.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      toastTimers.delete(id);
+    }
     toasts = toasts.filter((toast) => toast.id !== id);
   }
 
@@ -94,7 +104,10 @@
     const id = ++toastId;
     // Cap the stack; an error loop used to fill the viewport with toasts.
     toasts = [...toasts, { id, kind, message }].slice(-TOAST_LIMIT);
-    window.setTimeout(() => dismissToast(id), 3600);
+    toastTimers.set(
+      id,
+      window.setTimeout(() => dismissToast(id), 3600)
+    );
   }
 
   function getCachedView(viewKey: string, nextPathname: string): CachedView | undefined {
@@ -116,6 +129,11 @@
       viewCache.delete(oldest);
     }
     latestPathCache.set(nextPathname, value);
+    while (latestPathCache.size > VIEW_CACHE_LIMIT) {
+      const oldest = latestPathCache.keys().next().value;
+      if (oldest === undefined) break;
+      latestPathCache.delete(oldest);
+    }
   }
 
   async function load() {

@@ -52,6 +52,7 @@
         method: 'DELETE',
         success: 'Combo deleted'
       });
+    } catch {
     } finally {
       const next = new Set(deleting);
       next.delete(id);

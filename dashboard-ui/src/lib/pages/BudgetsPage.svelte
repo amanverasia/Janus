@@ -86,6 +86,7 @@
         method: 'DELETE',
         success: 'Budget deleted'
       });
+    } catch {
     } finally {
       const next = new Set(deleting);
       next.delete(id);

@@ -148,6 +148,7 @@
       await action('/dashboard/api/reset', {
         success: 'Configuration reset to startup defaults'
       });
+    } catch {
     } finally {
       resetting = false;
     }

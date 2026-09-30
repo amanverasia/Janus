@@ -43,6 +43,7 @@
   "data.keys[].daily_credit_date null",
   "data.keys[].daily_credit_limit null",
   "data.keys[].daily_credit_used number",
+  "data.keys[].decryptable boolean",
   "data.keys[].health_status string",
   "data.keys[].health_warnings null",
   "data.keys[].id string",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,8 @@ from janus.tokensavers.pipeline import SaverPipeline
 from janus.tokensavers.ponytail import PROMPTS as PONYTAIL_PROMPTS
 from janus.tokensavers.ponytail import PonytailSaver
 from janus.tokensavers.rtk import RTKSaver
+
+logger = logging.getLogger(__name__)
 
 
 def _provider_execution_key(config: ProviderConfig) -> tuple[Any, ...]:
@@ -173,6 +176,22 @@ async def _reload_providers_locked(app: FastAPI) -> None:
     secrets_by_id = {str(key["id"]): key for key in secret_rows}
     for key in selected_keys:
         key.update(secrets_by_id.get(str(key["id"]), {}))
+    undecryptable_key_ids = [
+        str(key["id"])
+        for keys in keys_by_provider.values()
+        for key in keys
+        if key.get("credential_decryptable") is False
+    ]
+    if undecryptable_key_ids:
+        logger.warning(
+            "Skipping %d upstream key(s) that cannot be decrypted with the current key: %s",
+            len(undecryptable_key_ids),
+            ", ".join(undecryptable_key_ids),
+        )
+        keys_by_provider = {
+            provider_id: [key for key in keys if key.get("credential_decryptable") is not False]
+            for provider_id, keys in keys_by_provider.items()
+        }
     discoveries = await list_model_ids_for_keys(db_path, all_key_ids)
     provider_prefixes = {str(row["id"]): str(row["prefix"]) for row in rows}
     custom_by_prefix: dict[str, list[str]] = {}
@@ -187,6 +206,14 @@ async def _reload_providers_locked(app: FastAPI) -> None:
         for row in rows:
             inventory_id = inventory_provider_id_for_prefix(row["prefix"])
             assigned_keys = keys_by_provider.get(str(row["id"]), [])
+            if not assigned_keys and row.get("credential_decryptable") is False:
+                logger.warning(
+                    "Skipping provider %s (%s): its credential cannot be decrypted "
+                    "with the current key",
+                    row["id"],
+                    row["prefix"],
+                )
+                continue
             static_identity = _static_credential_identity(row)
             if (
                 not assigned_keys

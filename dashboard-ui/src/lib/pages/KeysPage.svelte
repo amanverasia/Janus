@@ -122,6 +122,7 @@
         method: 'DELETE',
         success: 'API key revoked'
       });
+    } catch {
     } finally {
       const next = new Set(revoking);
       next.delete(id);

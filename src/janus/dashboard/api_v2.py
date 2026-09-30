@@ -376,6 +376,13 @@ async def _inventory_keys_data(
     for key in keys:
         key.pop("key_hash", None)
         key.pop("metadata", None)
+    from janus.inventory.rotation import undecryptable_credential_ids
+
+    undecryptable = await undecryptable_credential_ids(
+        db_path, "upstream_keys", [str(key["id"]) for key in keys]
+    )
+    for key in keys:
+        key["decryptable"] = str(key["id"]) not in undecryptable
     return (
         {
             "keys": keys,
@@ -451,6 +458,11 @@ async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
         if not model.get("disabled"):
             visible_models[prefix] = visible_models.get(prefix, 0) + 1
     enriched = await _enrich_providers(db_path)
+    from janus.inventory.rotation import undecryptable_credential_ids
+
+    undecryptable_providers = await undecryptable_credential_ids(
+        db_path, "providers", [str(provider.get("id")) for provider in enriched]
+    )
     gateway_account_counts: dict[str, int] = {}
     for provider in enriched:
         prefix = str(provider.get("prefix") or "")
@@ -458,6 +470,7 @@ async def _providers_data(request: Request, db_path: Path) -> dict[str, Any]:
     providers: list[dict[str, Any]] = []
     for provider in enriched:
         safe = _without_provider_secrets(provider)
+        safe["decryptable"] = str(provider.get("id")) not in undecryptable_providers
         prefix = str(provider.get("prefix") or "")
         catalog_id = _matching_catalog_id(provider, catalog)
         safe["catalog_id_inferred"] = not provider.get("catalog_id") and catalog_id is not None

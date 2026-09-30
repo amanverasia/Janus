@@ -179,6 +179,7 @@ async def test_lifespan_marks_dashboard_ready_before_first_request(
     monkeypatch.setattr("janus.app._pricing_catalog_needs_sync", no_pricing_sync)
     monkeypatch.setattr("janus.inventory.scheduler.scheduler_enabled", lambda: False)
     monkeypatch.setattr("janus.pricing.scheduler.pricing_scheduler_enabled", lambda: False)
+    monkeypatch.setenv("JANUS_ALLOW_INSECURE_DEV_KEY", "1")
 
     async with app.router.lifespan_context(app):
         assert app.state._dashboard_db_ready is True

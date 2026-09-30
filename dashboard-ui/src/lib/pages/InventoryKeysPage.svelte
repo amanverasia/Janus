@@ -30,6 +30,7 @@
   let detailPriority = 0;
   let revealedDetail = '';
   let revealBusy = false;
+  let revealError = '';
   let revealTimer = 0;
   let testResults: Record<string, string> = {};
   let testing = new Set<string>();
@@ -66,6 +67,22 @@
   onMount(() => {
     syncQueryState();
   });
+
+  // The shell reloads data on popstate without remounting this component, so
+  // the toolbar has to follow the server-confirmed query state or back/forward
+  // would show stale filters that Apply would then re-apply.
+  $: syncFromData(data);
+
+  function syncFromData(next: JsonObject) {
+    providerId = text(next.provider_id, '');
+    status = text(next.status, '');
+    search = text(next.search, '');
+    sort = text(next.sort, 'credits');
+    direction = text(next.direction, 'desc');
+    limit = Math.max(1, number(next.limit, 25));
+    offset = Math.max(0, number(next.offset, 0));
+    testResults = {};
+  }
 
   function syncQueryState() {
     const query = new URLSearchParams(window.location.search);
@@ -145,6 +162,7 @@
         body,
         success: `${selected.size} credentials ${kind === 'recheck' ? 'queued' : `${kind}d`}`
       });
+    } catch {
     } finally {
       bulkBusy = false;
     }
@@ -156,6 +174,7 @@
     busyRows = new Set(busyRows).add(id);
     try {
       await action(url, options);
+    } catch {
     } finally {
       const next = new Set(busyRows);
       next.delete(id);
@@ -170,6 +189,7 @@
       await action('/dashboard/api/inventory/recheck-all', {
         success: 'Inventory recheck started'
       });
+    } catch {
     } finally {
       recheckingAll = false;
     }
@@ -190,6 +210,7 @@
         ...testResults,
         [id]: text(result.message, result.ok ? 'Credential is valid' : 'Test completed')
       };
+    } catch {
     } finally {
       const next = new Set(testing);
       next.delete(id);
@@ -223,6 +244,7 @@
         `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/account-value/refresh`,
         { success: 'Account usage refreshed' }
       );
+    } catch {
     } finally {
       refreshingValue = '';
     }
@@ -250,9 +272,8 @@
       if (token !== detailToken) return;
       detail = loaded;
       detailPriority = number(loaded.priority);
-    } catch (caught) {
-      if (token !== detailToken) return;
-      throw caught;
+    } catch {
+      detail = undefined;
     } finally {
       if (token === detailToken) detailLoading = false;
     }
@@ -266,6 +287,7 @@
     }
     const id = idOf(detail);
     revealBusy = true;
+    revealError = '';
     try {
       const response = await dashboardFetch(
         `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/reveal`,
@@ -278,10 +300,13 @@
       );
       if (!response.ok) throw new Error('Credential unavailable');
       const key = text(object(await response.json()).key_value, '');
+      if (!key) throw new Error('Credential unavailable');
       if (!detail || idOf(detail) !== id) return;
       revealedDetail = key;
       window.clearTimeout(revealTimer);
       revealTimer = window.setTimeout(clearReveal, 30_000);
+    } catch (error) {
+      revealError = error instanceof Error ? error.message : 'Credential unavailable';
     } finally {
       revealBusy = false;
     }
@@ -290,6 +315,7 @@
   function clearReveal() {
     window.clearTimeout(revealTimer);
     revealedDetail = '';
+    revealError = '';
   }
 
   function closeDetail() {
@@ -305,6 +331,7 @@
     exporting = true;
     try {
       await downloadInventoryExport();
+    } catch {
     } finally {
       exporting = false;
     }
@@ -320,6 +347,7 @@
         { method: 'POST', headers: { Accept: 'application/json' } },
         `janus-key-${idOf(detail)}.json`
       );
+    } catch {
     } finally {
       downloadingJson = false;
     }
@@ -336,6 +364,8 @@
         body,
         success: 'Routing priority updated'
       });
+    } catch {
+      return;
     } finally {
       savingPriority = false;
     }
@@ -351,6 +381,8 @@
           refresh: false
         })
       );
+    } catch {
+      reclassifyPreview = undefined;
     } finally {
       reclassifying = false;
     }
@@ -365,6 +397,7 @@
         success: `Re-identified ${reclassifyChangeCount} credentials`
       });
       reclassifyPreview = undefined;
+    } catch {
     } finally {
       reclassifying = false;
     }
@@ -804,6 +837,7 @@
         Download JSON
       </button>
     </div>
+    {#if revealError}<p class="reveal-error" role="alert">{revealError}</p>{/if}
     <div class="detail-metrics">
       <div>
         <span>Credits</span>
@@ -1217,6 +1251,11 @@
     display: flex;
     gap: 7px;
     margin: 14px 0;
+  }
+  .reveal-error {
+    margin: -6px 0 12px;
+    color: var(--warning);
+    font-size: 11px;
   }
   .detail-metrics {
     display: grid;

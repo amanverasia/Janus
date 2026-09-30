@@ -1434,6 +1434,7 @@
   "data.providers[].catalog_model_count number",
   "data.providers[].catalog_name string",
   "data.providers[].created_at string",
+  "data.providers[].decryptable boolean",
   "data.providers[].default_model null",
   "data.providers[].gateway_account_count number",
   "data.providers[].has_api_key boolean",

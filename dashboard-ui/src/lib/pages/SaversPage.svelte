@@ -62,6 +62,7 @@
     body.set('value', value);
     try {
       await action('/dashboard/api/settings', { body, success: message });
+    } catch {
     } finally {
       setPending(key, false);
     }

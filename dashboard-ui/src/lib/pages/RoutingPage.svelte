@@ -60,6 +60,7 @@
       await action('/dashboard/api/routing/cooldowns/clear', {
         success: 'All cooldowns cleared'
       });
+    } catch {
     } finally {
       clearing = false;
     }

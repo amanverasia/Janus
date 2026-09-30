@@ -128,6 +128,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config: JanusConfig = app.state.config
     await seed_from_config(db_path, config)
 
+    from janus.inventory.rotation import (
+        assert_credential_encryption_ready,
+        count_stored_credentials,
+        rotate_credentials,
+    )
+
+    assert_credential_encryption_ready(await count_stored_credentials(db_path))
+    rotate_report = await rotate_credentials(db_path)
+    rotate_report.log_summary(logger)
+
     from janus.storage.settings import ensure_server_defaults
 
     await ensure_server_defaults(db_path)

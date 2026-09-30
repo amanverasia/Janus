@@ -56,9 +56,23 @@
       .join('')
       .toUpperCase() || '•';
 
+  function readStoredTheme(): 'system' | 'light' | 'dark' {
+    try {
+      const saved = localStorage.getItem('janus-theme');
+      return saved === 'light' || saved === 'dark' ? saved : 'system';
+    } catch {
+      return 'system';
+    }
+  }
+
+  function storeTheme(mode: 'system' | 'light' | 'dark') {
+    try {
+      localStorage.setItem('janus-theme', mode);
+    } catch {}
+  }
+
   onMount(() => {
-    const saved = localStorage.getItem('janus-theme');
-    themeMode = saved === 'light' || saved === 'dark' ? saved : 'system';
+    themeMode = readStoredTheme();
     const listener = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -68,11 +82,13 @@
         mobileOpen = false;
         return;
       }
-      if (
-        event.key === '/' &&
-        !(event.target instanceof HTMLInputElement) &&
-        !(event.target instanceof HTMLTextAreaElement)
-      ) {
+      const target = event.target;
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable);
+      if (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         paletteOpen = true;
       }
@@ -109,7 +125,7 @@
     themeMode = themeMode === 'system' ? 'light' : themeMode === 'light' ? 'dark' : 'system';
     if (themeMode === 'system') delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = themeMode;
-    localStorage.setItem('janus-theme', themeMode);
+    storeTheme(themeMode);
   }
 </script>
 

@@ -59,7 +59,10 @@
   }
 ]`;
 
+  let chooseToken = 0;
+
   async function choose(file: File | undefined) {
+    const token = ++chooseToken;
     selectedFile = file;
     importedFilename = '';
     importedCount = 0;
@@ -74,6 +77,7 @@
     }
     try {
       const parsed: unknown = JSON.parse(await file.text());
+      if (token !== chooseToken) return;
       const root = object(parsed);
       const records = Array.isArray(parsed)
         ? parsed
@@ -83,6 +87,7 @@
       if (!records) throw new Error('Expected a top-level array or a keys array.');
       previewCount = records.length;
     } catch (error) {
+      if (token !== chooseToken) return;
       previewError = error instanceof Error ? error.message : 'The file is not valid JSON.';
     }
   }
@@ -133,7 +138,6 @@
       const result = await action('/dashboard/api/inventory/import', {
         body,
         success: 'Inventory import completed',
-        refresh: false,
         validate: successfulImportCount
       });
       if (result === null || typeof result !== 'object' || !('imported' in result)) {

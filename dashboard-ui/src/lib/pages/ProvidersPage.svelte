@@ -265,6 +265,19 @@
     return filename ? `/dashboard/static/logos/${encodeURIComponent(filename)}` : '';
   }
 
+  // Track failed logo URLs in state: hiding the <img> imperatively leaks across
+  // reused DOM in the unkeyed rail/preset lists and keeps the next provider's
+  // good logo hidden too.
+  let erroredLogos = new Set<string>();
+
+  function hideLogo(url: string) {
+    erroredLogos = new Set(erroredLogos).add(url);
+  }
+
+  function logoVisible(url: string): boolean {
+    return !!url && !erroredLogos.has(url);
+  }
+
   function displayInitial(value: JsonObject): string {
     return text(value.name ?? value.id ?? value.prefix, '?')
       .trim()
@@ -673,13 +686,8 @@
                 on:click={() => selectProvider(provider)}
               >
                 <span class="provider-mark">
-                  {#if providerLogo}
-                    <img
-                      src={providerLogo}
-                      alt=""
-                      on:error={(event) =>
-                        ((event.currentTarget as HTMLImageElement).hidden = true)}
-                    />
+                  {#if logoVisible(providerLogo)}
+                    <img src={providerLogo} alt="" on:error={() => hideLogo(providerLogo)} />
                   {:else}
                     {displayInitial(provider)}
                   {/if}
@@ -721,12 +729,8 @@
       <header class="provider-detail-head">
         <div class="provider-detail-identity">
           <span class="provider-mark large">
-            {#if selectedLogo}
-              <img
-                src={selectedLogo}
-                alt=""
-                on:error={(event) => ((event.currentTarget as HTMLImageElement).hidden = true)}
-              />
+            {#if logoVisible(selectedLogo)}
+              <img src={selectedLogo} alt="" on:error={() => hideLogo(selectedLogo)} />
             {:else}
               {displayInitial(selectedProvider)}
             {/if}
@@ -1174,12 +1178,8 @@
         {@const capabilities = capabilityLabels(preset)}
         <button type="button" class="preset-row" on:click={() => choosePreset(preset)}>
           <span class="provider-mark">
-            {#if presetLogo}
-              <img
-                src={presetLogo}
-                alt=""
-                on:error={(event) => ((event.currentTarget as HTMLImageElement).hidden = true)}
-              />
+            {#if logoVisible(presetLogo)}
+              <img src={presetLogo} alt="" on:error={() => hideLogo(presetLogo)} />
             {:else}
               {displayInitial(preset)}
             {/if}
