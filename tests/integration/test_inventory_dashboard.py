@@ -434,9 +434,7 @@ async def test_inventory_overview_encryption_panel(client):
     assert "encryption_enabled" in data
 
 
-async def test_missing_encryption_key_returns_actionable_503_for_upstream_keys(
-    client, tmp_path, monkeypatch
-):
+async def test_masked_inventory_read_works_without_encryption_key(client, tmp_path, monkeypatch):
     from cryptography.fernet import Fernet
 
     from janus.storage.database import init_db
@@ -446,17 +444,18 @@ async def test_missing_encryption_key_returns_actionable_503_for_upstream_keys(
     await init_db(db_path)
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
     secret = "sk-proj-encrypted-upstream-secret"
-    await create_upstream_key(db_path, provider_id="openai", key_value=secret)
+    record = await create_upstream_key(db_path, provider_id="openai", key_value=secret)
     monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
 
     response = await client.get("/dashboard/api/inventory/keys")
 
-    assert response.status_code == 503
-    error = response.json()["error"]
-    assert error["type"] == "credential_encryption_error"
-    assert "INVENTORY_ENCRYPTION_KEY" in error["message"]
-    assert "Verify INVENTORY_ENCRYPTION_KEY" in error["hint"]
+    assert response.status_code == 200
     assert secret not in response.text
+    reveal = await client.post(f"/dashboard/api/inventory/keys/{record['id']}/reveal")
+    assert reveal.status_code == 503
+    assert reveal.json() == {"detail": "Credential unavailable"}
+    assert reveal.headers["cache-control"] == "no-store"
+    assert secret not in reveal.text
 
 
 async def test_wrong_encryption_key_returns_actionable_503_for_providers(

@@ -43,7 +43,7 @@ async def test_codex_inventory_expands_multi_account(tmp_path) -> None:
     codex_rows = [p for p in providers if p["prefix"] == "codex" or p["id"] == "codex"]
     assert codex_rows
     row = codex_rows[0]
-    keys = await list_routable_upstream_keys(db, "codex")
+    keys = await list_routable_upstream_keys(db, "codex", include_secret=True)
     assert len(keys) == 2
     configs = expand_gateway_provider(row, keys)
     assert len(configs) == 2

@@ -66,7 +66,7 @@ async def test_seed_provider_key_is_encrypted_at_rest(db, tmp_path, monkeypatch)
         async with conn.execute("SELECT api_key FROM providers WHERE id = 'openai'") as cur:
             row = await cur.fetchone()
     assert row["api_key"].startswith(ENCRYPTED_PREFIX)
-    assert (await list_providers(db))[0]["api_key"] == "sk-seeded"
+    assert (await list_providers(db, include_secret=True))[0]["api_key"] == "sk-seeded"
 
 
 async def test_seed_combos_from_config(db, tmp_path):

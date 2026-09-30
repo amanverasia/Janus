@@ -15,7 +15,7 @@ async def reclassify_upstream_keys(
     dry_run: bool = True,
     scope: str = "invalid",
 ) -> dict[str, Any]:
-    keys = await list_upstream_keys(db_path)
+    keys = await list_upstream_keys(db_path, include_secret=True)
     if scope == "all":
         candidates = [key for key in keys if key.get("status") != "revoked"]
     else:

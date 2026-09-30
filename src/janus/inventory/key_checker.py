@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
+from weakref import ReferenceType, WeakKeyDictionary, ref
 
 import httpx
 
@@ -1453,7 +1454,23 @@ def _enrich_models(
     return enriched_models
 
 
+_probe_semaphores: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, ReferenceType[asyncio.Semaphore]
+] = WeakKeyDictionary()
+
+
 async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
+    loop = asyncio.get_running_loop()
+    semaphore_ref = _probe_semaphores.get(loop)
+    semaphore = semaphore_ref() if semaphore_ref is not None else None
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(max(1, CHECK_CONCURRENCY))
+        _probe_semaphores[loop] = ref(semaphore)
+    async with semaphore:
+        await _check_upstream_key(db_path, key_id)
+
+
+async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
     key = await get_upstream_key(db_path, key_id)
     if key is None:
         return
@@ -1617,14 +1634,11 @@ async def check_all_upstream_keys(db_path: str | Path) -> int:
     if not eligible:
         return 0
 
-    semaphore = asyncio.Semaphore(max(1, CHECK_CONCURRENCY))
-
     async def worker(key_id: str) -> None:
-        async with semaphore:
-            try:
-                await check_upstream_key(db_path, key_id)
-            except Exception as exc:
-                logger.error("check_all_upstream_keys failed for %s: %s", key_id, exc)
+        try:
+            await check_upstream_key(db_path, key_id)
+        except Exception as exc:
+            logger.error("check_all_upstream_keys failed for %s: %s", key_id, exc)
 
     await asyncio.gather(*(worker(key["id"]) for key in eligible))
     return len(eligible)

@@ -291,7 +291,7 @@ async def test_provider_credentials_encrypt_at_rest_and_decrypt_on_read(db, monk
     assert stored.startswith(ENCRYPTED_PREFIX)
     assert "sk-secret" not in stored
     assert (await get_provider(db, "secure"))["api_key"] == "sk-secret"
-    assert (await list_providers(db))[0]["api_key"] == "sk-secret"
+    assert (await list_providers(db, include_secret=True))[0]["api_key"] == "sk-secret"
 
 
 async def test_update_provider_encrypts_oauth_blob_opaquely(db, monkeypatch):
@@ -397,3 +397,26 @@ async def test_encrypted_provider_requires_matching_key(db, monkeypatch):
 def test_encrypt_key_value_still_accepts_plaintext_legacy_values(monkeypatch):
     monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY", raising=False)
     assert encrypt_key_value("sk-plain") == "sk-plain"
+
+
+async def test_provider_list_defaults_to_presence_without_decryption(db, monkeypatch):
+    await create_provider(
+        db,
+        {
+            "id": "projection",
+            "prefix": "openai",
+            "api_type": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "synthetic-provider-value",
+            "models": [],
+        },
+    )
+    from unittest.mock import Mock
+
+    decrypt = Mock(side_effect=AssertionError("Masked query decrypted a credential"))
+    monkeypatch.setattr("janus.storage.providers_db.decrypt_key_value", decrypt)
+    rows = await list_providers(db)
+    detail = await get_provider(db, "projection", include_secret=False)
+    assert rows[0]["api_key"] == "*"
+    assert detail["api_key"] == "*"
+    decrypt.assert_not_called()

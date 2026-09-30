@@ -28,6 +28,62 @@ SORT_COLUMNS: dict[str, str] = {
 DEFAULT_PAGE_SIZE = 25
 
 
+_UPSTREAM_PUBLIC_COLUMNS = (
+    "id",
+    "provider_id",
+    "key_label",
+    "key_masked",
+    "custom_base_url",
+    "status",
+    "is_valid",
+    "health_status",
+    "health_warnings",
+    "is_usable",
+    "usability_status",
+    "usability_note",
+    "credits_remaining",
+    "credits_total",
+    "credits_used",
+    "rate_limit_rpm",
+    "rate_limit_tpm",
+    "rate_limit_rpd",
+    "usage_current_rpm",
+    "usage_current_tpm",
+    "daily_credit_limit",
+    "daily_credit_used",
+    "daily_credit_date",
+    "is_daily_limited",
+    "account_value",
+    "account_value_status",
+    "account_value_error",
+    "account_value_fetched_at",
+    "account_value_checked_at",
+    "priority",
+    "metadata",
+    "source_node",
+    "last_checked_at",
+    "models_discovered_at",
+    "last_error",
+    "consecutive_failures",
+    "validation_paused_at",
+    "created_at",
+    "updated_at",
+    "is_archived",
+)
+
+
+def _upstream_projection(
+    *, include_secret: bool = False, include_hash: bool = False, alias: str = ""
+) -> str:
+    prefix = f"{alias}." if alias else ""
+    fields = list(_UPSTREAM_PUBLIC_COLUMNS)
+    if include_secret:
+        fields.extend(("key_value", "key_hash"))
+    elif include_hash:
+        fields.append("key_hash")
+    return ", ".join(prefix + field for field in fields)
+
+
 def _new_key_id() -> str:
     return str(uuid.uuid4())
 
@@ -37,7 +93,9 @@ def _prepare_key_storage(key_value: str) -> tuple[str, str, str]:
     return stored_value, hash_upstream_key(key_value), mask_key(key_value)
 
 
-def _decode_upstream_row(row: Any, *, include_secret: bool = True) -> dict[str, Any]:
+def _decode_upstream_row(
+    row: Any, *, include_secret: bool = True, include_hash: bool = False
+) -> dict[str, Any]:
     item = dict(row)
     account_value = item.get("account_value")
     if isinstance(account_value, str) and account_value:
@@ -48,7 +106,8 @@ def _decode_upstream_row(row: Any, *, include_secret: bool = True) -> dict[str, 
             item["account_value"] = None
     if not include_secret:
         item.pop("key_value", None)
-        item.pop("key_hash", None)
+        if not include_hash:
+            item.pop("key_hash", None)
         return item
     key_value = item.get("key_value")
     if isinstance(key_value, str):
@@ -346,7 +405,7 @@ async def list_upstream_keys_page(
     sort_dir = _normalize_direction(direction)
     null_dir = "ASC" if sort_dir == "DESC" else "DESC"
     query = f"""
-        SELECT k.*,
+        SELECT {_upstream_projection(include_secret=not masked, alias="k")},
                p.display_name AS provider_display_name,
                p.name AS provider_name,
                p.billing_model AS provider_billing_model
@@ -360,7 +419,7 @@ async def list_upstream_keys_page(
     async with get_connection(db_path) as db:
         async with db.execute(query, page_params) as cur:
             rows = await cur.fetchall()
-    items = [_decode_upstream_row(row) for row in rows]
+    items = [_decode_upstream_row(row, include_secret=not masked) for row in rows]
     if masked:
         for item in items:
             item.pop("key_value", None)
@@ -400,7 +459,7 @@ async def get_upstream_key_detail(
 ) -> dict[str, Any] | None:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT k.*,
+            f"""SELECT {_upstream_projection(include_secret=include_secret, alias="k")},
                       p.display_name AS provider_display_name,
                       p.name AS provider_name,
                       p.billing_model AS provider_billing_model
@@ -421,8 +480,9 @@ async def list_upstream_keys(
     search: str | None = None,
     limit: int | None = None,
     include_archived: bool = False,
+    include_secret: bool = False,
 ) -> list[dict[str, Any]]:
-    query = "SELECT * FROM upstream_keys"
+    query = f"SELECT {_upstream_projection(include_secret=include_secret)} FROM upstream_keys"
     clauses: list[str] = ["status != 'revoked'"]
     params: list[Any] = []
     if not include_archived:
@@ -451,18 +511,12 @@ async def list_upstream_keys(
     async with get_connection(db_path) as db:
         async with db.execute(query, params) as cur:
             rows = await cur.fetchall()
-    return [_decode_upstream_row(row) for row in rows]
+    return [_decode_upstream_row(row, include_secret=include_secret) for row in rows]
 
 
 async def list_upstream_keys_masked(db_path: str | Path, **kwargs: Any) -> list[dict[str, Any]]:
-    keys = await list_upstream_keys(db_path, **kwargs)
-    masked: list[dict[str, Any]] = []
-    for key in keys:
-        item = dict(key)
-        item.pop("key_value", None)
-        item.pop("key_hash", None)
-        masked.append(item)
-    return masked
+    kwargs["include_secret"] = False
+    return await list_upstream_keys(db_path, **kwargs)
 
 
 async def update_upstream_key(
@@ -651,10 +705,15 @@ async def count_upstream_keys(db_path: str | Path) -> int:
 async def list_routable_upstream_keys(
     db_path: str | Path,
     inventory_provider_id: str,
+    *,
+    include_secret: bool = False,
+    include_hash: bool = False,
 ) -> list[dict[str, Any]]:
+    projection = _upstream_projection(include_secret=include_secret, include_hash=include_hash)
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT * FROM upstream_keys
+            f"""SELECT {projection}
+               FROM upstream_keys
                WHERE provider_id = ?
                  AND status = 'active'
                  AND is_valid = 1
@@ -673,7 +732,10 @@ async def list_routable_upstream_keys(
             (inventory_provider_id,),
         ) as cur:
             rows = await cur.fetchall()
-    return [_decode_upstream_row(row) for row in rows]
+    return [
+        _decode_upstream_row(row, include_secret=include_secret, include_hash=include_hash)
+        for row in rows
+    ]
 
 
 async def list_routable_upstream_keys_for_providers(
@@ -685,7 +747,8 @@ async def list_routable_upstream_keys_for_providers(
     placeholders = ", ".join("?" for _ in inventory_provider_ids)
     async with get_connection(db_path) as db:
         async with db.execute(
-            f"""SELECT * FROM upstream_keys
+            f"""SELECT id, provider_id, key_label, key_masked, priority, credits_remaining
+                FROM upstream_keys
                 WHERE provider_id IN ({placeholders})
                   AND status = 'active'
                   AND is_valid = 1
@@ -703,7 +766,7 @@ async def list_routable_upstream_keys_for_providers(
         provider_id: [] for provider_id in inventory_provider_ids
     }
     for row in rows:
-        result[str(row["provider_id"])].append(_decode_upstream_row(row))
+        result[str(row["provider_id"])].append(dict(row))
     return result
 
 
@@ -772,7 +835,9 @@ async def get_probe_upstream_key_row(
     db_path: str | Path,
     inventory_provider_id: str,
 ) -> dict[str, Any] | None:
-    routable = await list_routable_upstream_keys(db_path, inventory_provider_id)
+    routable = await list_routable_upstream_keys(
+        db_path, inventory_provider_id, include_secret=True
+    )
     if routable:
         return routable[0]
     async with get_connection(db_path) as db:
@@ -814,7 +879,10 @@ async def get_upstream_keys_by_ids(
     if not key_ids:
         return []
     placeholders = ", ".join("?" for _ in key_ids)
-    query = f"SELECT * FROM upstream_keys WHERE id IN ({placeholders}) ORDER BY created_at"
+    projection = _upstream_projection(include_secret=include_secret)
+    query = (
+        f"SELECT {projection} FROM upstream_keys WHERE id IN ({placeholders}) ORDER BY created_at"
+    )
     async with get_connection(db_path) as db:
         async with db.execute(query, key_ids) as cur:
             rows = await cur.fetchall()
@@ -869,17 +937,14 @@ async def reencrypt_plaintext_upstream_keys(db_path: str | Path) -> int:
 
 
 async def count_storage_encryption_state(db_path: str | Path) -> dict[str, int]:
-    encrypted = 0
-    plaintext = 0
     async with get_connection(db_path) as db:
         async with db.execute(
-            "SELECT key_value FROM upstream_keys WHERE status != 'revoked'"
+            "SELECT COUNT(*) AS total, "
+            "COALESCE(SUM(substr(key_value, 1, 7) = 'enc:v1:'), 0) AS encrypted "
+            "FROM upstream_keys WHERE status != 'revoked'"
         ) as cur:
-            rows = await cur.fetchall()
-    for row in rows:
-        stored = row["key_value"]
-        if isinstance(stored, str) and is_encrypted_value(stored):
-            encrypted += 1
-        else:
-            plaintext += 1
-    return {"encrypted": encrypted, "plaintext": plaintext, "total": encrypted + plaintext}
+            row = await cur.fetchone()
+    assert row is not None
+    total = int(row["total"])
+    encrypted = int(row["encrypted"])
+    return {"encrypted": encrypted, "plaintext": total - encrypted, "total": total}

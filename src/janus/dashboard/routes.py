@@ -1117,7 +1117,9 @@ async def api_fetch_models(request: Request) -> JSONResponse:
                 provider = await get_provider(db_path, provider_id)
                 if provider:
                     inventory_id = inventory_provider_id_for_prefix(str(provider["prefix"]))
-                    rows = await list_routable_upstream_keys(db_path, inventory_id)
+                    rows = await list_routable_upstream_keys(
+                        db_path, inventory_id, include_secret=True
+                    )
                     inventory_credentials = [str(row["key_value"]) for row in rows]
                     if inventory_credentials:
                         kiro_credentials = inventory_credentials
@@ -1822,7 +1824,7 @@ async def api_export_config(request: Request, include_secrets: str = "false") ->
     from janus.storage.pricing_db import list_pricing_overrides
     from janus.storage.providers_db import list_providers
 
-    providers_raw = await list_providers(db_path)
+    providers_raw = await list_providers(db_path, include_secret=reveal_secrets)
     providers_yaml = [
         {
             "id": p["id"],
