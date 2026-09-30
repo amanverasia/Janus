@@ -1440,7 +1440,11 @@ INVENTORY_ENCRYPTION_KEY=...  # encrypts inventory and gateway provider credenti
 INVENTORY_PUSH_TOKEN=...
 </code></pre></div>
 <p>Retain <code>INVENTORY_ENCRYPTION_KEY</code> with your backup material. Janus fails clearly if
-an encrypted credential is present but the matching key is unavailable. Dashboard
+an encrypted credential is present but the matching key is unavailable; when rotating
+the key, set <code>INVENTORY_ENCRYPTION_PREVIOUS_KEY</code> to the old key and restart so stored
+credentials are re-sealed automatically (see the inventory docs). If no encryption key
+is configured while real credentials exist, startup refuses to continue unless
+<code>JANUS_ALLOW_INSECURE_DEV_KEY=1</code> opts into plaintext storage. Dashboard
 configuration export is plaintext by design; a raw database backup remains encrypted.</p>
 <h3 id="build-from-source">Build from source<a class="headerlink" href="#build-from-source" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/amanverasia/Janus.git
