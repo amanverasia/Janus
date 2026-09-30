@@ -1093,6 +1093,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ci-timing-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI Timing and Recovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#architecture-constraint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1240,6 +1251,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ci-timing-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI Timing and Recovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#architecture-constraint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1373,6 +1395,46 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 .venv/bin/mkdocs<span class="w"> </span>serve
 </code></pre></div>
 <p>Run <code>ruff check</code>, <code>ruff format --check</code>, and <code>mypy</code> before every commit. CI enforces all three.</p>
+<h2 id="ci-timing-and-recovery">CI Timing and Recovery<a class="headerlink" href="#ci-timing-and-recovery" title="Permanent link">&para;</a></h2>
+<p>PRs and pushes to <code>main</code> run the reusable check suite. Ruff, formatting, mypy,
+dashboard validation, migration smoke, and docs run once. Tests and the 80% line
+coverage gate run on both Python 3.11 and 3.12. Browser and packaging checks run
+alongside them. A new PR commit cancels superseded CI and Docker runs; main and
+release runs are not interrupted. Release tags run one shared check suite before
+PyPI and Docker publishing. PyPI uploads the distributions validated by that suite.</p>
+<p>Healthy Python test jobs currently take about five to six minutes. CI prints each
+test name and the 30 slowest test durations. A test taking 60 seconds dumps thread
+stacks; the 120-second timeout includes fixture setup and teardown and terminates
+the process. A separate nine-minute process limit also catches collection or
+session-shutdown hangs and dumps stacks before termination. The Python job has a
+12-minute limit, leaving time to upload diagnostics after the process exits.</p>
+<p>For a failed or timed-out test job, download the
+<code>test-diagnostics-&lt;python-version&gt;-&lt;attempt&gt;</code> artifact from the Actions run. It
+contains <code>pytest.log</code> with test names and thread stacks, plus <code>junit.xml</code> when pytest
+finishes normally. Coverage reports are uploaded separately when available. Hard
+timeouts can prevent JUnit and coverage reports from being finalized; the saved
+log is the primary diagnostic. Test diagnostics are retained for 14 days.</p>
+<p>Reproduce the test settings locally with:</p>
+<div class="highlight"><pre><span></span><code>.venv/bin/python<span class="w"> </span>-X<span class="w"> </span>faulthandler<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>-vv<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--timeout<span class="o">=</span><span class="m">120</span><span class="w"> </span>--timeout-method<span class="o">=</span>thread<span class="w"> </span>-o<span class="w"> </span><span class="nv">faulthandler_timeout</span><span class="o">=</span><span class="m">60</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--durations<span class="o">=</span><span class="m">30</span><span class="w"> </span>--cov<span class="o">=</span>src/janus<span class="w"> </span>--cov-fail-under<span class="o">=</span><span class="m">80</span>
+</code></pre></div>
+<p>Inspect the log and identify the stuck test or cleanup hook before retrying. A
+passing retry does not establish that a hang was caused by runner contention.
+SQLite worker stacks can reflect idle connections; inspect the main thread,
+pending async work, and pool cleanup too.</p>
+<p>The shared test fixture closes database pools after every test, before its event
+loop is torn down. Keep this cleanup global: ASGITransport does not execute the
+application lifespan shutdown, so leaving connections until session completion
+retains SQLite worker threads and pools from earlier tests.</p>
+<p>If a run must be cancelled manually:</p>
+<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>run<span class="w"> </span>cancel<span class="w"> </span>&lt;run-id&gt;
+gh<span class="w"> </span>run<span class="w"> </span>view<span class="w"> </span>&lt;run-id&gt;<span class="w"> </span>--json<span class="w"> </span>status,conclusion
+<span class="c1"># Wait until status is completed, then retry failed/cancelled jobs.</span>
+gh<span class="w"> </span>run<span class="w"> </span>rerun<span class="w"> </span>&lt;run-id&gt;<span class="w"> </span>--failed
+</code></pre></div>
+<p>GitHub can reject a rerun while cancellation is still settling. Wait for the
+terminal status rather than repeatedly cancelling or retrying an active run.</p>
 <h2 id="architecture-constraint">Architecture Constraint<a class="headerlink" href="#architecture-constraint" title="Permanent link">&para;</a></h2>
 <p>Janus uses a <strong>canonical intermediate model</strong>. The rule is simple:</p>
 <blockquote>

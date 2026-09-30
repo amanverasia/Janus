@@ -1478,6 +1478,7 @@ not make the dashboard anonymous when disabled.</p>
 <span class="w">    </span><span class="kn">proxy_http_version</span><span class="w"> </span><span class="mi">1</span><span class="s">.1</span><span class="p">;</span>
 <span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">Host</span><span class="w"> </span><span class="nv">$host</span><span class="p">;</span>
 <span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Real-IP</span><span class="w"> </span><span class="nv">$remote_addr</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Forwarded-For</span><span class="w"> </span><span class="nv">$remote_addr</span><span class="p">;</span>
 <span class="w">    </span><span class="kn">proxy_buffering</span><span class="w"> </span><span class="no">off</span><span class="p">;</span><span class="w">   </span><span class="c1"># important for SSE streaming</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -1494,6 +1495,14 @@ inventory keys, and cooldown state.</p>
 <span class="c1"># {"status": "ok"}</span>
 </code></pre></div>
 <p>The root URL <code>/</code> redirects to the Cloudline dashboard at <code>/dashboard/ui</code>.</p>
+<p>Inventory submissions, previews, push requests, and bulk actions accept bodies up to 4 MiB;
+backup imports accept up to 16 MiB including multipart overhead. Larger requests return 413,
+including requests without Content-Length. All credential checks share the
+<code>CHECK_CONCURRENCY</code> limit (default 8), including scheduled and bulk checks.</p>
+<p>Inventory submission rate limits use the resolved client address. Behind a reverse proxy,
+forward <code>X-Forwarded-For</code> and configure Uvicorn's <code>FORWARDED_ALLOW_IPS</code> to trust only your
+proxy addresses (loopback is trusted by default). Untrusted forwarded headers do not change
+the rate-limit bucket.</p>
 
 
 
