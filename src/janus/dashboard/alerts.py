@@ -77,6 +77,7 @@ async def _collect_dashboard_alerts_with_status(
         _quota_alerts,
         _cooldown_alerts,
         _inventory_alerts,
+        _credential_alerts,
         _unpriced_alerts,
         _setup_alerts,
     )
@@ -405,6 +406,29 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
             )
         )
     return alerts
+
+
+async def _credential_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
+    del request
+    from janus.inventory.rotation import list_undecryptable_credentials
+
+    undecryptable = await list_undecryptable_credentials(db_path)
+    count = sum(len(ids) for ids in undecryptable.values())
+    if not count:
+        return []
+    noun = "credential" if count == 1 else "credentials"
+    return [
+        DashboardAlert(
+            id="credentials:undecryptable",
+            severity="critical",
+            title="Credentials unreadable with current key",
+            detail=(
+                f"{count} stored {noun} can't be decrypted with the current key — re-save them "
+                "or set INVENTORY_ENCRYPTION_PREVIOUS_KEY to re-seal them at startup."
+            ),
+            href="/dashboard/ui/inventory/keys",
+        )
+    ]
 
 
 async def _unpriced_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:

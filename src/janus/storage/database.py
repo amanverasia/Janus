@@ -631,6 +631,7 @@ async def _migrate_custom_model_columns(db: aiosqlite.Connection) -> None:
 
 async def _migrate_upstream_key_columns(db: aiosqlite.Connection) -> None:
     from janus.inventory.key_encryption import (
+        CredentialDecryptionError,
         decrypt_key_value,
         hash_upstream_key,
         is_encrypted_value,
@@ -654,7 +655,10 @@ async def _migrate_upstream_key_columns(db: aiosqlite.Connection) -> None:
         stored = key_value
         if not isinstance(stored, str):
             continue
-        plaintext = decrypt_key_value(stored) if is_encrypted_value(stored) else stored
+        try:
+            plaintext = decrypt_key_value(stored) if is_encrypted_value(stored) else stored
+        except CredentialDecryptionError:
+            continue
         await db.execute(
             "UPDATE upstream_keys SET key_hash = ? WHERE id = ?",
             (hash_upstream_key(plaintext), row_id),

@@ -16,6 +16,7 @@
   let revealed: Record<string, string> = {};
   let revealTimers: Record<string, number> = {};
   let revealBusy = '';
+  let revealErrors: Record<string, string> = {};
   let copied = '';
 
   $: summary = object(data.summary);
@@ -37,6 +38,9 @@
       return;
     }
     revealBusy = id;
+    const nextErrors = { ...revealErrors };
+    delete nextErrors[id];
+    revealErrors = nextErrors;
     try {
       const response = await dashboardFetch(
         `/dashboard/api/inventory/keys/${encodeURIComponent(id)}/reveal`,
@@ -54,6 +58,11 @@
       revealed = { ...revealed, [id]: value };
       window.clearTimeout(revealTimers[id]);
       revealTimers[id] = window.setTimeout(() => hide(id), 30_000);
+    } catch (error) {
+      revealErrors = {
+        ...revealErrors,
+        [id]: error instanceof Error ? error.message : 'Credential unavailable'
+      };
     } finally {
       revealBusy = '';
     }
@@ -86,7 +95,9 @@
   <button
     class="button"
     on:click={() =>
-      action('/dashboard/api/inventory/recheck-all', { success: 'Inventory recheck started' })}
+      action('/dashboard/api/inventory/recheck-all', {
+        success: 'Inventory recheck started'
+      }).catch(() => undefined)}
   >
     <Icon name="refresh" />Recheck all
   </button>
@@ -148,7 +159,7 @@
       on:click={() =>
         action('/dashboard/api/inventory/encrypt-keys', {
           success: 'Credential encryption updated'
-        })}
+        }).catch(() => undefined)}
     >
       Encrypt now
     </button>
@@ -186,6 +197,7 @@
             <code class:revealed={!!revealed[id]}>
               {revealed[id] || text(key.key_masked, '••••••••')}
             </code>
+            {#if revealErrors[id]}<small class="reveal-error">{revealErrors[id]}</small>{/if}
             <button
               class="button compact-button"
               disabled={revealBusy === id}
@@ -246,9 +258,9 @@
             <span class="provider-copy">
               <strong>{text(provider.display_name ?? provider.provider_id)}</strong>
               <small>{compact(usable)} usable · {compact(provider.invalid_keys)} invalid</small>
-              <span class="progress">
+              <div class="progress">
                 <span style={`width:${Math.min(100, (usable / total) * 100)}%`}></span>
-              </span>
+              </div>
             </span>
             <span class="provider-total">
               <strong>{compact(provider.total_keys)}</strong>
@@ -494,6 +506,10 @@
   }
   .credential-line code.revealed {
     color: var(--accent-strong);
+  }
+  .credential-line .reveal-error {
+    color: var(--warning);
+    font-size: 11px;
   }
   .credential-line .icon-button {
     width: 29px;

@@ -148,6 +148,35 @@ one **Encrypt credentials** action when `INVENTORY_ENCRYPTION_KEY` is set. Dashb
 configuration export remains a portable plaintext YAML export; protect exported files
 accordingly. For encrypted backups, copy the SQLite database and retain the Fernet key.
 
+### Startup hardening and key rotation
+
+On startup Janus audits stored credentials:
+
+- When `INVENTORY_ENCRYPTION_KEY` is set, any still-plaintext credential is sealed with
+  the current key, and rows previously encrypted with another key are re-sealed if
+  `INVENTORY_ENCRYPTION_PREVIOUS_KEY` holds the old key. Re-sealing uses a
+  compare-and-swap on the stored ciphertext, so concurrent writers cannot lose data.
+- Credentials that can't be decrypted with the current (or previous) key are logged at
+  `ERROR` with their row ids, reported as a critical dashboard banner, flagged with
+  `decryptable: false` on the provider and inventory-keys state sections, and skipped
+  by routing — they never cause a 500.
+- If `INVENTORY_ENCRYPTION_KEY` is unset while real credentials are stored, Janus
+  refuses to start rather than keeping them in plaintext. Set the key, or opt into
+  insecure plaintext storage explicitly with `JANUS_ALLOW_INSECURE_DEV_KEY=1` (a
+  prominent warning is logged). Rotation never re-seals onto this insecure fallback.
+
+Rotating the encryption key:
+
+```bash
+janus inventory generate-encryption-key   # new key
+export INVENTORY_ENCRYPTION_PREVIOUS_KEY="$INVENTORY_ENCRYPTION_KEY"
+export INVENTORY_ENCRYPTION_KEY='gAAAAABl...'  # the new key
+# restart Janus; stored credentials are re-sealed onto the new key
+```
+
+After a successful restart with every credential re-sealed, unset
+`INVENTORY_ENCRYPTION_PREVIOUS_KEY`.
+
 ## Preview API
 
 `POST /dashboard/api/inventory/preview` is the read-only half of
@@ -230,6 +259,8 @@ janus inventory migrate export.json --verify
 | Variable | Default | Description |
 |---|---|---|
 | `INVENTORY_ENCRYPTION_KEY` | *(unset)* | Fernet key for encrypting keys at rest |
+| `INVENTORY_ENCRYPTION_PREVIOUS_KEY` | *(unset)* | Previous Fernet key, used once at startup to re-seal rotated credentials |
+| `JANUS_ALLOW_INSECURE_DEV_KEY` | *(unset)* | Set to `1` to allow storing real credentials in plaintext when no encryption key is configured |
 | `INVENTORY_PUSH_TOKEN` | *(unset)* | Bearer token for the push API |
 | `INVENTORY_SCHEDULER_ENABLED` | `true` | Enable background recheck scheduler |
 | `INVENTORY_CHECK_INTERVAL_HOURS` | `12` | Hours between scheduled rechecks |

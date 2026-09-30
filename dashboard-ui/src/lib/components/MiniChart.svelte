@@ -8,8 +8,9 @@
   // once two charts share a page.
   const gradientId = `mini-chart-${Math.random().toString(36).slice(2, 10)}`;
 
-  $: hasData = values.length > 1 && values.some((value) => Number.isFinite(value) && value !== 0);
-  $: safe = hasData ? values.filter((value) => Number.isFinite(value)) : [];
+  $: finite = values.filter((value) => Number.isFinite(value));
+  $: hasData = finite.length > 1 && finite.some((value) => value !== 0);
+  $: safe = hasData ? finite : [];
   $: max = safe.length ? Math.max(...safe, 1) : 1;
   $: min = safe.length ? Math.min(...safe, 0) : 0;
   $: range = max - min || 1;

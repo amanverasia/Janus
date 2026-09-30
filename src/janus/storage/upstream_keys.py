@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from janus.inventory.key_encryption import (
+    CredentialDecryptionError,
     decrypt_key_value,
     encrypt_key_value,
     encryption_enabled,
@@ -111,14 +112,19 @@ def _decode_upstream_row(
         return item
     key_value = item.get("key_value")
     if isinstance(key_value, str):
-        item["key_value"] = decrypt_key_value(key_value)
         try:
-            parsed = json.loads(item["key_value"])
-            expires = parsed.get("expires_at") or parsed.get("expiresAt")
-            if isinstance(expires, (int, float)):
-                item["credential_expires_at"] = float(expires)
-        except (TypeError, json.JSONDecodeError):
-            pass
+            item["key_value"] = decrypt_key_value(key_value)
+            item["credential_decryptable"] = True
+            try:
+                parsed = json.loads(item["key_value"])
+                expires = parsed.get("expires_at") or parsed.get("expiresAt")
+                if isinstance(expires, (int, float)):
+                    item["credential_expires_at"] = float(expires)
+            except (TypeError, json.JSONDecodeError):
+                pass
+        except CredentialDecryptionError:
+            item["key_value"] = None
+            item["credential_decryptable"] = False
     return item
 
 

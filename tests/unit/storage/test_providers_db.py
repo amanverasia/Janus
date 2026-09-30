@@ -5,7 +5,6 @@ from cryptography.fernet import Fernet
 
 from janus.inventory.key_encryption import (
     ENCRYPTED_PREFIX,
-    CredentialDecryptionError,
     encrypt_key_value,
 )
 from janus.storage.database import get_connection, init_db
@@ -386,12 +385,22 @@ async def test_encrypted_provider_requires_matching_key(db, monkeypatch):
     )
 
     monkeypatch.delenv("INVENTORY_ENCRYPTION_KEY")
-    with pytest.raises(CredentialDecryptionError, match="required to decrypt stored credentials"):
-        await get_provider(db, "secure")
+    unreadable = await get_provider(db, "secure")
+    assert unreadable is not None
+    assert unreadable["api_key"] is None
+    assert unreadable["credential_decryptable"] is False
 
     monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    with pytest.raises(CredentialDecryptionError, match="Failed to decrypt stored credential"):
-        await get_provider(db, "secure")
+    wrong_key = await get_provider(db, "secure")
+    assert wrong_key is not None
+    assert wrong_key["api_key"] is None
+    assert wrong_key["credential_decryptable"] is False
+
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", key)
+    restored = await get_provider(db, "secure")
+    assert restored is not None
+    assert restored["api_key"] == "sk-secret"
+    assert restored["credential_decryptable"] is True
 
 
 def test_encrypt_key_value_still_accepts_plaintext_legacy_values(monkeypatch):

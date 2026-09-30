@@ -180,7 +180,7 @@ jobs:
           print("config written")
           PY
 
-          janus serve --port 20131 --config /tmp/janus-browser-config.yaml &
+          JANUS_ALLOW_INSECURE_DEV_KEY=1 janus serve --port 20131 --config /tmp/janus-browser-config.yaml &
           SERVER_PID=$!
           trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
 

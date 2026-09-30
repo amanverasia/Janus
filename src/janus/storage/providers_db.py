@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from janus.inventory.key_encryption import (
+    CredentialDecryptionError,
     decrypt_key_value,
     encrypt_key_value,
     encryption_enabled,
@@ -82,7 +83,12 @@ def _decode_provider_row(row: Any, *, include_secret: bool = True) -> dict[str, 
     item = dict(row)
     api_key = item.get("api_key")
     if include_secret and isinstance(api_key, str) and api_key:
-        item["api_key"] = decrypt_key_value(api_key)
+        try:
+            item["api_key"] = decrypt_key_value(api_key)
+            item["credential_decryptable"] = True
+        except CredentialDecryptionError:
+            item["api_key"] = None
+            item["credential_decryptable"] = False
     return item
 
 

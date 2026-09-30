@@ -119,6 +119,7 @@
         method: 'DELETE',
         success: 'Request logs cleared'
       });
+    } catch {
     } finally {
       clearing = false;
     }

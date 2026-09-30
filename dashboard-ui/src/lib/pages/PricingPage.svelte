@@ -36,11 +36,17 @@
   $: onCatalogTab = tab === 'catalog';
 
   let searchInput = '';
-  $: if (catalogSearch !== searchInput && !searchDirty) searchInput = catalogSearch;
   let searchDirty = false;
+  // Keep the input in sync with the server-confirmed query, but only once the
+  // server catches up with what the user typed; clearing the dirty flag before
+  // the fetch made the input flash back to the previous query.
+  $: if (searchDirty) {
+    if (catalogSearch === searchInput.trim()) searchDirty = false;
+  } else if (catalogSearch !== searchInput) {
+    searchInput = catalogSearch;
+  }
 
   function runSearch() {
-    searchDirty = false;
     navigateQuery({ search: searchInput.trim(), offset: '' });
   }
 
@@ -69,6 +75,7 @@
     syncing = true;
     try {
       await action('/dashboard/api/pricing/sync', { success: 'Pricing catalog synced' });
+    } catch {
     } finally {
       syncing = false;
     }
@@ -100,6 +107,7 @@
         method: 'DELETE',
         success: 'Pricing override deleted'
       });
+    } catch {
     } finally {
       const next = new Set(deleting);
       next.delete(model);

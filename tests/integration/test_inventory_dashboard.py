@@ -458,7 +458,7 @@ async def test_masked_inventory_read_works_without_encryption_key(client, tmp_pa
     assert secret not in reveal.text
 
 
-async def test_wrong_encryption_key_returns_actionable_503_for_providers(
+async def test_wrong_encryption_key_flags_provider_without_failing_state(
     client, tmp_path, monkeypatch
 ):
     from cryptography.fernet import Fernet
@@ -485,11 +485,12 @@ async def test_wrong_encryption_key_returns_actionable_503_for_providers(
 
     response = await client.get("/dashboard/api/v2/state/providers")
 
-    assert response.status_code == 503
-    error = response.json()["error"]
-    assert error["type"] == "credential_encryption_error"
-    assert "Failed to decrypt stored credential" in error["message"]
-    assert "Verify INVENTORY_ENCRYPTION_KEY" in error["hint"]
+    assert response.status_code == 200
+    payload = response.json()
+    provider = next(item for item in payload["data"]["providers"] if item["id"] == "secure")
+    assert provider["decryptable"] is False
+    alert = next(item for item in payload["alerts"] if item["id"] == "credentials:undecryptable")
+    assert "INVENTORY_ENCRYPTION_PREVIOUS_KEY" in alert["detail"]
     assert secret not in response.text
 
 
