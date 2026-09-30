@@ -24,8 +24,15 @@
   CRUD mutation, and a no-secret DOM scan; needs `playwright` + `playwright install chromium`), and
   a package job that builds distributions, validates metadata, and verifies the
   wheel ships the dashboard bundle. `publish.yml` runs the same suite via
-  `workflow_call` before `twine check` gates the PyPI upload.
+  `workflow_call` once for both PyPI and Docker publishing; PyPI downloads the
+  distributions already validated by the package job rather than rebuilding them.
   `scripts/browser_smoke.py` remains a minimal opt-in smoke for manual checks.
+- CI hang diagnostics and recovery are documented in `CONTRIBUTING.md` under
+  "CI Timing and Recovery". Pytest uses a 120s per-test timeout (including fixtures),
+  a 60s thread dump, and a 9m process limit covering session shutdown. Download
+  `test-diagnostics-<python-version>-<attempt>` for saved logs; JUnit/coverage may
+  be absent after hard termination. Inspect stacks before retrying; wait for a
+  cancelled run to reach `completed` before `gh run rerun <id> --failed`.
 - PyPI package name is `janus-ai`. Import name is `janus`. CLI binary is `janus`.
 
 ## Commands

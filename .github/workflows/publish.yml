@@ -5,19 +5,14 @@ on:
     tags:
       - "v*"
 
-jobs:
-  # A tag used to publish without running CI at all: v3.14.0 reached PyPI
-  # 2m21s before CI on main finished. Publishing now depends on the same
-  # checks a pull request faces.
-  checks:
-    uses: ./.github/workflows/checks.yml
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
-  publish:
-    needs: checks
+jobs:
+  version:
     runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -49,14 +44,33 @@ jobs:
           print(f"tag {tag} and dashboard package match project version {version}")
           PY
 
-      - name: Install build tool
-        run: pip install build twine
+  checks:
+    needs: version
+    uses: ./.github/workflows/checks.yml
 
-      - name: Build distributions
-        run: python -m build
+  docker:
+    needs: checks
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      publish: true
 
-      - name: Validate distribution metadata
-        run: twine check --strict dist/*
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download checked distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.14.2
