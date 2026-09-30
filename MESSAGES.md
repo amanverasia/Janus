@@ -478,3 +478,36 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - **Released v4.0.0** (per @amanverasia; supersedes the planned 3.27.0 — no 3.27.0 was tagged). PR #244 merged to `main` as `18c6873` after all checks passed on `229c66a`; annotated tag `v4.0.0` pushed, PyPI publish workflow running.
 - **Cleanup:** remote branch `dashboard-connect` deleted; `NEXT_STEPS.md` removed from the `Janus-dashboard-connect` worktree.
 - Option-C issues (#183/#187/#237/#238/#239) remain approval-gated and untouched.
+
+### 2026-09-30 05:31 UTC (2026-09-30 11:01 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242/#220, investigating
+
+- Identity: user `amanverasia`, machine `amans-mint`; Tailscale unavailable (local daemon not running). Owns read-only CI latency investigation requested by user; no PR yet.
+- Findings: #242 tracks pytest hangs; #220 remains open despite earlier merge note. Inspecting current workflows and live job/step timings before recommending changes.
+- Next: distinguish ordinary runtime, duplicate checks, queue delays, and hanging tests.
+
+### 2026-09-30 05:31 UTC (2026-09-30 11:01 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242/#220, investigation complete
+
+- Timestamp correction: preceding claim's 05:31 UTC was entered ahead of machine time; this entry uses the machine clock.
+- Verified healthy run 36672804159: pytest 3.11 = 272.60s (2002 passed/3 skipped), test job ~5m; 3.12 pytest ~5m11s. Other suite jobs ~18–58s.
+- Slow PR run 36611676964 took ~32m because attempt 1's 3.12 hung ~26m and was cancelled; attempt 2 passed ~6m. Not a 26m queue delay. Current run 36672959045 also has prolonged 3.11 pytest while 3.12 passed.
+- Recommendations: bounded pytest/test-job execution, verbose unbuffered logs and stack dumps saved as artifacts, inspect SQLite/pool cleanup instead of assuming runner contention; cancel superseded PR CI; retain both supported Python versions, consolidate release checks shared by Docker/PyPI. Duration profiling before parallelizing.
+- No workflow/code changes or remote mutations; analysis delivered to user. Next: implementation when user chooses scope.
+
+### 2026-09-30 05:34 UTC (2026-09-30 11:04 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242/#220, implementing
+
+- User approved CI improvements. Owns `.github/workflows/`, pytest timeout dependency, CI recovery documentation; branch `fix/ci-timeouts-242`.
+- Shared `.venv` is Python 3.14.4; validation will use an isolated Python 3.11 environment without modifying it.
+- Next: bounded tests with saved diagnostics, PR cancellation, single lint/typecheck execution and one release gate shared by both publishers; investigate pool lifecycle with duration/stack evidence.
+
+### 2026-09-30 05:49 UTC (2026-09-30 11:19 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242/#220, ready for review
+
+- Implemented locally on `fix/ci-timeouts-242`: pytest thread dumps at 60s, hard per-test limit 120s, 9m process / 12m job bounds, unbuffered named-test logs and diagnostics artifacts, slow-test profiling; PR CI/Docker cancellation; lint/type checks once; one tag gate shared by Docker/PyPI, publishing the checked distribution artifact (stable name supports failed-publisher-only retries).
+- Resource evidence: original integration probe after 40 tests retained 32 SQLite pools / 34 threads; promoting storage-only cleanup to shared `tests/conftest.py` reduced this to zero pools / two threads. Added worker-lifecycle regression (old fixture fails 11/12 generated cases). Production pooling unchanged.
+- Validation: Python 3.11 full suite 2006 passed in 359.43s, coverage 84.93%; actionlint, shell syntax, Ruff/format, mypy, docs strict, migration smoke, dashboard gate (71 vitest), wheel/sdist + twine strict + bundle checks passed. Intentional body/setup/teardown/session-shutdown hangs preserved diagnostic logs and failed correctly; release-version check accepts matching/rejects mismatched tags.
+- Local SQLite hangs reproduced under the sandbox on the first test in both 3.11 and 3.14; bounded unsandboxed probes/tests pass. This does not establish the CI hang root cause. Timeout diagnostics will identify any remaining CI stall.
+- No push, PR, merge, tag, or publish performed. Shared .venv unchanged; isolated validation env/artifacts in `/tmp/janus-ci-validation`. Next: review/merge, then confirm hosted CI timings.
+
+### 2026-09-30 05:58 UTC (2026-09-30 11:28 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242/#220, committing and pushing
+
+- User explicitly requested commit and push. Committing the validated CI changes on `fix/ci-timeouts-242` and pushing that branch to origin. No merge or release requested.
+- Next: verify remote branch matches the commit and report the pushed revision.

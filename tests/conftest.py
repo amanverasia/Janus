@@ -15,5 +15,11 @@ def _reset_login_throttle():
     login_throttle.reset_login_throttle()
 
 
+@pytest.fixture(autouse=True)
+async def close_database_connections_after_test():
+    yield
+    await close_connection_pools()
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: pytest.ExitCode) -> None:
     asyncio.run(close_connection_pools())

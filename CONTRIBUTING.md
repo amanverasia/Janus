@@ -38,6 +38,59 @@ pip install -e ".[dev]"
 
 Run `ruff check`, `ruff format --check`, and `mypy` before every commit. CI enforces all three.
 
+## CI Timing and Recovery
+
+PRs and pushes to `main` run the reusable check suite. Ruff, formatting, mypy,
+dashboard validation, migration smoke, and docs run once. Tests and the 80% line
+coverage gate run on both Python 3.11 and 3.12. Browser and packaging checks run
+alongside them. A new PR commit cancels superseded CI and Docker runs; main and
+release runs are not interrupted. Release tags run one shared check suite before
+PyPI and Docker publishing. PyPI uploads the distributions validated by that suite.
+
+Healthy Python test jobs currently take about five to six minutes. CI prints each
+test name and the 30 slowest test durations. A test taking 60 seconds dumps thread
+stacks; the 120-second timeout includes fixture setup and teardown and terminates
+the process. A separate nine-minute process limit also catches collection or
+session-shutdown hangs and dumps stacks before termination. The Python job has a
+12-minute limit, leaving time to upload diagnostics after the process exits.
+
+For a failed or timed-out test job, download the
+`test-diagnostics-<python-version>-<attempt>` artifact from the Actions run. It
+contains `pytest.log` with test names and thread stacks, plus `junit.xml` when pytest
+finishes normally. Coverage reports are uploaded separately when available. Hard
+timeouts can prevent JUnit and coverage reports from being finalized; the saved
+log is the primary diagnostic. Test diagnostics are retained for 14 days.
+
+Reproduce the test settings locally with:
+
+```bash
+.venv/bin/python -X faulthandler -m pytest -vv \
+  --timeout=120 --timeout-method=thread -o faulthandler_timeout=60 \
+  --durations=30 --cov=src/janus --cov-fail-under=80
+```
+
+Inspect the log and identify the stuck test or cleanup hook before retrying. A
+passing retry does not establish that a hang was caused by runner contention.
+SQLite worker stacks can reflect idle connections; inspect the main thread,
+pending async work, and pool cleanup too.
+
+The shared test fixture closes database pools after every test, before its event
+loop is torn down. Keep this cleanup global: ASGITransport does not execute the
+application lifespan shutdown, so leaving connections until session completion
+retains SQLite worker threads and pools from earlier tests.
+
+If a run must be cancelled manually:
+
+```bash
+gh run cancel <run-id>
+gh run view <run-id> --json status,conclusion
+# Wait until status is completed, then retry failed/cancelled jobs.
+gh run rerun <run-id> --failed
+```
+
+GitHub can reject a rerun while cancellation is still settling. Wait for the
+terminal status rather than repeatedly cancelling or retrying an active run.
+
 ## Architecture Constraint
 
 Janus uses a **canonical intermediate model**. The rule is simple:

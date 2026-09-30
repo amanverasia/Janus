@@ -3,13 +3,25 @@ name: Docker
 on:
   push:
     branches: ["main"]
-    tags: ["v*"]
   pull_request:
     branches: ["main"]
+
+  workflow_call:
+    inputs:
+      publish:
+        description: Publish the image after the caller's release checks pass.
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -28,14 +40,11 @@ jobs:
       - name: Verify image
         run: docker run --rm janus:ci janus --help
 
-  checks:
-    if: startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/checks.yml
-
   publish:
-    needs: [build, checks]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    if: ${{ inputs.publish }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
