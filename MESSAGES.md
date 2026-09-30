@@ -511,3 +511,99 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - User explicitly requested commit and push. Committing the validated CI changes on `fix/ci-timeouts-242` and pushing that branch to origin. No merge or release requested.
 - Next: verify remote branch matches the commit and report the pushed revision.
+
+### 2026-09-30 06:00 UTC (2026-09-30 11:30 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242 / PR #247, CI monitoring
+
+- User authorized completing PR, checks, fixes, and merge. Opened https://github.com/amanverasia/Janus/pull/247 from `fix/ci-timeouts-242`; no release/tag requested.
+- Next: monitor all checks, address failures, merge on green, and verify main CI.
+
+### 2026-09-30 06:08 UTC (2026-09-30 11:38 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242 / PR #247, merged
+
+- PR #247 squash-merged as `75ce2b9` after every check passed. Python jobs: 3.11 5m10s, 3.12 5m21s; uploaded logs verified (3.11: 2003 passed / 3 skipped, 84.93% coverage).
+- Local checkout fast-forwarded to main; feature branch deleted locally/remotely. Coordination entries preserved locally; no tag or release.
+- Next: confirm merge CI `36676519708` and Docker `36676519478`, then close #242 if still open.
+
+### 2026-09-30 06:12 UTC (2026-09-30 11:42 IST) — Codex (GPT-6, Codex app) → concurrent agents, #242 / PR #247, complete
+
+- Main CI `36676519708` and Docker `36676519478` both passed on merge `75ce2b9`. Python job durations: 3.11 5m11s, 3.12 5m27s; both diagnostic/coverage artifacts uploaded.
+- Closed #242 as completed. Feature branches removed; local main synchronized. No release or tag. Only appended coordination updates remain uncommitted locally.
+- Next: none; authorized CI improvement train complete.
+
+### 2026-09-30 06:22 UTC (2026-09-30 11:52 IST) — Codex (GPT-6, Codex app) → coordinator, open bug triage, investigating
+
+- Identity: user `amanverasia`, machine `amans-mint`; Tailscale unavailable (local daemon not running). Owns read-only review of open GitHub bugs; no issue/PR claimed for implementation.
+- Next: verify live issues and existing PR coverage, then recommend two fixes.
+
+### 2026-09-30 06:24 UTC (2026-09-30 11:54 IST) — Codex (GPT-6, Codex app) → coordinator, open bug triage, complete
+
+- Live GitHub search: 13 open issues, no open PRs. Remaining defect/performance batches: #204, #210, #213; #220 remains open but current workflows address its listed CI/version/publish concerns. Audit tracker #224 contains stale open-status notes.
+- Recommend #204 first (bound inventory probes/body memory), #213 second (remove unnecessary credential decryption on dashboard reads). #210 is the next UI correctness batch.
+- No source changes or GitHub mutations. Next: user selects implementation scope.
+
+### 2026-09-30 06:25 UTC (2026-09-30 11:55 IST) — Codex (GPT-6, Codex app) → coordinator, #204/#213, implementing
+
+- Owns inventory concurrency/body limits and decrypt-free dashboard reads on `fix/inventory-limits-masked-reads`. User authorized commit/push/PR, merge on green, and cleanup.
+- Next: regression tests and full checks, then PR. Existing coordination edits preserved.
+
+### 2026-09-30 06:47 UTC (2026-09-30 12:17 IST) — Codex (GPT-6, Codex app) → coordinator, #204/#213, committing
+
+- Shared cancellation-safe probe cap; pre-parse streamed body limits (4 MiB / import 16 MiB); rate-bucket pruning/trusted-proxy docs. SQL projections omit credentials on dashboard reads; routing deduplicates hashes before selected-account decryption, with legacy compatibility.
+- Focused regressions, Ruff/format/mypy, dashboard gate, docs, migration, isolated browser, package/metadata/bundle checks pass. Final full coverage run ongoing after correcting explicit export/runtime callers.
+- Next: push/open PR, wait for all checks, merge and clean up. Existing MESSAGES.md edits remain unstaged.
+
+### 2026-09-30 06:48 UTC (2026-09-30 12:18 IST) — Codex (GPT-6, Codex app) → coordinator, #204/#213 / PR #248, CI monitoring
+
+- Committed `ba8ab8a` and pushed `fix/inventory-limits-masked-reads`; PR https://github.com/amanverasia/Janus/pull/248 closes both issues. Local final coverage run and hosted CI ongoing; browser/dashboard/docs/migration/package checks passed locally.
+- Next: fix any failures, merge only after all checks pass, verify main and remove feature branches.
+
+### 2026-09-30 06:52 UTC (2026-09-30 12:22 IST) — Codex (GPT-6, Codex app) → coordinator, #204/#213 / PR #248, local validation complete
+
+- Final Python 3.11 suite: 2025 passed in 356.44s; coverage 84.98%. Ruff/format/mypy, dashboard gate, docs strict, migration smoke, browser regression, wheel/sdist and strict metadata/bundle checks passed.
+- Hosted Docker/browser/package/single-run checks passed; both Python jobs remain in progress. Next: merge on all green.
+
+### 2026-09-30 06:54 UTC (2026-09-30 12:24 IST) — Codex (GPT-6, Codex app) → coordinator, #204/#213 / PR #248, merged
+
+- All PR checks passed (Python 3.11 4m54s / 3.12 5m40s). Squash merged as `ce7585f`; local main fast-forwarded and both feature branches removed.
+- Existing/local append-only MESSAGES.md edits preserved. Next: confirm main CI/Docker and close issues if auto-close does not occur.
+
+### 2026-09-30 07:00 UTC (2026-09-30 12:30 IST) — Codex (GPT-6, Codex app) → coordinator, #204/#213 / PR #248, complete
+
+- Main CI `36680680669`, Docker `36680680466`, and Docs `36680680475` passed on `ce7585f`. Both issues closed as completed. Local main matches origin/main; local/remote feature branches removed.
+- Validation: 2025 local tests, 84.98% coverage, all local/hosted gates green. Only pre-existing and appended coordination-log edits remain uncommitted; no release/tag requested or created.
+- Next: none; authorized fix/PR/merge/cleanup complete.
+
+### 2026-09-30 07:08 UTC (2026-09-30 12:38 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #186 + #210, claiming
+
+- Identity: user `amanverasia`, machine `office-linux` (100.78.171.49, Tailscale up). Claims #186 (encryption hardening) and #210 (UI state bug batch) for implementation; user authorized commit/push/PR, merge on green.
+- Working in an isolated git worktree to avoid sharing the checkout with concurrent agents. Next: implement both, run all gates, single PR closing both issues.
+
+### 2026-09-30 08:05 UTC (2026-09-30 13:35 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #186 + #210, implementation complete
+
+- #186: `inventory/rotation.py` (startup audit, previous-key CAS re-seal, dev-key guard), tolerant credential decoders (undecryptable rows skipped in routing, never 500), `decryptable` on providers/inventory-keys sections, critical banner alert, docs; CI browser job + lifespan test set `JANUS_ALLOW_INSECURE_DEV_KEY=1`.
+- #210: items 1-11 fixed (server-offset pagination, toolbar re-sync on data change, div.progress, reveal failure feedback, stale testResults, import ordering guard + refresh, errored-logo state, MiniChart NaN guard, health generation/cache pruning/toast timers, `/` shortcut + localStorage guards, search flash-back) + rejection-hygiene catch sweep.
+- Local: ruff/format/mypy clean, dashboard gate green (bundle rebuilt), docs strict, migration smoke, contract fixtures regen (providers + inventory-keys shapes only). Full suite re-running.
+- Next: commit, push branch, open PR closing both issues, merge on green.
+
+### 2026-09-30 08:20 UTC (2026-09-30 13:50 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #186 + #210 / PR #249, CI monitoring
+
+- Opened https://github.com/amanverasia/Janus/pull/249 from `feat/encryption-hardening-186-ui-bugs-210` (commit e6670b1); closes both issues. All local gates green (2032 tests passed, dashboard bundle rebuilt+verified, docs, migration smoke).
+- Next: watch all checks, fix any failures, merge on green, verify main CI, clean up worktree/branches.
+
+### 2026-09-30 09:05 UTC (2026-09-30 14:35 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #186 + #210 / PR #249, complete
+
+- Squash-merged as `10296be` after every PR check passed (test 3.11 5m16s / 3.12 5m54s, browser, single-run, package, build; one ruff-format fix amended before green). Issues #186 and #210 auto-closed.
+- Main CI `36688452614`, Docker `36688452297`, and Docs `36688452290` all passed on the merge commit. Local main fast-forwarded; worktree `Janus-wt-186-210` and local/remote feature branches removed.
+- Next: none; authorized fix/PR/merge/cleanup complete. No release/tag requested.
+
+### 2026-09-30 14:20 UTC (2026-09-30 19:50 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #220 + #224, claiming
+
+- Identity: user `amanverasia`, machine `office-linux` (100.78.171.49, Tailscale up). Same session as the 09:05 UTC #186/#210 completion entry.
+- Wrap-up authorized by user: #220 (all four acceptance criteria verified against current workflows — dynamic version via #240, push→main + single-run job via #240/#247, publish action pinned v1.14.2) and #224 (all 27 sub-issues #196–#223 confirmed closed via PRs #226–#249; tracker notes stale).
+- Next: tick #220 checkboxes, comment and close; rewrite #224 with final per-issue PR map, comment and close; commit MESSAGES.md.
+
+### 2026-09-30 14:22 UTC (2026-09-30 19:52 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #220 + #224, complete
+
+- #220 closed as completed: body checkboxes ticked, resolution note added (dynamic version via #240, push→main + single-run job via #240/#247, publish pinned `v1.14.2`), closing comment cites verification.
+- #224 closed as completed: body rewritten as a final-resolution record — all 28 sub-issues (#196–#223 incl. #220) struck through with their closing PRs (#226, #227, #228, #229, #230, #231, #232, #234, #235, #236, #240, #241, #243, #248, #249); closure mapping verified via API. Tracker list re-verified: every sub-issue state=closed.
+- Remaining open issues (7): feature-only OrcaRouter-Lite parity cluster — #239 (tracker), #183, #184, #187, #189, #237, #238. No open PRs, no audit/defect debt.
+- MESSAGES.md (89 added lines incl. earlier sessions' unstaged entries) committed as a docs commit on main. Next: none; user may pick up #239 cluster.
