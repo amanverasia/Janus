@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   YAML seed entry whose `api_type` has no driver is skipped with a warning
   instead of aborting the whole routing rebuild.
 ### Fixed
+- **docker compose passes the encryption settings through** — the compose file
+  now forwards `INVENTORY_ENCRYPTION_KEY`, `INVENTORY_ENCRYPTION_PREVIOUS_KEY`,
+  `INVENTORY_PUSH_TOKEN` and `JANUS_ALLOW_INSECURE_DEV_KEY` from `.env`. Before,
+  setting the key in `.env` had no effect, so deployments with stored
+  credentials hit the startup encryption check (#249) and crash-looped.
 - **Refreshed OAuth tokens are saved** — Claude, Codex, Kiro and Antigravity
   executors now write refreshed credentials back to their inventory row
   (compare-and-swap) and re-read the stored credential before refreshing, and
