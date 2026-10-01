@@ -39,6 +39,19 @@ const renderPage = (logs: JsonObject[]) =>
     }
   });
 
+describe('RequestLogsPage resolved model column', () => {
+  it('shows the resolved model next to the requested one for auto requests', () => {
+    const page = renderPage([log({ model: 'auto', resolved_model: 'deepseek-chat' })]);
+    expect(page.getByRole('columnheader', { name: 'Resolved' })).toBeTruthy();
+    expect(page.getByRole('cell', { name: 'deepseek-chat' })).toBeTruthy();
+  });
+
+  it('renders an em-dash when no resolved model is recorded', () => {
+    const page = renderPage([log({ resolved_model: null })]);
+    expect(page.getAllByRole('cell', { name: '—' }).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('RequestLogsPage API key column', () => {
   it('prefers the joined key name in the table', () => {
     const page = renderPage([log({ client_key_name: 'ci-key', client_key_label: 'sk-janus-old' })]);
@@ -52,7 +65,9 @@ describe('RequestLogsPage API key column', () => {
   });
 
   it('renders an em-dash when neither name nor label exists', () => {
-    const page = renderPage([log({ client_key_name: null, client_key_label: null })]);
+    const page = renderPage([
+      log({ client_key_name: null, client_key_label: null, resolved_model: 'gpt-4o' })
+    ]);
     expect(page.getByRole('cell', { name: '—' })).toBeTruthy();
   });
 

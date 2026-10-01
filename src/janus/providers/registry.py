@@ -101,11 +101,25 @@ def _build_account_route_index(config: ProviderConfig) -> _AccountRouteIndex:
     )
 
 
+def _catalog_default_models(prefix: str) -> list[str]:
+    from janus.catalog import PROVIDERS
+
+    for entry in PROVIDERS.values():
+        gateway = entry.get("gateway")
+        if isinstance(gateway, dict) and gateway.get("prefix") == prefix:
+            defaults = gateway.get("default_models")
+            if isinstance(defaults, list):
+                return [str(model) for model in defaults]
+            break
+    return []
+
+
 class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, list[ProviderConfig]] = {}
         self._combos: dict[str, list[str]] = {}
         self._prefix_route_models: dict[str, set[str]] = {}
+        self._prefix_explicit_models: dict[str, set[str]] = {}
         self._prefix_unrestricted_patterns: dict[str, set[str]] = {}
         self._prefixes_accepting_any_model: set[str] = set()
         self._prefixes_with_defaults: set[str] = set()
@@ -120,6 +134,9 @@ class ProviderRegistry:
             self._providers[config.prefix] = []
         self._providers[config.prefix].append(config)
         account_routes = _build_account_route_index(config)
+        explicit = set(config.models or []) | set(getattr(config, "discovered_models", None) or [])
+        if explicit:
+            self._prefix_explicit_models.setdefault(config.prefix, set()).update(explicit)
         if account_routes.accepts_any_model:
             if account_routes.allowed_models:
                 self._prefix_unrestricted_patterns.setdefault(config.prefix, set()).update(
@@ -173,6 +190,23 @@ class ProviderRegistry:
             return True
         patterns = self._prefix_unrestricted_patterns.get(prefix)
         return patterns is not None and model_allowed(model, patterns)
+
+    def auto_candidates(self) -> list[str]:
+        """Namespaced models auto-routing may consider.
+
+        Explicit per-prefix route models plus, for prefixes that accept any
+        model, the catalog default models under that prefix (an anything-goes
+        prefix has no enumerable model list of its own).
+        """
+        candidates: set[str] = set()
+        for prefix, models in self._prefix_route_models.items():
+            candidates.update(f"{prefix}/{model}" for model in models)
+        for prefix, models in self._prefix_explicit_models.items():
+            candidates.update(f"{prefix}/{model}" for model in models)
+        for prefix in self._prefixes_accepting_any_model:
+            for model in _catalog_default_models(prefix):
+                candidates.add(f"{prefix}/{model}")
+        return sorted(candidates)
 
     def has_route(self, model_str: str) -> bool:
         if "/" in model_str:

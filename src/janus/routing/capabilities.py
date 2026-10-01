@@ -36,9 +36,14 @@ def detect_required_capabilities(req: CanonicalRequest) -> frozenset[str]:
                 if isinstance(part, ImagePart):
                     required.add("vision")
         break
-    for tool in req.tools:
-        if "search" in tool.function.name.lower():
-            required.add("search")
+    if req.tools:
+        tool_choice = req.tool_choice
+        tools_disabled = tool_choice is not None and getattr(tool_choice, "type", None) == "none"
+        if not tools_disabled:
+            required.add("tool_use")
+        for tool in req.tools:
+            if "search" in tool.function.name.lower():
+                required.add("search")
     return frozenset(required)
 
 

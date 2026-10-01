@@ -520,6 +520,7 @@ class FallbackHandler:
         required_caps: frozenset[str] = frozenset(),
         combo_strategy: str = "fallback",
         combo_sticky_limit: int = 1,
+        model_chain: list[str] | None = None,
     ) -> list[ResolvedTarget]:
         self._last_strategy = (
             strategy.value if isinstance(strategy, AccountStrategy) else str(strategy)
@@ -529,8 +530,10 @@ class FallbackHandler:
         # below have no await between read and write, so they are an atomic critical
         # section under the single-threaded event loop (no lock needed).
         combo_models = self.registry.lookup_combo(model_str)
+        if combo_models is None and model_chain is not None:
+            combo_models = list(model_chain)
         if combo_models is not None:
-            if combo_strategy == "round_robin" and len(combo_models) > 1:
+            if combo_strategy == "round_robin" and model_chain is None and len(combo_models) > 1:
                 idx = self._combo_rotation.get(model_str, 0) % len(combo_models)
                 if combo_sticky_limit > 1:
                     used = self._combo_sticky.get(model_str, 0) + 1
@@ -579,14 +582,14 @@ class FallbackHandler:
                         )
                     )
             if not all_attempts:
+                chain_label = "auto chain" if model_chain is not None else f"combo '{model_str}'"
                 if all_candidate_ids and earliest_expiry is not None:
                     retry_after = max(earliest_expiry - time.time(), MIN_RETRY_AFTER_S)
                     raise AllAccountsCooledDown(
-                        f"No available providers for combo '{model_str}' "
-                        "(all accounts cooling down)",
+                        f"No available providers for {chain_label} (all accounts cooling down)",
                         retry_after=retry_after,
                     )
-                raise ValueError(f"No available providers for combo '{model_str}'")
+                raise ValueError(f"No available providers for {chain_label}")
             return all_attempts
 
         targets = self.registry.lookup(model_str)

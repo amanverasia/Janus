@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **`model="auto"` routing** — requests asking for `auto` are ranked per request under a
+  configurable strategy (`balanced`, `cheapest`, `fastest`, `quality`; default `balanced`,
+  settable from the Routing tab) and the top-5 chain becomes the fallback try-order through
+  the existing cooldown/demotion pipeline. Candidates are priced, routable models filtered by
+  the key's allowlist and request capabilities (tools, vision); version siblings
+  (`-001`/date suffixes) are deduped; `cheapest` uses blended 0.3·input + 0.7·output pricing;
+  `quality`/`fastest`/`balanced` rank on the recorded attempt signals (#257) with strict
+  two-axis tiering. Request Logs record the resolved model next to the requested one and the
+  `x-janus-resolved-model` header reports it per response. The Routing tab shows the strategy
+  control and the chain auto would pick right now. (#183)
 - **Savings vs baseline model** — the Analytics page now shows what its window's
   priced traffic would have cost on a baseline model (default `gpt-4o`, overridable
   per request and via the `analytics_savings_baseline` setting), how much was

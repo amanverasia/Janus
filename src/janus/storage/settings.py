@@ -52,6 +52,7 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "combo_fusion_hard_timeout_s": "90",
     "combo_fusion_judge": "",
     "analytics_savings_baseline": "gpt-4o",
+    "auto_routing_strategy": "balanced",
 }
 
 VALID_COMBO_STRATEGIES = frozenset({"fallback", "round_robin", "fusion"})
@@ -144,6 +145,23 @@ def resolve_reporting_timezone(settings: dict[str, str]) -> str:
 
 async def get_reporting_timezone(db_path: str | Path) -> str:
     return resolve_reporting_timezone(await get_all_settings(db_path))
+
+
+def validate_auto_strategy(value: str) -> str:
+    from janus.routing.auto import VALID_AUTO_STRATEGIES
+
+    strategy = value.strip()
+    if strategy not in VALID_AUTO_STRATEGIES:
+        raise ValueError("must be one of balanced, cheapest, fastest, quality")
+    return strategy
+
+
+def resolve_auto_strategy(settings: dict[str, str]) -> str:
+    value = resolve_server_settings(settings).get("auto_routing_strategy", "balanced")
+    try:
+        return validate_auto_strategy(value)
+    except ValueError:
+        return "balanced"
 
 
 def validate_savings_baseline(value: str) -> str:

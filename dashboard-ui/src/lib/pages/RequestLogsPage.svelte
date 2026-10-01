@@ -39,6 +39,11 @@
     { key: 'timestamp', label: 'Time', format: dateTime },
     { key: 'model', label: 'Model' },
     {
+      key: 'resolved_model',
+      label: 'Resolved',
+      format: (value: unknown) => text(value, '—')
+    },
+    {
       key: 'provider_id',
       label: 'Provider',
       format: (value: unknown, row: JsonObject) => providerLabel(value, row)

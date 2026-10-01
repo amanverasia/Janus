@@ -35,6 +35,7 @@ from janus.models.catalog import (
     set_model_visibility,
 )
 from janus.pricing.registry import PricingRegistry
+from janus.routing.auto import AutoStrategy, plan_auto
 from janus.routing.provider_snapshots import ensure_provider_snapshot
 from janus.routing.reachability import UnreachableReason, connect_target, cooled_down
 from janus.storage.analytics import (
@@ -70,6 +71,7 @@ from janus.storage.settings import (
     request_logging_enabled,
     require_api_key_enabled,
     resolve_account_strategy,
+    resolve_auto_strategy,
     resolve_combo_fusion_hard_timeout_s,
     resolve_combo_fusion_judge,
     resolve_combo_fusion_min_panel,
@@ -723,8 +725,25 @@ async def _routing_data(
         filtered = flat
     total = len(filtered)
     page = filtered[offset : offset + limit]
+    snapshot = ensure_provider_snapshot(request.app)
+    try:
+        auto_plan = await plan_auto(
+            registry=snapshot.registry,
+            db_path=db_path,
+            pricing_registry=_pricing_registry(request),
+            strategy=AutoStrategy(resolve_auto_strategy(settings)),
+        )
+        auto_models = auto_plan.models
+    except Exception:
+        logger.warning("Auto routing preview failed", exc_info=True)
+        auto_models = []
     return {
         "overview": overview,
+        "auto": {
+            "strategy": resolve_auto_strategy(settings),
+            "models": auto_models,
+            "top": auto_models[0] if auto_models else None,
+        },
         "live": request.app.state.fallback_handler.routing_snapshot(),
         "settings": {
             "cooldowns_enabled": cooldowns_enabled(settings),

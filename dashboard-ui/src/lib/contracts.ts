@@ -132,6 +132,7 @@ export interface RequestLogRow extends JsonObject {
   timestamp: string;
   client_format: string | null;
   model: string | null;
+  resolved_model: string | null;
   provider_id: string | null;
   account_id: string | null;
   status: number;
