@@ -103,3 +103,56 @@ async def test_store_load_returns_none_for_revoked_or_missing(tmp_path: Any) -> 
 async def test_store_save_swallows_errors(tmp_path: Any) -> None:
     store = SqliteCredentialStore(tmp_path / "missing-dir" / "nope.db", "k")
     assert await store.save(OLD, NEW) is False
+
+
+async def test_swap_matches_reformatted_previous(tmp_path: Any) -> None:
+    db_path = await _db(tmp_path)
+    stored = '{"access_token":"at-old","refresh_token":"rt-old"}'
+    key = await create_upstream_key(db_path, provider_id="codex", key_value=stored)
+    reformatted = '{ "access_token": "at-old", "refresh_token": "rt-old" }'
+    assert await swap_upstream_key_value(db_path, str(key["id"]), previous=reformatted, current=NEW)
+    row = await get_upstream_key(db_path, str(key["id"]))
+    assert row is not None and row["key_value"] == NEW
+
+
+async def test_swap_refuses_semantically_different_previous(tmp_path: Any) -> None:
+    db_path = await _db(tmp_path)
+    key = await create_upstream_key(db_path, provider_id="codex", key_value=OLD)
+    different = '{"access_token": "at-old", "refresh_token": "rt-other"}'
+    assert not await swap_upstream_key_value(
+        db_path, str(key["id"]), previous=different, current=NEW
+    )
+    row = await get_upstream_key(db_path, str(key["id"]))
+    assert row is not None and row["key_value"] == OLD
+
+
+async def test_swap_updates_mirror_when_provider_key_is_reformatted(tmp_path: Any) -> None:
+    db_path = await _db(tmp_path)
+    provider_key = '{ "access_token": "at-old",  "refresh_token": "rt-old" }'
+    await create_provider(
+        db_path,
+        {
+            "id": "cl",
+            "prefix": "claude",
+            "api_type": "claude_oauth",
+            "base_url": "https://api.anthropic.com",
+            "api_key": provider_key,
+            "models": ["m"],
+        },
+    )
+    key = await create_upstream_key(
+        db_path, provider_id="claude_oauth", key_value=OLD, source_node="gateway:cl"
+    )
+    assert await swap_upstream_key_value(db_path, str(key["id"]), previous=OLD, current=NEW)
+    provider = await get_provider(db_path, "cl")
+    assert provider is not None and provider["api_key"] == NEW
+
+
+async def test_swap_second_writer_with_stale_previous_loses(tmp_path: Any) -> None:
+    db_path = await _db(tmp_path)
+    key = await create_upstream_key(db_path, provider_id="codex", key_value=OLD)
+    other = '{"access_token":"at-other","refresh_token":"rt-other"}'
+    assert await swap_upstream_key_value(db_path, str(key["id"]), previous=OLD, current=NEW)
+    assert not await swap_upstream_key_value(db_path, str(key["id"]), previous=OLD, current=other)
+    row = await get_upstream_key(db_path, str(key["id"]))
+    assert row is not None and row["key_value"] == NEW
