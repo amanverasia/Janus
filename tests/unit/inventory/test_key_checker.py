@@ -648,3 +648,31 @@ def test_safe_error_note_strips_urls_and_truncates():
     assert "<url>" in note
     assert len(_safe_error_note("x" * 500)) == 200
     assert _safe_error_note(None) == "Unknown error"
+
+
+@pytest.mark.asyncio
+async def test_inconclusive_probe_persists_rotated_credential(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    record = await create_upstream_key(
+        db_path,
+        provider_id="openai",
+        key_value="old-credential",
+    )
+    await update_upstream_key(db_path, record["id"], {"status": "active"})
+
+    async def fake_validate(key_value, provider_id, metadata):
+        return {
+            "probe_inconclusive": True,
+            "error": "rate limited",
+            "key_value": "rotated-credential",
+        }
+
+    monkeypatch.setattr("janus.inventory.key_checker.validate_key", fake_validate)
+
+    await check_upstream_key(db_path, record["id"])
+
+    updated = await get_upstream_key(db_path, record["id"])
+    assert updated is not None
+    assert updated["status"] == "active"
+    assert updated["key_value"] == "rotated-credential"

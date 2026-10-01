@@ -1004,7 +1004,11 @@ async def _validate_claude_oauth_key(
         try:
             response = await client.get(CLAUDE_USAGE_URL, headers=claude_usage_headers(token))
         except (httpx.TimeoutException, httpx.RequestError) as exc:
-            return {"probe_inconclusive": True, "error": f"Claude usage probe unavailable: {exc}"}
+            return {
+                "probe_inconclusive": True,
+                "error": f"Claude usage probe unavailable: {exc}",
+                "key_value": normalized,
+            }
     if response.status_code == 200:
         return {
             "is_valid": True,
@@ -1015,7 +1019,11 @@ async def _validate_claude_oauth_key(
         }
     if response.status_code in (401, 403):
         return {"is_valid": False, "error": f"Claude OAuth token rejected ({response.status_code})"}
-    return {"probe_inconclusive": True, "error": f"Claude usage probe HTTP {response.status_code}"}
+    return {
+        "probe_inconclusive": True,
+        "error": f"Claude usage probe HTTP {response.status_code}",
+        "key_value": normalized,
+    }
 
 
 async def _validate_kiro_key(
@@ -1565,15 +1573,15 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
             # failure must not invalidate an otherwise routable credential.
             error = _safe_error_note(result.get("error") or "Codex probe inconclusive")
             final_status = str(previous_status or "pending_validation")
-            await update_upstream_key(
-                db_path,
-                key_id,
-                {
-                    "status": final_status,
-                    "last_checked_at": _now(),
-                    "last_error": error,
-                },
-            )
+            inconclusive_fields: dict[str, Any] = {
+                "status": final_status,
+                "last_checked_at": _now(),
+                "last_error": error,
+            }
+            rotated = result.get("key_value")
+            if isinstance(rotated, str) and rotated and rotated != key["key_value"]:
+                inconclusive_fields["key_value"] = rotated
+            await update_upstream_key(db_path, key_id, inconclusive_fields)
         elif result.get("is_valid") and result.get("partial_check"):
             await update_upstream_key(
                 db_path,

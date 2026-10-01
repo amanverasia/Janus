@@ -33,7 +33,7 @@ async def test_valid_token_is_usable_without_refresh() -> None:
 
 @respx.mock
 async def test_expired_token_refreshes_once_and_returns_blob() -> None:
-    respx.post(CLAUDE_TOKEN_URL).mock(
+    refresh = respx.post(CLAUDE_TOKEN_URL).mock(
         return_value=Response(
             200,
             json={
@@ -46,6 +46,7 @@ async def test_expired_token_refreshes_once_and_returns_blob() -> None:
     respx.get(CLAUDE_USAGE_URL).mock(return_value=Response(200, json={}))
     result = await validate_key(_cred(time.time() - 10), "claude_oauth")
     assert json.loads(result["key_value"])["access_token"] == "sk-ant-oat01-new"
+    assert refresh.call_count == 1
 
 
 @respx.mock
@@ -69,3 +70,22 @@ async def test_failed_refresh_is_invalid() -> None:
     respx.post(CLAUDE_TOKEN_URL).mock(return_value=Response(400, json={"error": "invalid_grant"}))
     result = await validate_key(_cred(time.time() - 10), "claude_oauth")
     assert result["is_valid"] is False
+    assert "sk-ant" not in json.dumps(result.get("error"))
+
+
+@respx.mock
+async def test_inconclusive_probe_after_refresh_keeps_rotated_blob() -> None:
+    respx.post(CLAUDE_TOKEN_URL).mock(
+        return_value=Response(
+            200,
+            json={
+                "access_token": "sk-ant-oat01-new",
+                "refresh_token": "sk-ant-ort01-new",
+                "expires_in": 28800,
+            },
+        )
+    )
+    respx.get(CLAUDE_USAGE_URL).mock(return_value=Response(429))
+    result = await validate_key(_cred(time.time() - 10), "claude_oauth")
+    assert result["probe_inconclusive"]
+    assert json.loads(result["key_value"])["access_token"] == "sk-ant-oat01-new"
