@@ -1545,6 +1545,8 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "server_sticky_limit": lambda v: _require_int(v, min_value=1),
     "server_gateway_rate_limit_rpm": lambda v: _require_int(v, min_value=0, max_value=100_000),
     "server_request_log_retention": lambda v: _require_int(v, min_value=50, max_value=5000),
+    "server_prompt_cache_ttl_s": lambda v: _require_int(v, min_value=1, max_value=604_800),
+    "server_prompt_cache_max_entries": lambda v: _require_int(v, min_value=1, max_value=10_000),
     _USAGE_RETENTION_SETTING_KEY: lambda v: _require_int(v, min_value=7, max_value=3650),
     "server_reporting_timezone": lambda v: _require_reporting_timezone(v),
 }
