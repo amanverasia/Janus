@@ -964,6 +964,60 @@ async def _probe_codex_access_token(
         return None
 
 
+async def _validate_claude_oauth_key(
+    key_value: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    del metadata
+    from janus.inventory.claude_credentials import normalize_claude_credential
+    from janus.providers.oauth_tokens import (
+        CLAUDE_USAGE_URL,
+        access_token,
+        apply_token_response,
+        claude_usage_headers,
+        needs_refresh,
+        parse_credential,
+        refresh_claude,
+        refresh_token,
+        serialize_credential,
+    )
+
+    try:
+        normalized = normalize_claude_credential(key_value)
+    except ValueError as exc:
+        return {"is_valid": False, "error": str(exc)}
+    cred = parse_credential(normalized)
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        rt = refresh_token(cred)
+        if rt and needs_refresh(cred):
+            try:
+                tokens = await refresh_claude(rt, client)
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                return {"probe_inconclusive": True, "error": f"Claude refresh unavailable: {exc}"}
+            if tokens is None:
+                return {"is_valid": False, "error": "Claude OAuth refresh failed; re-export"}
+            cred = apply_token_response(cred, tokens)
+            normalized = serialize_credential(cred)
+        token = access_token(cred)
+        if not token:
+            return {"is_valid": False, "error": "Claude credential missing access token"}
+        try:
+            response = await client.get(CLAUDE_USAGE_URL, headers=claude_usage_headers(token))
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            return {"probe_inconclusive": True, "error": f"Claude usage probe unavailable: {exc}"}
+    if response.status_code == 200:
+        return {
+            "is_valid": True,
+            "is_usable": True,
+            "usability_status": "usable",
+            "usability_note": "Claude OAuth usage endpoint accepted the token",
+            "key_value": normalized,
+        }
+    if response.status_code in (401, 403):
+        return {"is_valid": False, "error": f"Claude OAuth token rejected ({response.status_code})"}
+    return {"probe_inconclusive": True, "error": f"Claude usage probe HTTP {response.status_code}"}
+
+
 async def _validate_kiro_key(
     key_value: str,
     metadata: dict[str, Any] | None = None,
@@ -1331,6 +1385,8 @@ async def validate_key(
             return await _validate_cline_key(key_value, metadata)
         if provider_id == "antigravity":
             return await _validate_antigravity_key(key_value, metadata)
+        if provider_id == "claude_oauth":
+            return await _validate_claude_oauth_key(key_value, metadata)
         if provider_id == "kiro":
             return await _validate_kiro_key(key_value, metadata)
 
