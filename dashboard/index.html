@@ -2320,6 +2320,14 @@ counted as unreachable.</p>
 <li>Spend trajectory for 7, 30, 90, or 365 days</li>
 <li>Breakdown by model, provider, account, or client key</li>
 <li>Request, token, cost, and success-rate summaries</li>
+<li><strong>Savings vs baseline.</strong> What the window's priced traffic would have cost on
+  a baseline model (default <code>gpt-4o</code>, changeable via the selector or the
+  <code>analytics_savings_baseline</code> setting), how much routing actually spent, and a
+  per-model table of the difference. Requests on subscription providers and
+  unpriced models are excluded and reported separately — they never count as
+  savings. API clients can read the same numbers from
+  <code>GET /v1/analytics/savings?baseline=&amp;days=</code>. Home shows the same comparison
+  for the configured reporting day as a <strong>Saved today</strong> tile.</li>
 </ul>
 <h3 id="leaderboard-dashboarduileaderboard">Leaderboard — <code>/dashboard/ui/leaderboard</code><a class="headerlink" href="#leaderboard-dashboarduileaderboard" title="Permanent link">&para;</a></h3>
 <ul>
