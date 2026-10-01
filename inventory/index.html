@@ -849,6 +849,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#claude-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude OAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1498,6 +1509,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#claude-oauth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claude OAuth
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1769,13 +1791,14 @@ here.</p>
 <td><strong>Auto</strong> or <strong>Kiro (AWS)</strong></td>
 <td>A credential blob containing <code>accessToken</code> and <code>refreshToken</code>. Auto needs <code>profileArn</code> or <code>authMethod</code>.</td>
 </tr>
+<tr>
+<td>Claude Code <code>~/.claude/.credentials.json</code></td>
+<td><strong>Auto</strong> or <strong>Claude Code (OAuth)</strong></td>
+<td>The <code>claudeAiOauth</code> object (access token, refresh token, expiry, subscription type) becomes a Claude OAuth credential. A bare <code>sk-ant-oat…</code> access token also works. Janus refreshes it and saves the refreshed token.</td>
+</tr>
 </tbody>
 </table>
-<p>Claude Code <code>~/.claude/.credentials.json</code> is recognized but not stored in the
-inventory: the preview rejects it with a pointer to <strong>Routing → Providers</strong>, where
-it can be added as a Claude OAuth provider (see
-<a href="../client-setup/#subscription-oauth-providers">Subscription / OAuth providers</a>).
-Other credential files are not supported and come back from the preview as
+<p>Other credential files are not supported and come back from the preview as
 <code>rejected</code> with an "unsupported credential format" message. Gemini CLI
 <code>oauth_creds.json</code> is one example.</p>
 <h2 id="supported-inventory-providers">Supported inventory providers<a class="headerlink" href="#supported-inventory-providers" title="Permanent link">&para;</a></h2>
@@ -1783,7 +1806,7 @@ Other credential files are not supported and come back from the preview as
 <p>OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
-Firecrawl, fal.ai, Exa, Brave Search, <strong>Codex (ChatGPT)</strong>, <strong>Cline</strong>, <strong>Antigravity</strong>,
+Firecrawl, fal.ai, Exa, Brave Search, <strong>Codex (ChatGPT)</strong>, <strong>Cline</strong>, <strong>Antigravity</strong>, <strong>Claude Code (OAuth)</strong>,
 and <strong>Kiro</strong> (OAuth credentials), plus <strong>custom</strong> and <strong>unidentified</strong> fallbacks.</p>
 <h3 id="codex-chatgpt-oauth">Codex / ChatGPT OAuth<a class="headerlink" href="#codex-chatgpt-oauth" title="Permanent link">&para;</a></h3>
 <p>Paste or drop one of the following on <strong>Connect</strong>, then choose provider <strong>Codex (ChatGPT)</strong>:</p>
@@ -1799,6 +1822,11 @@ and <strong>Kiro</strong> (OAuth credentials), plus <strong>custom</strong> and 
 <p>Full 9router backup import (settings, combos, other providers) is not supported
 here — only connection objects. Pasting a Codex blob on the <strong>Providers</strong> page
 still works for a single gateway account.</p>
+<h3 id="claude-oauth">Claude OAuth<a class="headerlink" href="#claude-oauth" title="Permanent link">&para;</a></h3>
+<p>Claude Code credentials are probed for account value through Anthropic's OAuth usage
+endpoint: the 5h, weekly, weekly Opus and weekly Sonnet windows are shown with usage bars
+and reset times, cached for 10 minutes, and feed routing soft-ordering like the other
+OAuth probes.</p>
 <h2 id="encryption-at-rest">Encryption at rest<a class="headerlink" href="#encryption-at-rest" title="Permanent link">&para;</a></h2>
 <p>Set <code>INVENTORY_ENCRYPTION_KEY</code> to a Fernet key before adding credentials. Inventory
 upstream keys and gateway provider API keys/OAuth credential blobs are then stored
