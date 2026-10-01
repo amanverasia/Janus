@@ -695,3 +695,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Real bug found by the new browser scenario: the once-only preselect consumed its chance on the inventory-state fallback provider list (which lacks most catalog ids) before the catalog list arrived — now retries until the requested id appears or the user touches the select; pinned by a new vitest regression.
 - Gates: full pytest **2223 passed / 3 skipped, cov 85.78%**; ruff check/format; mypy strict (162 files); mkdocs --strict; migration smoke; dashboard bundle rebuilt + `--check` exit 0; live-server browser regression all green (new scenario: Connect card → `connect?provider=deepseek` preselected).
 - Next: push branch, PR closing #238, CI green → squash-merge, then #237 per the cluster order.
+
+### 2026-10-01 13:24 UTC (2026-10-01 18:54 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #237, implementation complete
+
+- #237 done on `feat/savings-baseline-237` (worktree `../Janus-wt-237-savings`, from `7470993`): `storage/savings.py` counterfactual via `compute_cost` over `usage.get_savings_window_totals` (subscription + unpriced excluded/reported separately), `analytics_savings_baseline` setting (default gpt-4o), `analytics` section `data.savings` + `overview` `data.savings_today` (reporting-calendar-day bounds), public `GET /v1/analytics/savings` (API-key, baseline 422 vs PricingRegistry), Overview "Saved today" tile + Analytics savings panel (baseline select + per-model table), contracts fixtures (overview/analytics + settings key only — reorder churn reverted) + `contracts.ts` types, docs.
+- Gates: full pytest **2236 passed / 3 skipped** (cov gate passed), ruff check/format, mypy strict (163 files), mkdocs --strict, migration smoke, dashboard build + `--check`, live browser regression all green. 13 new tests (8 unit + 5 integration) + 7 vitest.
+- Contract note: `analytics`/`overview` are value-pinned — fixtures regenerated; `SavingsWindow` typed with optional fields so both window kinds satisfy it.
+- Next: commit, PR closing #237, CI green → merge; then #183 + #187 part 2 (the ranker half).

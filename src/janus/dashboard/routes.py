@@ -1536,9 +1536,16 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
 VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})
 _USAGE_RETENTION_SETTING_KEY = "server_usage_retention_days"
 
+
 # Settings keys that require server-side validation before being persisted. Each
 # validator raises ValueError on bad input; the POST handler rejects with 400 and
 # leaves the stored value untouched (page re-renders with the prior value on reload).
+def _require_savings_baseline(value: str) -> None:
+    from janus.storage.settings import validate_savings_baseline
+
+    validate_savings_baseline(value)
+
+
 _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "combo_strategy": lambda v: _require_choice(v, VALID_COMBO_STRATEGIES),
     "combo_sticky_limit": lambda v: _require_int(v, min_value=1),
@@ -1555,6 +1562,7 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "server_prompt_cache_max_entries": lambda v: _require_int(v, min_value=1, max_value=10_000),
     _USAGE_RETENTION_SETTING_KEY: lambda v: _require_int(v, min_value=7, max_value=3650),
     "server_reporting_timezone": lambda v: _require_reporting_timezone(v),
+    "analytics_savings_baseline": lambda v: _require_savings_baseline(v),
 }
 _ALLOWED_SETTINGS = (
     frozenset(SERVER_SETTING_DEFAULTS)

@@ -36,6 +36,39 @@
       "client_4xx": 0,
       "server_5xx": 0,
       "total": 0
+    },
+    "savings": {
+      "baseline": "gpt-4o",
+      "baseline_priced": true,
+      "actual_cost": 0.73,
+      "baseline_cost": 0.00985,
+      "savings": -0.72015,
+      "savings_pct": -7311.17,
+      "requests": 3,
+      "excluded": {
+        "subscription_requests": 0,
+        "unpriced_requests": 0
+      },
+      "by_model": [
+        {
+          "model": "anthropic/fixture-model-002",
+          "requests": 1,
+          "actual_cost": 0.31,
+          "baseline_cost": 0.0031,
+          "savings": -0.3069
+        },
+        {
+          "model": "openai/fixture-model-001",
+          "requests": 2,
+          "actual_cost": 0.42,
+          "baseline_cost": 0.00675,
+          "savings": -0.41325
+        }
+      ],
+      "window": {
+        "kind": "days",
+        "days": 30
+      }
     }
   },
   "meta": {
@@ -46,7 +79,8 @@
     },
     "query": {
       "days": 30,
-      "dimension": "model"
+      "dimension": "model",
+      "baseline": ""
     }
   }
 }

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Savings vs baseline model** — the Analytics page now shows what its window's
+  priced traffic would have cost on a baseline model (default `gpt-4o`, overridable
+  per request and via the `analytics_savings_baseline` setting), how much was
+  actually spent, and a per-model breakdown; Home gains a "Saved today" tile on the
+  same configured reporting day as budget "today". Counterfactual costs reuse
+  `compute_cost` over per-model token totals; subscription and unpriced traffic is
+  excluded and reported separately, never counted as savings. New public
+  `GET /v1/analytics/savings?baseline=&days=` endpoint. (#237)
 - **"Models you can't reach"** — a new Routing tab lists catalog, discovered, and
   configured models that Janus can't route, with the reason (no provider, provider
   disabled, no active credential, model not enabled), grouped by provider with a

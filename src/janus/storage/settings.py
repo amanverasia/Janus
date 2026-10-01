@@ -51,6 +51,7 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "combo_fusion_straggler_grace_s": "8",
     "combo_fusion_hard_timeout_s": "90",
     "combo_fusion_judge": "",
+    "analytics_savings_baseline": "gpt-4o",
 }
 
 VALID_COMBO_STRATEGIES = frozenset({"fallback", "round_robin", "fusion"})
@@ -143,6 +144,23 @@ def resolve_reporting_timezone(settings: dict[str, str]) -> str:
 
 async def get_reporting_timezone(db_path: str | Path) -> str:
     return resolve_reporting_timezone(await get_all_settings(db_path))
+
+
+def validate_savings_baseline(value: str) -> str:
+    baseline = value.strip()
+    if not baseline:
+        raise ValueError("must be a model id with pricing, e.g. gpt-4o")
+    if len(baseline) > 100:
+        raise ValueError("must be at most 100 characters")
+    return baseline
+
+
+def resolve_savings_baseline(settings: dict[str, str]) -> str:
+    value = resolve_server_settings(settings).get("analytics_savings_baseline", "")
+    try:
+        return validate_savings_baseline(value)
+    except ValueError:
+        return "gpt-4o"
 
 
 def require_api_key_enabled(settings: dict[str, str]) -> bool:
