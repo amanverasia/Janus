@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Auto quality overrides + preview** — operators can pin per-model quality scores
+  (0–1) that win over measured signals; the Routing tab's Auto-routing panel shows the full
+  scoring breakdown (tier, score, blended cost, error rate, TPS, TTFT, samples) and manages
+  the overrides. New public `GET /v1/quality/auto-preview?strategy=` returns the same ranked
+  trace the request path uses — no DRY drift. (#187)
 - **`model="auto"` routing** — requests asking for `auto` are ranked per request under a
   configurable strategy (`balanced`, `cheapest`, `fastest`, `quality`; default `balanced`,
   settable from the Routing tab) and the top-5 chain becomes the fallback try-order through

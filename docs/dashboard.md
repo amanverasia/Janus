@@ -210,8 +210,11 @@ Full CRUD for fallback chains:
 ### Health — `/dashboard/ui/routing`
 
 The Health tab also carries the **Auto routing** panel: pick the strategy used when a client
-sends `model: "auto"` (`balanced`, `cheapest`, `fastest`, or `quality`) and see the ranked
-model chain auto would pick right now. Request Logs show the model the request resolved to
+sends `model: "auto"` (`balanced`, `cheapest`, `fastest`, or `quality`), see the ranked model
+chain auto would pick right now with the full scoring breakdown (cost, error rate, TPS, TTFT,
+sample counts), and pin **quality overrides** (0–1) that beat measured signals — useful when
+your evals disagree with the recorded data. API clients can fetch the same trace from
+`GET /v1/quality/auto-preview?strategy=`. Request Logs show the model the request resolved to
 next to the requested one.
 
 ![Routing hub with section tabs on the Health page](assets/dashboard-routing-tabs.png)

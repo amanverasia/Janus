@@ -76,6 +76,11 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
   which reuses the combo expansion — cooldowns, rate-limit/quota/probed demotions, and account
   strategies all still apply. Auto requests skip the prompt cache; Request Logs carry
   `resolved_model` alongside the requested model.
+- Auto overrides/preview (#187): `storage/model_overrides.py` (table `model_quality_overrides`,
+  30s read cache, upsert/delete invalidate) feeds `plan_auto(overrides=...)` — an override pins a
+  model's quality axis unconditionally. `GET /v1/quality/auto-preview` (API-key) and the routing
+  section's `auto.preview`/`auto.overrides` both come from the same `plan_auto` call as the
+  request path; CRUD lives at `POST/DELETE /dashboard/api/v2/auto-overrides`.
 `routing/errors.py` has `classify_error(status_code)` and `is_fallback_eligible(error)` — these drive fallback decisions in `_handle()`.
 - The retry loop lives in `api/routes.py::_handle()`. Streaming requests do NOT retry mid-stream (can't replay partial output).
 - Adding multi-account: register multiple `ProviderConfig` entries with the same `prefix` but different `id`/`api_key`.

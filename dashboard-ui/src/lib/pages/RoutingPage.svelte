@@ -4,7 +4,7 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Pagination from '$lib/components/Pagination.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
-  import { bool, compact, firstList, number, object, text } from '$lib/data';
+  import { bool, compact, firstList, money, number, object, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
   export let data: JsonObject;
@@ -23,6 +23,41 @@
   $: auto = object(data.auto);
   $: autoStrategy = text(auto.strategy, 'balanced');
   $: autoModels = firstList(auto, 'models');
+  $: autoPreview = firstList(auto, 'preview');
+  $: autoOverrides = firstList(auto, 'overrides');
+  let overrideModel = '';
+  let overrideQuality = '0.9';
+  let overrideSaving = false;
+
+  async function saveOverride() {
+    const model = overrideModel.trim();
+    if (!model) return;
+    autoSaving = true;
+    overrideSaving = true;
+    try {
+      await action('/dashboard/api/v2/auto-overrides', {
+        method: 'POST',
+        body: { model, quality: Number(overrideQuality) },
+        success: 'Override saved'
+      });
+      overrideModel = '';
+    } finally {
+      autoSaving = false;
+      overrideSaving = false;
+    }
+  }
+
+  async function removeOverride(model: string) {
+    autoSaving = true;
+    try {
+      await action(`/dashboard/api/v2/auto-overrides/${encodeURIComponent(model)}`, {
+        method: 'DELETE',
+        success: 'Override removed'
+      });
+    } finally {
+      autoSaving = false;
+    }
+  }
   let autoSaving = false;
 
   async function saveAutoStrategy(value: string) {
@@ -138,6 +173,87 @@
   {:else}
     <p class="muted">No priced, routable models for auto yet.</p>
   {/if}
+  {#if autoPreview.length}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Score</th>
+            <th>Cost/MTok</th>
+            <th>Err %</th>
+            <th>TPS</th>
+            <th>TTFT</th>
+            <th>Samples</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each autoPreview as row}
+            <tr>
+              <td data-label="Model">
+                <strong class="mono">{text(row.model)}</strong>
+                {#if bool(row.overridden)}<span class="status active">override</span>{/if}
+              </td>
+              <td data-label="Score">{number(row.score).toFixed(2)}</td>
+              <td data-label="Cost">{money(row.blended_cost)}</td>
+              <td data-label="Errors">
+                {row.error_rate != null ? `${(number(row.error_rate) * 100).toFixed(0)}%` : '—'}
+              </td>
+              <td data-label="TPS">{row.tps_p50 != null ? number(row.tps_p50).toFixed(1) : '—'}</td>
+              <td data-label="TTFT">
+                {row.ttft_p50_ms != null ? `${compact(row.ttft_p50_ms)}ms` : '—'}
+              </td>
+              <td data-label="Samples">{compact(row.samples)}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+  <div class="override-row">
+    <label>
+      <span>Quality override</span>
+      <input
+        placeholder="model id, e.g. deepseek-chat"
+        bind:value={overrideModel}
+        aria-label="Override model"
+      />
+    </label>
+    <label>
+      <span>Quality 0–1</span>
+      <input
+        type="number"
+        min="0"
+        max="1"
+        step="0.05"
+        bind:value={overrideQuality}
+        aria-label="Override quality"
+      />
+    </label>
+    <button
+      class="button"
+      disabled={!overrideModel.trim() || overrideSaving}
+      on:click={saveOverride}
+    >
+      Save override
+    </button>
+  </div>
+  {#if autoOverrides.length}
+    <div class="chips">
+      {#each autoOverrides as override (override.model)}
+        <span class="status mono">
+          {override.model} = {number(override.quality).toFixed(2)}
+          <button
+            class="link"
+            aria-label={`Remove override for ${override.model}`}
+            on:click={() => removeOverride(text(override.model))}
+          >
+            remove
+          </button>
+        </span>
+      {/each}
+    </div>
+  {/if}
 </section>
 <div class="panel-grid equal">
   <section class="panel">
@@ -219,6 +335,28 @@
 </div>
 
 <style>
+  .override-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .override-row label {
+    display: grid;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
   .account-list {
     display: grid;
     gap: 8px;
