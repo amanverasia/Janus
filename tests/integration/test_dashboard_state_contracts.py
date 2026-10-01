@@ -68,6 +68,7 @@ SHAPE_SECTIONS = frozenset(
         "inventory",
         "inventory-keys",
         "models",
+        "models-unreachable",
         "pricing",
         "providers",
         "routing",

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **"Models you can't reach"** — a new Routing tab lists catalog, discovered, and
+  configured models that Janus can't route, with the reason (no provider, provider
+  disabled, no active credential, model not enabled), grouped by provider with a
+  Connect button that opens Connect with that provider preselected. Models whose
+  every account is cooling down are shown separately as "Reachable soon". (#238)
 - **Per-attempt latency and reliability signals** — every upstream attempt now
   records time-to-first-token, output tokens/sec, and its outcome
   (`ok` / `error` / `client_error` / `aborted`) per model and account in a new

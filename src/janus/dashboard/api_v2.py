@@ -12,9 +12,11 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from janus.catalog import PROVIDERS
 from janus.dashboard.alerts import collect_dashboard_alerts_cached
 from janus.dashboard.auth import require_dashboard_access
 from janus.dashboard.mutation_route import DashboardMutationRoute
+from janus.dashboard.reachability_cache import get_reachability_report
 from janus.dashboard.routes import (
     _api_v1_base_url,
     _build_budget_statuses,
@@ -31,6 +33,8 @@ from janus.models.catalog import (
     resolve_provider_models,
     set_model_visibility,
 )
+from janus.routing.provider_snapshots import ensure_provider_snapshot
+from janus.routing.reachability import UnreachableReason, connect_target, cooled_down
 from janus.storage.analytics import (
     Dimension,
     get_breakdown,
@@ -101,6 +105,7 @@ _SECTIONS = frozenset(
         "inventory",
         "inventory-keys",
         "models",
+        "models-unreachable",
         "providers",
         "combos",
         "routing",
@@ -708,6 +713,99 @@ async def _routing_data(
     }
 
 
+_UNREACHABLE_REASONS = frozenset(reason.value for reason in UnreachableReason)
+_UNREACHABLE_SAMPLE_SIZE = 5
+
+
+def _catalog_display_name(catalog_id: str, prefix: str) -> str:
+    entry = PROVIDERS.get(catalog_id)
+    if isinstance(entry, dict):
+        gateway = entry.get("gateway")
+        if isinstance(gateway, dict) and isinstance(gateway.get("name"), str):
+            return str(gateway["name"])
+        inventory = entry.get("inventory")
+        if isinstance(inventory, dict):
+            for key in ("display_name", "name"):
+                value = inventory.get(key)
+                if isinstance(value, str) and value:
+                    return value
+    return prefix
+
+
+async def _models_unreachable_data(
+    request: Request, *, provider: str, reason: str, search: str, limit: int, offset: int
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if reason and reason not in _UNREACHABLE_REASONS:
+        raise _invalid_query("reason", f"expected one of {', '.join(sorted(_UNREACHABLE_REASONS))}")
+    snapshot = ensure_provider_snapshot(request.app)
+    report = await get_reachability_report(request.app, snapshot)
+    unreachable = report.unreachable
+    grouped: dict[str, list[Any]] = {}
+    for item in unreachable:
+        grouped.setdefault(item.prefix, []).append(item)
+    if provider and provider not in grouped:
+        raise _invalid_query("provider", "unknown provider prefix")
+    groups: list[dict[str, Any]] = []
+    for prefix, items in grouped.items():
+        catalog_id = items[0].catalog_id
+        reasons: dict[str, int] = {}
+        for item in items:
+            reasons[item.reason.value] = reasons.get(item.reason.value, 0) + 1
+        groups.append(
+            {
+                "prefix": prefix,
+                "catalog_id": catalog_id,
+                "name": _catalog_display_name(catalog_id, prefix),
+                "count": len(items),
+                "reasons": reasons,
+                "sample_models": [item.model for item in items[:_UNREACHABLE_SAMPLE_SIZE]],
+                "connect": connect_target(catalog_id),
+            }
+        )
+    groups.sort(key=lambda group: (-int(group["count"]), str(group["prefix"])))
+    needle = search.strip().lower()
+    filtered = [
+        item
+        for item in unreachable
+        if (not provider or item.prefix == provider)
+        and (not reason or item.reason.value == reason)
+        and (not needle or needle in item.model.lower())
+    ]
+    total = len(filtered)
+    models = [
+        {
+            "model": item.model,
+            "prefix": item.prefix,
+            "catalog_id": item.catalog_id,
+            "reason": item.reason.value,
+            "source": item.source,
+        }
+        for item in filtered[offset : offset + limit]
+    ]
+    soon = [
+        {"model": item.model, "prefix": item.prefix}
+        for item in cooled_down(report.reachable, snapshot.registry, snapshot.handler)
+    ]
+    data = {
+        "groups": groups,
+        "models": models,
+        "soon": soon,
+        "unreachable_total": len(unreachable),
+        "reachable_total": len(report.reachable),
+    }
+    meta = {
+        "pagination": {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "page": (offset // limit) + 1,
+            "total_pages": max(1, -(-total // limit)),
+        },
+        "query": {"provider": provider, "reason": reason, "search": search},
+    }
+    return data, meta
+
+
 async def _budgets_data(db_path: Path) -> dict[str, Any]:
     try:
         budgets, keys = await _build_budget_statuses(db_path)
@@ -1124,6 +1222,7 @@ async def get_dashboard_state(
     provider: str = Query("", max_length=100),
     provider_id: str = Query("", max_length=100),
     search: str = Query("", max_length=200),
+    reason: str = Query("", max_length=40),
     direction: Literal["asc", "desc"] = Query("desc", alias="dir"),
 ) -> JSONResponse:
     if section not in _SECTIONS:
@@ -1193,6 +1292,11 @@ async def get_dashboard_state(
             models_data,
             meta={"query": {"provider": provider, "search": search}},
         )
+    if section == "models-unreachable":
+        data, meta = await _models_unreachable_data(
+            request, provider=provider, reason=reason, search=search, limit=limit, offset=offset
+        )
+        return await _response(request, db_path, section, data, meta=meta)
     if section == "providers":
         return await _response(request, db_path, section, await _providers_data(request, db_path))
     if section == "combos":

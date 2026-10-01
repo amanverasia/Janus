@@ -688,3 +688,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - `docker-compose.yml` never forwarded `INVENTORY_ENCRYPTION_KEY`, so compose deployments with stored credentials crash-loop on #249's startup check even with the key in `.env`.
 - Branch `fix/compose-encryption-env` (worktree `../Janus-wt-compose-env`): compose forwards INVENTORY_ENCRYPTION_KEY / _PREVIOUS_KEY / INVENTORY_PUSH_TOKEN / JANUS_ALLOW_INSECURE_DEV_KEY; deployment docs + changelog.
 - Next: PR, merge only with user go-ahead.
+
+### 2026-10-01 12:30 UTC (2026-10-01 18:00 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #238, implementation complete
+
+- All five plan tasks done on `feat/unreachable-models-238` (worktree `../Janus-wt-238-unreachable`, plan `docs/superpowers/plans/2026-10-01-unreachable-models.md`): T1 classifier `795799d` + T3 page `5265e01` (both Claude's, T3 cross-reviewed here — page field names match the `{...data, ...meta.query, ...meta.pagination}` prop convention); T2 state section `182c91d` (Claude's uncommitted work verified/completed: import order fixed, incidental settings.json fixture reorder reverted, all 9 integration tests green); T4 Connect preselect `e961abe` + bugfix `8f7dd2a`; T5 docs + browser regression `f1ca9c5`.
+- Real bug found by the new browser scenario: the once-only preselect consumed its chance on the inventory-state fallback provider list (which lacks most catalog ids) before the catalog list arrived — now retries until the requested id appears or the user touches the select; pinned by a new vitest regression.
+- Gates: full pytest **2223 passed / 3 skipped, cov 85.78%**; ruff check/format; mypy strict (162 files); mkdocs --strict; migration smoke; dashboard bundle rebuilt + `--check` exit 0; live-server browser regression all green (new scenario: Connect card → `connect?provider=deepseek` preselected).
+- Next: push branch, PR closing #238, CI green → squash-merge, then #237 per the cluster order.

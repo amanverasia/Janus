@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import type { ValidatedMutationOptions } from '$lib/api';
 
 const api = vi.hoisted(() => ({
@@ -225,5 +225,67 @@ describe('ConnectPage', () => {
     expect(view.getByRole('button', { name: /View in Inventory/ })).toBeTruthy();
     assertNoSecrets(RAW_KEY, RAW_TOKEN);
     view.unmount();
+  });
+});
+
+describe('ConnectPage provider preselect', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('preselects a known provider from ?provider=', async () => {
+    window.history.replaceState({}, '', '/dashboard/ui/connect?provider=anthropic');
+    api.dashboardFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          providers: [
+            { id: 'anthropic', display_name: 'Anthropic' },
+            { id: 'groq', display_name: 'Groq' }
+          ]
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    const view = setup();
+    await view.findByRole('option', { name: 'Anthropic' });
+    const select = view.getByRole('combobox') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('anthropic'));
+    expect(api.dashboardFetch).toHaveBeenCalledWith('/dashboard/api/inventory/providers', {
+      headers: { Accept: 'application/json' }
+    });
+  });
+
+  it('waits for the catalog provider list before preselecting', async () => {
+    window.history.replaceState({}, '', '/dashboard/ui/connect?provider=deepseek');
+    api.dashboardFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          providers: [
+            { id: 'anthropic', display_name: 'Anthropic' },
+            { id: 'deepseek', display_name: 'DeepSeek' }
+          ]
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    const action = vi.fn(async () => ({}));
+    const view = render(ConnectPage, {
+      props: {
+        data: { provider_cards: [{ id: 'anthropic', display_name: 'Anthropic' }] },
+        action,
+        navigate: vi.fn()
+      }
+    });
+    await view.findByRole('option', { name: 'DeepSeek' });
+    const select = view.getByRole('combobox') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('deepseek'));
+  });
+
+  it('keeps automatic detection for unknown providers', async () => {
+    window.history.replaceState({}, '', '/dashboard/ui/connect?provider=nope');
+    const view = setup();
+    await view.findByRole('option', { name: 'Groq' });
+    const select = view.getByRole('combobox') as HTMLSelectElement;
+    expect(select.value).toBe('auto');
   });
 });

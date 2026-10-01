@@ -177,6 +177,10 @@ Provider edit endpoint preserves the existing API key when the field is left bla
  links through `navigate`, so deep links and back/forward keep working. Legacy URLs live in
  `LEGACY_REDIRECTS` (`legacyRedirect()`): `/dashboard/ui/inventory/add` → `/dashboard/ui/connect`
  and `/dashboard/ui/inventory/import` → `/dashboard/ui/connect/restore`.
+- `models-unreachable` (`/dashboard/ui/models/unreachable`, Routing hub) is computed by
+  `routing/reachability.py` via `has_route()` only, cached per provider snapshot in
+  `dashboard/reachability_cache.py`; cooldowns are a live soft state (`soon`), never a
+  reason. Connect preselects `?provider=<inventory id>`.
 - Connect (`/dashboard/ui/connect`, section `inventory`) reads dropped files in the browser, calls
  `POST /dashboard/api/inventory/preview` (masked, `no-store`, never writes the DB; statuses
  `new`/`exists`/`rejected`), then imports through the existing `/dashboard/api/inventory/submit`

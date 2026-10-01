@@ -18,6 +18,7 @@ describe('SectionTabs', () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       'Providers',
       'Models',
+      "Can't reach",
       'Combos',
       'Health',
       'Token savers'
