@@ -46,8 +46,11 @@ Or, without sudo, using a throwaway root container:
 docker run --rm -u 0 -v "$(pwd)/janus-data:/data" alpine sh -c 'chown -R 1000:1000 /data'
 ```
 
-Environment variables from your host `.env` file are passed through for
-`${ENV_VAR}` resolution in config:
+The compose file passes an explicit list of variables from your host `.env` into the
+container: the provider API keys, the OAuth client ids/secrets, and
+`INVENTORY_ENCRYPTION_KEY`, `INVENTORY_ENCRYPTION_PREVIOUS_KEY`, `INVENTORY_PUSH_TOKEN`
+and `JANUS_ALLOW_INSECURE_DEV_KEY`. A variable that is only in `.env` but not listed under
+`environment:` never reaches Janus — add it there (or in a `docker-compose.override.yml`):
 
 ```env
 OPENAI_API_KEY=sk-...

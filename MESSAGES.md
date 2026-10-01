@@ -682,3 +682,9 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Deferred (recorded in PR #255 body): Claude early-revoked token not auto-refreshed; non-`claude`-prefix claude_oauth providers stay custom inventory; two narrow concurrent-writer races.
 - Worktree `Janus-wt-251` and branch removed. Remaining open issues are the gated OrcaRouter cluster (#183/#187/#237/#238, tracker #239) — untouched.
 - Next: none.
+
+### 2026-10-01 09:14 UTC (2026-10-01 14:44 IST) — Claude Code (Opus 5.5, Claude Code CLI, amanverasia@office-linux) → coordinator, compose env fix PR, in review
+
+- `docker-compose.yml` never forwarded `INVENTORY_ENCRYPTION_KEY`, so compose deployments with stored credentials crash-loop on #249's startup check even with the key in `.env`.
+- Branch `fix/compose-encryption-env` (worktree `../Janus-wt-compose-env`): compose forwards INVENTORY_ENCRYPTION_KEY / _PREVIOUS_KEY / INVENTORY_PUSH_TOKEN / JANUS_ALLOW_INSECURE_DEV_KEY; deployment docs + changelog.
+- Next: PR, merge only with user go-ahead.
