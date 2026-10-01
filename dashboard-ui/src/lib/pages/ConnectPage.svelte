@@ -102,6 +102,19 @@
 
   $: fallbackProviders = firstList(data, 'provider_cards', 'providers');
   $: providers = catalogProviders.length ? catalogProviders : fallbackProviders;
+
+  let providerPreselected = false;
+
+  $: if (!providerPreselected && providers.length) {
+    providerPreselected = true;
+    const requested = new URLSearchParams(window.location.search).get('provider') ?? '';
+    if (
+      requested &&
+      providers.some((provider) => text(provider.id ?? provider.provider_id, '') === requested)
+    ) {
+      providerId = requested;
+    }
+  }
   $: sources = currentSources(keysText, files);
   $: signature = signatureFor(sources, providerId);
   $: hasInput = sources.length > 0;
