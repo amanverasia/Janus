@@ -17,6 +17,7 @@ from uuid import uuid4
 import httpx
 
 from .base import RawResult, parse_error_body, parse_retry_after
+from .credential_persistence import PersistentCredentialMixin
 from .oauth_tokens import (
     access_token,
     apply_token_response,
@@ -155,7 +156,7 @@ def _tool_input(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
 
-class KiroProvider:
+class KiroProvider(PersistentCredentialMixin):
     name = "kiro"
 
     def __init__(
@@ -167,6 +168,7 @@ class KiroProvider:
         region: str = "us-east-1",
     ) -> None:
         self._cred = parse_credential(api_key)
+        self._init_credential_persistence(api_key)
         raw_extra = self._cred.get("extra")
         extra: dict[str, Any] = raw_extra if isinstance(raw_extra, dict) else {}
         self.auth_method = (
@@ -306,34 +308,32 @@ class KiroProvider:
             amazon = q_urls + [url for url in amazon if "://q." not in url]
         return amazon + others if amazon else ordered
 
+    def _kiro_should_refresh(self) -> bool:
+        expires = self._cred.get("expires_at") or self._cred.get("expiresAt")
+        return needs_refresh(self._cred) or (expires is None and bool(refresh_token(self._cred)))
+
     async def _ensure_token(self) -> RawResult | None:
         if self.auth_method == "api_key":
             return None
         # Imported Kiro exports commonly omit expiresAt. In that case the
         # access token may already be stale; refresh once whenever a refresh
         # token is available, matching 9router's pre-request refresh behavior.
-        expires = self._cred.get("expires_at") or self._cred.get("expiresAt")
-        should_refresh = needs_refresh(self._cred) or (
-            expires is None and bool(refresh_token(self._cred))
-        )
-        if not should_refresh:
-            return None
-        rt = refresh_token(self._cred)
-        if not rt:
+        if not self._kiro_should_refresh() or not refresh_token(self._cred):
             return None
         async with self._refresh_lock:
-            expires = self._cred.get("expires_at") or self._cred.get("expiresAt")
-            should_refresh = needs_refresh(self._cred) or (
-                expires is None and bool(refresh_token(self._cred))
-            )
-            if not should_refresh:
+            if not self._kiro_should_refresh():
                 return None
+            if await self._adopt_newer_stored_credential() and not self._kiro_should_refresh():
+                return None
+            rt = refresh_token(self._cred)
             raw_extra = self._cred.get("extra")
             extra: dict[str, Any] = raw_extra if isinstance(raw_extra, dict) else {}
             client_id = extra.get("clientId") or self._cred.get("clientId")
             client_secret = extra.get("clientSecret") or self._cred.get("clientSecret")
             region = str(extra.get("region") or self._cred.get("region") or self.region)
-            if client_id and client_secret:
+            if not rt:
+                tokens = None
+            elif client_id and client_secret:
                 tokens = await refresh_kiro_aws(
                     rt,
                     self._client,
@@ -344,6 +344,11 @@ class KiroProvider:
             else:
                 tokens = await refresh_kiro_social(rt, self._client)
             if tokens is None:
+                if (
+                    await self._adopt_rotated_stored_credential()
+                    and not self._kiro_should_refresh()
+                ):
+                    return None
                 return RawResult(
                     status_code=401,
                     json_data={"error": "Kiro token refresh failed — re-auth required"},
@@ -357,6 +362,7 @@ class KiroProvider:
                 )
                 extra["profileArn"] = tokens["profileArn"]
                 self._cred["extra"] = extra
+            self._persist_credential()
         return None
 
     def _headers(self, url: str = "") -> dict[str, str]:

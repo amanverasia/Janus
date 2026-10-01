@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from .base import RawResult, parse_error_body, parse_google_retry_info, parse_retry_after
+from .credential_persistence import PersistentCredentialMixin
 from .oauth_tokens import (
     ANTIGRAVITY_CLIENT_ID,
     ANTIGRAVITY_CLIENT_SECRET,
@@ -72,7 +73,7 @@ def _unwrap_envelope_line(raw: str) -> str:
     return prefix + json.dumps(parsed["response"], separators=(",", ":"), ensure_ascii=False)
 
 
-class AntigravityProvider:
+class AntigravityProvider(PersistentCredentialMixin):
     name = "antigravity"
 
     def __init__(
@@ -86,6 +87,7 @@ class AntigravityProvider:
     ) -> None:
         self.base_url = (base_url or DEFAULT_AG_BASE).rstrip("/")
         self._cred = parse_credential(api_key)
+        self._init_credential_persistence(api_key)
         raw_extra = self._cred.get("extra")
         extra: dict[str, Any] = raw_extra if isinstance(raw_extra, dict) else {}
         self.project_id = project_id or (
@@ -101,7 +103,7 @@ class AntigravityProvider:
     def credential_blob(self) -> str:
         return serialize_credential(self._cred)
 
-    async def _ensure_token(self) -> RawResult | None:
+    def _antigravity_should_refresh(self) -> bool:
         # Older inventory rows may have a refresh token but no expires_at. Treat
         # those credentials as needing one refresh so the returned expiry is
         # captured instead of sending a stale access token forever.
@@ -111,31 +113,41 @@ class AntigravityProvider:
             or self._cred.get("expiresAt") is not None
             or self.credential_expires_at is not None
         )
-        if not needs_refresh(self._cred) and (has_expiry or not has_refresh):
-            return None
-        rt = refresh_token(self._cred)
-        if not rt:
+        return needs_refresh(self._cred) or (has_refresh and not has_expiry)
+
+    async def _ensure_token(self) -> RawResult | None:
+        if not self._antigravity_should_refresh() or not refresh_token(self._cred):
             return None
         async with self._refresh_lock:
-            has_refresh = bool(refresh_token(self._cred))
-            has_expiry = (
-                self._cred.get("expires_at") is not None
-                or self._cred.get("expiresAt") is not None
-                or self.credential_expires_at is not None
-            )
-            if not needs_refresh(self._cred) and (has_expiry or not has_refresh):
+            if not self._antigravity_should_refresh():
+                return None
+            if (
+                await self._adopt_newer_stored_credential()
+                and not self._antigravity_should_refresh()
+            ):
                 return None
             if self.variant in ("gemini_cli", "gemini-cli"):
                 cid, csec = GOOGLE_CLI_CLIENT_ID, GOOGLE_CLI_CLIENT_SECRET
             else:
                 cid, csec = ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET
-            tokens = await refresh_google(rt, self._client, client_id=cid, client_secret=csec)
+            rt = refresh_token(self._cred)
+            tokens = (
+                await refresh_google(rt, self._client, client_id=cid, client_secret=csec)
+                if rt
+                else None
+            )
             if tokens is None:
+                if (
+                    await self._adopt_rotated_stored_credential()
+                    and not self._antigravity_should_refresh()
+                ):
+                    return None
                 return RawResult(
                     status_code=401,
                     json_data={"error": "Google OAuth refresh failed — re-auth required"},
                 )
             self._cred = apply_token_response(self._cred, tokens)
+            self._persist_credential()
         return None
 
     def _headers(self) -> dict[str, str]:

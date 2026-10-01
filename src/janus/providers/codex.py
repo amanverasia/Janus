@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from .base import RawResult, parse_error_body, parse_retry_after
+from .credential_persistence import PersistentCredentialMixin
 from .oauth_tokens import (
     access_token,
     apply_token_response,
@@ -248,7 +249,7 @@ def _usage_limit_retry_after(status_code: int, body: dict[str, Any] | None) -> f
     return None
 
 
-class CodexProvider:
+class CodexProvider(PersistentCredentialMixin):
     name = "codex"
 
     def __init__(
@@ -260,6 +261,7 @@ class CodexProvider:
         if self.base_url.endswith("/responses"):
             self.base_url = self.base_url[: -len("/responses")]
         self._cred = parse_credential(api_key)
+        self._init_credential_persistence(api_key)
         self._refresh_lock = asyncio.Lock()
         self._client = httpx.AsyncClient(limits=_DEFAULT_LIMITS, timeout=_DEFAULT_TIMEOUT)
 
@@ -269,19 +271,24 @@ class CodexProvider:
     async def _ensure_token(self) -> RawResult | None:
         if not needs_refresh(self._cred):
             return None
-        rt = refresh_token(self._cred)
-        if not rt:
+        if not refresh_token(self._cred):
             return None
         async with self._refresh_lock:
             if not needs_refresh(self._cred):
                 return None
-            tokens = await refresh_codex(rt, self._client)
+            if await self._adopt_newer_stored_credential() and not needs_refresh(self._cred):
+                return None
+            rt = refresh_token(self._cred)
+            tokens = await refresh_codex(rt, self._client) if rt else None
             if tokens is None:
+                if await self._adopt_rotated_stored_credential() and not needs_refresh(self._cred):
+                    return None
                 return RawResult(
                     status_code=401,
                     json_data={"error": "Codex OAuth refresh failed — re-auth required"},
                 )
             self._cred = apply_token_response(self._cred, tokens)
+            self._persist_credential()
         return None
 
     def _headers(self) -> dict[str, str]:
