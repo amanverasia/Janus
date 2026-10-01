@@ -87,6 +87,7 @@ from janus.routing.thinking import (
 from janus.routing.tool_dedupe import dedupe_tools
 from janus.storage.budgets import get_budget_status
 from janus.storage.key_access import model_allowed as key_model_allowed
+from janus.storage.model_overrides import get_override_map
 from janus.storage.outcomes import record_request_outcome
 from janus.storage.request_logs import MAX_ROWS, record_request_log
 from janus.storage.usage import record_usage
@@ -962,6 +963,7 @@ async def _handle_with_snapshot(
             auto_strategy = AutoStrategy(resolve_auto_strategy(settings))
         except ValueError:
             auto_strategy = AutoStrategy.BALANCED
+        overrides = await get_override_map(db_path)
         auto_plan = await plan_auto(
             registry=handler.registry,
             db_path=db_path,
@@ -969,6 +971,7 @@ async def _handle_with_snapshot(
             request=canonical_req,
             strategy=auto_strategy,
             allowed_models=allowed,
+            overrides=overrides,
         )
         auto_chain = auto_plan.models
         if not auto_chain:
@@ -2302,6 +2305,51 @@ async def analytics_savings(
         )
     db_path = request.app.state.db_path
     return await savings_for_days(db_path, baseline=baseline or None, registry=registry, days=days)
+
+
+@router.get("/quality/auto-preview", dependencies=[Depends(require_api_key)])
+async def quality_auto_preview(
+    request: Request,
+    strategy: str = Query("", max_length=20),
+) -> dict[str, Any]:
+    from janus.pricing.registry import PricingRegistry
+    from janus.routing.auto import (
+        VALID_AUTO_STRATEGIES,
+        plan_auto,
+        serialize_trace,
+    )
+    from janus.routing.auto import AutoStrategy as PreviewStrategy
+    from janus.storage.model_overrides import get_override_map
+    from janus.storage.settings import get_all_settings, resolve_auto_strategy
+
+    if strategy and strategy not in VALID_AUTO_STRATEGIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid strategy: expected one of {', '.join(sorted(VALID_AUTO_STRATEGIES))}",
+        )
+    registry = getattr(request.app.state, "pricing_registry", None)
+    if registry is None:
+        registry = PricingRegistry({}, {})
+    settings = await get_all_settings(request.app.state.db_path)
+    active = strategy or resolve_auto_strategy(settings)
+    snapshot = getattr(request.app.state, "provider_snapshot", None)
+    if snapshot is None:
+        from janus.routing.provider_snapshots import ensure_provider_snapshot
+
+        snapshot = ensure_provider_snapshot(request.app)
+    plan = await plan_auto(
+        registry=snapshot.registry,
+        db_path=request.app.state.db_path,
+        pricing_registry=registry,
+        strategy=PreviewStrategy(active),
+        overrides=await get_override_map(request.app.state.db_path),
+    )
+    return {
+        "strategy": plan.strategy,
+        "models": plan.models,
+        "trace": serialize_trace(plan, limit=25),
+        "excluded": [{"model": model, "reason": reason} for model, reason in plan.excluded],
+    }
 
 
 @router.get("/health")

@@ -168,6 +168,23 @@ def score_candidates(
     return scored
 
 
+def serialize_trace(plan: AutoPlan, *, limit: int = 10) -> list[dict[str, Any]]:
+    return [
+        {
+            "model": candidate.model_str,
+            "tier": candidate.tier,
+            "score": round(candidate.score, 4),
+            "blended_cost": candidate.blended_cost,
+            "error_rate": candidate.error_rate,
+            "tps_p50": candidate.tps_p50,
+            "ttft_p50_ms": candidate.ttft_p50_ms,
+            "samples": candidate.samples,
+            "overridden": candidate.overridden,
+        }
+        for candidate in plan.trace[: max(1, limit)]
+    ]
+
+
 def _caps_satisfied(model_str: str, required: frozenset[str]) -> bool:
     if not required:
         return True

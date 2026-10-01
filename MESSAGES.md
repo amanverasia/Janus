@@ -709,3 +709,15 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Gates: full pytest **2252 passed / 3 skipped** (cov gate ok), ruff/format, mypy strict (164 files), mkdocs strict, migration smoke, dashboard build + `--check`, live browser regression all green. 16 new tests (10 unit + 6 integration) + 2 RequestLogs vitest.
 - Notable: `json_mode` not enforced (no such capability key in Janus — would drop all models); balanced/quality degrade to neutral ordering when signals are sparse (tier-2 by model id).
 - Next: commit, PR (Refs #183), CI green → merge; then PR B = #187 part 2 (overrides table + shared-ranker auto-preview endpoint/panel).
+
+### 2026-10-01 14:23 UTC (2026-10-01 19:53 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #183 PR A merged; #187 part 2 claimed
+
+- PR #260 (#183 auto core) squash-merged as `6c13025d` after all checks green. #183 stays open until the per-key override follow-up decision; its acceptance items are met by PR A except the optional per-key override (explicitly optional).
+- Claiming #187 part 2 as PR B on `feat/auto-overrides-187p2` (worktree `../Janus-wt-183-auto`, reused venv): `model_quality_overrides` table + dashboard CRUD, override precedence into `plan_auto` (param already plumbed), public `GET /v1/quality/auto-preview` sharing the ranker, routing-section preview trace + RoutingPage overrides management.
+- Next: implement, gates, PR (Refs #187), merge, then close out the cluster (#239 tracker).
+
+### 2026-10-01 14:38 UTC (2026-10-01 20:08 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #187 part 2 / PR B, implementation complete
+
+- PR B done on `feat/auto-overrides-187p2` (from merged `6c13025d`): `storage/model_overrides.py` (`model_quality_overrides` table, 30s read cache, invalidation on write) feeding `plan_auto(overrides=...)`; dashboard CRUD `POST/DELETE /dashboard/api/v2/auto-overrides`; public `GET /v1/quality/auto-preview?strategy=` sharing the exact request-path ranker (401/422 covered); routing section `auto.preview` (top-10 scoring trace) + `auto.overrides`; RoutingPage Auto-routing panel extended with the breakdown table + override add/remove.
+- Gates: full pytest **2258 passed / 3 skipped** (cov ok), ruff/format, mypy strict (165 files), mkdocs strict, migration smoke, dashboard build + `--check`, contracts+size green (routing.shape regen; settings reorder reverted — no new key in this PR).
+- Next: PR (Refs #187), CI green → merge; then cluster closeout (#183/#187 comments + close, file the deferred `janus bench` follow-up, close tracker #239).

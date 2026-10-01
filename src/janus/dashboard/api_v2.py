@@ -35,7 +35,7 @@ from janus.models.catalog import (
     set_model_visibility,
 )
 from janus.pricing.registry import PricingRegistry
-from janus.routing.auto import AutoStrategy, plan_auto
+from janus.routing.auto import AutoStrategy, plan_auto, serialize_trace
 from janus.routing.provider_snapshots import ensure_provider_snapshot
 from janus.routing.reachability import UnreachableReason, connect_target, cooled_down
 from janus.storage.analytics import (
@@ -58,6 +58,12 @@ from janus.storage.inventory_overview import (
 )
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.key_access import parse_models_input
+from janus.storage.model_overrides import (
+    delete_override,
+    get_override_map,
+    list_overrides,
+    upsert_override,
+)
 from janus.storage.routing_overview import get_routing_overview
 from janus.storage.savings import savings_for_days, savings_for_today
 from janus.storage.settings import (
@@ -732,17 +738,22 @@ async def _routing_data(
             db_path=db_path,
             pricing_registry=_pricing_registry(request),
             strategy=AutoStrategy(resolve_auto_strategy(settings)),
+            overrides=await get_override_map(db_path),
         )
         auto_models = auto_plan.models
+        auto_preview = serialize_trace(auto_plan)
     except Exception:
         logger.warning("Auto routing preview failed", exc_info=True)
         auto_models = []
+        auto_preview = []
     return {
         "overview": overview,
         "auto": {
             "strategy": resolve_auto_strategy(settings),
             "models": auto_models,
             "top": auto_models[0] if auto_models else None,
+            "preview": auto_preview,
+            "overrides": await list_overrides(db_path),
         },
         "live": request.app.state.fallback_handler.routing_snapshot(),
         "settings": {
@@ -1126,6 +1137,36 @@ async def get_custom_models(request: Request) -> JSONResponse:
 
     db_path = await _ensure_db(request)
     return _no_store_json({"custom_models": await list_custom_models(db_path)})
+
+
+@router.post("/api/v2/auto-overrides")
+async def post_auto_override(request: Request) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    payload = await _json_object(request)
+    model = str(payload.get("model", "")).strip()
+    if not model or len(model) > 200:
+        return _no_store_json({"error": "model must be 1-200 characters"}, status_code=400)
+    try:
+        quality = float(str(payload.get("quality")))
+    except (TypeError, ValueError):
+        return _no_store_json({"error": "quality must be a number"}, status_code=400)
+    note = payload.get("note")
+    if note is not None and not isinstance(note, str):
+        return _no_store_json({"error": "note must be a string"}, status_code=400)
+    try:
+        override = await upsert_override(db_path, model, quality, note)
+    except ValueError as exc:
+        return _no_store_json({"error": str(exc)}, status_code=400)
+    return _no_store_json({"ok": True, "override": override})
+
+
+@router.delete("/api/v2/auto-overrides/{model}")
+async def delete_auto_override(request: Request, model: str) -> JSONResponse:
+    db_path = await _ensure_db(request)
+    removed = await delete_override(db_path, model)
+    if not removed:
+        return _no_store_json({"error": "override not found"}, status_code=404)
+    return _no_store_json({"ok": True})
 
 
 @router.post("/api/v2/custom-models")
