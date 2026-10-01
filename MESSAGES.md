@@ -673,3 +673,12 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Claiming the rest of #251 (user-approved spec + plan): OAuth credential write-back for Claude/Codex/Kiro/Antigravity executors (CAS to upstream_keys, read-through before refresh, validators refresh only expired tokens) + Claude OAuth inventory onboarding + `/api/oauth/usage` probe.
 - Working in `../Janus-wt-251` on `feat/oauth-writeback-claude-probe-251` via subagent-driven execution (Tasks 1–2 of 8 done and reviewed). Gated cluster #183/#187/#237/#238 untouched.
 - Next: finish tasks, final review, PR closing #251, merge on green.
+
+### 2026-10-01 08:59 UTC (2026-10-01 14:29 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #251 / PR #255, complete
+
+- Squash-merged PR #255 as `ff79a4f` (user-authorized); #251 auto-closed. Main CI, Docker and Docs green on the merge commit. Local gates before push: 2152 tests, ruff/format/mypy strict, dashboard check, docs strict, migration smoke.
+- GitGuardian flagged 16 "Generic High Entropy Secret" hits — all verified fake test fixtures (`sk-ant-oat01-live`, `-new`, `-AAAA`, etc.) in tests/unit/inventory/test_claude_{validator,credentials}.py; no real credentials. User chose to merge over the failing check; incidents can be marked false positive in the GitGuardian dashboard.
+- Shipped: OAuth credential write-back (semantic CAS store + read-through/write-back mixin for Claude/Codex/Kiro/Antigravity, validator writes via CAS, blank-key provider edit keeps refreshed cred, shutdown drain), validators refresh only expired tokens, Claude OAuth inventory onboarding + migration, Claude validator + /api/oauth/usage probe.
+- Deferred (recorded in PR #255 body): Claude early-revoked token not auto-refreshed; non-`claude`-prefix claude_oauth providers stay custom inventory; two narrow concurrent-writer races.
+- Worktree `Janus-wt-251` and branch removed. Remaining open issues are the gated OrcaRouter cluster (#183/#187/#237/#238, tracker #239) — untouched.
+- Next: none.
