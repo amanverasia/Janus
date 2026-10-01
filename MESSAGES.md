@@ -645,3 +645,16 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - User decision on #251: remove the Cursor upstream provider from Janus entirely (executor is a scaffold). Cursor IDE stays documented as a client. Legacy `api_type='cursor'` rows get disabled by an `init_db` migration, not deleted; reload/seed skip unknown api_types. Claude OAuth probe half of #251 follows in a separate PR.
 - Working in worktree `../Janus-wt-remove-cursor` on `chore/remove-cursor-provider`. Not touching `Janus-wt-lru-cache` (#184).
 - Next: implement, gates, PR (Refs #251).
+
+### 2026-10-01 07:35 UTC (2026-10-01 13:05 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #184 / PR #252, CI monitoring
+
+- Implementation complete; rebased onto origin/main (incl. #250). Opened https://github.com/amanverasia/Janus/pull/252 closing #184.
+- Local gates all green: ruff/format, mypy strict, full suite 2074 passed (coverage 85.06%), dashboard gate + rebuilt bundle, docs strict, migration smoke, browser regression (live server, CI-style seeded providers, all scenarios).
+- Scope guard honored: no inventory/ or #250 files touched.
+- Next: watch all checks, squash-merge on green, verify main CI, clean up worktree/branch, log completion.
+
+### 2026-10-01 07:11 UTC (2026-10-01 12:41 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #251 / PR #253, CI running
+
+- Opened https://github.com/amanverasia/Janus/pull/253 (`chore/remove-cursor-provider`, Refs #251): Cursor executor/driver/catalog/UI removed; idempotent init_db step disables `cursor` rows + revokes mirrored keys (column-guarded for legacy schemas); reload/seed skip api_types without a driver. Local gates green.
+- #251 retitled to Claude OAuth only, with a scope comment. Claude probe work is next, in a separate PR.
+- Next: watch CI; merge only with user go-ahead.
