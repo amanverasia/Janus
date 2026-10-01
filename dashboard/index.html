@@ -1067,6 +1067,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#prompt-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#api-keys-dashboarduikeys" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1826,6 +1837,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#prompt-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Prompt cache
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#api-keys-dashboarduikeys" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2302,6 +2324,8 @@ unless actively debugging.</p>
 <li><strong>Sticky client routing</strong> and account strategy</li>
 <li><strong>Reporting timezone</strong> and request-log retention</li>
 <li><strong>Request Logging</strong> — capture full request/response bodies for debugging (off by default), plus the log retention limit</li>
+<li><strong>Prompt cache</strong> — serve cached responses for deterministic requests at zero cost
+  (off by default; see below)</li>
 <li><strong>Export secrets</strong> — download current DB state as YAML after an explicit
   plaintext-credential warning</li>
 </ul>
@@ -2310,6 +2334,25 @@ limit, and Fusion tuning), server information, and <strong>Reset to Defaults</st
 <a href="../combos/#combo-strategies">Combos &amp; Fallback</a> for the routing fields. Values
 are validated server-side, and reset wipes the relevant DB state before
 re-seeding from <code>config.yaml</code>.</p>
+<h3 id="prompt-cache">Prompt cache<a class="headerlink" href="#prompt-cache" title="Permanent link">&para;</a></h3>
+<p>When <strong>Prompt cache</strong> is enabled (<code>server_prompt_cache_enabled</code>), Janus serves
+an exact-match cached response — before any upstream call — for <em>deterministic</em>
+requests:</p>
+<ul>
+<li>explicit <code>temperature=0</code> without a narrowed <code>top_p</code> (<code>top_p</code> unset or <code>1.0</code>), or</li>
+<li>a pinned <code>seed</code>,</li>
+</ul>
+<p>and only for non-streaming requests. The cache key covers the full
+post-saver canonical request plus every output-shaping parameter (<code>max_tokens</code>,
+<code>stop</code>, <code>n</code>, penalties, <code>logit_bias</code>, <code>tool_choice</code>, thinking intent, …) and is
+scoped per client API key, so completions never leak across keys. Token-saver
+normalization (RTK, Caveman, …) happens before the key is computed, so savers
+increase the hit rate.</p>
+<p>A cache hit returns the original response with an <code>x-janus-cache: hit</code> header,
+records zero-cost usage, and appears in Request Logs with the provider shown as
+<code>prompt-cache</code>. Entries are bounded by <code>server_prompt_cache_ttl_s</code> (default
+3600) and <code>server_prompt_cache_max_entries</code> (default 128, LRU eviction).
+Responses are cached in memory only and are not persisted across restarts.</p>
 <p>Settings does not contain a dashboard username or password. Dashboard identity
 and access are API-key based, and <strong>Settings → API keys</strong> is the place to grant or revoke
 <strong>Allow dashboard login</strong>. Any legacy username/password settings are purged at
