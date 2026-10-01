@@ -39,7 +39,7 @@ def _cred(**fields: object) -> str:
 
 
 def test_oauth_providers_registered() -> None:
-    for provider_id in ("codex", "kiro", "antigravity"):
+    for provider_id in ("codex", "kiro", "antigravity", "claude_oauth"):
         assert provider_id in ACCOUNT_VALUE_PROBES
 
 
@@ -275,3 +275,61 @@ async def test_concurrent_oauth_refreshes_share_one_probe(tmp_path) -> None:
         )
     assert route.call_count == 1
     assert all(state is not None and state["status"] == "ok" for state in states)
+
+
+CLAUDE_URL = "https://api.anthropic.com/api/oauth/usage"
+
+
+@respx.mock
+async def test_claude_probe_maps_windows() -> None:
+    route = respx.get(CLAUDE_URL).mock(
+        return_value=Response(
+            200,
+            json={
+                "five_hour": {"utilization": 42.0, "resets_at": "2026-10-01T12:00:00+00:00"},
+                "seven_day": {"utilization": 91, "resets_at": "2026-10-05T00:00:00+00:00"},
+                "seven_day_opus": {"utilization": 12.5, "resets_at": None},
+                "seven_day_sonnet": None,
+                "email": "person@example.com",
+            },
+        )
+    )
+    value = await probe_account_value(
+        "claude_oauth", _cred(extra={"subscriptionType": "max"}), "https://api.anthropic.com", None
+    )
+    assert value.status == AccountValueStatus.OK
+    assert [(w.label, w.used_percent) for w in value.windows] == [
+        ("5h", 42.0),
+        ("weekly", 91.0),
+        ("weekly opus", 12.5),
+    ]
+    assert value.metadata == {"subscription_type": "max"}
+    assert "person@example.com" not in json.dumps(value.to_dict())
+    assert route.calls.last.request.headers["anthropic-beta"] == "oauth-2025-04-20"
+
+
+@respx.mock
+async def test_claude_probe_unauthorized_is_probe_error() -> None:
+    respx.get(CLAUDE_URL).mock(return_value=Response(401))
+    with pytest.raises(ProbeError):
+        await probe_account_value("claude_oauth", _cred(), "https://api.anthropic.com", None)
+
+
+async def test_claude_probe_expired_token_does_not_call_endpoint() -> None:
+    with respx.mock(assert_all_called=False) as router:
+        route = router.get(CLAUDE_URL)
+        with pytest.raises(ProbeError):
+            await probe_account_value(
+                "claude_oauth",
+                _cred(expires_at=time.time() - 5),
+                "https://api.anthropic.com",
+                None,
+            )
+        assert not route.called
+
+
+@respx.mock
+async def test_claude_probe_empty_response_is_transient_error() -> None:
+    respx.get(CLAUDE_URL).mock(return_value=Response(200, json={"five_hour": None}))
+    with pytest.raises(ProbeError):
+        await probe_account_value("claude_oauth", _cred(), "https://api.anthropic.com", None)
