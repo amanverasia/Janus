@@ -418,12 +418,12 @@ async def test_bare_workos_token_detected_as_cline(client):
     assert (item["provider_id"], item["format"]) == ("cline", "api_key")
 
 
-async def test_claude_code_credentials_rejected_with_specific_reason(client, app):
+async def test_claude_code_credentials_are_accepted(client, app):
     blob = json.dumps(
         {
             "claudeAiOauth": {
-                "accessToken": "sk-ant-oat01-claude-code-SECRET",
-                "refreshToken": "sk-ant-ort01-claude-code-SECRET",
+                "accessToken": "sk-ant-oat01-SECRET-claude-code-token",
+                "refreshToken": "sk-ant-ort01-SECRET-claude-code-token",
                 "expiresAt": 1759000000000,
                 "scopes": ["user:inference"],
             }
@@ -433,11 +433,15 @@ async def test_claude_code_credentials_rejected_with_specific_reason(client, app
     submitted = await _submit(client, blob)
 
     item = preview.json()["results"][0]
-    assert item["status"] == "rejected"
-    assert item["format"] == "oauth_json"
-    assert "Claude Code" in item["error"]
-    assert submitted.status_code == 422
-    assert "Claude Code" in submitted.json()["results"][0]["error"]
+    assert (item["status"], item["provider_id"], item["format"]) == (
+        "new",
+        "claude_oauth",
+        "oauth_json",
+    )
+    assert submitted.status_code == 200
+    assert submitted.json()["results"][0]["provider_id"] == "claude_oauth"
     for body in (preview.text, submitted.text):
         assert "SECRET" not in body
-    assert await list_upstream_keys(app.state.db_path) == []
+    stored = await list_upstream_keys(app.state.db_path)
+    assert len(stored) == 1
+    assert stored[0]["provider_id"] == "claude_oauth"

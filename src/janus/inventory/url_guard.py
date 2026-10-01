@@ -340,6 +340,8 @@ _ZHIPU_KEY_RE = re.compile(r"^[0-9a-f]{32}\.[A-Za-z0-9]{16}$")
 def detect_provider_from_key(key: str) -> str | None:
     if key.startswith("sk-or-v1-"):
         return "openrouter"
+    if key.startswith("sk-ant-oat"):
+        return "claude_oauth"
     if key.startswith("sk-ant-"):
         return "anthropic"
     if key.startswith("nvapi-"):

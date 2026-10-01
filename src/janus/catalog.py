@@ -1416,6 +1416,23 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
     },
     "claude_oauth": {
+        "inventory": {
+            "id": "claude_oauth",
+            "name": "claude_oauth",
+            "display_name": "Claude Code (OAuth)",
+            "base_url": "https://api.anthropic.com",
+            "auth_type": "oauth",
+            "auth_header": "Authorization",
+            "auth_prefix": "Bearer",
+            "key_env_var": None,
+            "models_endpoint": None,
+            "health_check_endpoint": None,
+            "credit_check_endpoint": None,
+            "billing_model": "subscription",
+            "is_direct": True,
+            "routing_note": "Drop Claude Code's ~/.claude/.credentials.json, a JSON object "
+            "with access_token and refresh_token, or a bare sk-ant-oat access token.",
+        },
         "gateway": {
             "id": "claude_oauth",
             "name": "Claude Code (OAuth)",
