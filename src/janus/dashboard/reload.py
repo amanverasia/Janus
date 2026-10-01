@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from janus.app import _build_provider
 from janus.config.schema import ComboConfig, ProviderConfig
+from janus.inventory.credential_store import SqliteCredentialStore
 from janus.inventory.key_encryption import hash_upstream_key
 from janus.models.catalog import list_catalog_models
 from janus.pricing.registry import PricingRegistry
@@ -245,6 +246,9 @@ async def _reload_providers_locked(app: FastAPI) -> None:
                     reused_provider_ids.add(pc.id)
                 else:
                     provider = _build_provider(pc)
+                    attach = getattr(provider, "attach_credential_store", None)
+                    if pc.upstream_key_id and callable(attach):
+                        attach(SqliteCredentialStore(db_path, pc.upstream_key_id))
                     new_providers[pc.id] = provider
                     built_providers.append(provider)
 
