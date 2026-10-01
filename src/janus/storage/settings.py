@@ -44,6 +44,9 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_gateway_rate_limit_rpm": "0",
     "server_cooldowns_enabled": "true",
     "server_reporting_timezone": "UTC",
+    "server_prompt_cache_enabled": "false",
+    "server_prompt_cache_ttl_s": "3600",
+    "server_prompt_cache_max_entries": "128",
     "combo_fusion_min_panel": "2",
     "combo_fusion_straggler_grace_s": "8",
     "combo_fusion_hard_timeout_s": "90",
@@ -204,6 +207,26 @@ def resolve_sticky_limit(settings: dict[str, str]) -> int:
 
 def request_logging_enabled(settings: dict[str, str]) -> bool:
     return resolve_server_settings(settings)["server_request_logging"].lower() == "true"
+
+
+def prompt_cache_enabled(settings: dict[str, str]) -> bool:
+    return resolve_server_settings(settings)["server_prompt_cache_enabled"].lower() == "true"
+
+
+def resolve_prompt_cache_ttl_s(settings: dict[str, str]) -> int:
+    try:
+        value = int(resolve_server_settings(settings)["server_prompt_cache_ttl_s"])
+    except (ValueError, TypeError):
+        return 3600
+    return max(1, min(value, 604800))
+
+
+def resolve_prompt_cache_max_entries(settings: dict[str, str]) -> int:
+    try:
+        value = int(resolve_server_settings(settings)["server_prompt_cache_max_entries"])
+    except (ValueError, TypeError):
+        return 128
+    return max(1, min(value, 10000))
 
 
 def resolve_request_log_retention(settings: dict[str, str]) -> int:

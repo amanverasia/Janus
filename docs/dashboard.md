@@ -271,6 +271,8 @@ and the Settings toggle.
 - **Sticky client routing** and account strategy
 - **Reporting timezone** and request-log retention
 - **Request Logging** — capture full request/response bodies for debugging (off by default), plus the log retention limit
+- **Prompt cache** — serve cached responses for deterministic requests at zero cost
+  (off by default; see below)
 - **Export secrets** — download current DB state as YAML after an explicit
   plaintext-credential warning
 
@@ -279,6 +281,28 @@ limit, and Fusion tuning), server information, and **Reset to Defaults**. See
 [Combos & Fallback](combos.md#combo-strategies) for the routing fields. Values
 are validated server-side, and reset wipes the relevant DB state before
 re-seeding from `config.yaml`.
+
+### Prompt cache
+
+When **Prompt cache** is enabled (`server_prompt_cache_enabled`), Janus serves
+an exact-match cached response — before any upstream call — for *deterministic*
+requests:
+
+- explicit `temperature=0` without a narrowed `top_p` (`top_p` unset or `1.0`), or
+- a pinned `seed`,
+
+and only for non-streaming requests. The cache key covers the full
+post-saver canonical request plus every output-shaping parameter (`max_tokens`,
+`stop`, `n`, penalties, `logit_bias`, `tool_choice`, thinking intent, …) and is
+scoped per client API key, so completions never leak across keys. Token-saver
+normalization (RTK, Caveman, …) happens before the key is computed, so savers
+increase the hit rate.
+
+A cache hit returns the original response with an `x-janus-cache: hit` header,
+records zero-cost usage, and appears in Request Logs with the provider shown as
+`prompt-cache`. Entries are bounded by `server_prompt_cache_ttl_s` (default
+3600) and `server_prompt_cache_max_entries` (default 128, LRU eviction).
+Responses are cached in memory only and are not persisted across restarts.
 
 Settings does not contain a dashboard username or password. Dashboard identity
 and access are API-key based, and **Settings → API keys** is the place to grant or revoke

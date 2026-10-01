@@ -41,6 +41,12 @@
       'request_logging_enabled',
       'Record request metadata',
       'Store recent gateway request metadata for the Request logs page.'
+    ],
+    [
+      'server_prompt_cache_enabled',
+      'prompt_cache_enabled',
+      'Prompt cache',
+      'Serve cached responses for deterministic requests (temperature 0 or a pinned seed) at zero cost.'
     ]
   ];
 
@@ -57,6 +63,8 @@
     server_account_strategy: 'round_robin',
     server_sticky_limit: '3',
     server_gateway_rate_limit_rpm: '0',
+    server_prompt_cache_ttl_s: '3600',
+    server_prompt_cache_max_entries: '128',
     combo_strategy: 'fallback',
     combo_sticky_limit: '1',
     combo_fusion_judge: '',
@@ -251,6 +259,31 @@
             max="100000"
             value={text(values.server_gateway_rate_limit_rpm ?? status.gateway_rate_limit_rpm, '0')}
             on:change={(event) => saveField(event, 'server_gateway_rate_limit_rpm')}
+          />
+        </label>
+      </div>
+      <div class="field-grid">
+        <label class="field">
+          <span>Prompt cache TTL (seconds)</span>
+          <input
+            type="number"
+            min="1"
+            max="604800"
+            value={text(values.server_prompt_cache_ttl_s ?? status.prompt_cache_ttl_s, '3600')}
+            on:change={(event) => saveField(event, 'server_prompt_cache_ttl_s')}
+          />
+        </label>
+        <label class="field">
+          <span>Prompt cache entries</span>
+          <input
+            type="number"
+            min="1"
+            max="10000"
+            value={text(
+              values.server_prompt_cache_max_entries ?? status.prompt_cache_max_entries,
+              '128'
+            )}
+            on:change={(event) => saveField(event, 'server_prompt_cache_max_entries')}
           />
         </label>
       </div>

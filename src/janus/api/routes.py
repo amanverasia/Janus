@@ -64,6 +64,14 @@ from janus.routing.fusion import FusionDeps, run_fusion
 from janus.routing.modality import strip_unsupported_modalities
 from janus.routing.model_aliases import resolve_model_alias
 from janus.routing.prefetch import prefetch_remote_images
+from janus.routing.prompt_cache import (
+    PROMPT_CACHE_PROVIDER_ID,
+    CachedResponse,
+    compute_cache_key,
+    is_cacheable_request,
+    prompt_cache_get,
+    prompt_cache_put,
+)
 from janus.routing.provider_snapshots import (
     ProviderSnapshot,
     acquire_provider_snapshot,
@@ -789,6 +797,7 @@ async def _handle_with_snapshot(
 
     from janus.storage.settings import (
         get_all_settings,
+        prompt_cache_enabled,
         request_logging_enabled,
         resolve_account_strategy,
         resolve_combo_fusion_hard_timeout_s,
@@ -797,6 +806,8 @@ async def _handle_with_snapshot(
         resolve_combo_fusion_straggler_grace_s,
         resolve_combo_sticky_limit,
         resolve_combo_strategy,
+        resolve_prompt_cache_max_entries,
+        resolve_prompt_cache_ttl_s,
         resolve_request_log_retention,
         resolve_sticky_limit,
         sticky_client_key_routing_enabled,
@@ -948,6 +959,66 @@ async def _handle_with_snapshot(
     sticky_limit = resolve_sticky_limit(settings)
     combo_strat = resolve_combo_strategy(settings)
     combo_csl = resolve_combo_sticky_limit(settings)
+
+    cache_key: str | None = None
+    cache_max_entries = resolve_prompt_cache_max_entries(settings)
+    if (
+        prompt_cache_enabled(settings)
+        and is_cacheable_request(canonical_req)
+        and cache_max_entries > 0
+    ):
+        cache_key = compute_cache_key(
+            client_key_id=client_key_id,
+            client_format=client_format,
+            canonical_req=canonical_req,
+            thinking_intent=thinking_intent,
+            client_tool=client_tool,
+        )
+        cached = prompt_cache_get(cache_key, ttl_s=resolve_prompt_cache_ttl_s(settings))
+        if cached is not None:
+            await record_usage(
+                db_path,
+                provider_id=PROMPT_CACHE_PROVIDER_ID,
+                model=cached.model,
+                input_tokens=cached.usage.input_tokens,
+                output_tokens=cached.usage.output_tokens,
+                cache_creation_tokens=cached.usage.cache_creation_input_tokens,
+                cache_read_tokens=cached.usage.cache_read_input_tokens,
+                status=200,
+                client_key_id=client_key_id,
+                client_key_label=client_key_label,
+                cost=0.0,
+            )
+            if log_requests:
+                try:
+                    cached_response_body: str | None = json.dumps(
+                        cached.payload, ensure_ascii=False
+                    )
+                except (TypeError, ValueError):
+                    cached_response_body = str(cached.payload)
+                await record_request_log(
+                    db_path,
+                    client_format=client_format,
+                    model=canonical_req.model,
+                    provider_id=PROMPT_CACHE_PROVIDER_ID,
+                    status=200,
+                    duration_ms=_elapsed_ms(),
+                    request_body=logged_request_body,
+                    response_body=cached_response_body,
+                    client_key_id=client_key_id,
+                    client_key_label=client_key_label,
+                    max_rows=retention,
+                )
+            await outcome.record(
+                status=200,
+                model=cached.model,
+                provider_id=PROMPT_CACHE_PROVIDER_ID,
+                duration_ms=_elapsed_ms(),
+            )
+            return JSONResponse(
+                content=cached.payload,
+                headers={**_janus_headers(cached.model), "x-janus-cache": "hit"},
+            )
 
     # ── Fusion combo: fan out to the panel, then judge synthesizes ────────
     # Rewrites canonical_req to the judge request (a plain model), so the
@@ -1597,10 +1668,24 @@ async def _handle_with_snapshot(
                 native_payload = _restore_claude_oauth_response(
                     native_result.json_data, native_prep
                 )
-                return JSONResponse(
+                native_response = JSONResponse(
                     content=native_payload if native_payload else {},
                     headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
                 )
+                if cache_key is not None and native_payload:
+                    prompt_cache_put(
+                        cache_key,
+                        CachedResponse(
+                            payload=native_payload,
+                            model=target.model,
+                            provider_id=target.provider_config.id,
+                            account_id=target.account_id,
+                            usage=passthrough_usage,
+                        ),
+                        max_entries=cache_max_entries,
+                        max_body_bytes=len(native_response.body),
+                    )
+                return native_response
         # ── End native passthrough ─────────────────────────────────────
 
         provider_adapter = _resolve_format(effective_native_format)
@@ -1907,10 +1992,24 @@ async def _handle_with_snapshot(
                 duration_ms=_elapsed_ms(),
                 attempts=len(attempt_errors) + 1,
             )
-            return JSONResponse(
+            response = JSONResponse(
                 content=client_payload,
                 headers=_janus_headers(target.model, attempt=len(attempt_errors) + 1),
             )
+            if cache_key is not None:
+                prompt_cache_put(
+                    cache_key,
+                    CachedResponse(
+                        payload=client_payload,
+                        model=target.model,
+                        provider_id=target.provider_config.id,
+                        account_id=target.account_id,
+                        usage=canonical_resp.usage,
+                    ),
+                    max_entries=cache_max_entries,
+                    max_body_bytes=len(response.body),
+                )
+            return response
 
         except httpx.RequestError as e:
             handler.mark_cooldown(target.account_id, "network", model=target.model)
