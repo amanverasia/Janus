@@ -954,3 +954,50 @@ async def count_storage_encryption_state(db_path: str | Path) -> dict[str, int]:
     total = int(row["total"])
     encrypted = int(row["encrypted"])
     return {"encrypted": encrypted, "plaintext": total - encrypted, "total": total}
+
+
+async def swap_upstream_key_value(
+    db_path: str | Path,
+    key_id: str,
+    *,
+    previous: str,
+    current: str,
+) -> bool:
+    if not previous or not current or previous == current:
+        return False
+    stored_value, key_hash, key_masked = _prepare_key_storage(current)
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """UPDATE upstream_keys
+               SET key_value = ?, key_hash = ?, key_masked = ?, updated_at = datetime('now')
+               WHERE id = ? AND key_hash = ?""",
+            (stored_value, key_hash, key_masked, key_id, hash_upstream_key(previous)),
+        ) as cur:
+            swapped = cur.rowcount == 1
+        if swapped:
+            async with db.execute(
+                "SELECT source_node FROM upstream_keys WHERE id = ?", (key_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            source = str(row[0] or "") if row else ""
+            if source.startswith("gateway:"):
+                provider_id = source.removeprefix("gateway:")
+                async with db.execute(
+                    "SELECT api_key FROM providers WHERE id = ?", (provider_id,)
+                ) as cur:
+                    provider_row = await cur.fetchone()
+                stored_provider_key = provider_row[0] if provider_row else None
+                try:
+                    provider_key = (
+                        decrypt_key_value(str(stored_provider_key)) if stored_provider_key else None
+                    )
+                except CredentialDecryptionError:
+                    provider_key = None
+                if provider_key is not None and provider_key.strip() == previous:
+                    await db.execute(
+                        "UPDATE providers SET api_key = ?, updated_at = datetime('now') "
+                        "WHERE id = ?",
+                        (encrypt_key_value(current), provider_id),
+                    )
+        await db.commit()
+    return swapped
