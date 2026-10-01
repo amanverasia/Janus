@@ -945,6 +945,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#models-you-cant-reach-dashboarduimodelsunreachable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Models you can't reach — /dashboard/ui/models/unreachable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#combos-dashboarduicombos" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1715,6 +1726,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#models-you-cant-reach-dashboarduimodelsunreachable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Models you can't reach — /dashboard/ui/models/unreachable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#combos-dashboarduicombos" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2107,6 +2129,11 @@ directly.</p>
 </tr>
 <tr>
 <td></td>
+<td>Can't reach</td>
+<td><code>/dashboard/ui/models/unreachable</code></td>
+</tr>
+<tr>
+<td></td>
 <td>Combos</td>
 <td><code>/dashboard/ui/combos</code></td>
 </tr>
@@ -2249,6 +2276,15 @@ does not silently remove models that another same-prefix connection can serve.</
 <p>Choose which models appear in the shared Janus catalog and <code>GET /v1/models</code>, and
 add custom models to a provider prefix. Hidden models remain callable by exact
 ID.</p>
+<h3 id="models-you-cant-reach-dashboarduimodelsunreachable">Models you can't reach — <code>/dashboard/ui/models/unreachable</code><a class="headerlink" href="#models-you-cant-reach-dashboarduimodelsunreachable" title="Permanent link">&para;</a></h3>
+<p>Lists known models (catalog defaults, discovered inventory models, and models on
+provider rows) that Janus cannot currently route, grouped by provider with the
+reason (no provider, provider disabled, no active credential, or model not
+enabled on any account). Each group has a button that opens
+<a href="#keys-and-logins--dashboarduiconnect">Connect</a> with that provider preselected,
+or the Providers page when Connect cannot onboard it. Models whose every account
+is cooling down are listed separately as <strong>Reachable soon</strong> — they are never
+counted as unreachable.</p>
 <h3 id="combos-dashboarduicombos">Combos — <code>/dashboard/ui/combos</code><a class="headerlink" href="#combos-dashboarduicombos" title="Permanent link">&para;</a></h3>
 <p>Full CRUD for fallback chains:</p>
 <ul>

@@ -5503,6 +5503,11 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong>"Models you can't reach"</strong> — a new Routing tab lists catalog, discovered, and
+  configured models that Janus can't route, with the reason (no provider, provider
+  disabled, no active credential, model not enabled), grouped by provider with a
+  Connect button that opens Connect with that provider preselected. Models whose
+  every account is cooling down are shown separately as "Reachable soon". (#238)</li>
 <li><strong>Per-attempt latency and reliability signals</strong> — every upstream attempt now
   records time-to-first-token, output tokens/sec, and its outcome
   (<code>ok</code> / <code>error</code> / <code>client_error</code> / <code>aborted</code>) per model and account in a new
