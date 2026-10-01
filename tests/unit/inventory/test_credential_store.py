@@ -156,3 +156,40 @@ async def test_swap_second_writer_with_stale_previous_loses(tmp_path: Any) -> No
     assert not await swap_upstream_key_value(db_path, str(key["id"]), previous=OLD, current=other)
     row = await get_upstream_key(db_path, str(key["id"]))
     assert row is not None and row["key_value"] == NEW
+
+
+async def test_swap_updates_encrypted_mirrored_provider_key(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    from cryptography.fernet import Fernet
+
+    from janus.inventory.key_encryption import is_encrypted_value
+    from janus.storage.database import get_connection
+
+    monkeypatch.setenv("INVENTORY_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    db_path = await _db(tmp_path)
+    await create_provider(
+        db_path,
+        {
+            "id": "cl",
+            "prefix": "claude",
+            "api_type": "claude_oauth",
+            "base_url": "https://api.anthropic.com",
+            "api_key": OLD,
+            "models": ["m"],
+        },
+    )
+    key = await create_upstream_key(
+        db_path, provider_id="claude_oauth", key_value=OLD, source_node="gateway:cl"
+    )
+    assert await swap_upstream_key_value(db_path, str(key["id"]), previous=OLD, current=NEW)
+
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT api_key FROM providers WHERE id = 'cl'") as cur:
+            stored = await cur.fetchone()
+    assert stored is not None and is_encrypted_value(str(stored[0]))
+    assert NEW not in str(stored[0])
+    provider = await get_provider(db_path, "cl")
+    assert provider is not None and provider["api_key"] == NEW
+    row = await get_upstream_key(db_path, str(key["id"]))
+    assert row is not None and row["key_value"] == NEW

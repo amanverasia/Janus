@@ -89,3 +89,57 @@ async def test_inconclusive_probe_after_refresh_keeps_rotated_blob() -> None:
     result = await validate_key(_cred(time.time() - 10), "claude_oauth")
     assert result["probe_inconclusive"]
     assert json.loads(result["key_value"])["access_token"] == "sk-ant-oat01-new"
+
+
+@respx.mock
+async def test_forbidden_usage_is_inconclusive() -> None:
+    respx.get(CLAUDE_USAGE_URL).mock(return_value=Response(403))
+    result = await validate_key(_cred(time.time() + 3600), "claude_oauth")
+    assert result["probe_inconclusive"] is True
+    assert "403" in result["error"]
+    assert "key_value" not in result
+    assert "sk-ant" not in json.dumps(result.get("error"))
+
+
+@respx.mock
+async def test_forbidden_usage_after_refresh_keeps_rotated_blob() -> None:
+    respx.post(CLAUDE_TOKEN_URL).mock(
+        return_value=Response(
+            200,
+            json={
+                "access_token": "sk-ant-oat01-new",
+                "refresh_token": "sk-ant-ort01-new",
+                "expires_in": 28800,
+            },
+        )
+    )
+    respx.get(CLAUDE_USAGE_URL).mock(return_value=Response(403))
+    result = await validate_key(_cred(time.time() - 10), "claude_oauth")
+    assert result["probe_inconclusive"] is True
+    assert json.loads(result["key_value"])["access_token"] == "sk-ant-oat01-new"
+
+
+@respx.mock
+async def test_rejected_after_refresh_returns_rotated_blob() -> None:
+    respx.post(CLAUDE_TOKEN_URL).mock(
+        return_value=Response(
+            200,
+            json={
+                "access_token": "sk-ant-oat01-new",
+                "refresh_token": "sk-ant-ort01-new",
+                "expires_in": 28800,
+            },
+        )
+    )
+    respx.get(CLAUDE_USAGE_URL).mock(return_value=Response(401))
+    result = await validate_key(_cred(time.time() - 10), "claude_oauth")
+    assert result["is_valid"] is False
+    assert json.loads(result["key_value"])["refresh_token"] == "sk-ant-ort01-new"
+
+
+@respx.mock
+async def test_rejected_without_refresh_returns_no_blob() -> None:
+    respx.get(CLAUDE_USAGE_URL).mock(return_value=Response(401))
+    result = await validate_key(_cred(time.time() + 3600), "claude_oauth")
+    assert result["is_valid"] is False
+    assert "key_value" not in result

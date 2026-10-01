@@ -27,6 +27,7 @@ from janus.inventory.xiaomi_tokenplan import (
 from janus.storage.upstream_keys import (
     get_upstream_key,
     record_upstream_key_history,
+    swap_upstream_key_value,
     update_upstream_key,
 )
 from janus.storage.upstream_models import replace_models_for_key
@@ -987,6 +988,7 @@ async def _validate_claude_oauth_key(
     except ValueError as exc:
         return {"is_valid": False, "error": str(exc)}
     cred = parse_credential(normalized)
+    refreshed = False
     async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
         rt = refresh_token(cred)
         if rt and needs_refresh(cred):
@@ -998,6 +1000,7 @@ async def _validate_claude_oauth_key(
                 return {"is_valid": False, "error": "Claude OAuth refresh failed; re-export"}
             cred = apply_token_response(cred, tokens)
             normalized = serialize_credential(cred)
+            refreshed = True
         token = access_token(cred)
         if not token:
             return {"is_valid": False, "error": "Claude credential missing access token"}
@@ -1017,8 +1020,15 @@ async def _validate_claude_oauth_key(
             "usability_note": "Claude OAuth usage endpoint accepted the token",
             "key_value": normalized,
         }
-    if response.status_code in (401, 403):
-        return {"is_valid": False, "error": f"Claude OAuth token rejected ({response.status_code})"}
+    rotated: dict[str, Any] = {"key_value": normalized} if refreshed else {}
+    if response.status_code == 401:
+        return {"is_valid": False, "error": "Claude OAuth token rejected (401)", **rotated}
+    if response.status_code == 403:
+        return {
+            "probe_inconclusive": True,
+            "error": "Claude usage endpoint forbidden (403); token may lack usage scope",
+            **rotated,
+        }
     return {
         "probe_inconclusive": True,
         "error": f"Claude usage probe HTTP {response.status_code}",
@@ -1556,6 +1566,19 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
         await _check_upstream_key(db_path, key_id)
 
 
+async def _persist_rotated_key_value(
+    db_path: str | Path, key_id: str, previous: str, result: dict[str, Any]
+) -> None:
+    rotated = result.get("key_value")
+    if isinstance(rotated, str) and rotated and rotated != previous:
+        await swap_upstream_key_value(db_path, key_id, previous=previous, current=rotated)
+
+
+async def _credential_changed_since(db_path: str | Path, key_id: str, validated: str) -> bool:
+    current = await get_upstream_key(db_path, key_id)
+    return current is not None and current.get("key_value") != validated
+
+
 async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
     key = await get_upstream_key(db_path, key_id)
     if key is None:
@@ -1578,9 +1601,7 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 "last_checked_at": _now(),
                 "last_error": error,
             }
-            rotated = result.get("key_value")
-            if isinstance(rotated, str) and rotated and rotated != key["key_value"]:
-                inconclusive_fields["key_value"] = rotated
+            await _persist_rotated_key_value(db_path, key_id, key["key_value"], result)
             await update_upstream_key(db_path, key_id, inconclusive_fields)
         elif result.get("is_valid") and result.get("partial_check"):
             await update_upstream_key(
@@ -1626,10 +1647,7 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
             }
             if custom_base:
                 update_fields["custom_base_url"] = str(custom_base).rstrip("/")
-            rotated = result.get("key_value")
-            if isinstance(rotated, str) and rotated and rotated != key["key_value"]:
-                update_fields["key_value"] = rotated
-
+            await _persist_rotated_key_value(db_path, key_id, key["key_value"], result)
             await update_upstream_key(
                 db_path,
                 key_id,
@@ -1655,7 +1673,19 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
                     await refresh_account_value(db_path, key_id, force=True)
                 except Exception as exc:
                     logger.warning("account-value refresh failed for %s: %s", key_id, exc)
+        elif await _credential_changed_since(db_path, key_id, key["key_value"]):
+            final_status = str(previous_status or "pending_validation")
+            await update_upstream_key(
+                db_path,
+                key_id,
+                {
+                    "status": final_status,
+                    "last_checked_at": _now(),
+                    "last_error": "credential changed during validation",
+                },
+            )
         else:
+            await _persist_rotated_key_value(db_path, key_id, key["key_value"], result)
             error = _safe_error_note(result.get("error"))
             failure_count = int(key.get("consecutive_failures") or 0) + 1
             paused = failure_count >= VALIDATION_MAX_FAILURES

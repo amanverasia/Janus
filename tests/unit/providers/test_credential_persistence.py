@@ -140,3 +140,44 @@ async def test_no_store_means_no_writeback_and_failure_is_not_fatal() -> None:
     await _drain()
     await provider.close()
     await provider2.close()
+
+
+async def test_drain_pending_credential_saves_waits_for_tasks() -> None:
+    from janus.providers.credential_persistence import drain_pending_credential_saves
+
+    finished: list[bool] = []
+
+    async def slow_save() -> None:
+        await asyncio.sleep(0.01)
+        finished.append(True)
+
+    task = asyncio.create_task(slow_save())
+    _PENDING_SAVES.add(task)
+    task.add_done_callback(_PENDING_SAVES.discard)
+
+    await drain_pending_credential_saves(timeout=1.0)
+
+    assert finished == [True]
+    assert task not in _PENDING_SAVES
+
+
+async def test_drain_pending_credential_saves_respects_timeout() -> None:
+    from janus.providers.credential_persistence import drain_pending_credential_saves
+
+    blocker = asyncio.Event()
+    task = asyncio.create_task(blocker.wait())
+    _PENDING_SAVES.add(task)
+    task.add_done_callback(_PENDING_SAVES.discard)
+    try:
+        await drain_pending_credential_saves(timeout=0.01)
+        assert not task.done()
+    finally:
+        blocker.set()
+        await task
+
+
+async def test_drain_pending_credential_saves_noop_when_empty() -> None:
+    from janus.providers.credential_persistence import drain_pending_credential_saves
+
+    assert not _PENDING_SAVES
+    await drain_pending_credential_saves()

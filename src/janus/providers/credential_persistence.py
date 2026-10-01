@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 _PENDING_SAVES: set[asyncio.Task[None]] = set()
 
 
+async def drain_pending_credential_saves(timeout: float = 5.0) -> None:
+    if _PENDING_SAVES:
+        await asyncio.wait(set(_PENDING_SAVES), timeout=timeout)
+
+
 class CredentialStore(Protocol):
     async def load(self) -> str | None: ...
 
