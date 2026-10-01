@@ -5,18 +5,20 @@ import json
 import logging
 import math
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from httpx import HTTPError
 
 from janus.inventory.currency import normalize_credits_to_usd
 from janus.inventory.url_guard import BlockedUrlError, safe_fetch
+from janus.providers.oauth_tokens import access_token, parse_credential
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,14 @@ _SYNTHETIC_QUOTA_PATH = "/v2/quotas"
 _OLLAMA_USAGE_PATH = "/api/usage"
 _CLINE_PLAN_LIMITS_PATH = "/users/me/plan/usage-limits"
 _KIMI_DEFAULT_BASE = "https://api.kimi.com/coding/v1"
+_CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+_KIRO_USAGE_TARGET = "AmazonCodeWhispererService.GetUsageLimits"
+_KIRO_REGION_RE = re.compile(r"[a-z0-9-]{1,32}")
+_KIRO_RESOURCE_PRIORITY = ("AGENTIC_REQUEST", "CREDIT")
+_ANTIGRAVITY_QUOTA_SUMMARY_URL = (
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+)
+_ANTIGRAVITY_USER_AGENT = "antigravity/ide/2.1.1 darwin/arm64"
 
 
 class AccountValueStatus(StrEnum):
@@ -804,6 +814,295 @@ async def _probe_cline(
     )
 
 
+def _oauth_access_token(key_value: str) -> tuple[str, dict[str, Any]]:
+    cred = parse_credential(key_value)
+    token = access_token(cred)
+    if not token:
+        raise ProbeError("credential has no OAuth access token", transient=False)
+    expires = _finite(cred.get("expires_at") or cred.get("expiresAt"))
+    if expires is not None and expires > 0:
+        if expires > 1e12:
+            expires /= 1000.0
+        if time.time() >= expires:
+            raise ProbeError("OAuth access token expired; awaiting refresh", transient=False)
+    return token, cred
+
+
+def _cred_extra(cred: dict[str, Any]) -> dict[str, Any]:
+    return _child(cred, "extra")
+
+
+async def _fetch_oauth_json(
+    url: str,
+    *,
+    headers: dict[str, str],
+    method: str = "GET",
+    body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    content = json.dumps(body, separators=(",", ":")).encode() if body is not None else None
+    try:
+        response = await safe_fetch(
+            url,
+            method=method,
+            headers=headers,
+            content=content,
+            timeout=PROBE_TIMEOUT_SECONDS,
+        )
+    except BlockedUrlError:
+        raise
+    except HTTPError as exc:
+        raise ProbeError(f"usage fetch failed: {exc}", transient=True) from exc
+    if response.status_code in (401, 403):
+        raise ProbeError(
+            f"usage endpoint rejected the OAuth token (HTTP {response.status_code})",
+            transient=False,
+        )
+    if response.status_code != 200:
+        raise _http_error(response.status_code)
+    return _json_object(response)
+
+
+def _duration_label(seconds: float | None) -> str | None:
+    if seconds is None or seconds <= 0:
+        return None
+    hours = seconds / 3600.0
+    if 4 <= hours <= 6:
+        return "5h"
+    if hours < 24:
+        return f"{round(hours)}h"
+    days = hours / 24.0
+    if days < 1.5:
+        return "daily"
+    if 6 <= days <= 8:
+        return "weekly"
+    if days >= 28:
+        return "monthly"
+    return f"{round(days)}d"
+
+
+async def _probe_codex(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    del base_url, custom_base_url
+    token, cred = _oauth_access_token(key_value)
+    extra = _cred_extra(cred)
+    headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+    workspace = extra.get("workspaceId") or extra.get("chatgptAccountId")
+    if isinstance(workspace, str) and workspace:
+        headers["ChatGPT-Account-Id"] = workspace
+    body = await _fetch_oauth_json(_CODEX_USAGE_URL, headers=headers)
+    rate_limit = _child(body, "rate_limit")
+    windows: list[UsageWindow] = []
+    for slot in ("primary_window", "secondary_window", "tertiary_window"):
+        row = _child(rate_limit, slot)
+        percent = _percent(row.get("used_percent"))
+        if percent is None:
+            continue
+        label = _duration_label(_finite(row.get("limit_window_seconds"))) or slot.split("_")[0]
+        if any(window.label == label for window in windows):
+            continue
+        windows.append(
+            UsageWindow(label=label, used_percent=percent, reset_at=_reset_at(row.get("reset_at")))
+        )
+    metadata: dict[str, Any] = {}
+    plan = body.get("plan_type")
+    if isinstance(plan, str) and plan:
+        metadata["plan_type"] = plan
+    reset_credits = _finite(_child(body, "rate_limit_reset_credits").get("available_count"))
+    if reset_credits is not None:
+        metadata["reset_credits_available"] = int(reset_credits)
+    if not windows and not metadata:
+        raise ProbeError("codex usage response had no recognized windows", transient=True)
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("codex", "wham-usage"),
+        fetched_at=_now_iso(),
+        windows=windows,
+        metadata=metadata,
+    )
+
+
+def _kiro_region(cred: dict[str, Any]) -> str:
+    extra = _cred_extra(cred)
+    profile_arn = extra.get("profileArn") or cred.get("profileArn")
+    candidates: list[Any] = []
+    if isinstance(profile_arn, str):
+        parts = profile_arn.split(":")
+        if len(parts) >= 4:
+            candidates.append(parts[3])
+    candidates.extend([extra.get("region"), cred.get("region")])
+    for candidate in candidates:
+        if isinstance(candidate, str) and _KIRO_REGION_RE.fullmatch(candidate):
+            return candidate
+    return "us-east-1"
+
+
+def _kiro_amount(row: dict[str, Any], precise: str, whole: str) -> float | None:
+    value = _finite(row.get(precise))
+    return value if value is not None else _finite(row.get(whole))
+
+
+def _kiro_used_percent(row: dict[str, Any]) -> tuple[float, float, float] | None:
+    used = _kiro_amount(row, "currentUsageWithPrecision", "currentUsage")
+    limit = _kiro_amount(row, "usageLimitWithPrecision", "usageLimit")
+    if used is None or limit is None or limit <= 0:
+        return None
+    return min(100.0, max(0.0, used / limit * 100)), used, limit
+
+
+async def _probe_kiro(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    del base_url, custom_base_url
+    token, cred = _oauth_access_token(key_value)
+    extra = _cred_extra(cred)
+    profile_arn = extra.get("profileArn") or cred.get("profileArn")
+    query = "origin=AI_EDITOR&isEmailRequired=true"
+    request_body: dict[str, Any] = {"origin": "AI_EDITOR", "isEmailRequired": True}
+    if isinstance(profile_arn, str) and profile_arn:
+        query += f"&profileArn={quote(profile_arn, safe='')}"
+        request_body["profileArn"] = profile_arn
+    body = await _fetch_oauth_json(
+        f"https://management.{_kiro_region(cred)}.kiro.dev/?{query}",
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/x-amz-json-1.0",
+            "x-amz-target": _KIRO_USAGE_TARGET,
+            "x-amzn-codewhisperer-optout": "true",
+        },
+        body=request_body,
+    )
+    rows = [row for row in body.get("usageBreakdownList") or [] if isinstance(row, dict)]
+    breakdown = next(
+        (
+            row
+            for wanted in _KIRO_RESOURCE_PRIORITY
+            for row in rows
+            if str(row.get("resourceType") or "").strip().upper() == wanted
+        ),
+        None,
+    )
+    if breakdown is None:
+        raise ProbeError("kiro usage response had no recognized usage bucket", transient=True)
+    measured = _kiro_used_percent(breakdown)
+    if measured is None:
+        raise ProbeError("kiro usage response had no usage limit", transient=True)
+    percent, used, limit = measured
+    windows = [
+        UsageWindow(
+            label="monthly", used_percent=percent, reset_at=_reset_at(body.get("nextDateReset"))
+        )
+    ]
+    trial = _child(breakdown, "freeTrialInfo")
+    trial_measured = _kiro_used_percent(trial) if trial else None
+    if trial_measured is not None:
+        windows.append(UsageWindow(label="Free trial", used_percent=trial_measured[0]))
+    overage = str(_child(body, "overageConfiguration").get("overageStatus") or "").strip().upper()
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("kiro", "get-usage-limits"),
+        fetched_at=_now_iso(),
+        windows=windows,
+        metadata={
+            "resource_type": str(breakdown.get("resourceType")),
+            "used": used,
+            "limit": limit,
+            "overage_enabled": overage == "ENABLED",
+        },
+    )
+
+
+def _antigravity_used_percent(bucket: dict[str, Any]) -> float | None:
+    target = _child(bucket, "remaining") or bucket
+    fraction = _finite(target.get("remainingFraction"))
+    if fraction is None:
+        fraction = _finite(target.get("remainingPercentage"))
+    if fraction is None:
+        return None
+    return _percent(100 - fraction * 100)
+
+
+def _antigravity_label(group: dict[str, Any], bucket: dict[str, Any]) -> str | None:
+    group_text = " ".join(
+        str(group.get(key) or "") for key in ("displayName", "description")
+    ).lower()
+    window_text = " ".join(
+        str(bucket.get(key) or "") for key in ("window", "bucketId", "displayName")
+    ).lower()
+    weekly = "week" in window_text
+    five_hour = "5h" in window_text or "five" in window_text
+    if "gemini" in group_text:
+        family = "Gemini"
+    elif any(marker in group_text for marker in ("claude", "3p", "gpt")):
+        family = "Claude"
+    else:
+        name = group.get("displayName")
+        base = name if isinstance(name, str) and name else "Other"
+        return f"{base} weekly" if weekly else base
+    if five_hour:
+        return f"{family} 5h"
+    if weekly:
+        return f"{family} weekly"
+    return None
+
+
+async def _probe_antigravity(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    del base_url, custom_base_url
+    token, cred = _oauth_access_token(key_value)
+    project = _cred_extra(cred).get("projectId") or cred.get("projectId")
+    if not isinstance(project, str) or not project:
+        raise ProbeError("antigravity credential has no projectId yet", transient=False)
+    body = await _fetch_oauth_json(
+        _ANTIGRAVITY_QUOTA_SUMMARY_URL,
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": _ANTIGRAVITY_USER_AGENT,
+        },
+        body={"project": project},
+    )
+    windows: list[UsageWindow] = []
+    for group in body.get("groups") or []:
+        if not isinstance(group, dict):
+            continue
+        for bucket in group.get("buckets") or []:
+            if not isinstance(bucket, dict):
+                continue
+            label = _antigravity_label(group, bucket)
+            percent = _antigravity_used_percent(bucket)
+            if label is None or percent is None:
+                continue
+            if any(window.label == label for window in windows):
+                continue
+            windows.append(
+                UsageWindow(
+                    label=label,
+                    used_percent=percent,
+                    reset_at=_reset_at(bucket.get("resetTime")),
+                )
+            )
+    if not windows:
+        raise ProbeError("antigravity quota summary had no recognized windows", transient=True)
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("antigravity", "quota-summary"),
+        fetched_at=_now_iso(),
+        windows=windows,
+    )
+
+
 AccountValueProbe = Callable[..., Awaitable[AccountValue]]
 
 ACCOUNT_VALUE_PROBES: dict[str, AccountValueProbe] = {
@@ -817,6 +1116,9 @@ ACCOUNT_VALUE_PROBES: dict[str, AccountValueProbe] = {
     "synthetic": _probe_synthetic,
     "ollama": _probe_ollama_cloud,
     "cline": _probe_cline,
+    "codex": _probe_codex,
+    "kiro": _probe_kiro,
+    "antigravity": _probe_antigravity,
 }
 
 
