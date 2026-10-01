@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Claude OAuth in Key Inventory** — Connect now accepts Claude Code's
+  `.credentials.json` (and bare `sk-ant-oat…` tokens) as `claude_oauth`
+  inventory credentials, validates them against `/api/oauth/usage`, and probes
+  5h / weekly / per-model weekly windows for the keys table and routing
+  soft-ordering. Existing Providers-page Claude OAuth keys move to the new
+  inventory provider on startup. (#251)
 - **Account-value probes for OAuth inventory accounts** — Codex (ChatGPT
   `wham/usage`: 5h/weekly/monthly windows by declared duration, plan type,
   reset credits), Kiro (`GetUsageLimits`: monthly allowance, free trial,
@@ -15,8 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   buckets). Probes use the stored access token only and never consume a
   refresh token; an expired token or a 401/403 from the usage endpoint marks
   the probe unavailable without changing the key's status. Account emails and
-  user ids in usage responses are discarded. Claude OAuth remains a
-  gateway-only provider and is not probed yet. (#189)
+  user ids in usage responses are discarded. (#189)
 ### Removed
 - **Cursor upstream provider** — the `cursor` api_type was an unfinished
   scaffold (it posted OpenAI chat completions to `api2.cursor.sh` instead of
@@ -30,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   YAML seed entry whose `api_type` has no driver is skipped with a warning
   instead of aborting the whole routing rebuild.
 ### Fixed
+- **Refreshed OAuth tokens are saved** — Claude, Codex, Kiro and Antigravity
+  executors now write refreshed credentials back to their inventory row
+  (compare-and-swap) and re-read the stored credential before refreshing, and
+  validators refresh only expired tokens. Rotating refresh tokens no longer
+  break after a restart or a validator run. (#251)
 - **Models page no longer paginates a provider-grouped view** — `?offset=…`
   pages cut providers mid-list, so groups opened collapsed, per-provider counts
   and the rail described only the current slice, and "All off" could hide a

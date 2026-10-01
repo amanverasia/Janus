@@ -313,7 +313,7 @@
         return 'Add an Antigravity OAuth JSON object containing access_token/accessToken and refresh_token/refreshToken. Project metadata may be included as projectId.';
       case 'claude':
       case 'claude_oauth':
-        return 'Add a Claude credential JSON object containing access_token and refresh_token, or a bare access token.';
+        return 'Drop Claude Code’s ~/.claude/.credentials.json on Connect (or paste a JSON object with access_token and refresh_token). It is stored as an Inventory credential and refreshed automatically.';
       default:
         return 'Add the exported credential or token expected by this provider.';
     }

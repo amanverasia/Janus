@@ -120,10 +120,10 @@ One screen for adding upstream credentials:
    in the browser; nothing is uploaded until you preview.
 2. **Choose options.** The provider selector defaults to **Auto** (detect the
    provider for each entry). Auto recognizes Codex CLI `auth.json`, 9router
-   `providerConnections` exports, Cline, Antigravity, and Kiro credential JSON
+   `providerConnections` exports, Cline, Antigravity, Kiro, and Claude Code (`.credentials.json`) credential JSON
    (see [Supported credential formats](inventory.md#supported-credential-formats));
    choose the provider yourself for a bare OAuth access token. Claude Code
-   logins belong under **Routing → Providers** as Claude OAuth. **Advanced** holds an optional
+   logins are accepted here as Claude Code (OAuth) inventory credentials. **Advanced** holds an optional
    custom base URL. **Make these routable** is on by default; it creates the
    matching routing provider when one is missing, so imported credentials join
    fallback rotation once they validate.

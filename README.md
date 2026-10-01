@@ -189,7 +189,7 @@ from [step 4](#4-connect-your-credentials).
 - **Cloudline dashboard** — responsive SvelteKit 2 + Svelte 5 + TypeScript SPA at `/dashboard/ui`: six sidebar sections with in-page tabs, a Connect screen for pasting or dropping credentials, a first-run checklist, light/dark/system themes, a command palette, live usage, analytics, and routing visibility
 - **Single self-hosted dashboard** — the versioned Cloudline bundle ships with Janus; production rendering has no runtime CDN or Node.js dependency. `/dashboard` and former page URLs are compatibility redirects to `/dashboard/ui`
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/ui/inventory`)
-- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax/Venice plans, Synthetic/Ollama Cloud/Cline usage, Codex/Kiro/Antigravity OAuth subscription windows) surfaced in the inventory dashboard with low-quota alerts
+- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax/Venice plans, Synthetic/Ollama Cloud/Cline usage, Codex/Kiro/Antigravity/Claude OAuth subscription windows) surfaced in the inventory dashboard with low-quota alerts
 
 ## Upstream Key Inventory
 

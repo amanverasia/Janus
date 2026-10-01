@@ -84,11 +84,8 @@ here.
 | Cline account | **Auto** or **Cline** | A WorkOS access token with the `workos:` prefix, a JSON object with `"provider": "cline"` plus `accessToken` / `refreshToken`, or Cline entries in a `providerConnections` export. The refresh token is kept so Janus can renew the ~1 hour access token. Pick **Cline** for a token without the `workos:` prefix. |
 | Antigravity (Google) OAuth JSON | **Auto** or **Antigravity (Google)** | Needs an access token (`access_token` or `accessToken`); refresh token, expiry, and `projectId` are kept when present. Auto needs `projectId`; pick the provider for a bare access token. |
 | Kiro (AWS) OAuth JSON | **Auto** or **Kiro (AWS)** | A credential blob containing `accessToken` and `refreshToken`. Auto needs `profileArn` or `authMethod`. |
+| Claude Code `~/.claude/.credentials.json` | **Auto** or **Claude Code (OAuth)** | The `claudeAiOauth` object (access token, refresh token, expiry, subscription type) becomes a Claude OAuth credential. A bare `sk-ant-oat…` access token also works. Janus refreshes it and saves the refreshed token. |
 
-Claude Code `~/.claude/.credentials.json` is recognized but not stored in the
-inventory: the preview rejects it with a pointer to **Routing → Providers**, where
-it can be added as a Claude OAuth provider (see
-[Subscription / OAuth providers](client-setup.md#subscription-oauth-providers)).
 Other credential files are not supported and come back from the preview as
 `rejected` with an "unsupported credential format" message. Gemini CLI
 `oauth_creds.json` is one example.
@@ -100,7 +97,7 @@ Janus recognizes keys for these providers (auto-detection probes each):
 OpenAI, Anthropic, OpenRouter, Google AI (Gemini), Ollama Cloud, Groq, Together, Perplexity,
 Cohere, Mistral, DeepSeek, xAI, Hugging Face, Replicate, Fireworks, NVIDIA,
 Moonshot, DashScope (Qwen), MiniMax, SiliconFlow, StepFun, Zhipu, Xiaomi, Tavily,
-Firecrawl, fal.ai, Exa, Brave Search, **Codex (ChatGPT)**, **Cline**, **Antigravity**,
+Firecrawl, fal.ai, Exa, Brave Search, **Codex (ChatGPT)**, **Cline**, **Antigravity**, **Claude Code (OAuth)**,
 and **Kiro** (OAuth credentials), plus **custom** and **unidentified** fallbacks.
 
 ### Codex / ChatGPT OAuth
@@ -118,6 +115,13 @@ Paste or drop one of the following on **Connect**, then choose provider **Codex 
 Full 9router backup import (settings, combos, other providers) is not supported
 here — only connection objects. Pasting a Codex blob on the **Providers** page
 still works for a single gateway account.
+
+### Claude OAuth
+
+Claude Code credentials are probed for account value through Anthropic's OAuth usage
+endpoint: the 5h, weekly, weekly Opus and weekly Sonnet windows are shown with usage bars
+and reset times, cached for 10 minutes, and feed routing soft-ordering like the other
+OAuth probes.
 
 ## Encryption at rest
 
