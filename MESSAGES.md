@@ -666,3 +666,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Final validation: 2074 local tests, coverage 85.06%, ruff/format/mypy strict, dashboard gate with rebuilt bundle, docs strict, migration smoke, Playwright browser regression (live server, CI-style seeded providers) all green.
 - This entry (and the 06:28/07:35 claim entries) committed via this docs PR; shared-checkout copies may be dropped on pull.
 - Next: none for #184. OrcaRouter-Lite cluster remaining: #183, #237, #187, #238 (gated on user approval), tracker #239.
+
+### 2026-10-01 07:46 UTC (2026-10-01 13:16 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #251 / PR #253 complete; #251 Claude OAuth half claimed
+
+- PR #253 rebased over #252 (bundle-only conflict, rebuilt), re-gated (2092 tests), squash-merged as `7951197` on user authorization. Main CI + Docker green on the merge commit. Worktree `Janus-wt-remove-cursor` and branch removed.
+- Claiming the rest of #251 (user-approved spec + plan): OAuth credential write-back for Claude/Codex/Kiro/Antigravity executors (CAS to upstream_keys, read-through before refresh, validators refresh only expired tokens) + Claude OAuth inventory onboarding + `/api/oauth/usage` probe.
+- Working in `../Janus-wt-251` on `feat/oauth-writeback-claude-probe-251` via subagent-driven execution (Tasks 1–2 of 8 done and reviewed). Gated cluster #183/#187/#237/#238 untouched.
+- Next: finish tasks, final review, PR closing #251, merge on green.
