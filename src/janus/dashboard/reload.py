@@ -27,6 +27,7 @@ from janus.routing.provider_snapshots import (
 from janus.routing.upstream_expand import expand_gateway_provider
 from janus.storage.combos_db import list_combos
 from janus.storage.custom_models import list_custom_models
+from janus.storage.model_signals import invalidate_model_signals_cache
 from janus.storage.pricing_catalog import get_catalog
 from janus.storage.pricing_db import get_pricing_overrides
 from janus.storage.providers_db import list_providers
@@ -289,6 +290,7 @@ async def _reload_providers_locked(app: FastAPI) -> None:
         ),
         providers_to_close=providers_to_close,
     )
+    invalidate_model_signals_cache(db_path)
 
 
 async def reload_combos(app: FastAPI) -> None:
