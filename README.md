@@ -189,7 +189,7 @@ from [step 4](#4-connect-your-credentials).
 - **Cloudline dashboard** — responsive SvelteKit 2 + Svelte 5 + TypeScript SPA at `/dashboard/ui`: six sidebar sections with in-page tabs, a Connect screen for pasting or dropping credentials, a first-run checklist, light/dark/system themes, a command palette, live usage, analytics, and routing visibility
 - **Single self-hosted dashboard** — the versioned Cloudline bundle ships with Janus; production rendering has no runtime CDN or Node.js dependency. `/dashboard` and former page URLs are compatibility redirects to `/dashboard/ui`
 - **Upstream key inventory** — validate, monitor, and route through a multi-key pool for 29 providers (`/dashboard/ui/inventory`)
-- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax/Venice plans, Synthetic/Ollama Cloud/Cline usage) surfaced in the inventory dashboard with low-quota alerts
+- **Account value tracking** — per-key credit balances and usage windows (OpenRouter credits, Z.AI/GLM coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax/Venice plans, Synthetic/Ollama Cloud/Cline usage, Codex/Kiro/Antigravity OAuth subscription windows) surfaced in the inventory dashboard with low-quota alerts
 
 ## Upstream Key Inventory
 
@@ -210,8 +210,9 @@ credentials through **Connect**, then manage them under **Inventory**
 - Detected rate limits (RPM/RPD) deprioritize near-quota keys during routing
 - Account-value probes query each provider's own billing/usage endpoint — OpenRouter
   `/key`, Z.AI & BigModel coding-plan quota, DeepSeek/Moonshot/Kimi balances, MiniMax
-  coding-plan remains, Venice billing, Synthetic/Ollama Cloud/Cline usage windows —
-  and render usage windows (5h/weekly) with reset times; results are cached for 10
+  coding-plan remains, Venice billing, Synthetic/Ollama Cloud/Cline usage windows,
+  and Codex/Kiro/Antigravity subscription usage via each account's stored OAuth
+  access token (never refreshed by the probe) — and render usage windows (5h/weekly) with reset times; results are cached for 10
   minutes and refreshed on every validation or via **Refresh usage** on a key
 - Near-exhausted windows (≥90%) raise a dashboard alert
 - Background recheck scheduler (twice daily by default)

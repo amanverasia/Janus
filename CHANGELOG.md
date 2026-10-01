@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Account-value probes for OAuth inventory accounts** — Codex (ChatGPT
+  `wham/usage`: 5h/weekly/monthly windows by declared duration, plan type,
+  reset credits), Kiro (`GetUsageLimits`: monthly allowance, free trial,
+  overage flag; region taken only from an allowlisted profile ARN/region) and
+  Antigravity (`retrieveUserQuotaSummary`: Gemini/Claude 5h and weekly
+  buckets). Probes use the stored access token only and never consume a
+  refresh token; an expired token or a 401/403 from the usage endpoint marks
+  the probe unavailable without changing the key's status. Account emails and
+  user ids in usage responses are discarded. Claude OAuth and Cursor remain
+  gateway-only providers and are not probed yet. (#189)
 ### Fixed
 - **Models page no longer paginates a provider-grouped view** — `?offset=…`
   pages cut providers mid-list, so groups opened collapsed, per-provider counts
