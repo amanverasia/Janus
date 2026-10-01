@@ -5503,6 +5503,16 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong><code>model="auto"</code> routing</strong> — requests asking for <code>auto</code> are ranked per request under a
+  configurable strategy (<code>balanced</code>, <code>cheapest</code>, <code>fastest</code>, <code>quality</code>; default <code>balanced</code>,
+  settable from the Routing tab) and the top-5 chain becomes the fallback try-order through
+  the existing cooldown/demotion pipeline. Candidates are priced, routable models filtered by
+  the key's allowlist and request capabilities (tools, vision); version siblings
+  (<code>-001</code>/date suffixes) are deduped; <code>cheapest</code> uses blended 0.3·input + 0.7·output pricing;
+  <code>quality</code>/<code>fastest</code>/<code>balanced</code> rank on the recorded attempt signals (#257) with strict
+  two-axis tiering. Request Logs record the resolved model next to the requested one and the
+  <code>x-janus-resolved-model</code> header reports it per response. The Routing tab shows the strategy
+  control and the chain auto would pick right now. (#183)</li>
 <li><strong>Savings vs baseline model</strong> — the Analytics page now shows what its window's
   priced traffic would have cost on a baseline model (default <code>gpt-4o</code>, overridable
   per request and via the <code>analytics_savings_baseline</code> setting), how much was
