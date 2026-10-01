@@ -13,6 +13,23 @@
   $: daily = firstList(summary, 'daily', 'series');
   $: days = text(data.days, '30');
   $: dimension = text(data.dimension, 'model');
+  $: savings = object(data.savings);
+  $: savingsRows = firstList(savings, 'by_model');
+  $: baseline = text(savings.baseline, 'gpt-4o');
+  const baselineOptions = [
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'o3', label: 'o3' },
+    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { value: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'deepseek-chat', label: 'DeepSeek Chat' },
+    { value: 'grok-4', label: 'Grok 4' }
+  ];
+  $: baselineChoices = baselineOptions.some((option) => option.value === baseline)
+    ? baselineOptions
+    : [{ value: baseline, label: baseline }, ...baselineOptions];
   const columns = [
     {
       key: 'name',
@@ -105,6 +122,78 @@
 <section class="panel" style="margin-top:18px">
   <div class="panel-header">
     <div>
+      <h2>Savings vs baseline</h2>
+      <p>
+        What the last {number(days)} days of priced traffic would have cost on
+        {baseline}
+      </p>
+    </div>
+    <select
+      aria-label="Baseline model"
+      value={baseline}
+      on:change={(e) => navigateQuery({ baseline: (e.currentTarget as HTMLSelectElement).value })}
+    >
+      {#each baselineChoices as option (option.value)}<option value={option.value}>
+          {option.label}
+        </option>{/each}
+    </select>
+  </div>
+  {#if number(savings.baseline_cost) > 0}
+    <div class="stats-grid savings-grid">
+      <StatCard
+        label="Saved"
+        value={money(number(savings.savings))}
+        detail={`${percent(number(savings.savings_pct))} of baseline`}
+        tone="teal"
+      />
+      <StatCard label="Baseline cost" value={money(number(savings.baseline_cost))} />
+      <StatCard label="Actual spend" value={money(number(savings.actual_cost))} />
+      <StatCard
+        label="Excluded"
+        value={compact(
+          number(object(savings.excluded).subscription_requests) +
+            number(object(savings.excluded).unpriced_requests)
+        )}
+        detail="Subscription + unpriced requests"
+        tone="amber"
+      />
+    </div>
+    {#if savingsRows.length}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Requests</th>
+              <th>Actual</th>
+              <th>On {baseline}</th>
+              <th>Saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each savingsRows as row}
+              <tr>
+                <td data-label="Model"><strong class="mono">{text(row.model)}</strong></td>
+                <td data-label="Requests">{compact(row.requests)}</td>
+                <td data-label="Actual">{money(row.actual_cost)}</td>
+                <td data-label="On baseline">{money(row.baseline_cost)}</td>
+                <td data-label="Saved">{money(row.savings)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  {:else}
+    <p class="savings-empty">
+      No priced traffic to compare yet — requests on subscription or unpriced models are never
+      counted as savings.
+    </p>
+  {/if}
+</section>
+<section class="panel" style="margin-top:18px">
+  <div class="panel-header">
+    <div>
       <h2>Breakdown by {dimension}</h2>
       <p>Compare consumption and cost</p>
     </div>
@@ -119,3 +208,17 @@
   </div>
   <DataTable rows={breakdown} {columns} emptyTitle="No analytics data" />
 </section>
+
+<style>
+  .savings-grid {
+    padding: 0 20px;
+    margin: 14px 0;
+  }
+
+  .savings-empty {
+    margin: 0;
+    padding: 16px 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>

@@ -190,6 +190,74 @@ async def _compute_unpriced_models(db_path: str | Path, days: int) -> list[dict[
     return [dict(r) for r in rows]
 
 
+async def get_savings_window_totals(db_path: str | Path, *, start: str, end: str) -> dict[str, Any]:
+    """Per-model token/cost totals for a bounded timestamp window, split into
+    priced, subscription, and unpriced buckets for savings-vs-baseline.
+
+    One grouped scan: subscription-provider rows and zero-cost rows are flagged
+    through the group key so the counterfactual math only ever sees genuinely
+    priced, per-token-billed traffic.
+    """
+    sub_clause, sub_params = _not_subscription_provider_clause()
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            f"""SELECT model,
+                       COUNT(*) as requests,
+                       COALESCE(SUM(input_tokens), 0) as input_tokens,
+                       COALESCE(SUM(output_tokens), 0) as output_tokens,
+                       COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+                       COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+                       COALESCE(SUM(cost), 0.0) as cost,
+                       CASE WHEN {sub_clause} THEN 0 ELSE 1 END as is_subscription
+                FROM usage
+                WHERE timestamp >= ? AND timestamp < ?
+                  AND model IS NOT NULL
+                GROUP BY model, is_subscription""",
+            (*sub_params, start, end),
+        ) as cur:
+            rows = await cur.fetchall()
+    included: dict[str, dict[str, Any]] = {}
+    subscription = {"requests": 0, "input_tokens": 0, "output_tokens": 0}
+    unpriced = {"requests": 0, "input_tokens": 0, "output_tokens": 0}
+    for row in rows:
+        if row["is_subscription"]:
+            bucket = subscription
+        elif float(row["cost"]) == 0.0:
+            bucket = unpriced
+        else:
+            model = row["model"]
+            slot = included.setdefault(
+                model,
+                {
+                    "model": model,
+                    "requests": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cache_creation_tokens": 0,
+                    "cache_read_tokens": 0,
+                    "cost": 0.0,
+                },
+            )
+            for field in (
+                "requests",
+                "input_tokens",
+                "output_tokens",
+                "cache_creation_tokens",
+                "cache_read_tokens",
+            ):
+                slot[field] += int(row[field])
+            slot["cost"] += float(row["cost"])
+            continue
+        bucket["requests"] += int(row["requests"])
+        bucket["input_tokens"] += int(row["input_tokens"])
+        bucket["output_tokens"] += int(row["output_tokens"])
+    return {
+        "included": sorted(included.values(), key=lambda row: row["model"]),
+        "subscription": subscription,
+        "unpriced": unpriced,
+    }
+
+
 async def get_usage_stats(db_path: str | Path) -> dict[str, Any]:
     async with get_connection(db_path) as db:
         async with db.execute("SELECT COUNT(*) as cnt FROM request_outcomes") as cur:

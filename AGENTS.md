@@ -246,6 +246,13 @@ Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup
 ## Pricing & budget enforcement
 
 - `PricingRegistry` merges builtin defaults (~28 models in `pricing/builtin.py`) with DB overrides from the `pricing_overrides` table (seeded from YAML `pricing:` section on first startup). Cost computed at recording time via `compute_cost(usage, model, registry)`. Unknown models cost $0.0 (not an error).
+- Savings vs baseline (#237): `storage/savings.py` computes counterfactual cost through
+  `compute_cost` over per-model token totals from `storage/usage.py::get_savings_window_totals`
+  (subscription and unpriced rows are excluded and reported separately, never counted as
+  savings). Baseline default = the `analytics_savings_baseline` setting; `baseline` query
+  params are validated against `PricingRegistry`. Surfaces: `analytics` section `data.savings`
+  (rolling "Last N days"), `overview` section `data.savings_today` (configured reporting
+  calendar day, same bounds as budget "today"), and public `GET /v1/analytics/savings`.
 - Budgets are daily spending limits in the `budgets` SQLite table. Per-key (`key_id` set) or global (`key_id = NULL`). Enforcement in `_handle()` before routing: warn at 80% (request proceeds), block at 100% (request rejected with `429` + `Retry-After`). Most restrictive wins. Fail-safe: DB errors don't block requests.
 - Per-key daily budgets can also be set when creating/updating a key (CLI `--daily-budget` or dashboard Keys form); both paths call `create_or_update_budget`.
 - CLI: `janus budgets list/set/delete`, `janus pricing list/show`.

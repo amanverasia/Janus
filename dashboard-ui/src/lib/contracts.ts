@@ -47,10 +47,38 @@ export interface UsageState extends JsonObject {
   stats: UsageStats;
 }
 
+export interface SavingsWindow extends JsonObject {
+  kind: string;
+  days?: number;
+  reporting_timezone?: string;
+}
+
+export interface SavingsByModelRow extends JsonObject {
+  model: string;
+  requests: number;
+  actual_cost: number;
+  baseline_cost: number;
+  savings: number;
+}
+
+export interface SavingsSummary extends JsonObject {
+  baseline: string;
+  baseline_priced: boolean;
+  actual_cost: number;
+  baseline_cost: number;
+  savings: number;
+  savings_pct: number;
+  requests: number;
+  excluded: { subscription_requests: number; unpriced_requests: number };
+  window: SavingsWindow;
+  by_model?: SavingsByModelRow[];
+}
+
 export interface OverviewState extends JsonObject {
   stats: Omit<UsageStats, 'by_model'>;
   provider_count: number;
   today_cost: number;
+  savings_today: SavingsSummary | null;
   reporting_timezone: string;
   live_inflight: number;
   cooldown_count: number;
@@ -81,6 +109,7 @@ export interface AnalyticsState extends JsonObject {
   summary: Omit<UsageStats, 'by_model' | 'period_days' | 'reporting_timezone'>;
   breakdown: AnalyticsBreakdownRow[];
   success: SuccessBreakdown;
+  savings: SavingsSummary;
 }
 
 export interface LeaderboardRow extends JsonObject {

@@ -21,6 +21,7 @@
       "server_reporting_timezone": "UTC",
       "server_account_strategy": "round_robin",
       "server_prompt_cache_max_entries": "128",
+      "analytics_savings_baseline": "gpt-4o",
       "server_sticky_limit": "3",
       "combo_fusion_straggler_grace_s": "8",
       "server_prompt_cache_enabled": "false",

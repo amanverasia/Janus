@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import sqlite3
 from collections.abc import Mapping
@@ -33,6 +34,7 @@ from janus.models.catalog import (
     resolve_provider_models,
     set_model_visibility,
 )
+from janus.pricing.registry import PricingRegistry
 from janus.routing.provider_snapshots import ensure_provider_snapshot
 from janus.routing.reachability import UnreachableReason, connect_target, cooled_down
 from janus.storage.analytics import (
@@ -56,6 +58,7 @@ from janus.storage.inventory_overview import (
 from janus.storage.inventory_providers import list_inventory_providers
 from janus.storage.key_access import parse_models_input
 from janus.storage.routing_overview import get_routing_overview
+from janus.storage.savings import savings_for_days, savings_for_today
 from janus.storage.settings import (
     SAVER_SETTING_DEFAULTS,
     SERVER_SETTING_DEFAULTS,
@@ -89,6 +92,8 @@ from janus.storage.upstream_keys import (
     count_upstream_keys_filtered,
     list_upstream_keys_page,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
@@ -253,7 +258,9 @@ async def _usage_stats_data(
     }
 
 
-async def _overview_data(db_path: Path, *, days: int) -> dict[str, Any]:
+async def _overview_data(
+    db_path: Path, *, days: int, pricing_registry: PricingRegistry
+) -> dict[str, Any]:
     from janus.dashboard.live import get_bus
     from janus.storage.providers_db import list_providers
 
@@ -270,10 +277,16 @@ async def _overview_data(db_path: Path, *, days: int) -> dict[str, Any]:
         for combined, (expires_at, _level) in cooldowns.items()
         if expires_at > now
     }
+    try:
+        savings_today = await savings_for_today(db_path, baseline=None, registry=pricing_registry)
+    except Exception:
+        logger.warning("Failed to compute today's savings", exc_info=True)
+        savings_today = None
     return {
         "stats": stats,
         "provider_count": len(providers),
         "today_cost": summary["total_cost"],
+        "savings_today": savings_today,
         "reporting_timezone": summary["reporting_timezone"],
         "live_inflight": get_bus().inflight_count(),
         "cooldown_count": len(cooled_accounts),
@@ -285,16 +298,29 @@ async def _overview_data(db_path: Path, *, days: int) -> dict[str, Any]:
     }
 
 
-async def _analytics_data(db_path: Path, *, days: int, dimension: str) -> dict[str, Any]:
+async def _analytics_data(
+    db_path: Path,
+    *,
+    days: int,
+    dimension: str,
+    baseline: str,
+    pricing_registry: PricingRegistry,
+) -> dict[str, Any]:
     if dimension not in _DIMENSIONS:
         raise _invalid_query("dimension", "expected model, provider, account, or client_key")
     summary = await get_spend_summary(db_path, days=days, include_success=True)
     breakdown = await get_breakdown(db_path, dimension=cast(Dimension, dimension), days=days)
     success = summary.pop("_success")
+    if baseline and pricing_registry.get(baseline) is None:
+        raise _invalid_query("baseline", "unknown or unpriced model")
+    savings = await savings_for_days(
+        db_path, baseline=baseline or None, registry=pricing_registry, days=days
+    )
     return {
         "summary": summary,
         "breakdown": breakdown,
         "success": success,
+        "savings": savings,
     }
 
 
@@ -711,6 +737,13 @@ async def _routing_data(
         "cooldowns": cooldowns,
         "routing_total": total,
     }
+
+
+def _pricing_registry(request: Request) -> PricingRegistry:
+    registry: PricingRegistry | None = getattr(request.app.state, "pricing_registry", None)
+    if registry is None:
+        registry = PricingRegistry({}, {})
+    return registry
 
 
 _UNREACHABLE_REASONS = frozenset(reason.value for reason in UnreachableReason)
@@ -1223,6 +1256,7 @@ async def get_dashboard_state(
     provider_id: str = Query("", max_length=100),
     search: str = Query("", max_length=200),
     reason: str = Query("", max_length=40),
+    baseline: str = Query("", max_length=100),
     direction: Literal["asc", "desc"] = Query("desc", alias="dir"),
 ) -> JSONResponse:
     if section not in _SECTIONS:
@@ -1234,7 +1268,7 @@ async def get_dashboard_state(
             request,
             db_path,
             section,
-            await _overview_data(db_path, days=days),
+            await _overview_data(db_path, days=days, pricing_registry=_pricing_registry(request)),
             meta={"query": {"days": days}},
         )
     if section == "usage":
@@ -1250,8 +1284,14 @@ async def get_dashboard_state(
             request,
             db_path,
             section,
-            await _analytics_data(db_path, days=days, dimension=dimension),
-            meta={"query": {"days": days, "dimension": dimension}},
+            await _analytics_data(
+                db_path,
+                days=days,
+                dimension=dimension,
+                baseline=baseline,
+                pricing_registry=_pricing_registry(request),
+            ),
+            meta={"query": {"days": days, "dimension": dimension, "baseline": baseline}},
         )
     if section == "leaderboard":
         board_sort = sort or "tokens"

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any, NoReturn
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import ClientDisconnect
 
@@ -93,7 +93,7 @@ from janus.streaming.passthrough import generic_sse_passthrough, openai_passthro
 from janus.streaming.usage import StreamUsageTracker
 from janus.tokensavers.pipeline import SaverPipeline
 
-from .deps import require_gateway_rate_limit
+from .deps import require_api_key, require_gateway_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -2225,6 +2225,26 @@ async def retrieve_model(model_id: str, request: Request) -> dict[str, Any]:
     # Same response for "absent" and "not entitled", so a restricted key cannot
     # use this endpoint to probe which models exist.
     raise HTTPException(status_code=404, detail=f"Unknown model: {model_id}")
+
+
+@router.get("/analytics/savings", dependencies=[Depends(require_api_key)])
+async def analytics_savings(
+    request: Request,
+    baseline: str = Query("", max_length=100),
+    days: int = Query(30, ge=1, le=365),
+) -> dict[str, Any]:
+    from janus.pricing.registry import PricingRegistry
+    from janus.storage.savings import savings_for_days
+
+    registry: PricingRegistry | None = getattr(request.app.state, "pricing_registry", None)
+    if registry is None:
+        registry = PricingRegistry({}, {})
+    if baseline and registry.get(baseline) is None:
+        raise HTTPException(
+            status_code=422, detail=f"Invalid baseline: unknown or unpriced model {baseline!r}"
+        )
+    db_path = request.app.state.db_path
+    return await savings_for_days(db_path, baseline=baseline or None, registry=registry, days=days)
 
 
 @router.get("/health")

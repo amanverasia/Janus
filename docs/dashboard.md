@@ -240,6 +240,14 @@ Settings are stored in the DB and take effect immediately.
 - Spend trajectory for 7, 30, 90, or 365 days
 - Breakdown by model, provider, account, or client key
 - Request, token, cost, and success-rate summaries
+- **Savings vs baseline.** What the window's priced traffic would have cost on
+  a baseline model (default `gpt-4o`, changeable via the selector or the
+  `analytics_savings_baseline` setting), how much routing actually spent, and a
+  per-model table of the difference. Requests on subscription providers and
+  unpriced models are excluded and reported separately — they never count as
+  savings. API clients can read the same numbers from
+  `GET /v1/analytics/savings?baseline=&days=`. Home shows the same comparison
+  for the configured reporting day as a **Saved today** tile.
 
 ### Leaderboard — `/dashboard/ui/leaderboard`
 

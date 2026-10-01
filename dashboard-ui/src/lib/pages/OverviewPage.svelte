@@ -6,11 +6,16 @@
   import Icon from '$lib/components/Icon.svelte';
   import { onDestroy } from 'svelte';
   import { copyText } from '$lib/clipboard';
-  import { bool, compact, firstList, money, number, object, text } from '$lib/data';
+  import { bool, compact, firstList, money, number, object, percent, text } from '$lib/data';
   import { curlSnippet } from '$lib/snippets';
   import type { JsonObject } from '$lib/types';
   export let data: JsonObject;
   export let navigate: (href: string) => void;
+
+  $: savingsToday =
+    data.savings_today && typeof data.savings_today === 'object'
+      ? object(data.savings_today)
+      : null;
   $: stats = object(data.stats ?? data.summary);
   $: daily = firstList(stats, 'daily', 'series').length
     ? firstList(stats, 'daily', 'series')
@@ -145,6 +150,17 @@
     detail="Configured reporting day"
     tone="violet"
   />
+  {#if savingsToday}
+    <StatCard
+      label="Saved today"
+      value={money(number(savingsToday.savings))}
+      detail={`${percent(number(savingsToday.savings_pct))} vs ${text(
+        savingsToday.baseline,
+        'baseline'
+      )} · configured reporting day`}
+      tone="teal"
+    />
+  {/if}
   <StatCard
     label="In flight"
     value={compact(data.live_inflight ?? stats.inflight)}
