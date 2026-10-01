@@ -67,11 +67,28 @@ async def _upsert_custom_inventory_provider(
         await db.commit()
 
 
+async def _sync_mirror_attributes(
+    db_path: str | Path,
+    existing: dict[str, Any],
+    attributes: dict[str, Any],
+    *,
+    schedule_recheck: bool,
+) -> str:
+    key_id = str(existing["id"])
+    changed = {name: value for name, value in attributes.items() if existing.get(name) != value}
+    if changed:
+        await update_upstream_key(db_path, key_id, changed)
+        if schedule_recheck:
+            schedule_upstream_recheck(key_id, db_path)
+    return key_id
+
+
 async def sync_provider_key(
     db_path: str | Path,
     *,
     provider: dict[str, Any],
     schedule_recheck: bool = True,
+    key_changed: bool = True,
 ) -> str | None:
     api_key = provider.get("api_key")
     if not isinstance(api_key, str) or not api_key:
@@ -107,6 +124,16 @@ async def sync_provider_key(
     ):
         return str(existing["id"])
 
+    label = f"via Providers: {provider_id}"
+
+    if existing is not None and not key_changed:
+        return await _sync_mirror_attributes(
+            db_path,
+            existing,
+            {"provider_id": inventory_id, "custom_base_url": base_url, "key_label": label},
+            schedule_recheck=schedule_recheck,
+        )
+
     duplicate = await find_upstream_key_by_value(db_path, key_value)
     if (
         duplicate is not None
@@ -121,8 +148,6 @@ async def sync_provider_key(
         if existing is not None:
             await update_upstream_key(db_path, str(existing["id"]), {"status": "revoked"})
         return None
-
-    label = f"via Providers: {provider_id}"
 
     if existing is not None:
         await update_upstream_key(

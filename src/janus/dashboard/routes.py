@@ -805,6 +805,7 @@ async def api_update_provider(request: Request, provider_id: str) -> Response:
     if not params.get("api_type", [""])[0].strip() and not existing.get("api_type"):
         return _mutation_error("Missing required field: api_type")
     new_key = params.get("api_key", [""])[0] or None
+    key_changed = bool(new_key) and new_key != existing["api_key"]
     if not new_key:
         new_key = existing["api_key"]
     try:
@@ -837,6 +838,7 @@ async def api_update_provider(request: Request, provider_id: str) -> Response:
             "base_url": data["base_url"],
             "api_key": new_key,
         },
+        key_changed=key_changed,
     )
     await reload_providers(request.app)
     return JSONResponse({"ok": True, "id": provider_id})
@@ -871,11 +873,15 @@ async def api_delete_provider(request: Request, provider_id: str) -> JSONRespons
     return JSONResponse({"ok": True, "id": provider_id})
 
 
-async def _sync_provider_key_safe(db_path: Path, provider: dict[str, Any]) -> None:
+async def _sync_provider_key_safe(
+    db_path: Path, provider: dict[str, Any], *, key_changed: bool = True
+) -> None:
     from janus.inventory.provider_key_sync import sync_provider_key
 
     try:
-        await sync_provider_key(db_path, provider=provider, schedule_recheck=True)
+        await sync_provider_key(
+            db_path, provider=provider, schedule_recheck=True, key_changed=key_changed
+        )
     except Exception:
         logger.warning("Provider key mirror failed for %s", provider.get("id"), exc_info=True)
 
