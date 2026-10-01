@@ -1431,8 +1431,11 @@ directory on each start (no manual <code>chown</code> needed).</p>
 <p>Or, without sudo, using a throwaway root container:</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-u<span class="w"> </span><span class="m">0</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">"</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">/janus-data:/data"</span><span class="w"> </span>alpine<span class="w"> </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">'chown -R 1000:1000 /data'</span>
 </code></pre></div>
-<p>Environment variables from your host <code>.env</code> file are passed through for
-<code>${ENV_VAR}</code> resolution in config:</p>
+<p>The compose file passes an explicit list of variables from your host <code>.env</code> into the
+container: the provider API keys, the OAuth client ids/secrets, and
+<code>INVENTORY_ENCRYPTION_KEY</code>, <code>INVENTORY_ENCRYPTION_PREVIOUS_KEY</code>, <code>INVENTORY_PUSH_TOKEN</code>
+and <code>JANUS_ALLOW_INSECURE_DEV_KEY</code>. A variable that is only in <code>.env</code> but not listed under
+<code>environment:</code> never reaches Janus — add it there (or in a <code>docker-compose.override.yml</code>):</p>
 <div class="highlight"><pre><span></span><code>OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GEMINI_API_KEY=...

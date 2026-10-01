@@ -5537,6 +5537,11 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong>docker compose passes the encryption settings through</strong> — the compose file
+  now forwards <code>INVENTORY_ENCRYPTION_KEY</code>, <code>INVENTORY_ENCRYPTION_PREVIOUS_KEY</code>,
+  <code>INVENTORY_PUSH_TOKEN</code> and <code>JANUS_ALLOW_INSECURE_DEV_KEY</code> from <code>.env</code>. Before,
+  setting the key in <code>.env</code> had no effect, so deployments with stored
+  credentials hit the startup encryption check (#249) and crash-looped.</li>
 <li><strong>Refreshed OAuth tokens are saved</strong> — Claude, Codex, Kiro and Antigravity
   executors now write refreshed credentials back to their inventory row
   (compare-and-swap) and re-read the stored credential before refreshing, and
