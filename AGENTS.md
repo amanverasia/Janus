@@ -72,6 +72,13 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
 - `routing/errors.py` has `classify_error(status_code)` and `is_fallback_eligible(error)` — these drive fallback decisions in `_handle()`.
 - The retry loop lives in `api/routes.py::_handle()`. Streaming requests do NOT retry mid-stream (can't replay partial output).
 - Adding multi-account: register multiple `ProviderConfig` entries with the same `prefix` but different `id`/`api_key`.
+- Per-attempt signals: `api/signals.py::AttemptSignal` is started before each upstream call
+  (hung on `_OutcomeRecorder.attempt_signal`) and finished exactly once from
+  `_note_attempt_failure` (`error`), `_log_error_and_raise` (`client_error` for 4xx), success
+  paths, and stream `finally` blocks (`ok`/`aborted`/`error`). Writes go to `attempt_signals`
+  in tracked background tasks drained on shutdown. `storage/model_signals.py::get_model_signals`
+  aggregates p50/p90 TTFT and tokens/sec plus error rate (60 s cache, invalidated in
+  `reload_providers`). Signals are data only until #183 consumes them; they must never block.
 - `ProviderRegistry.has_route()` is the indexed, boolean equivalent of `lookup()`. Use it for
   catalog filtering; do not materialize `ResolvedTarget` lists just to determine routability.
 - Model catalog entries must be unique, remain key-allowlist-aware, and preserve configured combo
