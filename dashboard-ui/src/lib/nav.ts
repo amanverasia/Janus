@@ -102,6 +102,14 @@ export const navHubs: NavHub[] = [
         keywords: 'catalog visibility discovery custom'
       },
       {
+        label: "Can't reach",
+        href: `${UI}/models/unreachable`,
+        icon: 'layers',
+        section: 'models-unreachable',
+        title: "Models you can't reach",
+        keywords: 'unreachable missing connect unlock'
+      },
+      {
         label: 'Combos',
         href: `${UI}/combos`,
         icon: 'layers',

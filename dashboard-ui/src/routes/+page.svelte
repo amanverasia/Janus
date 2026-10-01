@@ -25,6 +25,7 @@
   import SaversPage from '$lib/pages/SaversPage.svelte';
   import SettingsPage from '$lib/pages/SettingsPage.svelte';
   import ToolsPage from '$lib/pages/ToolsPage.svelte';
+  import UnreachableModelsPage from '$lib/pages/UnreachableModelsPage.svelte';
   import UsagePage from '$lib/pages/UsagePage.svelte';
   import { getState, getHealth, mutate } from '$lib/api';
   import { object } from '$lib/data';
@@ -316,6 +317,8 @@
       <ProvidersPage {data} {action} {navigate} />
     {:else if active.section === 'models'}
       <ModelsPage {data} {action} {navigate} {navigateQuery} />
+    {:else if active.section === 'models-unreachable'}
+      <UnreachableModelsPage {data} {navigate} {navigateQuery} />
     {:else if active.section === 'combos'}
       <CombosPage {data} {action} />
     {:else if active.section === 'routing'}

@@ -11,6 +11,7 @@ const expected: [path: string, hub: string, tab: string, section: string][] = [
   [`${UI}/inventory/keys`, 'Inventory', 'Keys', 'inventory-keys'],
   [`${UI}/providers`, 'Routing', 'Providers', 'providers'],
   [`${UI}/models`, 'Routing', 'Models', 'models'],
+  [`${UI}/models/unreachable`, 'Routing', "Can't reach", 'models-unreachable'],
   [`${UI}/combos`, 'Routing', 'Combos', 'combos'],
   [`${UI}/routing`, 'Routing', 'Health', 'routing'],
   [`${UI}/savers`, 'Routing', 'Token savers', 'savers'],
