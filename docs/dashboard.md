@@ -69,6 +69,7 @@ directly.
 | | Keys | `/dashboard/ui/inventory/keys` |
 | **Routing** | Providers | `/dashboard/ui/providers` |
 | | Models | `/dashboard/ui/models` |
+| | Can't reach | `/dashboard/ui/models/unreachable` |
 | | Combos | `/dashboard/ui/combos` |
 | | Health | `/dashboard/ui/routing` |
 | | Token savers | `/dashboard/ui/savers` |
@@ -187,6 +188,17 @@ Changes hot-reload — no server restart needed.
 Choose which models appear in the shared Janus catalog and `GET /v1/models`, and
 add custom models to a provider prefix. Hidden models remain callable by exact
 ID.
+
+### Models you can't reach — `/dashboard/ui/models/unreachable`
+
+Lists known models (catalog defaults, discovered inventory models, and models on
+provider rows) that Janus cannot currently route, grouped by provider with the
+reason (no provider, provider disabled, no active credential, or model not
+enabled on any account). Each group has a button that opens
+[Connect](#keys-and-logins--dashboarduiconnect) with that provider preselected,
+or the Providers page when Connect cannot onboard it. Models whose every account
+is cooling down are listed separately as **Reachable soon** — they are never
+counted as unreachable.
 
 ### Combos — `/dashboard/ui/combos`
 

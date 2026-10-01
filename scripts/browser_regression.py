@@ -43,6 +43,7 @@ ROUTES: list[tuple[str, str]] = [
     ("/dashboard/ui/connect/restore", "Restore backup"),
     ("/dashboard/ui/providers", "Providers"),
     ("/dashboard/ui/models", "Models"),
+    ("/dashboard/ui/models/unreachable", "Models you can't reach"),
     ("/dashboard/ui/combos", "Combos"),
     ("/dashboard/ui/routing", "Routing"),
     ("/dashboard/ui/savers", "Token savers"),
@@ -59,7 +60,7 @@ HUB_TABS: list[tuple[str, str, list[str]]] = [
     (
         "/dashboard/ui/providers",
         "Routing",
-        ["Providers", "Models", "Combos", "Health", "Token savers"],
+        ["Providers", "Models", "Can't reach", "Combos", "Health", "Token savers"],
     ),
     ("/dashboard/ui/usage", "Usage", ["Live", "Analytics", "Leaderboard", "Request logs"]),
     ("/dashboard/ui/settings", "Settings", ["General", "API keys", "Budgets", "Pricing", "Tools"]),
@@ -231,6 +232,32 @@ def scenario_restore_export_download(page: Page) -> list[str]:
     return failures
 
 
+def scenario_unreachable_connect_link(page: Page) -> list[str]:
+    """A "Connect <provider>" card opens Connect with that provider preselected."""
+    failures: list[str] = []
+    try:
+        _visit(page, "/dashboard/ui/models/unreachable")
+        buttons = page.locator("button:has-text('Connect ')")
+        if buttons.count() == 0:
+            print("  unreachable connect link: no connect-kind group (skipped)")
+            return failures
+        buttons.first.click()
+        page.wait_for_url("**/dashboard/ui/connect?provider=*", timeout=ROUTE_WAIT_MS)
+        provider = page.url.split("provider=")[-1].split("&")[0]
+        select = page.locator("select")
+        select.first.wait_for(state="visible", timeout=ROUTE_WAIT_MS)
+        page.wait_for_function(
+            "expected => document.querySelector('select')?.value === expected", arg=provider
+        )
+        if page.locator("select").first.input_value() != provider:
+            failures.append(f"connect preselect: select value != {provider!r}")
+        else:
+            print(f"  unreachable connect link -> connect?provider={provider} preselected OK")
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"unreachable connect link: {type(exc).__name__}: {exc}")
+    return failures
+
+
 def scenario_back_forward_navigation(page: Page) -> list[str]:
     failures: list[str] = []
     try:
@@ -375,6 +402,7 @@ SCENARIOS: list[tuple[str, Callable[[Page], list[str]]]] = [
     ("legacy redirects", scenario_legacy_redirects),
     ("connect preview without import", scenario_connect_preview_without_import),
     ("restore export download", scenario_restore_export_download),
+    ("unreachable connect link", scenario_unreachable_connect_link),
     ("back/forward navigation", scenario_back_forward_navigation),
     ("filter + empty state", scenario_filter_and_empty_state),
     ("pagination", scenario_pagination),
