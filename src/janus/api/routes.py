@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import ClientDisconnect
 
 from janus.api.auth import key_allowed_models
+from janus.api.signals import AttemptSignal, drain_attempt_signal_tasks
 from janus.canonical.events import (
     InputJsonDelta,
     TextBlockStart,
@@ -429,6 +430,9 @@ async def _log_error_and_raise(
     extra_headers: dict[str, str] | None = None,
 ) -> NoReturn:
     """Record a non-fallback upstream error then raise HTTPException."""
+    signal = outcome.attempt_signal
+    if signal is not None and not signal.finished:
+        signal.finish("client_error" if 400 <= status < 500 else "error", status=status)
     await outcome.record(
         status=status,
         model=model,
@@ -594,6 +598,7 @@ class _OutcomeRecorder:
         self._client_key_label = client_key_label
         self._start_time = time.monotonic()
         self.recorded = False
+        self.attempt_signal: AttemptSignal | None = None
 
     def elapsed_ms(self) -> int:
         return int((time.monotonic() - self._start_time) * 1000)
@@ -663,6 +668,7 @@ async def _drain_stream_persist_tasks() -> None:
         pending = list(_stream_persist_tasks)
         _stream_persist_tasks.clear()
         await asyncio.gather(*pending, return_exceptions=True)
+    await drain_attempt_signal_tasks()
 
 
 async def _persist_stream_telemetry(
@@ -754,6 +760,9 @@ async def _handle(
         await release_provider_snapshot(request.app, snapshot)
         raise
     except Exception:
+        signal = outcome.attempt_signal
+        if signal is not None and not signal.finished:
+            signal.finish("error", status=500)
         await outcome.record(status=500, duration_ms=outcome.elapsed_ms())
         await release_provider_snapshot(request.app, snapshot)
         raise
@@ -793,6 +802,18 @@ async def _handle_with_snapshot(
 
     def _elapsed_ms() -> int:
         return outcome.elapsed_ms()
+
+    def _start_signal(target: ResolvedTarget, streamed: bool) -> AttemptSignal:
+        signal = AttemptSignal(
+            db_path,
+            model=target.model,
+            account_id=target.account_id,
+            provider_id=target.provider_config.id,
+            client_format=client_format,
+            streamed=streamed,
+        )
+        outcome.attempt_signal = signal
+        return signal
 
     from janus.storage.settings import (
         get_all_settings,
@@ -1122,7 +1143,12 @@ async def _handle_with_snapshot(
     public_attempt_errors: list[str] = []
     probe_demoted: dict[str, float] = dict(handler.last_probe_demotions)
 
-    def _note_attempt_failure(failed: ResolvedTarget, detail: str) -> None:
+    def _note_attempt_failure(
+        failed: ResolvedTarget, detail: str, *, status: int | None = None
+    ) -> None:
+        signal = outcome.attempt_signal
+        if signal is not None and not signal.finished:
+            signal.finish("error", status=status)
         probed_percent = probe_demoted.get(failed.account_id)
         if probed_percent is not None:
             detail = f"{detail} (probed window {probed_percent:.0f}% used)"
@@ -1136,6 +1162,7 @@ async def _handle_with_snapshot(
         )
 
     for target in attempts:
+        outcome.attempt_signal = None
         if not handler.is_available(target.account_id, target.model):
             continue
 
@@ -1194,6 +1221,7 @@ async def _handle_with_snapshot(
                 )
                 pt_stream = attempt_req.stream
                 media_type = getattr(client_adapter, "stream_media_type", "text/event-stream")
+                pt_signal = _start_signal(target, pt_stream)
                 try:
                     result = await _passthrough_call(
                         transport_base,
@@ -1221,7 +1249,9 @@ async def _handle_with_snapshot(
                             model=target.model,
                             retry_after=getattr(result, "retry_after", None),
                         )
-                        _note_attempt_failure(target, str(result.status_code))
+                        _note_attempt_failure(
+                            target, str(result.status_code), status=result.status_code
+                        )
                         continue
                     await _log_error_and_raise(
                         outcome=outcome,
@@ -1248,7 +1278,7 @@ async def _handle_with_snapshot(
                     )
                 if is_200_wrapped_error(result.json_data):
                     handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
-                    _note_attempt_failure(target, "200-wrapped quota error")
+                    _note_attempt_failure(target, "200-wrapped quota error", status=200)
                     continue
                 if pt_stream:
                     lines = result.lines
@@ -1316,6 +1346,14 @@ async def _handle_with_snapshot(
                             else:
                                 final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
+                            pt_signal.finish(
+                                "aborted"
+                                if client_aborted
+                                else ("ok" if final_status < 400 else "error"),
+                                status=final_status,
+                                output_tokens=usage.output_tokens,
+                                first_content_at=tracker.first_content_at,
+                            )
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
@@ -1396,6 +1434,7 @@ async def _handle_with_snapshot(
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
+                pt_signal.finish("ok", status=200, output_tokens=pt_usage.output_tokens)
                 await outcome.record(
                     status=200,
                     model=target.model,
@@ -1445,6 +1484,7 @@ async def _handle_with_snapshot(
                     )
                 native_stream = attempt_req.stream
                 native_media = getattr(client_adapter, "stream_media_type", "text/event-stream")
+                native_signal = _start_signal(target, native_stream)
                 try:
                     native_result = await provider_p.call(
                         native_body,
@@ -1472,7 +1512,11 @@ async def _handle_with_snapshot(
                             model=target.model,
                             retry_after=getattr(native_result, "retry_after", None),
                         )
-                        _note_attempt_failure(target, str(native_result.status_code))
+                        _note_attempt_failure(
+                            target,
+                            str(native_result.status_code),
+                            status=native_result.status_code,
+                        )
                         continue
                     await _log_error_and_raise(
                         outcome=outcome,
@@ -1499,7 +1543,7 @@ async def _handle_with_snapshot(
                     )
                 if is_200_wrapped_error(native_result.json_data):
                     handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
-                    _note_attempt_failure(target, "200-wrapped quota error")
+                    _note_attempt_failure(target, "200-wrapped quota error", status=200)
                     continue
                 if native_stream:
                     native_lines = native_result.lines
@@ -1571,6 +1615,14 @@ async def _handle_with_snapshot(
                             else:
                                 final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
+                            native_signal.finish(
+                                "aborted"
+                                if client_aborted
+                                else ("ok" if final_status < 400 else "error"),
+                                status=final_status,
+                                output_tokens=usage.output_tokens,
+                                first_content_at=tracker.first_content_at,
+                            )
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
@@ -1656,6 +1708,9 @@ async def _handle_with_snapshot(
                         max_rows=retention,
                     )
                 handler.mark_success(target.account_id, target.model)
+                native_signal.finish(
+                    "ok", status=200, output_tokens=passthrough_usage.output_tokens
+                )
                 await outcome.record(
                     status=200,
                     model=target.model,
@@ -1708,6 +1763,7 @@ async def _handle_with_snapshot(
         )
         provider = providers[target.provider_config.id]
         handler.record_attempt(target)
+        canon_signal = _start_signal(target, attempt_req.stream)
         provider_kwargs = _claude_provider_kwargs(
             request,
             upstream_prep,
@@ -1726,7 +1782,9 @@ async def _handle_with_snapshot(
                             model=target.model,
                             retry_after=result.retry_after,
                         )
-                        _note_attempt_failure(target, str(result.status_code))
+                        _note_attempt_failure(
+                            target, str(result.status_code), status=result.status_code
+                        )
                         continue
                     await _log_error_and_raise(
                         outcome=outcome,
@@ -1753,7 +1811,7 @@ async def _handle_with_snapshot(
                     )
                 if is_200_wrapped_error(result.json_data):
                     handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
-                    _note_attempt_failure(target, "200-wrapped quota error")
+                    _note_attempt_failure(target, "200-wrapped quota error", status=200)
                     continue
                 lines = result.lines
                 if lines is None:
@@ -1841,6 +1899,18 @@ async def _handle_with_snapshot(
                             )
                         elif upstream_failure and not stream_ok:
                             handler.mark_cooldown(target.account_id, "network", model=target.model)
+                        if client_aborted:
+                            canon_outcome = "aborted"
+                        elif final_status < 400 and not void_completion:
+                            canon_outcome = "ok"
+                        else:
+                            canon_outcome = "error"
+                        canon_signal.finish(
+                            canon_outcome,
+                            status=final_status,
+                            output_tokens=usage.output_tokens,
+                            first_content_at=tracker.first_content_at,
+                        )
                         persist = _persist_stream_telemetry(
                             db_path=db_path,
                             outcome=outcome,
@@ -1881,7 +1951,9 @@ async def _handle_with_snapshot(
                         model=target.model,
                         retry_after=result.retry_after,
                     )
-                    _note_attempt_failure(target, str(result.status_code))
+                    _note_attempt_failure(
+                        target, str(result.status_code), status=result.status_code
+                    )
                     continue
                 await _log_error_and_raise(
                     outcome=outcome,
@@ -1908,7 +1980,7 @@ async def _handle_with_snapshot(
                 )
             if is_200_wrapped_error(result.json_data):
                 handler.mark_cooldown(target.account_id, "rate_limit", model=target.model)
-                _note_attempt_failure(target, "200-wrapped quota error")
+                _note_attempt_failure(target, "200-wrapped quota error", status=200)
                 continue
             if result.json_data is None:
                 await _log_error_and_raise(
@@ -1936,7 +2008,11 @@ async def _handle_with_snapshot(
             canonical_resp = provider_adapter.parse_upstream_response(result.json_data)
             if _is_void_response(canonical_resp):
                 handler.mark_cooldown(target.account_id, "server_error", model=target.model)
-                _note_attempt_failure(target, "Empty completion (no content or tool call)")
+                _note_attempt_failure(
+                    target,
+                    "Empty completion (no content or tool call)",
+                    status=result.status_code,
+                )
                 continue
             client_payload = client_adapter.emit_response(canonical_resp)
 
@@ -1983,6 +2059,11 @@ async def _handle_with_snapshot(
                 )
 
             handler.mark_success(target.account_id, target.model)
+            canon_signal.finish(
+                "ok",
+                status=result.status_code,
+                output_tokens=canonical_resp.usage.output_tokens,
+            )
             await outcome.record(
                 status=result.status_code,
                 model=target.model,

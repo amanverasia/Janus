@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import json
+import types
 
-from janus.canonical.events import TextDelta
+from janus.canonical.events import (
+    InputJsonDelta,
+    MessageStart,
+    ReasoningDelta,
+    TextDelta,
+    ToolUseBlockStart,
+)
 from janus.formats.anthropic import AnthropicAdapter
 from janus.formats.openai import OpenAIAdapter
 from janus.streaming.usage import StreamUsageTracker
@@ -113,3 +120,53 @@ def test_tracker_empty_stream_returns_zero_usage():
     usage = tracker.get_usage()
     assert usage.input_tokens == 0
     assert usage.output_tokens == 0
+
+
+class _ListParser:
+    def __init__(self, batches):
+        self._batches = list(batches)
+
+    def feed(self, line):
+        return self._batches.pop(0) if self._batches else []
+
+    def finish(self):
+        return []
+
+
+def test_first_content_at_none_without_content():
+    t = StreamUsageTracker(_ListParser([[MessageStart(model="m")], [TextDelta(index=0, text="")]]))
+    t.feed("a")
+    t.feed("b")
+    assert t.first_content_at is None
+
+
+def test_first_content_at_set_on_first_text(monkeypatch):
+    clock = iter([10.0, 20.0])
+    monkeypatch.setattr(
+        "janus.streaming.usage.time",
+        types.SimpleNamespace(monotonic=lambda: next(clock)),
+        raising=False,
+    )
+    t = StreamUsageTracker(
+        _ListParser([[TextDelta(index=0, text="hi")], [TextDelta(index=0, text="there")]])
+    )
+    t.feed("a")
+    t.feed("b")
+    assert t.first_content_at == 10.0
+
+
+def test_reasoning_and_tool_events_count_as_content():
+    for event in (
+        ReasoningDelta(index=0, text="thinking"),
+        ToolUseBlockStart(index=0, id="t1", name="f"),
+        InputJsonDelta(index=0, partial_json="{"),
+    ):
+        t = StreamUsageTracker(_ListParser([[event]]))
+        t.feed("a")
+        assert t.first_content_at is not None
+
+
+def test_empty_reasoning_signature_only_is_not_content():
+    t = StreamUsageTracker(_ListParser([[ReasoningDelta(index=0, text="", signature="s")]]))
+    t.feed("a")
+    assert t.first_content_at is None

@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 import logging
+import time
 
-from janus.canonical.events import CanonicalEvent, MessageDelta, TextDelta
+from janus.canonical.events import (
+    CanonicalEvent,
+    InputJsonDelta,
+    MessageDelta,
+    ReasoningDelta,
+    TextDelta,
+    ToolUseBlockStart,
+)
 from janus.canonical.models import Usage
 from janus.formats.base import StreamParser
 
@@ -25,6 +33,7 @@ class StreamUsageTracker:
         self._cache_read = 0
         self._has_usage = False
         self._text_parts: list[str] = []
+        self.first_content_at: float | None = None
 
     def feed(self, line: str) -> list[CanonicalEvent]:
         events = self._parser.feed(line)
@@ -38,6 +47,8 @@ class StreamUsageTracker:
 
     def _collect(self, events: list[CanonicalEvent]) -> None:
         for event in events:
+            if self.first_content_at is None and _is_content(event):
+                self.first_content_at = time.monotonic()
             if isinstance(event, MessageDelta) and event.usage is not None:
                 self._has_usage = True
                 if event.usage.input_tokens:
@@ -60,6 +71,12 @@ class StreamUsageTracker:
                 cache_read_input_tokens=self._cache_read,
             )
         return _estimate_usage("".join(self._text_parts))
+
+
+def _is_content(event: CanonicalEvent) -> bool:
+    if isinstance(event, TextDelta | ReasoningDelta):
+        return bool(event.text)
+    return isinstance(event, ToolUseBlockStart | InputJsonDelta)
 
 
 def _estimate_usage(text: str) -> Usage:

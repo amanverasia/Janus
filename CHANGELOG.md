@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Per-attempt latency and reliability signals** — every upstream attempt now
+  records time-to-first-token, output tokens/sec, and its outcome
+  (`ok` / `error` / `client_error` / `aborted`) per model and account in a new
+  `attempt_signals` table (7-day retention). Fallback-masked failures now count
+  against the failing account. Data collection only; ranking arrives with
+  `model="auto"`. (#187)
 - **Claude OAuth in Key Inventory** — Connect now accepts Claude Code's
   `.credentials.json` (and bare `sk-ant-oat…` tokens) as `claude_oauth`
   inventory credentials, validates them against `/api/oauth/usage`, and probes
