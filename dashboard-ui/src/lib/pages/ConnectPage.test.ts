@@ -255,6 +255,32 @@ describe('ConnectPage provider preselect', () => {
     });
   });
 
+  it('waits for the catalog provider list before preselecting', async () => {
+    window.history.replaceState({}, '', '/dashboard/ui/connect?provider=deepseek');
+    api.dashboardFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          providers: [
+            { id: 'anthropic', display_name: 'Anthropic' },
+            { id: 'deepseek', display_name: 'DeepSeek' }
+          ]
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    const action = vi.fn(async () => ({}));
+    const view = render(ConnectPage, {
+      props: {
+        data: { provider_cards: [{ id: 'anthropic', display_name: 'Anthropic' }] },
+        action,
+        navigate: vi.fn()
+      }
+    });
+    await view.findByRole('option', { name: 'DeepSeek' });
+    const select = view.getByRole('combobox') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('deepseek'));
+  });
+
   it('keeps automatic detection for unknown providers', async () => {
     window.history.replaceState({}, '', '/dashboard/ui/connect?provider=nope');
     const view = setup();

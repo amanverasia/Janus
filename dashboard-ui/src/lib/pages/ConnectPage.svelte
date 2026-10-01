@@ -104,15 +104,16 @@
   $: providers = catalogProviders.length ? catalogProviders : fallbackProviders;
 
   let providerPreselected = false;
+  let providerTouched = false;
 
-  $: if (!providerPreselected && providers.length) {
-    providerPreselected = true;
+  $: if (!providerPreselected && !providerTouched && providers.length) {
     const requested = new URLSearchParams(window.location.search).get('provider') ?? '';
     if (
       requested &&
       providers.some((provider) => text(provider.id ?? provider.provider_id, '') === requested)
     ) {
       providerId = requested;
+      providerPreselected = true;
     }
   }
   $: sources = currentSources(keysText, files);
@@ -536,7 +537,10 @@
         <select
           bind:value={providerId}
           disabled={loadingProviders}
-          on:change={() => hasInput && schedulePreview(0)}
+          on:change={() => {
+            providerTouched = true;
+            if (hasInput) schedulePreview(0);
+          }}
         >
           <option value="auto">Detect automatically</option>
           {#each providers as provider}<option
