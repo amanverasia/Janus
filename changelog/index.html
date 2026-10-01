@@ -5503,6 +5503,11 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong>Auto quality overrides + preview</strong> — operators can pin per-model quality scores
+  (0–1) that win over measured signals; the Routing tab's Auto-routing panel shows the full
+  scoring breakdown (tier, score, blended cost, error rate, TPS, TTFT, samples) and manages
+  the overrides. New public <code>GET /v1/quality/auto-preview?strategy=</code> returns the same ranked
+  trace the request path uses — no DRY drift. (#187)</li>
 <li><strong><code>model="auto"</code> routing</strong> — requests asking for <code>auto</code> are ranked per request under a
   configurable strategy (<code>balanced</code>, <code>cheapest</code>, <code>fastest</code>, <code>quality</code>; default <code>balanced</code>,
   settable from the Routing tab) and the top-5 chain becomes the fallback try-order through
