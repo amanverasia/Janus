@@ -1415,19 +1415,6 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         },
         "capabilities": {"vision": True, "pdf": False, "tool_use": True, "reasoning": True},
     },
-    "cursor": {
-        "gateway": {
-            "id": "cursor",
-            "name": "Cursor",
-            "icon": "🖱️",
-            "logo": "",
-            "api_type": "cursor",
-            "base_url": "https://api2.cursor.sh",
-            "prefix": "cursor",
-            "default_models": ["composer-1", "gpt-4o", "claude-sonnet-4"],
-        },
-        "capabilities": {"vision": True, "pdf": False, "tool_use": True},
-    },
     "claude_oauth": {
         "gateway": {
             "id": "claude_oauth",
@@ -1648,7 +1635,6 @@ GATEWAY_ORDER: list[str] = [
     "github_copilot",
     "codex",
     "kiro",
-    "cursor",
     "antigravity",
     "claude_oauth",
     "opencode_free",
@@ -1722,7 +1708,6 @@ def gateway_entries() -> dict[str, dict[str, Any]]:
         "antigravity",
         "claude_oauth",
         "codex",
-        "cursor",
         "github_copilot",
         "kiro",
     }
@@ -1761,8 +1746,7 @@ def gateway_entries() -> dict[str, dict[str, Any]]:
         item.setdefault(
             "live_models",
             bool(models_endpoint)
-            or api_type
-            in {"antigravity", "cursor", "gemini", "github_copilot", "kiro", "openai_compat"},
+            or api_type in {"antigravity", "gemini", "github_copilot", "kiro", "openai_compat"},
         )
         default_models = item.get("default_models")
         if "default_model" not in item:

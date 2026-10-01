@@ -50,9 +50,9 @@ GATEWAY_FIELDS = {
 
 
 def test_unified_catalog_counts() -> None:
-    assert len(PROVIDERS) == 79
+    assert len(PROVIDERS) == 78
     assert len(inventory_entries()) == 43
-    assert len(gateway_entries()) == 71
+    assert len(gateway_entries()) == 70
 
 
 def test_groq_default_model_is_valid() -> None:
@@ -79,7 +79,6 @@ def test_new_9router_providers_present() -> None:
         "byteplus",
         "codex",
         "kiro",
-        "cursor",
         "antigravity",
         "claude_oauth",
         "xiaomi",
@@ -89,7 +88,7 @@ def test_new_9router_providers_present() -> None:
     ):
         assert pid in PROVIDERS, pid
         assert "gateway" in PROVIDERS[pid], pid
-        if pid not in ("cursor", "antigravity", "claude_oauth", "mimo_free"):
+        if pid not in ("antigravity", "claude_oauth", "mimo_free"):
             assert "inventory" in PROVIDERS[pid], pid
 
 
@@ -163,7 +162,6 @@ def test_gateway_only_entries_have_no_inventory_block() -> None:
         "opencode_free",
         "mimo_free",
         "claude_oauth",
-        "cursor",
     )
     for pid in gateway_only:
         assert pid in PROVIDERS

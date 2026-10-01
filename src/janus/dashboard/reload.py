@@ -14,6 +14,7 @@ from janus.inventory.key_encryption import hash_upstream_key
 from janus.models.catalog import list_catalog_models
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
+from janus.providers.drivers import get_driver
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
 from janus.routing.inventory_bridge import inventory_provider_id_for_prefix
@@ -204,6 +205,11 @@ async def _reload_providers_locked(app: FastAPI) -> None:
 
     try:
         for row in rows:
+            if get_driver(str(row["api_type"])) is None:
+                logger.warning(
+                    "Skipping provider %s: unsupported api_type %r", row["id"], row["api_type"]
+                )
+                continue
             inventory_id = inventory_provider_id_for_prefix(row["prefix"])
             assigned_keys = keys_by_provider.get(str(row["id"]), [])
             if not assigned_keys and row.get("credential_decryptable") is False:

@@ -29,7 +29,6 @@
     ['github_copilot', 'GitHub Copilot'],
     ['codex', 'OpenAI Codex'],
     ['kiro', 'AWS Kiro'],
-    ['cursor', 'Cursor'],
     ['antigravity', 'Google Antigravity'],
     ['gemini_cli', 'Gemini CLI'],
     ['gemini-cli', 'Gemini CLI (legacy ID)'],
@@ -315,8 +314,6 @@
       case 'claude':
       case 'claude_oauth':
         return 'Add a Claude credential JSON object containing access_token and refresh_token, or a bare access token.';
-      case 'cursor':
-        return 'Add the bearer credential used by your Cursor account or compatible Cursor bridge. Janus does not generate this credential.';
       default:
         return 'Add the exported credential or token expected by this provider.';
     }

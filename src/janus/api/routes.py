@@ -142,7 +142,6 @@ def _resolve_format(name: str) -> FormatAdapter:
     if name in (
         "opencode_free",
         "github_copilot",
-        "cursor",
         "kiro",
         "codex",
     ):

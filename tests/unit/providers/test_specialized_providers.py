@@ -10,7 +10,6 @@ from janus.config.schema import ProviderConfig
 from janus.providers.antigravity import AntigravityProvider
 from janus.providers.claude_oauth import ClaudeOAuthProvider
 from janus.providers.codex import CodexProvider
-from janus.providers.cursor import CursorProvider
 from janus.providers.kiro import KiroProvider
 
 
@@ -18,7 +17,6 @@ def test_build_provider_specialized_types():
     for api_type, cls in [
         ("codex", CodexProvider),
         ("kiro", KiroProvider),
-        ("cursor", CursorProvider),
         ("antigravity", AntigravityProvider),
         ("gemini-cli", AntigravityProvider),
         ("claude_oauth", ClaudeOAuthProvider),

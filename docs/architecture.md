@@ -122,7 +122,6 @@ Provider types are built by `_build_provider()` in `app.py`:
 | `github_copilot` | `GitHubCopilotProvider` | GitHub Copilot (device OAuth) |
 | `codex` | `CodexProvider` | ChatGPT Codex Responses API + OAuth refresh |
 | `kiro` | `KiroProvider` | AWS Kiro / CodeWhisperer + social refresh |
-| `cursor` | `CursorProvider` | Cursor subscription shell |
 | `antigravity` / `gemini_cli` | `AntigravityProvider` | Gemini CLI / Antigravity v1internal + Google OAuth |
 | `claude_oauth` | `ClaudeOAuthProvider` | Claude Code subscription OAuth |
 

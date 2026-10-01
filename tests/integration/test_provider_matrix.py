@@ -24,7 +24,6 @@ from janus.providers.anthropic import AnthropicProvider
 from janus.providers.antigravity import AntigravityProvider
 from janus.providers.claude_oauth import ClaudeOAuthProvider
 from janus.providers.codex import CodexProvider
-from janus.providers.cursor import CursorProvider
 from janus.providers.gemini import GeminiProvider
 from janus.providers.github_copilot import GitHubCopilotProvider
 from janus.providers.kiro import KiroProvider
@@ -130,7 +129,6 @@ _API_TYPE_CLASS = {
     "github_copilot": GitHubCopilotProvider,
     "codex": CodexProvider,
     "kiro": KiroProvider,
-    "cursor": CursorProvider,
     "antigravity": AntigravityProvider,
     "claude_oauth": ClaudeOAuthProvider,
 }
@@ -144,7 +142,6 @@ _API_TYPE_NATIVE = {
     "github_copilot": "openai",
     "codex": "openai_responses",
     "kiro": "openai",
-    "cursor": "openai",
     "antigravity": "gemini",
     "claude_oauth": "anthropic",
 }
@@ -491,45 +488,6 @@ async def test_antigravity_via_openai_client_translate(tmp_path: Any) -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_cursor_openai_native_passthrough(tmp_path: Any) -> None:
-    base = "https://cu.local/v1"
-    cfg = _cfg(tmp_path, _provider(api_type="cursor", base_url=base, prefix="cu"))
-    app = create_app(config=cfg)
-    await _seed_and_reload(app)
-
-    route = respx.post(f"{base}/chat/completions").mock(
-        return_value=httpx.Response(200, json=_OPENAI_JSON)
-    )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post(
-            "/v1/chat/completions",
-            json={"model": "cu/m1", "messages": [{"role": "user", "content": "hi"}]},
-        )
-        assert r.status_code == 200, r.text
-        assert r.json()["choices"][0]["message"]["content"] == "hello-matrix"
-        assert route.called
-
-    respx.post(f"{base}/chat/completions").mock(
-        return_value=httpx.Response(
-            200, content=_OPENAI_SSE.encode(), headers={"content-type": "text/event-stream"}
-        )
-    )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post(
-            "/v1/chat/completions",
-            json={
-                "model": "cu/m1",
-                "messages": [{"role": "user", "content": "hi"}],
-                "stream": True,
-            },
-        )
-        assert r.status_code == 200
-        assert "hello-matrix" in r.text
-        assert "[DONE]" in r.text
-
-
-@pytest.mark.asyncio
-@respx.mock
 async def test_kiro_openai_native_with_bridge_url(tmp_path: Any) -> None:
     """Kiro native EventStream is incomplete; OpenAI-bridge base_url must work."""
     base = "https://ki.local/v1"
@@ -763,7 +721,6 @@ async def test_models_lists_all_matrix_providers(tmp_path: Any) -> None:
         _provider(api_type="gemini", base_url="https://c", prefix="c"),
         _provider(api_type="codex", base_url="https://d", prefix="d"),
         _provider(api_type="kiro", base_url="https://e/v1", prefix="e"),
-        _provider(api_type="cursor", base_url="https://f/v1", prefix="f"),
         _provider(api_type="antigravity", base_url="https://g", prefix="g"),
         _provider(api_type="claude_oauth", base_url="https://h", prefix="h"),
         _provider(api_type="opencode_free", base_url="https://i", prefix="i"),
@@ -792,11 +749,6 @@ async def test_specialized_executors_stream_line_iter() -> None:
         (
             CodexProvider(api_key="k", base_url="https://s1.local"),
             "https://s1.local/responses",
-            _OPENAI_SSE,
-        ),
-        (
-            CursorProvider(api_key="k", base_url="https://s2.local/v1"),
-            "https://s2.local/v1/chat/completions",
             _OPENAI_SSE,
         ),
         (
