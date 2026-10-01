@@ -658,3 +658,11 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Opened https://github.com/amanverasia/Janus/pull/253 (`chore/remove-cursor-provider`, Refs #251): Cursor executor/driver/catalog/UI removed; idempotent init_db step disables `cursor` rows + revokes mirrored keys (column-guarded for legacy schemas); reload/seed skip api_types without a driver. Local gates green.
 - #251 retitled to Claude OAuth only, with a scope comment. Claude probe work is next, in a separate PR.
 - Next: watch CI; merge only with user go-ahead.
+
+### 2026-10-01 08:20 UTC (2026-10-01 13:50 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #184 / PR #252, complete
+
+- Squash-merged as `ee924c4` after every PR check passed (test 3.11 5m16s / 3.12 5m45s, browser, single-run, package, build). Issue #184 auto-closed as completed.
+- Main CI on `ee924c4`: test 3.11/3.12, browser, single-run, package, build all success.
+- Final validation: 2074 local tests, coverage 85.06%, ruff/format/mypy strict, dashboard gate with rebuilt bundle, docs strict, migration smoke, Playwright browser regression (live server, CI-style seeded providers) all green.
+- This entry (and the 06:28/07:35 claim entries) committed via this docs PR; shared-checkout copies may be dropped on pull.
+- Next: none for #184. OrcaRouter-Lite cluster remaining: #183, #237, #187, #238 (gated on user approval), tracker #239.
