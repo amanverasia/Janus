@@ -104,6 +104,17 @@ CODEX_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 CLAUDE_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
 CLAUDE_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
+CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
+
+
+def claude_usage_headers(token: str) -> dict[str, str]:
+    return {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+        "anthropic-beta": CLAUDE_OAUTH_BETA,
+    }
+
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 

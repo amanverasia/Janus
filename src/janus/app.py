@@ -27,6 +27,7 @@ from janus.config.schema import JanusConfig, ProviderConfig
 from janus.inventory.key_encryption import CredentialEncryptionError
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
+from janus.providers.credential_persistence import drain_pending_credential_saves
 from janus.providers.drivers import build_provider
 from janus.providers.registry import ProviderRegistry
 from janus.routing.fallback import FallbackHandler
@@ -212,6 +213,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await cancel_background_tasks()
     await _drain_stream_persist_tasks()
+    await drain_pending_credential_saves()
     await close_provider_snapshots(app)
     await close_connection_pools(app.state.db_path)
 

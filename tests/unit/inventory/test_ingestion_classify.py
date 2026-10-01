@@ -59,7 +59,7 @@ async def db(tmp_path):
         (
             json.dumps({"claudeAiOauth": {"accessToken": "a"}}),
             None,
-            ("oauth_json", "claude_code"),
+            ("oauth_json", "claude_oauth"),
         ),
         ("{not json", None, ("unknown", None)),
     ],

@@ -776,6 +776,27 @@ async def _table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
         return {str(row[1]) for row in await cursor.fetchall()}
 
 
+async def _migrate_claude_oauth_inventory(db: aiosqlite.Connection) -> None:
+    if not {"api_type"} <= await _table_columns(db, "providers"):
+        return
+    if not {"provider_id", "source_node"} <= await _table_columns(db, "upstream_keys"):
+        return
+    await db.execute(
+        """UPDATE upstream_keys SET provider_id = 'claude_oauth'
+           WHERE provider_id = 'claude'
+             AND source_node IN (
+               SELECT 'gateway:' || id FROM providers
+               WHERE api_type IN ('claude_oauth', 'claude')
+             )"""
+    )
+    await db.execute(
+        """DELETE FROM inventory_providers
+           WHERE id = 'claude'
+             AND routing_note = 'Mirrored from Providers page'
+             AND NOT EXISTS (SELECT 1 FROM upstream_keys WHERE provider_id = 'claude')"""
+    )
+
+
 async def _disable_removed_provider_types(db: aiosqlite.Connection) -> None:
     provider_columns = await _table_columns(db, "providers")
     if not {"api_type", "is_enabled"} <= provider_columns:
@@ -864,6 +885,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_budget_columns(db)
         await _backfill_request_outcomes(db)
         await _disable_removed_provider_types(db)
+        await _migrate_claude_oauth_inventory(db)
         await db.execute(
             "DELETE FROM settings WHERE key IN (?, ?, ?)",
             _LEGACY_DASHBOARD_SETTINGS,

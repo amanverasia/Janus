@@ -207,3 +207,32 @@ async def test_sync_provider_key_base_url_change_propagates(tmp_path):
     assert len(keys) == 1
     assert keys[0]["custom_base_url"] == "https://api.example.com/v2"
     assert keys[0]["status"] == "pending_validation"
+
+
+@pytest.mark.asyncio
+async def test_sync_provider_key_unchanged_key_keeps_refreshed_row(tmp_path):
+    from janus.storage.upstream_keys import get_upstream_key, update_upstream_key
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    provider = _provider(api_key="sk-stale-provider-blob-123456")
+    key_id = await sync_provider_key(db_path, provider=provider, schedule_recheck=False)
+    assert key_id is not None
+    await update_upstream_key(
+        db_path,
+        key_id,
+        {"key_value": "sk-refreshed-row-blob-654321", "status": "active", "is_valid": 1},
+    )
+
+    provider["base_url"] = "https://api.example.com/v2"
+    second = await sync_provider_key(
+        db_path, provider=provider, schedule_recheck=False, key_changed=False
+    )
+
+    assert second == key_id
+    row = await get_upstream_key(db_path, key_id)
+    assert row is not None
+    assert row["key_value"] == "sk-refreshed-row-blob-654321"
+    assert row["status"] == "active"
+    assert row["is_valid"] == 1
+    assert row["custom_base_url"] == "https://api.example.com/v2"

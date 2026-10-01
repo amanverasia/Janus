@@ -27,6 +27,7 @@ from janus.inventory.xiaomi_tokenplan import (
 from janus.storage.upstream_keys import (
     get_upstream_key,
     record_upstream_key_history,
+    swap_upstream_key_value,
     update_upstream_key,
 )
 from janus.storage.upstream_models import replace_models_for_key
@@ -964,6 +965,77 @@ async def _probe_codex_access_token(
         return None
 
 
+async def _validate_claude_oauth_key(
+    key_value: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    del metadata
+    from janus.inventory.claude_credentials import normalize_claude_credential
+    from janus.providers.oauth_tokens import (
+        CLAUDE_USAGE_URL,
+        access_token,
+        apply_token_response,
+        claude_usage_headers,
+        needs_refresh,
+        parse_credential,
+        refresh_claude,
+        refresh_token,
+        serialize_credential,
+    )
+
+    try:
+        normalized = normalize_claude_credential(key_value)
+    except ValueError as exc:
+        return {"is_valid": False, "error": str(exc)}
+    cred = parse_credential(normalized)
+    refreshed = False
+    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        rt = refresh_token(cred)
+        if rt and needs_refresh(cred):
+            try:
+                tokens = await refresh_claude(rt, client)
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                return {"probe_inconclusive": True, "error": f"Claude refresh unavailable: {exc}"}
+            if tokens is None:
+                return {"is_valid": False, "error": "Claude OAuth refresh failed; re-export"}
+            cred = apply_token_response(cred, tokens)
+            normalized = serialize_credential(cred)
+            refreshed = True
+        token = access_token(cred)
+        if not token:
+            return {"is_valid": False, "error": "Claude credential missing access token"}
+        try:
+            response = await client.get(CLAUDE_USAGE_URL, headers=claude_usage_headers(token))
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            return {
+                "probe_inconclusive": True,
+                "error": f"Claude usage probe unavailable: {exc}",
+                "key_value": normalized,
+            }
+    if response.status_code == 200:
+        return {
+            "is_valid": True,
+            "is_usable": True,
+            "usability_status": "usable",
+            "usability_note": "Claude OAuth usage endpoint accepted the token",
+            "key_value": normalized,
+        }
+    rotated: dict[str, Any] = {"key_value": normalized} if refreshed else {}
+    if response.status_code == 401:
+        return {"is_valid": False, "error": "Claude OAuth token rejected (401)", **rotated}
+    if response.status_code == 403:
+        return {
+            "probe_inconclusive": True,
+            "error": "Claude usage endpoint forbidden (403); token may lack usage scope",
+            **rotated,
+        }
+    return {
+        "probe_inconclusive": True,
+        "error": f"Claude usage probe HTTP {response.status_code}",
+        "key_value": normalized,
+    }
+
+
 async def _validate_kiro_key(
     key_value: str,
     metadata: dict[str, Any] | None = None,
@@ -1021,11 +1093,13 @@ async def _validate_antigravity_key(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     del metadata
+    from janus.providers.credential_persistence import credential_expiry
     from janus.providers.oauth_tokens import (
         ANTIGRAVITY_CLIENT_ID,
         ANTIGRAVITY_CLIENT_SECRET,
         access_token,
         apply_token_response,
+        needs_refresh,
         parse_credential,
         refresh_google,
         refresh_token,
@@ -1039,7 +1113,8 @@ async def _validate_antigravity_key(
     cred = parse_credential(normalized)
     async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
         rt = refresh_token(cred)
-        if rt:
+        should_refresh = bool(rt) and (needs_refresh(cred) or credential_expiry(cred) is None)
+        if should_refresh:
             tokens = await refresh_google(
                 rt,
                 client,
@@ -1224,6 +1299,7 @@ async def _validate_codex_key(
     from janus.providers.oauth_tokens import (
         access_token,
         apply_token_response,
+        needs_refresh,
         parse_credential,
         refresh_codex_detailed,
         refresh_token,
@@ -1249,6 +1325,24 @@ async def _validate_codex_key(
         }
 
     async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        if access_token(cred) and not needs_refresh(cred):
+            probe_status = await _probe_codex_access_token(client, cred)
+            if probe_status is not None and probe_status < 400:
+                return {
+                    "is_valid": True,
+                    "is_usable": True,
+                    "usability_status": "usable",
+                    "usability_note": "Access token valid; refresh left to the live provider",
+                    "key_value": normalized,
+                }
+            if probe_status not in (401, 403):
+                status_note = (
+                    f"HTTP {probe_status}" if probe_status is not None else "probe unavailable"
+                )
+                return {
+                    "probe_inconclusive": True,
+                    "error": f"Codex access-token probe {status_note}",
+                }
         tokens, refresh_error = await refresh_codex_detailed(rt, client)
         if tokens is None:
             probe_status = await _probe_codex_access_token(client, cred)
@@ -1309,6 +1403,8 @@ async def validate_key(
             return await _validate_cline_key(key_value, metadata)
         if provider_id == "antigravity":
             return await _validate_antigravity_key(key_value, metadata)
+        if provider_id == "claude_oauth":
+            return await _validate_claude_oauth_key(key_value, metadata)
         if provider_id == "kiro":
             return await _validate_kiro_key(key_value, metadata)
 
@@ -1470,6 +1566,19 @@ async def check_upstream_key(db_path: str | Path, key_id: str) -> None:
         await _check_upstream_key(db_path, key_id)
 
 
+async def _persist_rotated_key_value(
+    db_path: str | Path, key_id: str, previous: str, result: dict[str, Any]
+) -> None:
+    rotated = result.get("key_value")
+    if isinstance(rotated, str) and rotated and rotated != previous:
+        await swap_upstream_key_value(db_path, key_id, previous=previous, current=rotated)
+
+
+async def _credential_changed_since(db_path: str | Path, key_id: str, validated: str) -> bool:
+    current = await get_upstream_key(db_path, key_id)
+    return current is not None and current.get("key_value") != validated
+
+
 async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
     key = await get_upstream_key(db_path, key_id)
     if key is None:
@@ -1487,15 +1596,13 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
             # failure must not invalidate an otherwise routable credential.
             error = _safe_error_note(result.get("error") or "Codex probe inconclusive")
             final_status = str(previous_status or "pending_validation")
-            await update_upstream_key(
-                db_path,
-                key_id,
-                {
-                    "status": final_status,
-                    "last_checked_at": _now(),
-                    "last_error": error,
-                },
-            )
+            inconclusive_fields: dict[str, Any] = {
+                "status": final_status,
+                "last_checked_at": _now(),
+                "last_error": error,
+            }
+            await _persist_rotated_key_value(db_path, key_id, key["key_value"], result)
+            await update_upstream_key(db_path, key_id, inconclusive_fields)
         elif result.get("is_valid") and result.get("partial_check"):
             await update_upstream_key(
                 db_path,
@@ -1540,10 +1647,7 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
             }
             if custom_base:
                 update_fields["custom_base_url"] = str(custom_base).rstrip("/")
-            rotated = result.get("key_value")
-            if isinstance(rotated, str) and rotated and rotated != key["key_value"]:
-                update_fields["key_value"] = rotated
-
+            await _persist_rotated_key_value(db_path, key_id, key["key_value"], result)
             await update_upstream_key(
                 db_path,
                 key_id,
@@ -1569,7 +1673,19 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
                     await refresh_account_value(db_path, key_id, force=True)
                 except Exception as exc:
                     logger.warning("account-value refresh failed for %s: %s", key_id, exc)
+        elif await _credential_changed_since(db_path, key_id, key["key_value"]):
+            final_status = str(previous_status or "pending_validation")
+            await update_upstream_key(
+                db_path,
+                key_id,
+                {
+                    "status": final_status,
+                    "last_checked_at": _now(),
+                    "last_error": "credential changed during validation",
+                },
+            )
         else:
+            await _persist_rotated_key_value(db_path, key_id, key["key_value"], result)
             error = _safe_error_note(result.get("error"))
             failure_count = int(key.get("consecutive_failures") or 0) + 1
             paused = failure_count >= VALIDATION_MAX_FAILURES

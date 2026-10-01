@@ -23,7 +23,6 @@ from janus.dashboard.routes import _ensure_db
 from janus.inventory.account_value import refresh_account_value
 from janus.inventory.catalog import get_inventory_providers
 from janus.inventory.ingestion import (
-    CLAUDE_CODE_UNSUPPORTED_ERROR,
     UNSUPPORTED_FORMAT_ERROR,
     KeyIngestEntry,
     classify_upstream_entry,
@@ -160,7 +159,7 @@ def _safe_ingest_error(value: Any) -> str | None:
     if not isinstance(value, str) or not value:
         return None
     lowered = value.lower()
-    if value in {UNSUPPORTED_FORMAT_ERROR, CLAUDE_CODE_UNSUPPORTED_ERROR}:
+    if value in {UNSUPPORTED_FORMAT_ERROR}:
         return value
     if "too short" in lowered:
         return "Credential is too short."

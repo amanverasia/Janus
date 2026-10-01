@@ -18,7 +18,12 @@ from httpx import HTTPError
 
 from janus.inventory.currency import normalize_credits_to_usd
 from janus.inventory.url_guard import BlockedUrlError, safe_fetch
-from janus.providers.oauth_tokens import access_token, parse_credential
+from janus.providers.oauth_tokens import (
+    CLAUDE_USAGE_URL,
+    access_token,
+    claude_usage_headers,
+    parse_credential,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1103,6 +1108,46 @@ async def _probe_antigravity(
     )
 
 
+_CLAUDE_WINDOWS = (
+    ("five_hour", "5h"),
+    ("seven_day", "weekly"),
+    ("seven_day_opus", "weekly opus"),
+    ("seven_day_sonnet", "weekly sonnet"),
+)
+
+
+async def _probe_claude_oauth(
+    key_value: str,
+    base_url: str,
+    custom_base_url: str | None,
+) -> AccountValue:
+    del base_url, custom_base_url
+    token, cred = _oauth_access_token(key_value)
+    body = await _fetch_oauth_json(CLAUDE_USAGE_URL, headers=claude_usage_headers(token))
+    windows: list[UsageWindow] = []
+    for field_name, label in _CLAUDE_WINDOWS:
+        row = _child(body, field_name)
+        percent = _percent(row.get("utilization"))
+        if percent is None:
+            continue
+        windows.append(
+            UsageWindow(label=label, used_percent=percent, reset_at=_reset_at(row.get("resets_at")))
+        )
+    if not windows:
+        raise ProbeError("claude usage response had no recognized windows", transient=True)
+    metadata: dict[str, Any] = {}
+    subscription = _cred_extra(cred).get("subscriptionType")
+    if isinstance(subscription, str) and subscription:
+        metadata["subscription_type"] = subscription
+    return AccountValue(
+        status=AccountValueStatus.OK,
+        source=_probe_source("claude_oauth", "oauth-usage"),
+        fetched_at=_now_iso(),
+        windows=windows,
+        metadata=metadata,
+    )
+
+
 AccountValueProbe = Callable[..., Awaitable[AccountValue]]
 
 ACCOUNT_VALUE_PROBES: dict[str, AccountValueProbe] = {
@@ -1119,6 +1164,7 @@ ACCOUNT_VALUE_PROBES: dict[str, AccountValueProbe] = {
     "codex": _probe_codex,
     "kiro": _probe_kiro,
     "antigravity": _probe_antigravity,
+    "claude_oauth": _probe_claude_oauth,
 }
 
 

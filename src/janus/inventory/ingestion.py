@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from janus.inventory.antigravity_credentials import normalize_antigravity_credential
 from janus.inventory.catalog import get_inventory_provider
+from janus.inventory.claude_credentials import normalize_claude_credential
 from janus.inventory.cline_credentials import normalize_cline_credential
 from janus.inventory.codex_credentials import normalize_codex_credential
 from janus.inventory.provider_detection import resolve_provider_for_key
@@ -45,7 +46,7 @@ def _looks_like_credential_json(key_value: str) -> bool:
     return s.startswith("{") or s.startswith("[")
 
 
-_TOKEN_CREDENTIAL_PROVIDERS = frozenset({"codex", "antigravity", "cline"})
+_TOKEN_CREDENTIAL_PROVIDERS = frozenset({"codex", "antigravity", "cline", "claude_oauth"})
 
 
 def validate_key_value(key_value: str, *, provider_id: str | None = None) -> str | None:
@@ -87,10 +88,6 @@ CredentialFormat = Literal[
 ]
 PreviewStatus = Literal["new", "exists", "rejected"]
 UNSUPPORTED_FORMAT_ERROR = "Unsupported credential format"
-CLAUDE_CODE_UNSUPPORTED_ERROR = (
-    "Claude Code logins cannot be stored in Inventory; add them as a Claude OAuth provider"
-)
-_CLAUDE_CODE_MARKER = "claude_code"
 
 _CODEX_PROVIDER_NAMES = frozenset({"codex", "openai-codex", "chatgpt"})
 _OAUTH_FORMAT_BY_PROVIDER: dict[str, CredentialFormat] = {
@@ -98,7 +95,7 @@ _OAUTH_FORMAT_BY_PROVIDER: dict[str, CredentialFormat] = {
     "antigravity": "antigravity_json",
     "kiro": "oauth_json",
     "cline": "oauth_json",
-    _CLAUDE_CODE_MARKER: "oauth_json",
+    "claude_oauth": "oauth_json",
 }
 
 
@@ -128,7 +125,7 @@ def detect_credential_json_provider(data: Any) -> str | None:
     if _codex_cli_tokens(data) is not None:
         return "codex"
     if isinstance(data.get("claudeAiOauth"), dict):
-        return _CLAUDE_CODE_MARKER
+        return "claude_oauth"
     provider_name = data.get("provider")
     if isinstance(provider_name, str):
         lowered = provider_name.strip().lower()
@@ -211,6 +208,8 @@ def _normalize_key_value(raw_key: str, provider_id: str | None) -> str:
         return normalize_antigravity_credential(raw_key)
     if provider_id == "codex":
         return normalize_codex_credential(_flatten_codex_cli_auth(raw_key))
+    if provider_id == "claude_oauth":
+        return normalize_claude_credential(raw_key)
     if _looks_like_credential_json(raw_key):
         return raw_key
     return raw_key.replace("\r", "").replace("\n", "").replace("\t", "")
@@ -277,8 +276,6 @@ async def classify_upstream_entry(
         return rejected(validation_error, mask_key(entry.key) if entry.key else "?")
 
     raw_key = entry.key.strip()
-    if detected == _CLAUDE_CODE_MARKER:
-        return rejected(CLAUDE_CODE_UNSUPPORTED_ERROR, mask_key(raw_key))
     normalized_for = provider_hint or (
         detected if detected in _TOKEN_CREDENTIAL_PROVIDERS else None
     )
