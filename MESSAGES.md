@@ -607,3 +607,34 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - #224 closed as completed: body rewritten as a final-resolution record — all 28 sub-issues (#196–#223 incl. #220) struck through with their closing PRs (#226, #227, #228, #229, #230, #231, #232, #234, #235, #236, #240, #241, #243, #248, #249); closure mapping verified via API. Tracker list re-verified: every sub-issue state=closed.
 - Remaining open issues (7): feature-only OrcaRouter-Lite parity cluster — #239 (tracker), #183, #184, #187, #189, #237, #238. No open PRs, no audit/defect debt.
 - MESSAGES.md (89 added lines incl. earlier sessions' unstaged entries) committed as a docs commit on main. Next: none; user may pick up #239 cluster.
+
+### 2026-10-01 06:26 UTC (2026-10-01 11:56 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #189, claiming
+
+- Identity: user `amanverasia`, machine `office-linux` (100.78.171.49, Tailscale up). Claims #189 (account-value probes for OAuth providers). User reports another agent owns #184; I will not touch the tokensaver/cache path.
+- Working in an isolated worktree `../Janus-wt-189` on branch `feat/oauth-account-value-probes-189`.
+- Next: read `inventory/account_value.py` + OAuth provider token machinery, implement probes (10m TTL, per-account in-flight dedup, auth-failure → probe unavailable), tests, gates, PR.
+
+### 2026-10-01 06:28 UTC (2026-10-01 11:58 IST) — ZCode (GLM-5.3, ZCode app) → coordinator, #184, claiming
+
+- Identity: user `amanverasia`, machine `office-linux` (100.78.171.49, Tailscale up). User assigned #184 (deterministic exact-match prompt cache) to this session; #189 is owned by another agent — I will not touch `inventory/account_value.py` or its probe files. Gated cluster (#183/#237/#187/#238) remains unapproved and untouched.
+- Working in isolated worktree `../Janus-wt-lru-cache` on branch `feat/prompt-cache-184`; shared `.venv` used read-only with `PYTHONPATH=$PWD/src`.
+- Next: implement cache (post-saver canonical key, client_key_id + version in key, TTL+LRU, opt-in setting, zero-cost HIT usage + Request Logs marker), run all gates, open PR.
+
+### 2026-10-01 06:36 UTC (2026-10-01 12:06 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #189, implementation complete (uncommitted)
+
+- User-approved scope: inventory OAuth providers only — Codex (`wham/usage`), Kiro (`GetUsageLimits`), Antigravity (`retrieveUserQuotaSummary`). claude_oauth + Cursor are gateway-only (not in `upstream_keys`) → follow-up issue; xAI skipped (inventory holds API keys, endpoint needs Grok CLI OAuth).
+- Probes use the stored access token only (never refresh; Codex refresh tokens are single-use); expired token / 401/403 → probe `unavailable`, key status untouched. Existing 10m TTL + per-key in-flight dedup reused. Emails/user ids discarded; Kiro region allowlisted.
+- Worktree `../Janus-wt-189`: 2049 tests passed (85.05% cov), ruff/format/mypy clean, docs strict OK. No dashboard contract change.
+- Next: awaiting user go-ahead to commit/push/open PR.
+
+### 2026-10-01 06:52 UTC (2026-10-01 12:22 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #189 / PR #250, complete
+
+- Squash-merged PR #250 as `02e67a9` after all checks passed. Main CI `36826402665`, Docker `36826402265`, Docs `36826402274` all green on the merge commit.
+- Worktree `../Janus-wt-189` and local/remote branch `feat/oauth-account-value-probes-189` removed; local main fast-forwarded. Did not touch `Janus-wt-lru-cache` (#184 owner).
+- #189 intentionally left open (PR used "Refs"): Claude OAuth + Cursor are gateway-only and still unprobed. No release/tag.
+- Next: none for this session.
+
+### 2026-10-01 06:52 UTC (2026-10-01 12:22 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #189 → #251, closed out
+
+- Per user: opened follow-up #251 (Claude OAuth + Cursor probes; gateway-only, needs inventory onboarding vs gateway-probe decision). Commented on and closed #189 as completed for the inventory OAuth scope (PR #250).
+- Next: none.
