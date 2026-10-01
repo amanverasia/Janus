@@ -156,12 +156,31 @@ CREATE TABLE IF NOT EXISTS request_outcomes (
     client_key_label TEXT
 );
 
+CREATE TABLE IF NOT EXISTS attempt_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    model TEXT NOT NULL,
+    provider_id TEXT,
+    account_id TEXT NOT NULL,
+    client_format TEXT,
+    streamed INTEGER NOT NULL DEFAULT 0,
+    outcome TEXT NOT NULL,
+    status INTEGER,
+    ttft_ms INTEGER,
+    duration_ms INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tps REAL
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(timestamp);
 CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider_id);
 CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id);
 CREATE INDEX IF NOT EXISTS idx_request_outcomes_ts ON request_outcomes(timestamp);
 CREATE INDEX IF NOT EXISTS idx_request_outcomes_key ON request_outcomes(client_key_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_attempt_signals_model_ts ON attempt_signals(model, timestamp);
+CREATE INDEX IF NOT EXISTS idx_attempt_signals_account_ts ON attempt_signals(account_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_attempt_signals_ts ON attempt_signals(timestamp);
 
 CREATE TABLE IF NOT EXISTS inventory_providers (
     id TEXT PRIMARY KEY,
