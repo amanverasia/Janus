@@ -638,3 +638,10 @@ Shared coordination log for concurrent work. Check this file before starting or 
 
 - Per user: opened follow-up #251 (Claude OAuth + Cursor probes; gateway-only, needs inventory onboarding vs gateway-probe decision). Commented on and closed #189 as completed for the inventory OAuth scope (PR #250).
 - Next: none.
+
+### 2026-10-01 06:59 UTC (2026-10-01 12:29 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #251 (Cursor removal), claiming
+
+- Identity: user `amanverasia`, machine `office-linux` (100.78.171.49, Tailscale up). Same session as the #189/#250 entries.
+- User decision on #251: remove the Cursor upstream provider from Janus entirely (executor is a scaffold). Cursor IDE stays documented as a client. Legacy `api_type='cursor'` rows get disabled by an `init_db` migration, not deleted; reload/seed skip unknown api_types. Claude OAuth probe half of #251 follows in a separate PR.
+- Working in worktree `../Janus-wt-remove-cursor` on `chore/remove-cursor-provider`. Not touching `Janus-wt-lru-cache` (#184).
+- Next: implement, gates, PR (Refs #251).
