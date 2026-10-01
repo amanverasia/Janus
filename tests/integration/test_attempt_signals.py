@@ -317,3 +317,66 @@ async def test_canonical_fallback_records_error_then_ok(two_account_app):
         (rows[0]["account_id"], "error", 429),
         (rows[1]["account_id"], "ok", 200),
     ]
+
+
+@pytest.fixture
+async def transport_app(tmp_path):
+    cfg = JanusConfig(
+        server=ServerSettings(port=0, require_api_key=False, data_dir=tmp_path),
+        providers=[
+            ProviderConfig(
+                id="ds-transport",
+                prefix="ds",
+                api_type="openai_compat",
+                base_url="https://ds-openai.local/v1",
+                api_key="sk-ds",
+                models=["claude-sonnet-4-20250514"],
+                transports={"anthropic": "https://ds-anthropic.local/v1"},
+            )
+        ],
+    )
+    app = create_app(config=cfg)
+    await _seed_and_reload(app)
+    return app
+
+
+_TRANSPORT_BODY = {
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 16,
+    "messages": [{"role": "user", "content": "ping"}],
+}
+
+
+@respx.mock
+async def test_transport_passthrough_records_ok_signal(transport_app):
+    respx.post("https://ds-anthropic.local/v1/messages").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-20250514",
+                "content": [{"type": "text", "text": "pong"}],
+                "stop_reason": "end_turn",
+                "stop_sequence": None,
+                "usage": {"input_tokens": 3, "output_tokens": 7},
+            },
+        )
+    )
+    async with AsyncClient(transport=ASGITransport(app=transport_app)) as c:
+        r = await c.post("http://test/v1/messages", json=_TRANSPORT_BODY)
+    assert r.status_code == 200
+    rows = await _signals(transport_app)
+    assert [(x["outcome"], x["status"], x["output_tokens"]) for x in rows] == [("ok", 200, 7)]
+    assert rows[0]["streamed"] == 0
+
+
+@respx.mock
+async def test_transport_passthrough_records_error_signal(transport_app):
+    respx.post("https://ds-anthropic.local/v1/messages").mock(return_value=httpx.Response(503))
+    async with AsyncClient(transport=ASGITransport(app=transport_app)) as c:
+        r = await c.post("http://test/v1/messages", json=_TRANSPORT_BODY)
+    assert r.status_code == 503
+    rows = await _signals(transport_app)
+    assert [(x["outcome"], x["status"]) for x in rows] == [("error", 503)]
