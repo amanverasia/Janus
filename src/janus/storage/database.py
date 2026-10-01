@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import queue
 import threading
 import uuid
@@ -21,6 +22,8 @@ import aiosqlite
 if TYPE_CHECKING:
     from janus.config.schema import JanusConfig
 from janus.inventory.key_encryption import encrypt_key_value
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -765,6 +768,42 @@ async def _migrate_cooldowns_per_model(db: aiosqlite.Connection) -> None:
     await db.execute("ALTER TABLE cooldowns_new RENAME TO cooldowns")
 
 
+_REMOVED_PROVIDER_API_TYPES = ("cursor",)
+
+
+async def _table_columns(db: aiosqlite.Connection, table: str) -> set[str]:
+    async with db.execute(f"PRAGMA table_info({table})") as cursor:
+        return {str(row[1]) for row in await cursor.fetchall()}
+
+
+async def _disable_removed_provider_types(db: aiosqlite.Connection) -> None:
+    provider_columns = await _table_columns(db, "providers")
+    if not {"api_type", "is_enabled"} <= provider_columns:
+        return
+    placeholders = ", ".join("?" for _ in _REMOVED_PROVIDER_API_TYPES)
+    if {"status", "source_node"} <= await _table_columns(db, "upstream_keys"):
+        await db.execute(
+            f"""UPDATE upstream_keys SET status = 'revoked'
+                WHERE status != 'revoked'
+                  AND source_node IN (
+                    SELECT 'gateway:' || id FROM providers WHERE api_type IN ({placeholders})
+                  )""",
+            _REMOVED_PROVIDER_API_TYPES,
+        )
+    async with db.execute(
+        f"UPDATE providers SET is_enabled = 0 WHERE is_enabled != 0 "
+        f"AND api_type IN ({placeholders})",
+        _REMOVED_PROVIDER_API_TYPES,
+    ) as cursor:
+        disabled = cursor.rowcount
+    if disabled:
+        logger.warning(
+            "Disabled %d provider(s) using a removed api_type (%s)",
+            disabled,
+            ", ".join(_REMOVED_PROVIDER_API_TYPES),
+        )
+
+
 _OUTCOMES_BACKFILL_VERSION = 2
 
 
@@ -824,6 +863,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_api_key_columns(db)
         await _migrate_budget_columns(db)
         await _backfill_request_outcomes(db)
+        await _disable_removed_provider_types(db)
         await db.execute(
             "DELETE FROM settings WHERE key IN (?, ?, ?)",
             _LEGACY_DASHBOARD_SETTINGS,
@@ -870,7 +910,14 @@ async def _table_is_empty(db: aiosqlite.Connection, table: str) -> bool:
 async def seed_from_config(db_path: str | Path, config: JanusConfig) -> None:
     async with get_connection(db_path) as db:
         if await _table_is_empty(db, "providers") and config.providers:
+            from janus.providers.drivers import get_driver
+
             for pc in config.providers:
+                if get_driver(pc.api_type) is None:
+                    logger.warning(
+                        "Not seeding provider %s: unsupported api_type %r", pc.id, pc.api_type
+                    )
+                    continue
                 await db.execute(
                     """INSERT INTO providers
                        (id, catalog_id, prefix, api_type, base_url, api_key, models,

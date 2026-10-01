@@ -54,7 +54,6 @@ FORMAT_TO_NATIVE: dict[str, str] = {
     "kiro": "kiro",
     "codex": "openai",
     "antigravity": "gemini-budget",
-    "cursor": "openai",
 }
 
 _SUFFIX_RE = re.compile(r"^(.*)\(([^()]+)\)\s*$")

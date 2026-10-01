@@ -15,8 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   buckets). Probes use the stored access token only and never consume a
   refresh token; an expired token or a 401/403 from the usage endpoint marks
   the probe unavailable without changing the key's status. Account emails and
-  user ids in usage responses are discarded. Claude OAuth and Cursor remain
-  gateway-only providers and are not probed yet. (#189)
+  user ids in usage responses are discarded. Claude OAuth remains a
+  gateway-only provider and is not probed yet. (#189)
+### Removed
+- **Cursor upstream provider** — the `cursor` api_type was an unfinished
+  scaffold (it posted OpenAI chat completions to `api2.cursor.sh` instead of
+  Cursor's native protocol). The executor, driver, catalog entry and Providers
+  page option are gone, and creating a `cursor` provider now returns a 400.
+  Existing `cursor` provider rows are disabled on startup, not deleted, and
+  their mirrored inventory keys are revoked. Using the Cursor IDE *as a client*
+  against Janus's OpenAI-compatible endpoint is unaffected. (#251)
+### Changed
+- **Unsupported api_types no longer break provider reload** — a provider row or
+  YAML seed entry whose `api_type` has no driver is skipped with a warning
+  instead of aborting the whole routing rebuild.
 ### Fixed
 - **Models page no longer paginates a provider-grouped view** — `?offset=…`
   pages cut providers mid-list, so groups opened collapsed, per-provider counts

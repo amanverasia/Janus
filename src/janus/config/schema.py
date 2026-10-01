@@ -20,7 +20,7 @@ class ProviderConfig(BaseModel):
     catalog_id: str | None = None
     prefix: str
     # openai_compat | anthropic | gemini | opencode_free | github_copilot |
-    # codex | kiro | cursor | antigravity | claude_oauth
+    # codex | kiro | antigravity | claude_oauth
     api_type: str
     base_url: str
     api_key: str | None = None

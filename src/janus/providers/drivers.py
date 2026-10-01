@@ -10,7 +10,6 @@ from .antigravity import AntigravityProvider
 from .base import Provider
 from .claude_oauth import ClaudeOAuthProvider
 from .codex import CodexProvider
-from .cursor import CursorProvider
 from .gemini import GeminiProvider
 from .github_copilot import GitHubCopilotProvider
 from .kiro import KiroProvider
@@ -87,10 +86,6 @@ def _kiro(config: ProviderConfig) -> Provider:
     return KiroProvider(api_key=config.api_key or "", base_url=config.base_url)
 
 
-def _cursor(config: ProviderConfig) -> Provider:
-    return CursorProvider(api_key=config.api_key or "", base_url=config.base_url)
-
-
 def _antigravity(config: ProviderConfig) -> Provider:
     variant = "gemini_cli" if "gemini" in config.api_type else "antigravity"
     return AntigravityProvider(
@@ -114,7 +109,6 @@ _CANONICAL_DRIVERS = (
     ProviderDriver("github_copilot", "openai", "github_copilot", _github_copilot),
     ProviderDriver("codex", "openai_responses", None, _codex),
     ProviderDriver("kiro", "openai", "kiro", _kiro),
-    ProviderDriver("cursor", "openai", "cursor", _cursor),
     ProviderDriver("antigravity", "gemini", "antigravity", _antigravity),
     ProviderDriver("claude_oauth", "anthropic", None, _claude_oauth),
 )
