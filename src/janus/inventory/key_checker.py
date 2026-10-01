@@ -1021,11 +1021,13 @@ async def _validate_antigravity_key(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     del metadata
+    from janus.providers.credential_persistence import credential_expiry
     from janus.providers.oauth_tokens import (
         ANTIGRAVITY_CLIENT_ID,
         ANTIGRAVITY_CLIENT_SECRET,
         access_token,
         apply_token_response,
+        needs_refresh,
         parse_credential,
         refresh_google,
         refresh_token,
@@ -1039,7 +1041,8 @@ async def _validate_antigravity_key(
     cred = parse_credential(normalized)
     async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
         rt = refresh_token(cred)
-        if rt:
+        should_refresh = bool(rt) and (needs_refresh(cred) or credential_expiry(cred) is None)
+        if should_refresh:
             tokens = await refresh_google(
                 rt,
                 client,
@@ -1224,6 +1227,7 @@ async def _validate_codex_key(
     from janus.providers.oauth_tokens import (
         access_token,
         apply_token_response,
+        needs_refresh,
         parse_credential,
         refresh_codex_detailed,
         refresh_token,
@@ -1249,6 +1253,24 @@ async def _validate_codex_key(
         }
 
     async with httpx.AsyncClient(timeout=FETCH_TIMEOUT) as client:
+        if access_token(cred) and not needs_refresh(cred):
+            probe_status = await _probe_codex_access_token(client, cred)
+            if probe_status is not None and probe_status < 400:
+                return {
+                    "is_valid": True,
+                    "is_usable": True,
+                    "usability_status": "usable",
+                    "usability_note": "Access token valid; refresh left to the live provider",
+                    "key_value": normalized,
+                }
+            if probe_status not in (401, 403):
+                status_note = (
+                    f"HTTP {probe_status}" if probe_status is not None else "probe unavailable"
+                )
+                return {
+                    "probe_inconclusive": True,
+                    "error": f"Codex access-token probe {status_note}",
+                }
         tokens, refresh_error = await refresh_codex_detailed(rt, client)
         if tokens is None:
             probe_status = await _probe_codex_access_token(client, cred)

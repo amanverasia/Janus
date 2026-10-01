@@ -1,4 +1,5 @@
 import json
+import time
 
 import httpx
 import pytest
@@ -87,6 +88,7 @@ async def test_codex_validate_refresh_success() -> None:
         {
             "access_token": "old-at",
             "refresh_token": "old-rt",
+            "expires_at": time.time() - 10,
             "extra": {"workspaceId": "w"},
         }
     )
@@ -116,7 +118,9 @@ async def test_codex_validate_refresh_failure_falls_back_to_access_token() -> No
     respx.post(CODEX_RESPONSES_URL).mock(
         return_value=httpx.Response(200, text="event: response.created\\ndata: {}\\n")
     )
-    blob = json.dumps({"access_token": "old-at", "refresh_token": "old-rt"})
+    blob = json.dumps(
+        {"access_token": "old-at", "refresh_token": "old-rt", "expires_at": time.time() - 10}
+    )
     result = await validate_key(blob, "codex")
     assert result["is_valid"] is True
     assert result["is_usable"] is True
@@ -129,7 +133,9 @@ async def test_codex_validate_refresh_failure_falls_back_to_access_token() -> No
 async def test_codex_validate_refresh_and_access_probe_failure() -> None:
     respx.post(CODEX_TOKEN_URL).mock(return_value=httpx.Response(401, json={}))
     respx.post(CODEX_RESPONSES_URL).mock(return_value=httpx.Response(401, json={}))
-    blob = json.dumps({"access_token": "old-at", "refresh_token": "old-rt"})
+    blob = json.dumps(
+        {"access_token": "old-at", "refresh_token": "old-rt", "expires_at": time.time() - 10}
+    )
     result = await validate_key(blob, "codex")
     assert result["is_valid"] is False
     assert "access-token probe failed" in result["error"]
@@ -140,7 +146,9 @@ async def test_codex_validate_refresh_and_access_probe_failure() -> None:
 async def test_codex_validate_probe_rate_limit_is_inconclusive() -> None:
     respx.post(CODEX_TOKEN_URL).mock(return_value=httpx.Response(401, json={}))
     respx.post(CODEX_RESPONSES_URL).mock(return_value=httpx.Response(429, json={}))
-    blob = json.dumps({"access_token": "old-at", "refresh_token": "old-rt"})
+    blob = json.dumps(
+        {"access_token": "old-at", "refresh_token": "old-rt", "expires_at": time.time() - 10}
+    )
     result = await validate_key(blob, "codex")
     assert result.get("is_valid") is not True
     assert result["probe_inconclusive"] is True
