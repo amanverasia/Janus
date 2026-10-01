@@ -31,12 +31,14 @@ from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard
 # account pool (~110 KB routing) fails here.
 RAW_BUDGETS: dict[str, int] = {
     "models": 10_000,
+    "models-unreachable": 40_000,
     "routing": 25_000,
     "providers": 130_000,
     "pricing": 40_000,
 }
 GZIP_BUDGETS: dict[str, int] = {
     "models": 3_000,
+    "models-unreachable": 8_000,
     "routing": 4_000,
     "providers": 35_000,
     "pricing": 12_000,
