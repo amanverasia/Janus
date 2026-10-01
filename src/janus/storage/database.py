@@ -434,6 +434,7 @@ _NEW_PROVIDER_COLUMNS = [
 _NEW_REQUEST_LOG_COLUMNS = [
     ("client_key_id", "INTEGER"),
     ("client_key_label", "TEXT"),
+    ("resolved_model", "TEXT"),
 ]
 
 _API_KEY_NEW_COLUMNS = [

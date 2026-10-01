@@ -209,6 +209,11 @@ Full CRUD for fallback chains:
 
 ### Health — `/dashboard/ui/routing`
 
+The Health tab also carries the **Auto routing** panel: pick the strategy used when a client
+sends `model: "auto"` (`balanced`, `cheapest`, `fastest`, or `quality`) and see the ranked
+model chain auto would pick right now. Request Logs show the model the request resolved to
+next to the requested one.
+
 ![Routing hub with section tabs on the Health page](assets/dashboard-routing-tabs.png)
 
 - Enabled provider and account readiness at a glance

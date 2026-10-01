@@ -20,6 +20,22 @@
   // cooling-down subset arrives whole (it is small).
   $: accounts = firstList(data, 'accounts');
   $: cooldowns = firstList(data, 'cooldowns');
+  $: auto = object(data.auto);
+  $: autoStrategy = text(auto.strategy, 'balanced');
+  $: autoModels = firstList(auto, 'models');
+  let autoSaving = false;
+
+  async function saveAutoStrategy(value: string) {
+    autoSaving = true;
+    try {
+      const body = new FormData();
+      body.set('key', 'auto_routing_strategy');
+      body.set('value', value);
+      await action('/dashboard/api/settings', { body, success: 'Auto strategy saved' });
+    } finally {
+      autoSaving = false;
+    }
+  }
   $: totalAccounts = number(overview.total_accounts, accounts.length);
   $: readyAccounts = number(overview.ready_accounts, accounts.length);
   $: strategy = text(settings.account_strategy ?? live.account_strategy, 'round_robin')
@@ -92,6 +108,37 @@
   <StatCard label="Strategy" value={strategy} tone="violet" />
 </div>
 
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>Auto routing</h2>
+      <p>
+        Requests with model "auto" rank candidates per request and use the top chain as the fallback
+        try-order
+      </p>
+    </div>
+    <select
+      aria-label="Auto routing strategy"
+      disabled={autoSaving}
+      value={autoStrategy}
+      on:change={(event) => saveAutoStrategy((event.currentTarget as HTMLSelectElement).value)}
+    >
+      <option value="balanced">Balanced</option>
+      <option value="cheapest">Cheapest</option>
+      <option value="fastest">Fastest</option>
+      <option value="quality">Quality</option>
+    </select>
+  </div>
+  {#if autoModels.length}
+    <p class="auto-chain">
+      <span class="mono">{text(auto.top, '')}</span>
+      <span class="muted">would pick now</span>
+      {#each autoModels as model, index}<span class="status mono">{index + 1}. {model}</span>{/each}
+    </p>
+  {:else}
+    <p class="muted">No priced, routable models for auto yet.</p>
+  {/if}
+</section>
 <div class="panel-grid equal">
   <section class="panel">
     <div class="panel-header">

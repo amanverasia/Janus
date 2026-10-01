@@ -1540,6 +1540,12 @@ _USAGE_RETENTION_SETTING_KEY = "server_usage_retention_days"
 # Settings keys that require server-side validation before being persisted. Each
 # validator raises ValueError on bad input; the POST handler rejects with 400 and
 # leaves the stored value untouched (page re-renders with the prior value on reload).
+def _require_auto_strategy(value: str) -> None:
+    from janus.storage.settings import validate_auto_strategy
+
+    validate_auto_strategy(value)
+
+
 def _require_savings_baseline(value: str) -> None:
     from janus.storage.settings import validate_savings_baseline
 
@@ -1563,6 +1569,7 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     _USAGE_RETENTION_SETTING_KEY: lambda v: _require_int(v, min_value=7, max_value=3650),
     "server_reporting_timezone": lambda v: _require_reporting_timezone(v),
     "analytics_savings_baseline": lambda v: _require_savings_baseline(v),
+    "auto_routing_strategy": lambda v: _require_auto_strategy(v),
 }
 _ALLOWED_SETTINGS = (
     frozenset(SERVER_SETTING_DEFAULTS)

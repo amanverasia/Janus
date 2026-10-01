@@ -43,6 +43,7 @@ from janus.providers.registry import (
     ProviderRegistry,
     ResolvedTarget,
 )
+from janus.routing.auto import AUTO_MODEL, AutoPlan, AutoStrategy, plan_auto
 from janus.routing.capabilities import (
     detect_required_capabilities,
     get_capabilities_for_model,
@@ -416,6 +417,7 @@ async def _log_error_and_raise(
     db_path: str | Path,
     client_format: str,
     model: str | None,
+    resolved_model: str | None = None,
     provider_id: str | None,
     account_id: str | None,
     status: int,
@@ -457,6 +459,7 @@ async def _log_error_and_raise(
             db_path,
             client_format=client_format,
             model=model,
+            resolved_model=resolved_model,
             provider_id=provider_id,
             account_id=account_id,
             status=status,
@@ -709,6 +712,7 @@ async def _persist_stream_telemetry(
             db_path,
             client_format=client_format,
             model=client_model,
+            resolved_model=target.model,
             provider_id=target.provider_config.id,
             account_id=target.account_id,
             status=final_status,
@@ -820,6 +824,7 @@ async def _handle_with_snapshot(
         prompt_cache_enabled,
         request_logging_enabled,
         resolve_account_strategy,
+        resolve_auto_strategy,
         resolve_combo_fusion_hard_timeout_s,
         resolve_combo_fusion_judge,
         resolve_combo_fusion_min_panel,
@@ -945,6 +950,51 @@ async def _handle_with_snapshot(
     ):
         return await _model_not_allowed(requested_model)
 
+    auto_chain: list[str] | None = None
+    auto_plan: AutoPlan | None = None
+    if requested_model.strip().lower() == AUTO_MODEL:
+        pricing_registry = getattr(request.app.state, "pricing_registry", None)
+        if pricing_registry is None:
+            from janus.pricing.registry import PricingRegistry
+
+            pricing_registry = PricingRegistry({}, {})
+        try:
+            auto_strategy = AutoStrategy(resolve_auto_strategy(settings))
+        except ValueError:
+            auto_strategy = AutoStrategy.BALANCED
+        auto_plan = await plan_auto(
+            registry=handler.registry,
+            db_path=db_path,
+            pricing_registry=pricing_registry,
+            request=canonical_req,
+            strategy=auto_strategy,
+            allowed_models=allowed,
+        )
+        auto_chain = auto_plan.models
+        if not auto_chain:
+            await outcome.record(status=503, model=requested_model)
+            await _maybe_log_client_error(
+                log_requests=log_requests,
+                db_path=db_path,
+                client_format=client_format,
+                model=requested_model,
+                status=503,
+                request_body=logged_request_body,
+                error="No models match model='auto' under the active routing strategy",
+                max_rows=retention,
+            )
+            return JSONResponse(
+                content={
+                    "error": {
+                        "message": "No models match model='auto' under the active routing strategy",
+                        "type": "auto_no_candidates",
+                        "model": requested_model,
+                    }
+                },
+                status_code=503,
+                headers={"x-janus-error-type": "auto_no_candidates"},
+            )
+
     saver_pipeline: SaverPipeline = request.app.state.saver_pipeline
     canonical_req, async_savers_applied = await saver_pipeline.apply_async_traced(canonical_req)
     canonical_req, sync_savers_applied = saver_pipeline.apply_traced(canonical_req)
@@ -984,6 +1034,7 @@ async def _handle_with_snapshot(
     cache_max_entries = resolve_prompt_cache_max_entries(settings)
     if (
         prompt_cache_enabled(settings)
+        and auto_chain is None
         and is_cacheable_request(canonical_req)
         and cache_max_entries > 0
     ):
@@ -1099,6 +1150,7 @@ async def _handle_with_snapshot(
             required_caps=required_caps,
             combo_strategy=combo_strat,
             combo_sticky_limit=combo_csl,
+            model_chain=auto_chain,
         )
     except AllAccountsCooledDown as e:
         retry_after = e.retry_after
@@ -1423,6 +1475,7 @@ async def _handle_with_snapshot(
                         db_path,
                         client_format=client_format,
                         model=canonical_req.model,
+                        resolved_model=target.model,
                         provider_id=target.provider_config.id,
                         account_id=target.account_id,
                         status=200,
@@ -1697,6 +1750,7 @@ async def _handle_with_snapshot(
                         db_path,
                         client_format=client_format,
                         model=canonical_req.model,
+                        resolved_model=target.model,
                         provider_id=target.provider_config.id,
                         account_id=target.account_id,
                         status=200,
@@ -1962,6 +2016,7 @@ async def _handle_with_snapshot(
                     db_path=db_path,
                     client_format=client_format,
                     model=canonical_req.model,
+                    resolved_model=target.model,
                     provider_id=target.provider_config.id,
                     account_id=target.account_id,
                     status=result.status_code,
@@ -1990,6 +2045,7 @@ async def _handle_with_snapshot(
                     db_path=db_path,
                     client_format=client_format,
                     model=canonical_req.model,
+                    resolved_model=target.model,
                     provider_id=target.provider_config.id,
                     account_id=target.account_id,
                     status=502,
@@ -2047,6 +2103,7 @@ async def _handle_with_snapshot(
                     db_path,
                     client_format=client_format,
                     model=canonical_req.model,
+                    resolved_model=target.model,
                     provider_id=target.provider_config.id,
                     account_id=target.account_id,
                     status=result.status_code,
