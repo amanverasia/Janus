@@ -689,6 +689,45 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Branch `fix/compose-encryption-env` (worktree `../Janus-wt-compose-env`): compose forwards INVENTORY_ENCRYPTION_KEY / _PREVIOUS_KEY / INVENTORY_PUSH_TOKEN / JANUS_ALLOW_INSECURE_DEV_KEY; deployment docs + changelog.
 - Next: PR, merge only with user go-ahead.
 
+### 2026-10-01 09:29 UTC (2026-10-01 14:59 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, PR #256, complete
+
+- PR #256 squash-merged as `fdc4233` by the user after all checks passed; Docker and Docs green on main. Worktree `Janus-wt-compose-env` and branch removed.
+- Production deployment pulled `fdc4233` and now gets its encryption settings from the tracked compose file; temporary local override removed. Healthy, no restarts.
+- Next: none.
+
+### 2026-10-01 09:35 UTC (2026-10-01 15:05 IST) — Claude Code (Opus 5.5, Claude Code CLI, amanverasia@office-linux) → coordinator, #239 cluster, claiming
+
+- User approved the whole OrcaRouter cluster (#183/#187/#237/#238, tracker #239). Order: #187 part 1 (signal capture) → #238 → #237 → #183 + #187 part 2 (ranker, preview, overrides). `janus bench` deferred to a follow-up.
+- Starting #187 part 1: per-attempt `attempt_signals` table (TTFT, tokens/sec, outcome per model+account), no routing/UI change. Worktree `../Janus-wt-187-signals`, branch `feat/attempt-signals-187`.
+- Next: spec → plan → implement → PR (Refs #187).
+
+### 2026-10-01 09:53 UTC (2026-10-01 15:23 IST) — ZCode (GLM-5.3-Flash, ZCode CLI, amanverasia@office-linux) → coordinator, prod DB size audit (read-only), complete
+
+- User-requested prod audit on arm.kingfisher-typhon.ts.net:2222 ~/Janus — strictly read-only, no writes on prod, nothing downloaded.
+- "Big database" is 95% backups: 14 `.bak` copies (~2.8 GB) in `janus-data/` PLUS a second full set in `~/Janus/Janus_backup/` (3.2 GB). Live DB is only ~273 MB (220 MB db + 53 MB WAL).
+- Live 220 MB breakdown: request_logs 58 MB (1,000 rows × ~58 KB; 56.9 MB is `request_body` full payloads, retention=1000, request_logging=true); usage+5 idx ~72 MB (206k rows since 2026-07-03, 365-day default retention); request_outcomes+2 idx ~42 MB (204k rows, NO prune in code — unbounded); upstream_models+3 idx ~44 MB (133k rows, 116.8k openrouter, 928 upstream keys); upstream_key_history ~9 MB (47.6k rows, 180-day retention). Freelist 1.3%, so all live pages.
+- No credentials or secret values read/printed; only counts, sizes, DDL.
+- Cleanup options flagged to user (not executed): dedupe one backup set, lower log/usage retention, add request_outcomes retention (code change), VACUUM after deletes. WAL 53 MB noted.
+- Next: none; awaiting user decision. #187 attempt_signals work (other session) untouched.
+
+### 2026-10-01 10:18 UTC (2026-10-01 15:48 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #187 part 1 / PR #257, CI running
+
+- Opened https://github.com/amanverasia/Janus/pull/257 (`feat/attempt-signals-187`, Refs #187): per-attempt `attempt_signals` table + `AttemptSignal` recorder on every _handle path + cached `get_model_signals()` aggregate. No routing/UI change. Local gates green (2190 passed, 85.66% cov, mypy/ruff, migration smoke).
+- Next: watch CI; merge only with user go-ahead; then #238.
+
+### 2026-10-01 10:25 UTC (2026-10-01 15:55 IST) — Claude Code (Opus 5.5, Claude Code CLI) → coordinator, #187 part 1 / PR #257 complete; #238 claimed
+
+- PR #257 squash-merged as `706b40d` on user authorization after all checks passed. Worktree `Janus-wt-187-signals` and branch removed. #187 stays open for part 2 (ranker/preview/overrides, with #183).
+- Claiming #238 ("Models you can't reach"): spec written in `../Janus-wt-238-unreachable` on `feat/unreachable-models-238`, awaiting user review.
+
+### 2026-10-01 12:10 UTC (2026-10-01 17:40 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #238, adopting from dead Claude session
+
+- Identity: model GLM-5.3; harness ZCode CLI; machine office-linux (100.78.171.49, Tailscale up); whoami = amanverasia. User handed me Claude's in-flight #238 work ("continue it").
+- Handoff state: Claude's session died on API 429s mid-workflow — its dynamic workflow finished T1 (reachability core, committed `795799d`, reviewed+approved) and T3 (page, committed `5265e01`, review incomplete); T2 implementer died mid-task leaving uncommitted files; T4 (Connect preselect), T5 (browser regression/docs/gates) and final review never ran.
+- Continuing in `../Janus-wt-238-unreachable` on `feat/unreachable-models-238` (based on latest origin/main `706b40d`), following the committed plan `docs/superpowers/plans/2026-10-01-unreachable-models.md`. Worktree has own .venv (3.11.15) + node_modules.
+- Env note: absolute paths under ~ intermittently fail to resolve (eCryptfs filename-key churn); all work uses relative paths from the main checkout — not a repo problem.
+- Next: complete/review T2, review T3, implement T4+T5, full gates, PR (Refs #238).
+
 ### 2026-10-01 12:30 UTC (2026-10-01 18:00 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #238, implementation complete
 
 - All five plan tasks done on `feat/unreachable-models-238` (worktree `../Janus-wt-238-unreachable`, plan `docs/superpowers/plans/2026-10-01-unreachable-models.md`): T1 classifier `795799d` + T3 page `5265e01` (both Claude's, T3 cross-reviewed here — page field names match the `{...data, ...meta.query, ...meta.pagination}` prop convention); T2 state section `182c91d` (Claude's uncommitted work verified/completed: import order fixed, incidental settings.json fixture reorder reverted, all 9 integration tests green); T4 Connect preselect `e961abe` + bugfix `8f7dd2a`; T5 docs + browser regression `f1ca9c5`.
@@ -702,6 +741,20 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Gates: full pytest **2236 passed / 3 skipped** (cov gate passed), ruff check/format, mypy strict (163 files), mkdocs --strict, migration smoke, dashboard build + `--check`, live browser regression all green. 13 new tests (8 unit + 5 integration) + 7 vitest.
 - Contract note: `analytics`/`overview` are value-pinned — fixtures regenerated; `SavingsWindow` typed with optional fields so both window kinds satisfy it.
 - Next: commit, PR closing #237, CI green → merge; then #183 + #187 part 2 (the ranker half).
+
+### 2026-10-01 13:32 UTC (2026-10-01 19:02 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #237 / PR #259, complete
+
+- PR #259 (#237) squash-merged as `a54c48c` after every check passed (test 3.11/3.12, browser, single-run, package, build, GitGuardian). Local main fast-forwarded; branch/worktree `feat/savings-baseline-237` removed (remote auto-deleted by merge).
+- Re-spliced the main-checkout-only log entries (09:29–12:10 block + claims) after the pull; they ride my next PR.
+- #238 (#258, `7470993`) and #237 are both on main with green main-CI. Cluster status: **#187 part 1 done (PR #257), #238 done, #237 done** — remaining: #183 (model="auto") + #187 part 2 (ranker/preview/overrides) as one train, `janus bench` deferred.
+- Next: claiming #183 + #187 part 2.
+
+### 2026-10-01 13:39 UTC (2026-10-01 19:09 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #183 + #187 part 2, claiming
+
+- Main CI + Docker green on `a54c48c` (#237). Cluster remaining work claimed per the approved order: #183 (model="auto") + #187 part 2 (overrides, auto-preview) as a train, `janus bench` still deferred. Two PRs planned: (A) ranker + auto resolution + strategy setting + resolved-model logging; (B) overrides CRUD + shared-ranker preview.
+- Worktree `../Janus-wt-183-auto` on `feat/auto-routing-183` from `a54c48c`.
+- Design: async ranker `routing/auto.py` (strategies balanced/cheapest/fastest/quality; cheapest = 0.3·input+0.7·output blended; quality/fastest/balanced from `storage/model_signals` (#257) + strict two-axis tiering; version-sibling dedupe; priced-only candidates; capability filter incl. tools/json_mode edge cases; key allowlist intersect pre-cut with Janus empty=all semantics). `_handle` resolves "auto" after the allowlist check, passes a ranked model chain to `resolve_attempts` via a new `model_chain` kwarg reusing the combo expansion. `x-janus-resolved-model` already exists; request_logs gains resolved model. Routing state section + RoutingPage strategy control.
+- Next: spec doc → implement PR A.
 
 ### 2026-10-01 14:16 UTC (2026-10-01 19:46 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #183 PR A, implementation complete
 
@@ -721,3 +774,15 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - PR B done on `feat/auto-overrides-187p2` (from merged `6c13025d`): `storage/model_overrides.py` (`model_quality_overrides` table, 30s read cache, invalidation on write) feeding `plan_auto(overrides=...)`; dashboard CRUD `POST/DELETE /dashboard/api/v2/auto-overrides`; public `GET /v1/quality/auto-preview?strategy=` sharing the exact request-path ranker (401/422 covered); routing section `auto.preview` (top-10 scoring trace) + `auto.overrides`; RoutingPage Auto-routing panel extended with the breakdown table + override add/remove.
 - Gates: full pytest **2258 passed / 3 skipped** (cov ok), ruff/format, mypy strict (165 files), mkdocs strict, migration smoke, dashboard build + `--check`, contracts+size green (routing.shape regen; settings reorder reverted — no new key in this PR).
 - Next: PR (Refs #187), CI green → merge; then cluster closeout (#183/#187 comments + close, file the deferred `janus bench` follow-up, close tracker #239).
+
+### 2026-10-02 12:21 UTC (2026-10-02 17:51 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #239 cluster, COMPLETE
+
+- **Entire OrcaRouter-Lite parity cluster shipped and closed** (continuation handed to me by the user after Claude Code's session died on 429s mid-#238):
+  - #187 part 1 — attempt signals (Claude, PR #257 / `706b40d`)
+  - #238 — "Models you can't reach" (PR #258 / `7470993`; finished Claude's T2, reviewed T3, implemented T4+T5 incl. a real Connect-preselect bug the new browser scenario caught)
+  - #237 — savings vs baseline + Home tile (PR #259 / `a54c48c`)
+  - #183 — model="auto" strategies (PR #260 / `6c13025d`)
+  - #187 part 2 — overrides + shared-ranker preview (PR #261 / `aada9833`)
+- Main CI, Docker, and Docs green on every merge commit. #183/#187/#239 closed with completion comments; deferred `janus bench` filed as #262 (only open issue). All worktrees/branches cleaned up; main checkout at `aada983` with local-only log entries spliced back (they ride the next docs commit).
+- No release/version bump was performed for the cluster (standing no-tag release-debt pattern; newest tag v4.0.0).
+- Next: none — cluster done. #262 (bench) awaits user go-ahead.
