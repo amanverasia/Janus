@@ -215,3 +215,33 @@ async def test_backfill_costs_invalidates_unpriced_cache(tmp_path):
 
     after = await get_unpriced_models(db_path)
     assert after == []
+
+
+async def test_prune_usage_pass_also_prunes_expired_outcomes(tmp_path):
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    await seed_usage(
+        db_path,
+        [
+            {"model": "old-model", "timestamp": OLD_TS},
+            {"model": "new-model"},
+        ],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM request_outcomes")
+        await db.execute(
+            "INSERT INTO request_outcomes (timestamp, model, status) VALUES (?, 'old-model', 200)",
+            (OLD_TS,),
+        )
+        await db.execute(
+            "INSERT INTO request_outcomes (timestamp, model, status)"
+            " VALUES (datetime('now'), 'new-model', 200)"
+        )
+        await db.commit()
+
+    await record_usage(db_path, provider_id="p", model="trigger", input_tokens=1)
+
+    async with get_connection(db_path) as db:
+        async with db.execute("SELECT model FROM request_outcomes") as cur:
+            remaining = {row["model"] for row in await cur.fetchall()}
+    assert remaining == {"new-model"}
