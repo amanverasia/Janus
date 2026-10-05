@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import httpx
 import typer
 import uvicorn
 
@@ -102,13 +103,123 @@ pricing_app = typer.Typer(help="View model pricing")
 inventory_app = typer.Typer(help="Upstream key inventory")
 settings_app = typer.Typer(help="View and change server settings")
 db_app = typer.Typer(help="Bounded-memory database maintenance")
+bench_app = typer.Typer(help="Benchmark routable models through the gateway")
 app.add_typer(keys_app, name="keys")
+app.add_typer(bench_app, name="bench")
 app.add_typer(usage_app, name="usage")
 app.add_typer(budgets_app, name="budgets")
 app.add_typer(pricing_app, name="pricing")
 app.add_typer(inventory_app, name="inventory")
 app.add_typer(settings_app, name="settings")
 app.add_typer(db_app, name="db")
+
+
+@bench_app.command("run")
+def bench_run(
+    base_url: str = typer.Option("http://127.0.0.1:20128", "--base-url", help="Gateway base URL"),
+    api_key: str = typer.Option(
+        ..., "--api-key", envvar="JANUS_API_KEY", help="API key with model access"
+    ),
+    models: str = typer.Option(
+        "", "--models", help="Comma-separated model ids; default: every model this key can route"
+    ),
+    prefix: str = typer.Option("", "--prefix", help="Only models starting with this prefix"),
+    limit: int = typer.Option(0, "--limit", help="Benchmark at most this many models"),
+    prompts: int = typer.Option(1, "--prompts", help="Fixed prompts per model (1-3)"),
+    max_tokens: int = typer.Option(64, "--max-tokens", help="Output token cap per request"),
+    timeout: float = typer.Option(60.0, "--timeout", help="Per-request timeout in seconds"),
+    output: Path = typer.Option(
+        None, "--output", "-o", help="Write the Markdown report here (default: stdout)"
+    ),
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt"),
+    config: str = typer.Option(
+        "~/.janus/config.yaml", "--config", "-c", help="Local config for cost estimates"
+    ),
+) -> None:
+    """Stream fixed prompts at routable models and report TTFT/TPS/tokens/cost.
+
+    Requests go through the running gateway, so the server records its own
+    attempt signals and usage as a side effect. Real upstreams are called and
+    real money may be spent; a plan is printed before anything runs.
+    """
+    import asyncio
+
+    from janus.bench import (
+        MAX_PROMPTS,
+        build_markdown_report,
+        list_bench_models,
+        run_bench,
+        select_models,
+    )
+
+    prompts = max(1, min(prompts, MAX_PROMPTS))
+    trimmed_base = base_url.rstrip("/")
+
+    async def _plan() -> list[str]:
+        async with _bench_client(trimmed_base, api_key, timeout) as client:
+            available = await list_bench_models(client)
+            return select_models(available, requested=models, prefix=prefix, limit=limit)
+
+    try:
+        selected = asyncio.run(_plan())
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    except Exception as exc:
+        typer.secho(
+            f"Could not list models from {trimmed_base}: {exc}", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(code=2) from exc
+
+    if not selected:
+        typer.secho("No models matched the filters.", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=2)
+
+    typer.echo(f"Gateway: {trimmed_base}")
+    typer.echo(f"Models:  {len(selected)}")
+    for name in selected:
+        typer.echo(f"  - {name}")
+    typer.echo(
+        f"Requests: {len(selected) * prompts} "
+        f"({prompts} prompt(s) x {len(selected)} model(s), max {max_tokens} output tokens)"
+    )
+    typer.echo("Real upstream requests will run and may cost money.")
+    if not yes:
+        if not typer.confirm("Start benchmark?"):
+            raise typer.Exit(code=1)
+
+    db_path = _get_db_path(config)
+
+    async def _run() -> str:
+        async with _bench_client(trimmed_base, api_key, timeout) as client:
+            run = await run_bench(
+                client,
+                base_url=trimmed_base,
+                prompts=prompts,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                selected_models=selected,
+                cost_db_path=db_path,
+            )
+        return build_markdown_report(run)
+
+    report = asyncio.run(_run())
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report, encoding="utf-8")
+        typer.secho(f"Report written to {output}", fg=typer.colors.GREEN, err=True)
+    else:
+        typer.echo(report)
+
+
+def _bench_client(base_url: str, api_key: str, timeout: float) -> httpx.AsyncClient:
+    import httpx
+
+    return httpx.AsyncClient(
+        base_url=base_url,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=timeout,
+    )
 
 
 def _get_db_path(config: str) -> Path:

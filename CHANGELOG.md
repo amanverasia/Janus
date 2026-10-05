@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **`janus bench`** — benchmarks every routable model through a running gateway: streams a
+  fixed deterministic prompt set per model, measures status/TTFT/tokens-per-sec client-side,
+  estimates cost from the local pricing registry, and writes a Markdown report (per-model
+  aggregates + per-request detail). Requests go through the gateway, so the server's attempt
+  signals and usage record themselves as a side effect; a plan-and-confirm gate runs before
+  anything is sent. (#262)
 - **Auto quality overrides + preview** — operators can pin per-model quality scores
   (0–1) that win over measured signals; the Routing tab's Auto-routing panel shows the full
   scoring breakdown (tier, score, blended cost, error rate, TPS, TTFT, samples) and manages

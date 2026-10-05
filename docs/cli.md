@@ -396,3 +396,36 @@ janus inventory migrate export.json --verify
 | `--dry-run` | off | Count rows without writing |
 | `--verify` | off | Print summary after import |
 | `--config` / `-c` | `~/.janus/config.yaml` | Path to config file |
+
+### `janus bench run`
+
+Benchmark every routable model through a running gateway. The command is a
+normal API client: it streams a fixed deterministic prompt set (temperature 0)
+at each model listed by `GET /v1/models`, measures status, time-to-first-token,
+and tokens/sec client-side, and estimates cost from the local pricing registry.
+Because requests go through the gateway, the server's attempt signals and usage
+rows record themselves as a side effect — benchmarking also densifies the data
+`model="auto"` ranks on.
+
+A plan (models, request count, token cap) is printed before anything runs;
+real upstream requests are made and real money may be spent.
+
+```bash
+janus bench run --base-url http://127.0.0.1:20128 --api-key "$JANUS_API_KEY"
+janus bench run --prefix anthropic/ --prompts 3 --output bench.md
+janus bench run --models deepseek/deepseek-chat,openai/gpt-4o-mini --yes
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--base-url` | `http://127.0.0.1:20128` | Gateway base URL |
+| `--api-key` (env `JANUS_API_KEY`) | required | API key with model access |
+| `--models` | all routable | Comma-separated model ids |
+| `--prefix` | off | Only models starting with this prefix |
+| `--limit` | off | Benchmark at most this many models |
+| `--prompts` | `1` | Fixed prompts per model (1–3) |
+| `--max-tokens` | `64` | Output token cap per request |
+| `--timeout` | `60` | Per-request timeout (seconds) |
+| `--output` / `-o` | stdout | Write the Markdown report here |
+| `--yes` | off | Skip the confirmation prompt |
+| `--config` / `-c` | `~/.janus/config.yaml` | Local config for cost estimates |
