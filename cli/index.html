@@ -1233,6 +1233,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#janus-bench-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus bench run
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1725,6 +1736,17 @@
     <span class="md-ellipsis">
       
         janus inventory migrate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#janus-bench-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        janus bench run
       
     </span>
   </a>
@@ -2380,6 +2402,86 @@ janus<span class="w"> </span>inventory<span class="w"> </span>migrate<span class
 <td><code>--config</code> / <code>-c</code></td>
 <td><code>~/.janus/config.yaml</code></td>
 <td>Path to config file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="janus-bench-run"><code>janus bench run</code><a class="headerlink" href="#janus-bench-run" title="Permanent link">&para;</a></h3>
+<p>Benchmark every routable model through a running gateway. The command is a
+normal API client: it streams a fixed deterministic prompt set (temperature 0)
+at each model listed by <code>GET /v1/models</code>, measures status, time-to-first-token,
+and tokens/sec client-side, and estimates cost from the local pricing registry.
+Because requests go through the gateway, the server's attempt signals and usage
+rows record themselves as a side effect — benchmarking also densifies the data
+<code>model="auto"</code> ranks on.</p>
+<p>A plan (models, request count, token cap) is printed before anything runs;
+real upstream requests are made and real money may be spent.</p>
+<div class="highlight"><pre><span></span><code>janus<span class="w"> </span>bench<span class="w"> </span>run<span class="w"> </span>--base-url<span class="w"> </span>http://127.0.0.1:20128<span class="w"> </span>--api-key<span class="w"> </span><span class="s2">"</span><span class="nv">$JANUS_API_KEY</span><span class="s2">"</span>
+janus<span class="w"> </span>bench<span class="w"> </span>run<span class="w"> </span>--prefix<span class="w"> </span>anthropic/<span class="w"> </span>--prompts<span class="w"> </span><span class="m">3</span><span class="w"> </span>--output<span class="w"> </span>bench.md
+janus<span class="w"> </span>bench<span class="w"> </span>run<span class="w"> </span>--models<span class="w"> </span>deepseek/deepseek-chat,openai/gpt-4o-mini<span class="w"> </span>--yes
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--base-url</code></td>
+<td><code>http://127.0.0.1:20128</code></td>
+<td>Gateway base URL</td>
+</tr>
+<tr>
+<td><code>--api-key</code> (env <code>JANUS_API_KEY</code>)</td>
+<td>required</td>
+<td>API key with model access</td>
+</tr>
+<tr>
+<td><code>--models</code></td>
+<td>all routable</td>
+<td>Comma-separated model ids</td>
+</tr>
+<tr>
+<td><code>--prefix</code></td>
+<td>off</td>
+<td>Only models starting with this prefix</td>
+</tr>
+<tr>
+<td><code>--limit</code></td>
+<td>off</td>
+<td>Benchmark at most this many models</td>
+</tr>
+<tr>
+<td><code>--prompts</code></td>
+<td><code>1</code></td>
+<td>Fixed prompts per model (1–3)</td>
+</tr>
+<tr>
+<td><code>--max-tokens</code></td>
+<td><code>64</code></td>
+<td>Output token cap per request</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td><code>60</code></td>
+<td>Per-request timeout (seconds)</td>
+</tr>
+<tr>
+<td><code>--output</code> / <code>-o</code></td>
+<td>stdout</td>
+<td>Write the Markdown report here</td>
+</tr>
+<tr>
+<td><code>--yes</code></td>
+<td>off</td>
+<td>Skip the confirmation prompt</td>
+</tr>
+<tr>
+<td><code>--config</code> / <code>-c</code></td>
+<td><code>~/.janus/config.yaml</code></td>
+<td>Local config for cost estimates</td>
 </tr>
 </tbody>
 </table>

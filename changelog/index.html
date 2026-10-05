@@ -5503,6 +5503,12 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
+<li><strong><code>janus bench</code></strong> — benchmarks every routable model through a running gateway: streams a
+  fixed deterministic prompt set per model, measures status/TTFT/tokens-per-sec client-side,
+  estimates cost from the local pricing registry, and writes a Markdown report (per-model
+  aggregates + per-request detail). Requests go through the gateway, so the server's attempt
+  signals and usage record themselves as a side effect; a plan-and-confirm gate runs before
+  anything is sent. (#262)</li>
 <li><strong>Auto quality overrides + preview</strong> — operators can pin per-model quality scores
   (0–1) that win over measured signals; the Routing tab's Auto-routing panel shows the full
   scoring breakdown (tier, score, blended cost, error rate, TPS, TTFT, samples) and manages
