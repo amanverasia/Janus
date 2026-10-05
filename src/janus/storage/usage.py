@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from .database import get_connection
 from .inventory_overview import UPSTREAM_KEY_HISTORY_RETENTION_DAYS, prune_upstream_key_history
+from .outcomes import prune_outcome_rows
 from .settings import get_all_settings, resolve_usage_retention_days
 from .time_windows import current_reporting_day
 
@@ -67,6 +68,7 @@ async def _maybe_prune_retention(db_path: str | Path) -> None:
         settings = await get_all_settings(db_path)
         retention_days = resolve_usage_retention_days(settings)
         await prune_usage_rows(db_path, retention_days)
+        await prune_outcome_rows(db_path, retention_days)
         await prune_upstream_key_history(db_path, UPSTREAM_KEY_HISTORY_RETENTION_DAYS)
     except Exception as e:
         logger.warning("Retention prune failed: %s", e)

@@ -9,6 +9,16 @@ from .database import get_connection
 logger = logging.getLogger(__name__)
 
 
+async def prune_outcome_rows(db_path: str | Path, retention_days: int) -> int:
+    async with get_connection(db_path) as db:
+        cur = await db.execute(
+            "DELETE FROM request_outcomes WHERE timestamp < datetime('now', ?)",
+            (f"-{int(retention_days)} days",),
+        )
+        await db.commit()
+        return int(cur.rowcount or 0)
+
+
 async def record_request_outcome(
     db_path: str | Path,
     *,
