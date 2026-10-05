@@ -253,6 +253,11 @@ Runtime state in SQLite (`~/.janus/janus.db`). DB is auto-created on app startup
 - `storage/combos_db.py` — combo CRUD.
 - `storage/pricing_db.py` — pricing override CRUD.
 - CLI commands call `init_db()` inline before DB operations (see pattern in `cli.py`). Follow this if adding CLI subcommands that touch the DB.
+- `janus bench run` (#262) is a *client* of a running gateway (`--base-url`, `--api-key`,
+  `JANUS_API_KEY` env): it streams fixed prompts per routable model from `GET /v1/models`,
+  measures TTFT/TPS/tokens client-side, estimates cost from the local DB's pricing registry,
+  and prints/writes a Markdown report. It never reads the server DB directly; server-side
+  `attempt_signals` populate as a side effect. Confirm-before-spend (`--yes` to skip).
 - CLI keys: `janus keys create/list/update/revoke` — create/update support `--no-login`, `--models`, `--daily-budget` / `--clear-models`.
 
 ## Pricing & budget enforcement

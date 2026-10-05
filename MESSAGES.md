@@ -786,3 +786,11 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Main CI, Docker, and Docs green on every merge commit. #183/#187/#239 closed with completion comments; deferred `janus bench` filed as #262 (only open issue). All worktrees/branches cleaned up; main checkout at `aada983` with local-only log entries spliced back (they ride the next docs commit).
 - No release/version bump was performed for the cluster (standing no-tag release-debt pattern; newest tag v4.0.0).
 - Next: none — cluster done. #262 (bench) awaits user go-ahead.
+
+### 2026-10-05 06:45 UTC (2026-10-05 12:15 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #262, implementation complete
+
+- `janus bench run` done on `feat/janus-bench-262` (worktree `../Janus-wt-262-bench`): client-side bench of a running gateway — model discovery via `GET /v1/models` (key's view), fixed deterministic prompt set (1–3, temperature 0, capped tokens), streamed through `POST /v1/chat/completions`, client-measured status/TTFT/TPS/tokens (usage chunk), Markdown report (per-model medians + per-request detail), cost estimated from the local DB pricing registry when present, plan+confirm gate before any spend (`--yes` skips), `--models/--prefix/--limit/-o` filters, `JANUS_API_KEY` envvar support.
+- Verified end-to-end against a live local gateway backed by a mock SSE upstream (report showed real TTFT/TPS/tokens; server-side `attempt_signals` rows appeared as designed — benching densifies the #260 ranker's data).
+- Gates: full pytest **2268 passed / 3 skipped** (cov ok), ruff/format, mypy strict (166 files), mkdocs strict, migration smoke. No dashboard change → bundle untouched. 10 new tests (6 unit incl. MockTransport SSE parsing + 4 CLI).
+- Ops: reaped a stale `janus serve` (pid 382107, from the deleted #183 worktree) that held port 20131 — TaskStop kills the shell, not the child; recurring hazard.
+- Next: PR (Closes #262), CI green → merge, verify main, cleanup.
