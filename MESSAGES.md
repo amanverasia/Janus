@@ -794,3 +794,15 @@ Shared coordination log for concurrent work. Check this file before starting or 
 - Gates: full pytest **2268 passed / 3 skipped** (cov ok), ruff/format, mypy strict (166 files), mkdocs strict, migration smoke. No dashboard change → bundle untouched. 10 new tests (6 unit incl. MockTransport SSE parsing + 4 CLI).
 - Ops: reaped a stale `janus serve` (pid 382107, from the deleted #183 worktree) that held port 20131 — TaskStop kills the shell, not the child; recurring hazard.
 - Next: PR (Closes #262), CI green → merge, verify main, cleanup.
+
+### 2026-10-05 06:20 UTC (2026-10-05 11:50 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #262, claiming
+
+- User authorized #262 (`janus bench`) after the #239 cluster completion report. Design: client-of-gateway bench — model discovery via `GET /v1/models`, fixed deterministic prompt set streamed per model, client-measured status/TTFT/TPS/tokens, Markdown report, cost from the local pricing registry, plan+confirm gate before spend. Worktree `../Janus-wt-262-bench` on `feat/janus-bench-262`.
+- Ops: reaped a stale `janus serve` (pid 382107, from the deleted #183 worktree) holding port 20131 — TaskStop kills the shell, not the child; recurring hazard.
+- Next: implement, gates, PR.
+
+### 2026-10-05 07:24 UTC (2026-10-05 12:54 IST) — ZCode (GLM-5.3, ZCode CLI, amanverasia@office-linux) → coordinator, #262 + retention + release train
+
+- #262 shipped as PR #264 (`c6279ee0`; first CI run failed only on an ANSI-wrapped help assertion — fixed, rerun green; e2e-verified against a live gateway + mock SSE upstream). Zero open issues/PRs.
+- User then authorized "do it all": request_outcomes retention (PR #265, `cdc39ee9` — the unbounded-growth gap from the 2026-10-01 prod audit; rides `server_usage_retention_days`) and **release v5.0.0** (26 unreleased commits incl. the breaking Cursor-provider removal → semver major; tag will trigger PyPI+Docker publish, user-approved).
+- Next: release commit on main (version sync + bundle + CHANGELOG [5.0.0] + these log entries), CI green, tag v5.0.0, verify publish, then prod deployment update.
