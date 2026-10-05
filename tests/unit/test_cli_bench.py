@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 
 from typer.testing import CliRunner
 
@@ -21,8 +22,9 @@ def _run(monkeypatch, models: list[str]) -> None:
 def test_bench_help_lists_options():
     result = runner.invoke(app, ["bench", "run", "--help"])
     assert result.exit_code == 0
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     for flag in ("--base-url", "--api-key", "--models", "--prefix", "--limit", "--output", "--yes"):
-        assert flag in result.output
+        assert flag in plain
 
 
 def test_bench_exits_when_no_models(monkeypatch):
