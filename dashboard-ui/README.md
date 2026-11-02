@@ -6,6 +6,9 @@ need Node.js in production: FastAPI serves the committed bundle from
 
 ## Development
 
+Use Node.js 22.17 or newer. The dashboard build uses SvelteKit 3, Vite 8 and
+TypeScript 6; production remains a static bundle served by Python.
+
 ```bash
 npm ci
 npm run format:check
@@ -29,6 +32,11 @@ From the repository root:
 The build script installs the locked dependencies, verifies formatting, runs Svelte
 diagnostics, creates the static build, and atomically replaces only the committed dashboard
 application bundle.
+
+It also rejects registry advisories at every severity and runs the build dependency's
+prototype-poisoning regression tests before the component suite. The Svelte plugin's
+`deepmerge` dependency resolves to the reviewed local patch in `vendor/deepmerge`;
+see its provenance and maintenance instructions there.
 
 ## Constraints
 

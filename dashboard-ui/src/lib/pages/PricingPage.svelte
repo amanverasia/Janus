@@ -1,11 +1,11 @@
 <script lang="ts">
-  import DataTable from '$lib/components/DataTable.svelte';
-  import Icon from '$lib/components/Icon.svelte';
-  import Modal from '$lib/components/Modal.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import Pagination from '$lib/components/Pagination.svelte';
-  import { compact, firstList, number, rate, text } from '$lib/data';
-  import type { JsonObject, MutationOptions } from '$lib/types';
+  import DataTable from '#lib/components/DataTable.svelte';
+  import Icon from '#lib/components/Icon.svelte';
+  import Modal from '#lib/components/Modal.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import Pagination from '#lib/components/Pagination.svelte';
+  import { compact, firstList, number, rate, text } from '#lib/data.ts';
+  import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;

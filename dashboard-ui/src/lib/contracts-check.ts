@@ -27,19 +27,19 @@ import type {
   SettingsState,
   ToolsState,
   UsageState
-} from '$lib/contracts';
-import type { JsonObject } from '$lib/types';
-import analyticsFixture from '$lib/contract-fixtures/analytics.json';
-import budgetsFixture from '$lib/contract-fixtures/budgets.json';
-import combosFixture from '$lib/contract-fixtures/combos.json';
-import keysFixture from '$lib/contract-fixtures/keys.json';
-import leaderboardFixture from '$lib/contract-fixtures/leaderboard.json';
-import overviewFixture from '$lib/contract-fixtures/overview.json';
-import requestLogsFixture from '$lib/contract-fixtures/request-logs.json';
-import saversFixture from '$lib/contract-fixtures/savers.json';
-import settingsFixture from '$lib/contract-fixtures/settings.json';
-import toolsFixture from '$lib/contract-fixtures/tools.json';
-import usageFixture from '$lib/contract-fixtures/usage.json';
+} from '#lib/contracts.ts';
+import type { JsonObject } from '#lib/types.ts';
+import analyticsFixture from '#lib/contract-fixtures/analytics.json';
+import budgetsFixture from '#lib/contract-fixtures/budgets.json';
+import combosFixture from '#lib/contract-fixtures/combos.json';
+import keysFixture from '#lib/contract-fixtures/keys.json';
+import leaderboardFixture from '#lib/contract-fixtures/leaderboard.json';
+import overviewFixture from '#lib/contract-fixtures/overview.json';
+import requestLogsFixture from '#lib/contract-fixtures/request-logs.json';
+import saversFixture from '#lib/contract-fixtures/savers.json';
+import settingsFixture from '#lib/contract-fixtures/settings.json';
+import toolsFixture from '#lib/contract-fixtures/tools.json';
+import usageFixture from '#lib/contract-fixtures/usage.json';
 
 const analytics = analyticsFixture satisfies SectionEnvelope<AnalyticsState>;
 const budgets = budgetsFixture satisfies SectionEnvelope<BudgetsState>;

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
-  import Modal from '$lib/components/Modal.svelte';
-  import Icon from '$lib/components/Icon.svelte';
-  import { csv, firstList, idOf, text } from '$lib/data';
-  import type { JsonObject, MutationOptions } from '$lib/types';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import EmptyState from '#lib/components/EmptyState.svelte';
+  import Modal from '#lib/components/Modal.svelte';
+  import Icon from '#lib/components/Icon.svelte';
+  import { csv, firstList, idOf, text } from '#lib/data.ts';
+  import type { JsonObject, MutationOptions } from '#lib/types.ts';
   export let data: JsonObject;
   export let action: (url: string, o?: MutationOptions) => Promise<unknown>;
   let open = false;

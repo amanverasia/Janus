@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, tick } from 'svelte';
-  import { commandItems } from '$lib/nav';
+  import { commandItems } from '#lib/nav.ts';
   import Icon from './Icon.svelte';
 
   export let open = false;

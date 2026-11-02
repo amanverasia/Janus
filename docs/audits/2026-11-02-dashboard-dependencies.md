@@ -9,10 +9,12 @@ npm audit --json
 npm ls devalue source-map-js undici vite vitest cookie deepmerge @sveltejs/kit
 ```
 
-The baseline audit reports 12 affected package entries: four high, two moderate,
-and six low. The updated lockfile reports six low entries and no high, moderate,
-or critical entries. These counts describe package entries, including inherited
-findings, rather than twelve independent vulnerabilities. Registry results can change.
+The baseline audit reported 12 affected package entries: four high, two moderate,
+and six low. The compatible update in PR #283 removed the high/moderate entries.
+The subsequent full remediation below removes the remaining six entries: the fresh
+registry audit reports zero vulnerabilities at every severity. These counts include
+inherited findings rather than twelve independent vulnerabilities. Registry results
+can change; the local patched dependency is verified separately by security tests.
 
 ## High and moderate findings remediated
 
@@ -36,14 +38,14 @@ Published advisories include [devalue](https://github.com/advisories/GHSA-4q55-j
 The audit groups additional advisories under the same package entries; the updates
 remove all high and moderate entries in the fresh audit, not just these examples.
 
-Updates stay within existing major versions and dependency ranges. Vite and Vitest's
+The initial updates stayed within existing major versions and dependency ranges. Vite and Vitest's
 direct minimums now select patched releases. No forced audit fix, transitive major
 override, or framework migration was used. The production bundle is regenerated
 from the new lockfile and remains locally served in the wheel and Docker image.
 
-## Remaining low findings accepted for this update
+## Initial low findings assessment (superseded by full remediation)
 
-Six affected entries remain: `@sveltejs/adapter-static`, `@sveltejs/kit`,
+Six affected entries remained after PR #283: `@sveltejs/adapter-static`, `@sveltejs/kit`,
 `@sveltejs/vite-plugin-svelte`, `@sveltejs/vite-plugin-svelte-inspector`, `cookie`,
 and `deepmerge`. The adapter/plugin/inspector entries inherit findings from their
 dependency graph; they are not six distinct browser vulnerabilities.
@@ -55,11 +57,45 @@ dependency graph; they are not six distinct browser vulnerabilities.
 | [Cookie field validation](https://github.com/jshttp/cookie/security/advisories/GHSA-pxg6-pf52-xh8x) | SvelteKit → cookie 0.6.0 | Node cookie serialization is not used by the Python login/session routes. They use Starlette and fixed cookie names/paths. SvelteKit's current range retains this version; do not force a transitive replacement without compatibility review. |
 | [Prototype poisoning](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) | Vite plugin → deepmerge 4.3.1 | Build configuration merging, not a dashboard request parser. Only trusted checked-in configuration is merged. No patched deepmerge version is published at review time. Revisit if untrusted build configuration is accepted. |
 
-The audit's proposed resolution includes SvelteKit 3 and adapter-static 4, which is
-a separate framework migration. Accept these low findings for this compatible
-maintenance batch with the constraints above. Do not claim a clean audit from
-`npm audit --omit=dev`: the project lists its entire frontend toolchain under
-development dependencies even though the build produces browser runtime code.
+These findings were initially accepted to keep the compatible maintenance batch
+separate from the framework migration. They are now remediated as described below.
+Do not claim a clean audit from `npm audit --omit=dev`: the entire frontend toolchain
+is listed under development dependencies even though it produces browser runtime code.
+
+## Full remediation
+
+The user requested removal of every remaining advisory, including the required
+framework migration. The updated toolchain uses SvelteKit 3.1.1, adapter-static 4.0.1,
+Vite plugin 7.3.1, Vite 8.3.5, Svelte 5.57.3, and TypeScript 6.0.3. SvelteKit now
+uses cookie 2.0.1; the obsolete inspector dependency is no longer present.
+
+The migration follows the [official SvelteKit 3 guide](https://svelte.dev/docs/kit/migrating-to-sveltekit-3):
+shared configuration is passed to the Vite plugin, library imports use explicit
+`#lib` package imports and file extensions, and TypeScript extends `$app/tsconfig`.
+Both production and component tests use the same adapter/base/version settings.
+Builds require Node 22.17 or newer; the deployed Python image remains Node-free.
+
+The latest Vite plugin still depends on deepmerge 4.3.1, and upstream has no patched
+release. A private local package, `@janus/deepmerge` version `4.3.1-janus.1`, retains
+the MIT-licensed bundled implementation and filters `__proto__`, `constructor`, and
+`prototype` from both target and source key enumeration. This covers recursive
+cloning and the null-prototype/primitive/own-key bypasses in the original guard.
+The root local development dependency and npm `$deepmerge` override make the plugin
+resolve to this exact source. Provenance, original integrity/hash, the narrow patch,
+license, and removal criteria are recorded in `dashboard-ui/vendor/deepmerge/README.md`.
+
+Seven Node security/compatibility tests run through the plugin's actual dependency
+resolution. Four poisoning regressions failed against the original implementation;
+the patched implementation passes all seven, including configuration array overrides,
+symbol properties, functions, special values, and custom merge behavior. No registry
+advisory is ignored or filtered. Because npm does not assess private local source,
+zero registry findings alone cannot attest to this patch; its source review and
+security tests are separate required checks.
+
+The normal dashboard build now runs `npm audit --audit-level=low`, the security tests,
+and all component tests. A newly published advisory at any severity fails that gate.
+Remove the local fork when upstream supplies an equivalently fixed dependency, after
+re-running the security regressions against the replacement.
 
 ## Verification
 

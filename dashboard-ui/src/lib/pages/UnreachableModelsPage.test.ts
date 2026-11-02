@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/svelte';
 import UnreachableModelsPage from './UnreachableModelsPage.svelte';
-import type { JsonObject } from '$lib/types';
+import type { JsonObject } from '#lib/types.ts';
 
 const anthropic = {
   prefix: 'anthropic',

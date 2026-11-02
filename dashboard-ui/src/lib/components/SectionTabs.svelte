@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { NavHub, NavItem } from '$lib/nav';
+  import type { NavHub, NavItem } from '#lib/nav.ts';
 
   export let hub: NavHub | undefined;
   export let active: NavItem;

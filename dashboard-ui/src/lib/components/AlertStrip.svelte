@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import type { AlertItem } from '$lib/types';
+  import type { AlertItem } from '#lib/types.ts';
   import Icon from './Icon.svelte';
   export let alerts: AlertItem[] = [];
   const dispatch = createEventDispatcher<{ navigate: string }>();

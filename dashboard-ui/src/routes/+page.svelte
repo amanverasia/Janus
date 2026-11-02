@@ -1,36 +1,42 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import '../app.css';
-  import AlertStrip from '$lib/components/AlertStrip.svelte';
-  import Icon from '$lib/components/Icon.svelte';
-  import PageSkeleton from '$lib/components/PageSkeleton.svelte';
-  import Shell from '$lib/components/Shell.svelte';
-  import Toasts from '$lib/components/Toasts.svelte';
-  import AnalyticsPage from '$lib/pages/AnalyticsPage.svelte';
-  import BudgetsPage from '$lib/pages/BudgetsPage.svelte';
-  import CombosPage from '$lib/pages/CombosPage.svelte';
-  import SectionTabs from '$lib/components/SectionTabs.svelte';
-  import ConnectPage from '$lib/pages/ConnectPage.svelte';
-  import InventoryImportPage from '$lib/pages/InventoryImportPage.svelte';
-  import InventoryKeysPage from '$lib/pages/InventoryKeysPage.svelte';
-  import InventoryOverviewPage from '$lib/pages/InventoryOverviewPage.svelte';
-  import KeysPage from '$lib/pages/KeysPage.svelte';
-  import LeaderboardPage from '$lib/pages/LeaderboardPage.svelte';
-  import ModelsPage from '$lib/pages/ModelsPage.svelte';
-  import OverviewPage from '$lib/pages/OverviewPage.svelte';
-  import PricingPage from '$lib/pages/PricingPage.svelte';
-  import ProvidersPage from '$lib/pages/ProvidersPage.svelte';
-  import RequestLogsPage from '$lib/pages/RequestLogsPage.svelte';
-  import RoutingPage from '$lib/pages/RoutingPage.svelte';
-  import SaversPage from '$lib/pages/SaversPage.svelte';
-  import SettingsPage from '$lib/pages/SettingsPage.svelte';
-  import ToolsPage from '$lib/pages/ToolsPage.svelte';
-  import UnreachableModelsPage from '$lib/pages/UnreachableModelsPage.svelte';
-  import UsagePage from '$lib/pages/UsagePage.svelte';
-  import { getState, getHealth, mutate } from '$lib/api';
-  import { object } from '$lib/data';
-  import { hubFor, legacyRedirect, pageTitle, routeFor, type NavItem } from '$lib/nav';
-  import type { AlertItem, HealthState, JsonObject, MutationOptions, ToastItem } from '$lib/types';
+  import AlertStrip from '#lib/components/AlertStrip.svelte';
+  import Icon from '#lib/components/Icon.svelte';
+  import PageSkeleton from '#lib/components/PageSkeleton.svelte';
+  import Shell from '#lib/components/Shell.svelte';
+  import Toasts from '#lib/components/Toasts.svelte';
+  import AnalyticsPage from '#lib/pages/AnalyticsPage.svelte';
+  import BudgetsPage from '#lib/pages/BudgetsPage.svelte';
+  import CombosPage from '#lib/pages/CombosPage.svelte';
+  import SectionTabs from '#lib/components/SectionTabs.svelte';
+  import ConnectPage from '#lib/pages/ConnectPage.svelte';
+  import InventoryImportPage from '#lib/pages/InventoryImportPage.svelte';
+  import InventoryKeysPage from '#lib/pages/InventoryKeysPage.svelte';
+  import InventoryOverviewPage from '#lib/pages/InventoryOverviewPage.svelte';
+  import KeysPage from '#lib/pages/KeysPage.svelte';
+  import LeaderboardPage from '#lib/pages/LeaderboardPage.svelte';
+  import ModelsPage from '#lib/pages/ModelsPage.svelte';
+  import OverviewPage from '#lib/pages/OverviewPage.svelte';
+  import PricingPage from '#lib/pages/PricingPage.svelte';
+  import ProvidersPage from '#lib/pages/ProvidersPage.svelte';
+  import RequestLogsPage from '#lib/pages/RequestLogsPage.svelte';
+  import RoutingPage from '#lib/pages/RoutingPage.svelte';
+  import SaversPage from '#lib/pages/SaversPage.svelte';
+  import SettingsPage from '#lib/pages/SettingsPage.svelte';
+  import ToolsPage from '#lib/pages/ToolsPage.svelte';
+  import UnreachableModelsPage from '#lib/pages/UnreachableModelsPage.svelte';
+  import UsagePage from '#lib/pages/UsagePage.svelte';
+  import { getState, getHealth, mutate } from '#lib/api.ts';
+  import { object } from '#lib/data.ts';
+  import { hubFor, legacyRedirect, pageTitle, routeFor, type NavItem } from '#lib/nav.ts';
+  import type {
+    AlertItem,
+    HealthState,
+    JsonObject,
+    MutationOptions,
+    ToastItem
+  } from '#lib/types.ts';
 
   type CachedView = { data: JsonObject; alerts: AlertItem[] };
 

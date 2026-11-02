@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import SettingsPage from './SettingsPage.svelte';
-import type { JsonObject, MutationOptions } from '$lib/types';
+import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
 describe('SettingsPage failed saves', () => {
   it('restores toggles, selects, and inputs to their saved values', async () => {

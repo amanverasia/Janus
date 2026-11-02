@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/svelte';
 import RoutingPage from './RoutingPage.svelte';
-import type { JsonObject } from '$lib/types';
+import type { JsonObject } from '#lib/types.ts';
 
 const renderPage = (data: JsonObject) =>
   render(RoutingPage, {

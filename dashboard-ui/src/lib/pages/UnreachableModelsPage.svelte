@@ -1,11 +1,11 @@
 <script lang="ts">
-  import EmptyState from '$lib/components/EmptyState.svelte';
-  import Icon from '$lib/components/Icon.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import Pagination from '$lib/components/Pagination.svelte';
-  import StatCard from '$lib/components/StatCard.svelte';
-  import { compact, entries, firstList, number, object, text } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import EmptyState from '#lib/components/EmptyState.svelte';
+  import Icon from '#lib/components/Icon.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import Pagination from '#lib/components/Pagination.svelte';
+  import StatCard from '#lib/components/StatCard.svelte';
+  import { compact, entries, firstList, number, object, text } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let navigate: (href: string) => void;

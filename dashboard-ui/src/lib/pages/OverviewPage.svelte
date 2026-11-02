@@ -1,14 +1,14 @@
 <script lang="ts">
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import StatCard from '$lib/components/StatCard.svelte';
-  import MiniChart from '$lib/components/MiniChart.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
-  import Icon from '$lib/components/Icon.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import StatCard from '#lib/components/StatCard.svelte';
+  import MiniChart from '#lib/components/MiniChart.svelte';
+  import EmptyState from '#lib/components/EmptyState.svelte';
+  import Icon from '#lib/components/Icon.svelte';
   import { onDestroy } from 'svelte';
-  import { copyText } from '$lib/clipboard';
-  import { bool, compact, firstList, money, number, object, percent, text } from '$lib/data';
-  import { curlSnippet } from '$lib/snippets';
-  import type { JsonObject } from '$lib/types';
+  import { copyText } from '#lib/clipboard.ts';
+  import { bool, compact, firstList, money, number, object, percent, text } from '#lib/data.ts';
+  import { curlSnippet } from '#lib/snippets.ts';
+  import type { JsonObject } from '#lib/types.ts';
   export let data: JsonObject;
   export let navigate: (href: string) => void;
 

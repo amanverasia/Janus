@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import InventoryImportPage from './InventoryImportPage.svelte';
-import { dashboardFetch } from '$lib/api';
+import { dashboardFetch } from '#lib/api.ts';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.ts', () => ({
   dashboardFetch: vi.fn()
 }));
 

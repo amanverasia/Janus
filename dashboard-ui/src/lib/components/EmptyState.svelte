@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import type { IconName } from '$lib/nav';
+  import type { IconName } from '#lib/nav.ts';
   export let icon: IconName = 'layers';
   export let title = 'Nothing here yet';
   export let message = 'New data will appear here when it becomes available.';

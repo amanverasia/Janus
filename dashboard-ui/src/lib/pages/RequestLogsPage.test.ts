@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import RequestLogsPage from './RequestLogsPage.svelte';
-import { dashboardFetch } from '$lib/api';
-import type { JsonObject, MutationOptions } from '$lib/types';
+import { dashboardFetch } from '#lib/api.ts';
+import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
-vi.mock('$lib/api', () => ({
+vi.mock('#lib/api.ts', () => ({
   dashboardFetch: vi.fn(),
   responseError: vi.fn(async (response: Response) => response.statusText)
 }));

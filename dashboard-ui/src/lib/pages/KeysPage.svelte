@@ -1,11 +1,11 @@
 <script lang="ts">
-  import DataTable from '$lib/components/DataTable.svelte';
-  import { copyText } from '$lib/clipboard';
-  import Icon from '$lib/components/Icon.svelte';
-  import Modal from '$lib/components/Modal.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import { bool, csv, dateTime, firstList, idOf, money, number, object, text } from '$lib/data';
-  import type { JsonObject, MutationOptions } from '$lib/types';
+  import DataTable from '#lib/components/DataTable.svelte';
+  import { copyText } from '#lib/clipboard.ts';
+  import Icon from '#lib/components/Icon.svelte';
+  import Modal from '#lib/components/Modal.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import { bool, csv, dateTime, firstList, idOf, money, number, object, text } from '#lib/data.ts';
+  import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;

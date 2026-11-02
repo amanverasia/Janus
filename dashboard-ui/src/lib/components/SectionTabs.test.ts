@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/svelte';
 import SectionTabs from './SectionTabs.svelte';
-import { hubFor, routeFor } from '$lib/nav';
+import { hubFor, routeFor } from '#lib/nav.ts';
 
 function renderFor(path: string, navigate = vi.fn()) {
   const view = render(SectionTabs, {

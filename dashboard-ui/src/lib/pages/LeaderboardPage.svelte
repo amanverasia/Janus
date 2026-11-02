@@ -1,8 +1,8 @@
 <script lang="ts">
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
-  import { compact, firstList, money, number, text } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import EmptyState from '#lib/components/EmptyState.svelte';
+  import { compact, firstList, money, number, text } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
   export let data: JsonObject;
   export let navigateQuery: (p: Record<string, string>) => void;
   $: rows = firstList(data, 'leaderboard', 'rows', 'items');

@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { dashboardFetch, responseError } from '$lib/api';
-  import EmptyState from '$lib/components/EmptyState.svelte';
-  import MiniChart from '$lib/components/MiniChart.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import StatCard from '$lib/components/StatCard.svelte';
-  import { compact, dateTime, firstList, money, number, object, text } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import { dashboardFetch, responseError } from '#lib/api.ts';
+  import EmptyState from '#lib/components/EmptyState.svelte';
+  import MiniChart from '#lib/components/MiniChart.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import StatCard from '#lib/components/StatCard.svelte';
+  import { compact, dateTime, firstList, money, number, object, text } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
 
   export let data: JsonObject;
 

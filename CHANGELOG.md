@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stopping reason plus attempted/skipped counts. (#267)
 
 ### Fixed
+- Remove the remaining dashboard dependency advisories with SvelteKit 3 and its
+  supported toolchain; patch the unmaintained build-time deepmerge dependency with
+  tested prototype-key filtering and enforce audits at every severity.
 - Document trusted HTTPS proxy metadata, Docker peer trust, authenticated rollout
   checks, and rollback; reject malformed dashboard origins, label image revisions,
   and exclude the workspace coordination log from source archives. (#272)

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
-import type { ValidatedMutationOptions } from '$lib/api';
+import type { ValidatedMutationOptions } from '#lib/api.ts';
 
 const api = vi.hoisted(() => ({
   mutate: vi.fn(),
@@ -9,7 +9,7 @@ const api = vi.hoisted(() => ({
   responseError: vi.fn(async () => 'error')
 }));
 
-vi.mock('$lib/api', () => api);
+vi.mock('#lib/api.ts', () => api);
 
 import ConnectPage from './ConnectPage.svelte';
 

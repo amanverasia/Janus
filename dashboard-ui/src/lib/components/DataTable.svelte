@@ -1,7 +1,7 @@
 <script lang="ts">
   import EmptyState from './EmptyState.svelte';
-  import { idOf, text } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import { idOf, text } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
   export let rows: JsonObject[] = [];
   export let columns: {
     key: string;
