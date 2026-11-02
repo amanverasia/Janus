@@ -22,9 +22,13 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
                        'daily_exhausted', 'error', 'invalid', 'unidentified',
                        'validation_paused'
                      ) OR health_status IN ('critical', 'exhausted')
+                       OR routing_health_status = 'unhealthy'
                      THEN 1 ELSE 0
                    END
                  ) as needs_attention,
+                 SUM(
+                   CASE WHEN routing_health_status = 'unhealthy' THEN 1 ELSE 0 END
+                 ) as routing_unhealthy,
                  SUM(CASE WHEN is_usable = 1 AND status != 'revoked' THEN 1 ELSE 0 END) as usable,
                  SUM(CASE WHEN status = 'pending_validation' THEN 1 ELSE 0 END) as pending
                FROM upstream_keys
@@ -45,6 +49,7 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
             "active": 0,
             "invalid": 0,
             "needs_attention": 0,
+            "routing_unhealthy": 0,
             "usable": 0,
             "pending": 0,
         }
@@ -73,6 +78,9 @@ async def get_provider_cards(db_path: str | Path) -> list[dict[str, Any]]:
                  SUM(
                    CASE WHEN k.status IN ('invalid', 'validation_paused') THEN 1 ELSE 0 END
                  ) as invalid_keys,
+                 SUM(
+                   CASE WHEN k.routing_health_status = 'unhealthy' THEN 1 ELSE 0 END
+                 ) as routing_unhealthy_keys,
                  ROUND(COALESCE(SUM(k.credits_remaining), 0), 2) as total_credits
                FROM inventory_providers p
                LEFT JOIN upstream_keys k

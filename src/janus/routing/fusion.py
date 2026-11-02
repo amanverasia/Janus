@@ -213,6 +213,7 @@ async def _call_panel_model(
                 refine_error_type(result.status_code, result.json_data).value,
                 model=target.model,
                 retry_after=result.retry_after,
+                status=result.status_code,
             )
         logger.warning("FUSION panel %s: upstream %s", model, result.status_code)
         return None

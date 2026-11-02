@@ -46,6 +46,7 @@ from janus.storage.analytics import (
     get_spend_summary,
 )
 from janus.storage.api_keys import create_key, list_keys
+from janus.storage.attempt_signals import get_attempt_health
 from janus.storage.budgets import create_or_update_budget, get_budget_statuses
 from janus.storage.combos_db import list_combos
 from janus.storage.cooldowns import get_active_cooldowns
@@ -135,9 +136,12 @@ _SECTIONS = frozenset(
 _DIMENSIONS = frozenset({"model", "provider", "account", "client_key"})
 _LEADERBOARD_SORTS = frozenset({"tokens", "cost", "requests"})
 _KEY_STATUSES = frozenset({"active", "revoked", "all"})
+ROUTING_UNHEALTHY_LIST_CAP = 50
+ATTEMPT_HEALTH_HOURS = 24
 _INVENTORY_STATUSES = frozenset(
     {
         "active",
+        "routing_unhealthy",
         "invalid",
         "validation_paused",
         "pending_validation",
@@ -292,8 +296,20 @@ async def _overview_data(
     except Exception:
         logger.warning("Failed to compute today's savings", exc_info=True)
         savings_today = None
+    inventory_summary = await get_inventory_summary(db_path)
+    try:
+        attempts = await get_attempt_health(db_path, hours=ATTEMPT_HEALTH_HOURS)
+    except Exception:
+        logger.warning("Failed to compute attempt health", exc_info=True)
+        attempts = None
     return {
         "stats": stats,
+        "provider_health": {
+            "credentials_total": inventory_summary["total"],
+            "credentials_needing_attention": inventory_summary["needs_attention"],
+            "credentials_routing_unhealthy": inventory_summary["routing_unhealthy"],
+            "attempts": attempts,
+        },
         "provider_count": len(providers),
         "today_cost": summary["total_cost"],
         "savings_today": savings_today,
@@ -326,10 +342,12 @@ async def _analytics_data(
     savings = await savings_for_days(
         db_path, baseline=baseline or None, registry=pricing_registry, days=days
     )
+    attempts = await get_attempt_health(db_path, hours=days * 24)
     return {
         "summary": summary,
         "breakdown": breakdown,
         "success": success,
+        "attempts": attempts,
         "savings": savings,
     }
 
@@ -716,9 +734,13 @@ async def _routing_data(
     overview["ready_accounts"] = sum(
         1
         for account in flat
-        if not account.get("cooldown_active") and not account.get("quota_deprioritized")
+        if not account.get("cooldown_active")
+        and not account.get("quota_deprioritized")
+        and not account.get("routing_unhealthy")
     )
     cooldowns = [account for account in flat if account.get("cooldown_active")]
+    unhealthy = [account for account in flat if account.get("routing_unhealthy")]
+    overview["unhealthy_accounts"] = len(unhealthy)
     needle = search.strip().lower()
     if needle:
         filtered = [
@@ -767,6 +789,7 @@ async def _routing_data(
         },
         "accounts": page,
         "cooldowns": cooldowns,
+        "unhealthy": unhealthy[:ROUTING_UNHEALTHY_LIST_CAP],
         "routing_total": total,
     }
 
