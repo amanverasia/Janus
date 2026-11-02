@@ -2299,6 +2299,10 @@ sample counts), and pin <strong>quality overrides</strong> (0–1) that beat mea
 your evals disagree with the recorded data. API clients can fetch the same trace from
 <code>GET /v1/quality/auto-preview?strategy=</code>. Request Logs show the model the request resolved to
 next to the requested one.</p>
+<p>Auto selects up to five model families and retains the eligible provider routes for
+each family. Version siblings are deduplicated within a provider, so a cooled or
+failing provider cannot hide another provider serving that model. Request-specific
+capabilities and client-key allowlists still filter routes before dispatch.</p>
 <p><img alt="Routing hub with section tabs on the Health page" src="../assets/dashboard-routing-tabs.png" /></p>
 <ul>
 <li>Enabled provider and account readiness at a glance</li>

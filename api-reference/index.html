@@ -2434,7 +2434,7 @@ set to <code>"combo"</code>.</p>
 <tr>
 <td><code>503</code></td>
 <td>All accounts cooling down</td>
-<td>Every account for the requested model is currently in cooldown (none exhausted, all just waiting). Includes a <code>Retry-After</code> header — seconds until the <strong>earliest</strong> cooldown expiry across those accounts</td>
+<td>Every account for the requested model is currently in cooldown (none exhausted, all just waiting). Includes a <code>Retry-After</code> header — seconds until the <strong>earliest usable account</strong>, after all its applicable locks expire</td>
 </tr>
 <tr>
 <td><code>503</code></td>
@@ -2449,8 +2449,10 @@ every candidate account already in cooldown:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"All accounts for 'openai/gpt-4o' are cooling down; retry after 42s"</span><span class="p">}</span>
 </code></pre></div>
 <p>With header: <code>Retry-After: 42</code></p>
-<p>The value is computed from the soonest cooldown expiry among the model's
-accounts, so clients can back off precisely instead of guessing.</p>
+<p>The value is computed from the earliest usable account among the model's
+accounts. Each account must wait for the later of its account-wide and
+model-specific cooldowns, so an overlapping shorter lock cannot understate the
+delay.</p>
 <h3 id="body-text-rate-limit-detection">Body-text rate-limit detection<a class="headerlink" href="#body-text-rate-limit-detection" title="Permanent link">&para;</a></h3>
 <p>Some upstream providers disguise a rate limit as a non-429 status — e.g. an
 HTTP 400 with a body like <code>{"error": "quota exceeded"}</code>. Janus scans error

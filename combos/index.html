@@ -1634,7 +1634,7 @@ from the candidate pool for a fixed duration. Cooldowns are stored in SQLite and
 <tbody>
 <tr>
 <td>Rate limit (429)</td>
-<td>60 seconds</td>
+<td>Exponential backoff from 2 seconds, capped at 300 seconds</td>
 </tr>
 <tr>
 <td>Server error (5xx)</td>
@@ -1645,6 +1645,10 @@ from the candidate pool for a fixed duration. Cooldowns are stored in SQLite and
 <td>300 seconds</td>
 </tr>
 <tr>
+<td>Payment error (402)</td>
+<td>300 seconds</td>
+</tr>
+<tr>
 <td>Network error (timeout, connection)</td>
 <td>15 seconds</td>
 </tr>
@@ -1652,6 +1656,19 @@ from the candidate pool for a fixed duration. Cooldowns are stored in SQLite and
 </table>
 <p>An account in cooldown is skipped during attempt resolution. Once the cooldown
 expires, the account is automatically available again.</p>
+<p>Upstream reset hints take precedence over the normal error cooldown and are
+capped at 1,800 seconds. Janus tries <code>Retry-After</code> (seconds or HTTP date), then
+<code>x-ratelimit-reset-after</code> (seconds), then <code>x-ratelimit-reset</code> (epoch seconds).
+Non-finite, overflowing, negative, or malformed hints are ignored so another
+usable hint or the normal cooldown can apply. Explicit zero and past HTTP dates
+in <code>Retry-After</code> mean the delay has elapsed and take precedence over alternate
+headers; nonpositive alternate resets are ignored. Google retry durations must
+also be finite and positive.</p>
+<p>A later failure can extend an active cooldown but cannot shorten it. An account
+with both account-wide and model-specific locks must wait for both. Model success
+clears only that model's lock; account-level success clears only the account-wide
+lock. Operators can clear all timers through <strong>Routing → Health → Clear all
+cooldowns</strong>.</p>
 <h2 id="fallback-eligible-errors">Fallback-eligible errors<a class="headerlink" href="#fallback-eligible-errors" title="Permanent link">&para;</a></h2>
 <p>Not every error triggers fallback. Janus classifies errors and only retries on
 these:</p>
