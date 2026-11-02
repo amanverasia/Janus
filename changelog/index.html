@@ -5610,6 +5610,11 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
 <ul>
+<li>Document trusted HTTPS proxy metadata, Docker peer trust, authenticated rollout
+  checks, and rollback; reject malformed dashboard origins, label image revisions,
+  and exclude the workspace coordination log from source archives. (#272)</li>
+<li>Update dashboard dependencies within their existing major versions to clear high
+  and moderate audit findings; document the remaining low-severity exposure. (#277)</li>
 <li>Auto routing retains provider alternatives for each selected model family, while
   deduplicating version siblings within each provider. The top-five limit applies to
   model families so a cooled provider cannot hide a healthy alternate. (#274)</li>

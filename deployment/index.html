@@ -662,6 +662,56 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Reverse proxy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trust-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trust boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nginx-on-the-same-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nginx on the same host
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nginx-in-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nginx in Docker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-before-admitting-traffic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify before admitting traffic
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -669,6 +719,17 @@
     <span class="md-ellipsis">
       
         Data backup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#revision-tracking-and-rollback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revision tracking and rollback
       
     </span>
   </a>
@@ -1356,6 +1417,56 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Reverse proxy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trust-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trust boundary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nginx-on-the-same-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nginx on the same host
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nginx-in-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        nginx in Docker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-before-admitting-traffic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify before admitting traffic
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1363,6 +1474,17 @@
     <span class="md-ellipsis">
       
         Data backup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#revision-tracking-and-rollback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revision tracking and rollback
       
     </span>
   </a>
@@ -1472,31 +1594,166 @@ API keys and use TLS termination (reverse proxy) for anything beyond a trusted L
 keys must be active and have <strong>Allow dashboard login</strong> (<code>can_login=true</code>);
 configured static keys are also accepted. The session cookie is scoped to
 <code>/dashboard</code> and marked <code>Secure</code> when the request arrives over HTTPS, so a
-TLS-terminating reverse proxy should forward <code>X-Forwarded-Proto</code>. Username/password
+TLS-terminating reverse proxy must set <code>X-Forwarded-Proto</code> and be explicitly trusted
+by Uvicorn as described below. Username/password
 login and the loopback bypass are not supported. Legacy dashboard credential settings are
 purged during database initialization. See
 <a href="../dashboard/#authentication">Dashboard — Authentication</a>.</p>
 <p>The <code>require_api_key</code> setting controls API endpoint authentication only. It does
 not make the dashboard anonymous when disabled.</p>
 <h2 id="reverse-proxy">Reverse proxy<a class="headerlink" href="#reverse-proxy" title="Permanent link">&para;</a></h2>
-<p>Janus does not terminate TLS itself. Put nginx, Caddy, or Traefik in front:</p>
-<div class="highlight"><pre><span></span><code><span class="k">location</span><span class="w"> </span><span class="s">/</span><span class="w"> </span><span class="p">{</span>
+<p>Janus does not terminate TLS itself. Its dashboard accepts a browser mutation only
+when the browser's <code>Origin</code> matches the request's scheme, host, and port. Both the
+origin check and login cookie's <code>Secure</code> flag use the same resolved request scheme.
+A proxy must supply the external scheme and preserve the external <code>Host</code>, including
+any non-default port. A missing HTTPS scheme causes a legitimate mutation to return
+403; weakening the origin comparison is not a deployment fix.</p>
+<h3 id="trust-boundary">Trust boundary<a class="headerlink" href="#trust-boundary" title="Permanent link">&para;</a></h3>
+<p><code>janus serve</code> uses Uvicorn's proxy-header middleware. Set <code>FORWARDED_ALLOW_IPS</code> to
+the connecting proxy's IP address, or a dedicated network containing only trusted
+proxies. It defaults to <code>127.0.0.1</code>, and Docker Compose forwards the setting from
+<code>.env</code>. For a proxy in another container, loopback is not that proxy's address.
+Do not use <code>*</code> or a shared network containing untrusted containers. Restrict direct
+access to Janus with loopback binding, a private container network, or a firewall.</p>
+<p>Uvicorn accepts <code>X-Forwarded-Proto</code> and <code>X-Forwarded-For</code> only from trusted peers;
+it does not use <code>X-Forwarded-Host</code> or the standard <code>Forwarded</code> header to replace
+<code>Host</code>. The trusted proxy must overwrite incoming forwarding headers and accept
+only its configured public host. Client-supplied forwarding values must never
+become authoritative. See <a href="https://www.uvicorn.org/settings/#http">Uvicorn settings</a>
+and <a href="https://www.uvicorn.org/deployment/#running-behind-nginx">proxy deployment guidance</a>.</p>
+<h3 id="nginx-on-the-same-host">nginx on the same host<a class="headerlink" href="#nginx-on-the-same-host" title="Permanent link">&para;</a></h3>
+<p>Terminate TLS at nginx and forward to a loopback-only Janus listener. Within the
+nginx HTTPS server for <code>gateway.example</code> (with your certificate configured):</p>
+<div class="highlight"><pre><span></span><code><span class="k">server_name</span><span class="w"> </span><span class="s">gateway.example</span><span class="p">;</span>
+
+<span class="k">location</span><span class="w"> </span><span class="s">/</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kn">proxy_pass</span><span class="w"> </span><span class="s">http://127.0.0.1:20128</span><span class="p">;</span>
 <span class="w">    </span><span class="kn">proxy_http_version</span><span class="w"> </span><span class="mi">1</span><span class="s">.1</span><span class="p">;</span>
-<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">Host</span><span class="w"> </span><span class="nv">$host</span><span class="p">;</span>
-<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Real-IP</span><span class="w"> </span><span class="nv">$remote_addr</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">Host</span><span class="w"> </span><span class="nv">$http_host</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Forwarded-Proto</span><span class="w"> </span><span class="nv">$scheme</span><span class="p">;</span>
 <span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Forwarded-For</span><span class="w"> </span><span class="nv">$remote_addr</span><span class="p">;</span>
-<span class="w">    </span><span class="kn">proxy_buffering</span><span class="w"> </span><span class="no">off</span><span class="p">;</span><span class="w">   </span><span class="c1"># important for SSE streaming</span>
+<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">Forwarded</span><span class="w"> </span><span class="s">""</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Forwarded-Host</span><span class="w"> </span><span class="s">""</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_set_header</span><span class="w"> </span><span class="s">X-Forwarded-Port</span><span class="w"> </span><span class="s">""</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_buffering</span><span class="w"> </span><span class="no">off</span><span class="p">;</span>
+<span class="w">    </span><span class="kn">proxy_read_timeout</span><span class="w"> </span><span class="s">300s</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>For streaming (<code>stream: true</code>), disable proxy buffering.</p>
-<h2 id="data-backup">Data backup<a class="headerlink" href="#data-backup" title="Permanent link">&para;</a></h2>
-<p>Back up the entire data directory:</p>
-<div class="highlight"><pre><span></span><code>tar<span class="w"> </span>czf<span class="w"> </span>janus-backup.tar.gz<span class="w"> </span>janus-data/
+<p>Reject unknown hosts in a separate default server and redirect public HTTP to HTTPS.
+For native <code>janus serve</code>, bind <code>--host 127.0.0.1</code> and set
+<code>FORWARDED_ALLOW_IPS=127.0.0.1</code>. For a host proxy connecting to a published Docker
+port, Docker may translate the connecting peer address: inspect that address and
+trust only the controlled proxy path rather than broadening trust to all clients.</p>
+<h3 id="nginx-in-docker">nginx in Docker<a class="headerlink" href="#nginx-in-docker" title="Permanent link">&para;</a></h3>
+<p>For a proxy container on a dedicated bridge, replace <code>proxy_pass</code> above with
+<code>http://janus:20128</code>. Publish only the proxy's TLS port. This standalone Compose
+example uses fixed addresses to make the trusted peer explicit; choose an unused
+subnet and configure the TLS server, certificates, and host rejection in <code>nginx.conf</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">janus</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/amanverasia/janus:&lt;pinned-version&gt;</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./janus-data:/home/janus/.janus</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">FORWARDED_ALLOW_IPS</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">172.30.40.2</span>
+<span class="w">      </span><span class="nt">INVENTORY_ENCRYPTION_KEY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${INVENTORY_ENCRYPTION_KEY:?required}</span>
+<span class="w">    </span><span class="nt">networks</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">gateway</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">ipv4_address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">172.30.40.3</span>
+<span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
+<span class="w">  </span><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nginx:stable-alpine</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"443:443"</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./nginx.conf:/etc/nginx/conf.d/default.conf:ro</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">./certs:/etc/nginx/certs:ro</span>
+<span class="w">    </span><span class="nt">networks</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">gateway</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">ipv4_address</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">172.30.40.2</span>
+<span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
+<span class="nt">networks</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gateway</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ipam</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">subnet</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">172.30.40.0/24</span>
 </code></pre></div>
+<p>If using the repository's source-build Compose file instead, set the same environment
+variable and remove its <code>20128</code> port publication in your deployment configuration.
+Confirm the final configuration with <code>docker compose config</code> locally; it can contain
+secrets and must not be pasted into logs or bug reports.</p>
+<p>Caddy's <code>reverse_proxy janus:20128</code> and Traefik's HTTP TLS router can also supply
+scheme metadata. Preserve the original Host (Traefik <code>passHostHeader=true</code>), trust
+only their backend peer addresses, and keep their own incoming forwarded-header
+trust limited to any actual upstream proxy. A raw TLS-to-TCP tunnel does not
+necessarily add HTTP headers: place a trusted HTTP proxy after it. Hardcode
+<code>X-Forwarded-Proto https</code> only on a private listener reachable exclusively through
+that TLS tunnel; a public HTTP listener must not assert HTTPS.</p>
+<h3 id="verify-before-admitting-traffic">Verify before admitting traffic<a class="headerlink" href="#verify-before-admitting-traffic" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Visit the public HTTPS dashboard, sign in, and check that the cookie has
+   <code>Secure</code>, <code>HttpOnly</code>, <code>SameSite=Lax</code>, and <code>Path=/dashboard</code>.</li>
+<li>In Settings, change a reversible setting, confirm it persists, and restore it.
+   The browser's <code>Origin</code> must include the public port when it is non-default.</li>
+<li>Confirm the endpoint shown under Tools uses the public HTTPS host and port.</li>
+<li>Verify that mutations with another origin, <code>Origin: null</code>, malformed origins,
+   or a same-host HTTP origin return 403. A direct untrusted client sending
+   <code>X-Forwarded-Proto: https</code> must not override the request scheme.</li>
+</ol>
+<p>No separate external-origin override is needed. Keep strict origin validation and
+fix the proxy/peer trust configuration when these checks fail.</p>
+<h2 id="data-backup">Data backup<a class="headerlink" href="#data-backup" title="Permanent link">&para;</a></h2>
+<p>For a cold backup, stop Janus before archiving the entire data directory, then
+restart it. Keep the archive and the encryption key private:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>stop<span class="w"> </span>janus
+<span class="o">(</span><span class="nb">umask</span><span class="w"> </span><span class="m">077</span><span class="p">;</span><span class="w"> </span>tar<span class="w"> </span>czf<span class="w"> </span>janus-backup.tar.gz<span class="w"> </span>janus-data/<span class="o">)</span>
+docker<span class="w"> </span>compose<span class="w"> </span>start<span class="w"> </span>janus
+</code></pre></div>
+<p>For an online pre-deployment backup, use SQLite's backup API rather than copying
+an active database or its WAL independently:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>--user<span class="w"> </span>janus<span class="w"> </span>janus<span class="w"> </span>python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'PY'</span>
+<span class="s">import sqlite3</span>
+<span class="s">from datetime import datetime, timezone</span>
+<span class="s">from pathlib import Path</span>
+
+<span class="s">root = Path.home() / ".janus"</span>
+<span class="s">name = "predeploy-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".db"</span>
+<span class="s">source = sqlite3.connect(f"file:{root / 'janus.db'}?mode=ro", uri=True)</span>
+<span class="s">source.execute("PRAGMA query_only=ON")</span>
+<span class="s">target = sqlite3.connect(root / name)</span>
+<span class="s">source.backup(target)</span>
+<span class="s">assert target.execute("PRAGMA quick_check").fetchone()[0] == "ok"</span>
+<span class="s">target.close()</span>
+<span class="s">source.close()</span>
+<span class="s">(root / name).chmod(0o600)</span>
+<span class="s">print(name)</span>
+<span class="s">PY</span>
+</code></pre></div>
+<p>Copy the backup off-host, and retain the deployment's config, Compose overrides,
+proxy/tunnel configuration, and encryption key separately with restricted access.</p>
 <p>The SQLite database is the source of truth after first startup. Restoring
 <code>janus.db</code> restores providers, combos, pricing overrides, usage history, budgets,
 inventory keys, and cooldown state.</p>
+<h2 id="revision-tracking-and-rollback">Revision tracking and rollback<a class="headerlink" href="#revision-tracking-and-rollback" title="Permanent link">&para;</a></h2>
+<p>Before updating, record the source revision, dirty files, current image ID, effective
+proxy trust, and active DB settings privately. Preserve local Compose/proxy changes;
+never reset a deployment checkout or blindly overwrite its data directory. Tag the
+current image for rollback and create a verified database backup as above.</p>
+<p>Source builds can embed the revision in an OCI image label:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>build<span class="w"> </span>--build-arg<span class="w"> </span><span class="nv">VCS_REF</span><span class="o">=</span><span class="s2">"</span><span class="k">$(</span>git<span class="w"> </span>rev-parse<span class="w"> </span>HEAD<span class="k">)</span><span class="s2">"</span><span class="w"> </span>janus
+docker<span class="w"> </span>image<span class="w"> </span>inspect<span class="w"> </span>janus-janus<span class="w"> </span>--format<span class="w"> </span><span class="s1">'{{index .Config.Labels "org.opencontainers.image.revision"}}'</span>
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>--no-deps<span class="w"> </span>janus
+</code></pre></div>
+<p>The local image name depends on your Compose project. Published CI images also
+carry the source revision. Record the deployed image ID and revision after recreation;
+health alone is insufficient. Repeat the authenticated HTTPS checks above. If a
+proxy caches the Janus container IP, reload its upstream resolution after recreation.</p>
+<p>For an application rollback, override the <code>janus</code> image with the saved rollback
+tag and recreate just that service using <code>--no-build --no-deps</code>; preserve proxy
+configuration and volumes. If a schema rollback is necessary, stop Janus and restore
+the matching database backup together with its original image/configuration. Do not
+restore an older database over a running process; restoring it discards writes made
+since the backup. Retain the old image and backup until the new release is verified.</p>
 <h2 id="health-check">Health check<a class="headerlink" href="#health-check" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:20128/v1/health
 <span class="c1"># {"status": "ok"}</span>
