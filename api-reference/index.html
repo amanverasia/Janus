@@ -1178,6 +1178,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#dispatch-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dispatch limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#body-text-rate-limit-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1741,6 +1752,17 @@
     <span class="md-ellipsis">
       
         503 — All Accounts Cooling Down
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dispatch-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dispatch limits
       
     </span>
   </a>
@@ -2453,6 +2475,27 @@ every candidate account already in cooldown:</p>
 accounts. Each account must wait for the later of its account-wide and
 model-specific cooldowns, so an overlapping shorter lock cannot understate the
 delay.</p>
+<h3 id="dispatch-limits">Dispatch limits<a class="headerlink" href="#dispatch-limits" title="Permanent link">&para;</a></h3>
+<p>Runtime limits default to 60 seconds and 20 upstream sends per request. Operators
+can change them in dashboard <strong>Settings → Dispatch limits</strong>, with bounds of
+1–600 seconds and 1–100 attempts. Preprocessing, image prefetch, credential refresh,
+and fusion panels/judge calls share the budget. For a streamed response, the
+deadline covers startup until its first nonempty client-visible output; established
+streams continue under existing transport timeouts without fallback replay. Final
+accounting is outside the dispatch deadline.</p>
+<p>An attempt limit returns HTTP 503 with <code>error.type: dispatch_attempt_limit</code>; expiry
+returns HTTP 504 with <code>error.type: dispatch_deadline_exceeded</code>. The error includes
+<code>attempted</code> and <code>skipped</code>, also exposed through <code>x-janus-attempts</code> and
+<code>x-janus-skipped-attempts</code>. Skipped counts eligible resolved targets that were not
+sent; preprocessing expiry can have zero resolved targets and zero attempts.
+<code>x-janus-error-type</code> identifies the stopping reason. Request Logs retain these
+details when metadata logging is enabled, and terminal outcomes record the actual
+attempt count even when body logging is disabled. Client cancellation stops work
+and is recorded separately as 499.</p>
+<p>Limit errors do not advertise a guessed <code>Retry-After</code>. When resolution instead
+finds every account already cooling down, the usual 503 cooldown response retains
+its known <code>Retry-After</code>. Inspect account health and repair credentials or enable
+cooldowns before increasing limits.</p>
 <h3 id="body-text-rate-limit-detection">Body-text rate-limit detection<a class="headerlink" href="#body-text-rate-limit-detection" title="Permanent link">&para;</a></h3>
 <p>Some upstream providers disguise a rate limit as a non-429 status — e.g. an
 HTTP 400 with a body like <code>{"error": "quota exceeded"}</code>. Janus scans error

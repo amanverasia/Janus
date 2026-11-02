@@ -2376,14 +2376,31 @@ unless actively debugging.</p>
   errors are skipped until their cooldown expires. Turn off to override and keep
   retrying those accounts immediately (<code>server_cooldowns_enabled</code>). Also available
   via <code>janus settings set server_cooldowns_enabled false</code></li>
-<li><strong>Sticky client routing</strong> and account strategy</li>
-<li><strong>Reporting timezone</strong> and request-log retention</li>
-<li><strong>Request Logging</strong> — capture full request/response bodies for debugging (off by default), plus the log retention limit</li>
-<li><strong>Prompt cache</strong> — serve cached responses for deterministic requests at zero cost
-  (off by default; see below)</li>
-<li><strong>Export secrets</strong> — download current DB state as YAML after an explicit
-  plaintext-credential warning</li>
 </ul>
+<p><strong>Dispatch limits</strong> in Settings bound each gateway request, including when cooldowns
+are disabled. <strong>Dispatch timeout</strong> defaults to 60 seconds (range 1–600), and
+<strong>Maximum dispatch attempts</strong> defaults to 20 (range 1–100). Changes apply to new
+requests without restarting. These controls use the same DB settings as automation:
+<code>server_dispatch_timeout_s</code> and <code>server_dispatch_max_attempts</code>.</p>
+<p>The deadline starts after authentication and loading the runtime settings. It
+includes budget checks, parsing, token savers, image prefetch, credential refresh,
+upstream waits, and fusion panel/judge work. For streaming it ends when the first
+nonempty client-visible output is ready; the remaining stream uses existing
+upstream transport timeouts and never retries after output starts. Final terminal
+accounting runs after dispatch. Cancellation closes pending work and prevents
+further attempts.</p>
+<p>On a limit failure, use <strong>Inspect Request Logs</strong> to see the stopping reason and
+attempted/skipped counts. Repair failed credentials and enable cooldowns before
+raising limits. A deadline returns HTTP 504; an attempt limit returns HTTP 503.
+Client disconnections are recorded separately as 499. Limits do not bypass API-key
+model allowlists or spending budgets.
+- <strong>Sticky client routing</strong> and account strategy
+- <strong>Reporting timezone</strong> and request-log retention
+- <strong>Request Logging</strong> — capture full request/response bodies for debugging (off by default), plus the log retention limit
+- <strong>Prompt cache</strong> — serve cached responses for deterministic requests at zero cost
+  (off by default; see below)
+- <strong>Export secrets</strong> — download current DB state as YAML after an explicit
+  plaintext-credential warning</p>
 <p>Settings also exposes advanced combo routing controls (<code>combo_strategy</code>, sticky
 limit, and Fusion tuning), server information, and <strong>Reset to Defaults</strong>. See
 <a href="../combos/#combo-strategies">Combos &amp; Fallback</a> for the routing fields. Values
