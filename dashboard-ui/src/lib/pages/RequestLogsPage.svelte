@@ -54,7 +54,15 @@
       format: (value: unknown, row: JsonObject) => keyLabel(value, row)
     },
     { key: 'status', label: 'Status', format: (value: unknown) => text(value) },
-    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` }
+    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` },
+    {
+      key: 'error',
+      label: 'Failure reason',
+      format: (value: unknown) => {
+        const reason = text(value, '—');
+        return reason.length > 120 ? `${reason.slice(0, 117)}…` : reason;
+      }
+    }
   ];
 
   async function inspect(row: JsonObject) {
@@ -94,6 +102,7 @@
     ? [
         detailField('Time', detail.timestamp ?? detail.created_at),
         detailField('Model', detail.model),
+        detailField('Resolved model', detail.resolved_model),
         detailField('Provider', providerLabel(detail.provider_id ?? detail.provider, detail)),
         detailField('API key', detail.client_key_name ?? detail.client_key_label),
         detailField('Status', detail.status),
@@ -101,7 +110,7 @@
           'Latency',
           detail.duration_ms != null ? `${compact(detail.duration_ms)} ms` : '—'
         ),
-        detailField('Stream', detail.stream ?? detail.is_stream),
+        detailField('Stream', detail.streamed ?? detail.stream ?? detail.is_stream),
         detailField('Error', detail.error ?? detail.error_message)
       ]
     : [];

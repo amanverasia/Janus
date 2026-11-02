@@ -1157,11 +1157,28 @@ async def _handle_with_snapshot(
         )
     except AllAccountsCooledDown as e:
         retry_after = e.retry_after
+        detail = (
+            f"All accounts for '{canonical_req.model}' are cooling down; "
+            f"retry after {int(retry_after)}s"
+        )
+        if log_requests:
+            await record_request_log(
+                db_path,
+                client_format=client_format,
+                model=requested_model,
+                status=503,
+                duration_ms=_elapsed_ms(),
+                streamed=canonical_req.stream,
+                request_body=logged_request_body,
+                error=detail,
+                client_key_id=client_key_id,
+                client_key_label=client_key_label,
+                max_rows=retention,
+            )
         await outcome.record(status=503, model=canonical_req.model)
         raise HTTPException(
             status_code=503,
-            detail=f"All accounts for '{canonical_req.model}' are cooling down; "
-            f"retry after {int(retry_after)}s",
+            detail=detail,
             headers={
                 "Retry-After": str(int(retry_after)),
                 **_janus_headers(error_type="all_accounts_cooled_down"),

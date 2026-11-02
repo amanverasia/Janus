@@ -1,4 +1,43 @@
-# AGENTS.md
+# Agent instructions
+
+## Product direction: dashboard first
+
+- Cloudline, the bundled Svelte dashboard, is the primary operator interface. Design new
+  setup, credential recovery, routing, diagnostics, and cost controls as complete dashboard
+  workflows. Keep the CLI for bootstrap, headless operation, and automation; do not make a
+  new routine operator feature CLI-only.
+- A feature is complete when the operator can discover it, act, see success/failure, and
+  recover from the dashboard. Prefer a contextual action over instructions to edit YAML,
+  run SQL, SSH to production, or copy a curl command.
+- Preserve authentication during onboarding. Browser bootstrap needs a separate secure
+  design; do not add an anonymous administrator creation endpoint or a loopback bypass.
+- Prioritize truthful failure explanations and recovery before adding routing strategies.
+  Separate terminal client outcomes, failed upstream attempts, and client cancellations.
+  Zero cooldowns or a healthy process is not evidence that upstream routing is healthy.
+- Use the existing six navigation hubs, shared state endpoints, and mutation/reload paths.
+  New controls must update the same DB settings and routing state as the API/CLI.
+- Read `docs/audits/2026-11-02-dashboard-first-production-audit.md` for the production
+  evidence, OpenCodex comparison, and sequenced acceptance criteria. The reference project
+  is https://github.com/lidge-jun/opencodex; record a commit when studying its implementation.
+- Keep `AGENTS.md` and `CLAUDE.md` byte-for-byte identical. Edit this file, copy it to
+  `CLAUDE.md`, and verify with `cmp AGENTS.md CLAUDE.md` before handoff.
+
+## Codebase map
+
+- `app.py`: application startup/shutdown, routers, static assets, background services.
+- `api/routes.py`: gateway orchestration; `_handle` leases a provider snapshot and
+  `_handle_with_snapshot` performs parsing, policy, routing, streaming, and accounting.
+- `canonical/`, `formats/`, `providers/`: neutral messages, wire adapters, upstream executors.
+  `providers/drivers.py` is the executor factory/native-format registry.
+- `routing/`: account selection, combos, auto scoring, cooldowns, capabilities, and snapshot
+  lifetime. `inventory/` validates and refreshes credentials; `storage/` owns persistence.
+- `dashboard/api_v2.py`: typed state payloads and newer mutations; `routes.py` and
+  `inventory_routes.py`: other dashboard endpoints; `reload.py`: DB-to-runtime updates.
+- `dashboard-ui/src/routes/+page.svelte`: dashboard shell/view dispatch;
+  `src/lib/nav.ts`: hubs and URLs; `src/lib/pages/`: operator pages; `api.ts`, `contracts.ts`,
+  and `contract-fixtures/`: request handling and API/UI contracts (under `dashboard-ui/`).
+- `src/janus/dashboard/static/app/`: generated, committed runtime bundle. Edit Svelte source
+  and rebuild with `.venv/bin/python scripts/build_dashboard_ui.py`; never hand-edit hashes.
 
 ## Agent coordination
 
@@ -11,7 +50,10 @@
 - Python 3.11 in a `.venv` at repo root. Always use `.venv/bin/python -m <tool>`, not bare
   console scripts: generated wrappers can retain a stale checkout/interpreter path after an
   environment move.
-- Install: `pip install -e ".[dev]"` (editable + dev extras: respx, ruff, mypy, mkdocs-material, build).
+- Verify `.venv/bin/python --version` rather than assuming the environment matches this
+  requirement. The 2026-11-02 checkout had Python 3.14.6; checks on that environment do not
+  replace the supported Python 3.11/3.12 CI matrix.
+- Install: `.venv/bin/python -m pip install -e ".[dev]"` (includes pytest-timeout).
 - CI runs on push/PR via `.github/workflows/ci.yml`, which calls the reusable
   `.github/workflows/checks.yml` suite: lint (ruff check + format over `src/`,
   `tests/`, and `scripts/`), mypy over `src/janus/` and `scripts/`, pytest with
@@ -43,25 +85,34 @@
 .venv/bin/python -m ruff check src/janus/ tests/             # lint
 .venv/bin/python -m ruff format --check src/janus/ tests/    # format check (run before committing)
 .venv/bin/python -m mypy src/janus/                          # typecheck (strict)
-.venv/bin/janus serve --port 20128 --config ~/.janus/config.yaml  # dev server
+.venv/bin/python -m janus serve --port 20128 --config ~/.janus/config.yaml  # dev server
 docker compose up -d                                         # Docker (persists in ./janus-data/)
-.venv/bin/mkdocs serve                                       # docs preview
-.venv/bin/mkdocs build --strict                              # docs verify
+.venv/bin/python -m mkdocs serve                            # docs preview
+.venv/bin/python -m mkdocs build --strict                     # docs verify
 .venv/bin/python -m build                                    # wheel + sdist
-scripts/build_dashboard_ui.py --check                         # dashboard check (svelte-check + vitest + build + bundle)
-scripts/browser_regression.py                                 # browser suite (needs a running server + JANUS_SMOKE_API_KEY)
+.venv/bin/python scripts/build_dashboard_ui.py --check         # dashboard checks + bundle verification
+.venv/bin/python scripts/browser_regression.py                # browser suite (needs a running server + JANUS_SMOKE_API_KEY)
 ```
 
 ## Architecture constraint
 
 **Canonical intermediate model.** `formats/` and `providers/` never import or call each other — they only talk to `canonical/`. This is intentional (2N adapters instead of N² translators). Do not break this boundary.
 
-Request flow: client format → `parse_request` → `CanonicalRequest` → model allowlist check (per API key) → `SaverPipeline.apply` / `apply_async` → budget check (`_check_budgets`) → `FallbackHandler.resolve_attempts` → per-attempt: `build_upstream_request` → upstream call → `parse_upstream_response` → `CanonicalResponse` → `emit_response` → `record_usage` (with cost). On 429/5xx/auth/network errors, the account is cooled down and the next attempt is tried.
+Request flow: authenticated request → provider snapshot lease → budget check (`_check_budgets`)
+→ `parse_request` → `CanonicalRequest` → per-key model allowlist → optional auto plan
+→ asynchronous then synchronous token savers → cache/fusion handling →
+`FallbackHandler.resolve_attempts` → per-attempt payload build, upstream call, response parse,
+and client emission → usage, terminal outcome, and attempt accounting. Eligible failures try
+the next account; cooldowns apply only when `server_cooldowns_enabled` is true.
 
 ## Routing & fallback layer
 
 - `ProviderRegistry` stores `list[ProviderConfig]` per prefix (multi-account). `lookup()` returns `list[ResolvedTarget]`, not a single target.
-- `FallbackHandler` (`routing/fallback.py`) expands combos → models → available accounts, filtering out cooled-down accounts. Cooldown durations: 429→60s, 5xx→30s, auth→300s, network→15s. Cooldowns are kept in memory (`time.time()` expiries) and persisted to SQLite via `storage/cooldowns.py` (`save_cooldown` fire-and-forget on mark, `load_cooldowns()` restores active ones on startup/reload).
+- `FallbackHandler` (`routing/fallback.py`) expands combos → models → available accounts.
+  Cooldowns are keyed by `(account_id, model)` with `__all__` for account-wide state, and
+  are persisted to SQLite. `routing/errors.py` defines 429 exponential backoff (2s to 300s),
+  5xx 30s, auth/payment 300s, network 15s; an upstream Retry-After can override up to 1800s.
+  `server_cooldowns_enabled=false` bypasses both marking and availability filtering.
 - Probed account-value windows feed routing soft-ordering: `FallbackHandler.load_probed_headroom()`
   (called on reload and after dashboard probe refresh, reads `upstream_keys.account_value*` masked)
   keeps worst-window usage per account for 600s; `resolve_attempts` demotes ≥90% accounts to the
@@ -69,7 +120,7 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
   surfaced as `(probed window N% used)` markers in the 503 attempt trail.
 - Inventory rate limits (`rate_limit_rpm`/`rate_limit_rpd` on `upstream_keys`) feed routing: `expand_gateway_provider` copies them onto each `ProviderConfig`, `_handle()` calls `record_attempt()` per attempt, and `resolve_attempts` moves accounts without headroom to the end of the try-order (`_deprioritize_rate_limited`). Daily attempt counts are persisted to the `attempt_counters` table (`storage/attempt_counters.py`, fire-and-forget upserts) and seeded on startup/reload (`load_request_counts()`); success-only `usage` rows are never the attempt source of truth. The RPM window is in-memory only (60s sliding).
 - Subscription quotas (`quota_window`/`quota_limit`/`quota_metric` on the `providers` table) work the same way but per provider row (shared across expanded inventory accounts, keyed by `ProviderConfig.row_id`): `storage/quotas.py` defines UTC windows (5h buckets / daily / weekly / monthly), `FallbackHandler` tracks in-memory counters seeded via `load_quota_usage()` from the persisted attempt/token counters, requests-metric increments on attempt, tokens-metric via `record_quota_tokens()` post-response. Reloads merge adopted in-memory counts with the ledger (max per window) instead of replacing them. Soft enforcement only — exhausted providers are deprioritized, never blocked.
-- - `model="auto"` (#183): `routing/auto.py::plan_auto` ranks priced, routable, allowlisted,
+- `model="auto"` (#183): `routing/auto.py::plan_auto` ranks priced, routable, allowlisted,
   capability-matching candidates per request (strategies `balanced`/`cheapest`/`fastest`/
   `quality`, default from the `auto_routing_strategy` setting; version-sibling dedupe; top-5
   chain). `_handle` resolves it and passes the chain to `resolve_attempts(model_chain=...)`,
@@ -82,7 +133,9 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
   section's `auto.preview`/`auto.overrides` both come from the same `plan_auto` call as the
   request path; CRUD lives at `POST/DELETE /dashboard/api/v2/auto-overrides`.
 `routing/errors.py` has `classify_error(status_code)` and `is_fallback_eligible(error)` — these drive fallback decisions in `_handle()`.
-- The retry loop lives in `api/routes.py::_handle()`. Streaming requests do NOT retry mid-stream (can't replay partial output).
+- The retry loop lives in `api/routes.py::_handle_with_snapshot()`. Streaming requests do NOT
+  retry after client output starts (can't replay partial output). Keep pre-stream failures
+  separate from failures after emission.
 - Adding multi-account: register multiple `ProviderConfig` entries with the same `prefix` but different `id`/`api_key`.
 - Per-attempt signals: `api/signals.py::AttemptSignal` is started before each upstream call
   (hung on `_OutcomeRecorder.attempt_signal`) and finished exactly once from
@@ -90,7 +143,9 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
   paths, and stream `finally` blocks (`ok`/`aborted`/`error`). Writes go to `attempt_signals`
   in tracked background tasks drained on shutdown. `storage/model_signals.py::get_model_signals`
   aggregates p50/p90 TTFT and tokens/sec plus error rate (60 s cache, invalidated in
-  `reload_providers`). Signals are data only until #183 consumes them; they must never block.
+  `reload_providers`). Auto routing consumes these signals. Its quality axis defaults to
+  observed reliability (`1 - error_rate`), not a benchmark of answer quality. Signal recording
+  must never block routing. Attempt signals retain seven days with hourly pruning.
 - `ProviderRegistry.has_route()` is the indexed, boolean equivalent of `lookup()`. Use it for
   catalog filtering; do not materialize `ResolvedTarget` lists just to determine routability.
 - Model catalog entries must be unique, remain key-allowlist-aware, and preserve configured combo
@@ -101,7 +156,10 @@ Request flow: client format → `parse_request` → `CanonicalRequest` → model
 - `create_app()` creates an empty `app.state.providers = {}`. Providers are built during `lifespan()` startup via `reload_providers()` (in `dashboard/reload.py`), which reads enabled providers from the `providers` DB table and calls `_build_provider()` (still defined in `app.py`).
 - Each provider holds a shared `httpx.AsyncClient` with pool limits (100 connections, 20 keepalive). Clients are NOT created per-request.
 - Providers are closed on shutdown via the FastAPI lifespan handler in `app.py`.
-- After dashboard CRUD operations, `reload_providers(app)` rebuilds providers, registry, and fallback handler without restart. Deleted/disabled providers have their `httpx.AsyncClient` closed.
+- After dashboard CRUD, `reload_providers(app)` reuses unchanged executors and installs a new
+  `ProviderSnapshot`. Changed/deleted executors retire only when active request/stream leases
+  release them (`routing/provider_snapshots.py`). Never close an in-flight stream's client
+  during reload. Cooldowns and counters are adopted into the replacement handler.
 - `_handle()` looks up cached providers by `target.provider_config.id` — never constructs providers inline.
 
 ## DB-driven config (source of truth)
@@ -124,8 +182,10 @@ Provider edit endpoint preserves the existing API key when the field is left bla
 ## Adding a new provider executor
 
 1. Create `src/janus/providers/<name>.py` with a `call(payload, stream) -> RawResult` method and a `close()` method (the `Provider` protocol requires it).
-2. Add a case to `_build_provider()` in **`src/janus/app.py`**.
-3. If the provider's native format differs from its `api_type`, update `_resolve_format()` in routes.py.
+2. Register a `ProviderDriver` in **`src/janus/providers/drivers.py`**. The `app.py`
+   `_build_provider()` function delegates to that registry.
+3. Set the driver's native format and discovery behavior, and verify `_resolve_format()`
+   compatibility in routes.py.
 
 ## Adding a new token saver
 
@@ -159,7 +219,7 @@ Provider edit endpoint preserves the existing API key when the field is left bla
   (`Pagination.test.ts`) back the shared `Pagination.svelte` and run via
   `npm run test` inside `scripts/build_dashboard_ui.py --check`.
   Changing a backend field name requires regenerating fixtures/signatures
-  (`JANUS_REGEN_CONTRACT_FIXTURES=1 pytest tests/integration/test_dashboard_state_contracts.py`)
+  (`JANUS_REGEN_CONTRACT_FIXTURES=1 .venv/bin/python -m pytest tests/integration/test_dashboard_state_contracts.py`)
   AND updating `contracts.ts` for byte-pinned sections in the same change — both gates fail
   otherwise. Response-size budgets for the heavy sections live in
   `tests/integration/test_dashboard_state_size.py`; extend them deliberately when a section
@@ -232,6 +292,19 @@ Provider edit endpoint preserves the existing API key when the field is left bla
   fail safe by leaving an image URL unchanged when prefetch fails.
 
 ## Dashboard audit handoff
+
+The current dashboard-first direction and production findings are in
+`docs/audits/2026-11-02-dashboard-first-production-audit.md`. Read this before changing
+failure diagnostics, cooldown defaults, onboarding, or the production deployment.
+
+Keep deployment addresses, usernames, filesystem locations, and private incident notes out of
+public issues and commits. Inspect deployment revision, dirty files, and active DB settings
+before proposing an update. Preserve local deployment customizations; resolve TLS proxy
+scheme/host handling without weakening same-origin checks. Use read-only SQLite (`mode=ro`
+plus `PRAGMA query_only=ON`) and aggregate metadata for diagnostics. Do not print container
+environment, credentials, request bodies, account identifiers, or raw logs. Keep investigation
+separate from deploying, restarting, deleting records, changing routing settings, or running
+billable upstream probes.
 
 The production-data dashboard audit from 2026-08-25 is documented in `docs/audits/2026-08-25-dashboard-audit-handoff.md`. It contains evidence, proposed designs, file ownership, cleanup safety guidance, required tests, and acceptance criteria for GitHub issues #88 through #94. Read that report before changing inventory credential reveal, history, budget-time semantics, dashboard DOM rendering, or frontend asset packaging.
 

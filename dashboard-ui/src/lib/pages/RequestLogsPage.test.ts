@@ -52,6 +52,33 @@ describe('RequestLogsPage resolved model column', () => {
   });
 });
 
+describe('RequestLogsPage failure diagnostics', () => {
+  it('shows failure reasons as text without interpreting upstream HTML', () => {
+    const error = '<img src=x onerror="alert(1)"> All accounts are cooling down';
+    const page = renderPage([log({ status: 503, error })]);
+    expect(page.getByRole('columnheader', { name: 'Failure reason' })).toBeTruthy();
+    expect(page.getByRole('cell', { name: error })).toBeTruthy();
+    expect(page.container.querySelector('img')).toBeNull();
+  });
+
+  it('bounds the table reason and retains the full reason and stream metadata in detail', async () => {
+    const error = `All providers exhausted: ${'upstream 402; '.repeat(30)}`;
+    const entry = log({ status: 503, error, streamed: 1, resolved_model: 'selected-model' });
+    vi.mocked(dashboardFetch).mockResolvedValue({
+      ok: true,
+      json: async () => entry
+    } as unknown as Response);
+    const page = renderPage([entry]);
+    expect(page.getByRole('cell', { name: `${error.slice(0, 117)}…` })).toBeTruthy();
+    await fireEvent.click(page.getByTitle('Inspect'));
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Request detail' });
+    await waitFor(() => expect(within(dialog).getByText(error.trim())).toBeTruthy());
+    const stream = within(dialog).getByText('Stream').parentElement;
+    expect(stream?.textContent).toContain('1');
+    expect(within(dialog).getByText('selected-model')).toBeTruthy();
+  });
+});
+
 describe('RequestLogsPage API key column', () => {
   it('prefers the joined key name in the table', () => {
     const page = renderPage([log({ client_key_name: 'ci-key', client_key_label: 'sk-janus-old' })]);
@@ -68,7 +95,7 @@ describe('RequestLogsPage API key column', () => {
     const page = renderPage([
       log({ client_key_name: null, client_key_label: null, resolved_model: 'gpt-4o' })
     ]);
-    expect(page.getByRole('cell', { name: '—' })).toBeTruthy();
+    expect(page.getAllByRole('cell', { name: '—' }).length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows the same key field in the inspect modal', async () => {
