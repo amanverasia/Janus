@@ -185,7 +185,11 @@
       >
         <Icon name="menu" />
       </button>
-      <button class="command-trigger" on:click={() => (paletteOpen = true)}>
+      <button
+        class="command-trigger"
+        aria-label="Search dashboard"
+        on:click={() => (paletteOpen = true)}
+      >
         <Icon name="search" size={17} />
         <span>Search dashboard…</span>
         <kbd>⌘ K</kbd>

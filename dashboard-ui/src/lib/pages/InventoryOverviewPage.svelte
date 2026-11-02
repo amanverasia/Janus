@@ -26,9 +26,28 @@
   $: activity = firstList(data, 'recent_activity');
   $: encryption = object(data.encryption);
   $: providerEncryption = object(data.provider_encryption);
-  $: creditTotal = credits.reduce((total, row) => total + number(row.total_remaining), 0);
+  const isPostpaid = (row: JsonObject) => text(row.billing_model, '') === 'postpaid';
+  $: creditTotal = credits.reduce(
+    (total, row) => total + (isPostpaid(row) ? 0 : number(row.total_remaining)),
+    0
+  );
   $: encryptedCount = number(encryption.encrypted) + number(providerEncryption.encrypted);
   $: plaintextCount = number(encryption.plaintext) + number(providerEncryption.plaintext);
+  $: inventoryPlaintext = number(encryption.plaintext);
+  $: archivedPlaintext = number(encryption.archived_plaintext);
+  $: providerPlaintext = number(providerEncryption.plaintext);
+  $: plaintextBreakdown = [
+    inventoryPlaintext > 0
+      ? `${compact(inventoryPlaintext)} inventory credentials${
+          archivedPlaintext > 0 ? ` (${compact(archivedPlaintext)} archived)` : ''
+        }`
+      : '',
+    providerPlaintext > 0 ? `${compact(providerPlaintext)} routing provider API keys` : ''
+  ]
+    .filter(Boolean)
+    .join(' + ');
+  $: providersWithKeys = number(summary.providers_with_keys, providers.length);
+  $: archivedCount = number(summary.archived);
 
   async function reveal(key: JsonObject) {
     const id = idOf(key);
@@ -110,7 +129,7 @@
   <StatCard
     label="Stored keys"
     value={compact(summary.total)}
-    detail={`${compact(summary.providers)} connected providers`}
+    detail={`In ${compact(providersWithKeys)} inventory providers · ${compact(archivedCount)} archived not counted`}
   />
   <StatCard
     label="Ready to route"
@@ -127,7 +146,9 @@
   <StatCard
     label="Needs attention"
     value={compact(summary.needs_attention)}
-    detail="Invalid, exhausted, or unhealthy credentials"
+    detail={number(summary.routing_unhealthy)
+      ? `${compact(summary.routing_unhealthy)} failing at routing · invalid, exhausted, or unhealthy`
+      : 'Invalid, exhausted, or unhealthy credentials'}
     tone="amber"
   />
 </div>
@@ -140,14 +161,15 @@
     <span class="eyebrow">Credential protection</span>
     <strong>
       {plaintextCount > 0
-        ? `${compact(plaintextCount)} credentials still need encryption`
+        ? `${compact(plaintextCount)} stored secrets still need encryption`
         : 'Stored credentials are protected'}
     </strong>
     <p>
-      {#if encryptedCount > 0}
+      {#if plaintextCount > 0}
+        {plaintextBreakdown}{#if encryptedCount > 0}; {compact(encryptedCount)} already encrypted.{:else}.
+          Set an encryption key to protect them.{/if}
+      {:else if encryptedCount > 0}
         {compact(encryptedCount)} encrypted values across inventory and provider storage.
-      {:else if plaintextCount > 0}
-        Set an encryption key to protect {compact(plaintextCount)} stored credentials.
       {:else}
         Encryption status will appear after the first credential is stored.
       {/if}
@@ -295,6 +317,8 @@
         {#each credits as row}
           {@const remaining = number(row.total_remaining)}
           {@const cap = number(row.total_cap)}
+          {@const postpaid = isPostpaid(row)}
+          {@const overCap = cap > 0 && remaining > cap}
           {@const worstUsage =
             row.worst_usage_percent == null ? null : Math.round(number(row.worst_usage_percent))}
           <div class="credit-row">
@@ -309,12 +333,19 @@
               {/if}
             </div>
             <div class="credit-value">
-              <strong>{money(remaining)}</strong>
-              {#if cap > 0}<small>
-                  {Math.round((remaining / cap) * 100)}% remaining
-                </small>{:else if worstUsage != null}<small>windows tracked</small>{:else}<small>
-                  available
-                </small>{/if}
+              {#if postpaid}
+                <strong>Postpaid</strong>
+                <small>Billed after use</small>
+              {:else}
+                <strong>{money(remaining)}</strong>
+                {#if overCap}<small>
+                    Above original cap · includes top-ups
+                  </small>{:else if cap > 0}<small>
+                    {Math.round((remaining / cap) * 100)}% remaining
+                  </small>{:else if worstUsage != null}<small>windows tracked</small>{:else}<small>
+                    available
+                  </small>{/if}
+              {/if}
             </div>
           </div>
         {/each}

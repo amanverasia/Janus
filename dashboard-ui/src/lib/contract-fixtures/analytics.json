@@ -37,6 +37,15 @@
       "server_5xx": 0,
       "total": 0
     },
+    "attempts": {
+      "window_hours": 168,
+      "total": 0,
+      "ok": 0,
+      "failed": 0,
+      "aborted": 0,
+      "success_rate": null,
+      "failed_by_class": {}
+    },
     "savings": {
       "baseline": "gpt-4o",
       "baseline_priced": true,

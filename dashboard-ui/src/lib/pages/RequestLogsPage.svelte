@@ -4,7 +4,17 @@
   import Icon from '#lib/components/Icon.svelte';
   import Modal from '#lib/components/Modal.svelte';
   import PageHeader from '#lib/components/PageHeader.svelte';
-  import { compact, dateTime, firstList, idOf, list, number, object, text } from '#lib/data.ts';
+  import {
+    compact,
+    dateTime,
+    duration,
+    firstList,
+    idOf,
+    list,
+    number,
+    object,
+    text
+  } from '#lib/data.ts';
   import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
@@ -32,6 +42,28 @@
   $: attemptTotal = Math.max(0, number(attemptPagination.total, attempts.length));
   $: correlationAvailable = object(detail?.correlation).available === true;
   $: finalOutcome = text(detail?.final_outcome, 'unknown').replaceAll('_', ' ');
+  $: attemptSummary = object(detail?.attempt_summary);
+  $: summaryTotal = Math.max(0, number(attemptSummary.total, attemptTotal));
+  $: summaryFailed = Math.max(0, number(attemptSummary.failed, 0));
+  $: summaryOmitted = Math.max(0, summaryTotal - attempts.length);
+  $: recoveredAfterFailures = finalOutcome === 'success' && summaryFailed > 0;
+  $: failedOnly = data.failed_attempts_only === true;
+
+  function plural(count: number, noun: string): string {
+    return `${count} ${noun}${count === 1 ? '' : 's'}`;
+  }
+
+  function attemptsLabel(_value: unknown, row: JsonObject): string {
+    const count = row.attempt_count;
+    if (count == null) return row.request_id ? 'Unavailable' : 'Unavailable (legacy)';
+    const failed = row.failed_attempt_count;
+    if (failed == null) return `${number(count)}`;
+    if (number(failed) === 0) return `${number(count)}`;
+    const status = number(row.status, 0);
+    return status >= 200 && status < 400
+      ? `${number(count)} · succeeded after ${plural(number(failed), 'failed attempt')}`
+      : `${number(count)} · ${number(failed)} failed`;
+  }
 
   function providerLabel(value: unknown, row: JsonObject): string {
     const raw = text(value ?? row.provider, '');
@@ -63,7 +95,8 @@
       format: (value: unknown, row: JsonObject) => keyLabel(value, row)
     },
     { key: 'status', label: 'Status', format: (value: unknown) => text(value) },
-    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` },
+    { key: 'attempt_count', label: 'Attempts', format: attemptsLabel },
+    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => duration(value) },
     {
       key: 'error',
       label: 'Failure reason',
@@ -154,10 +187,7 @@
         detailField('Status', detail.status),
         detailField('Final outcome', finalOutcome),
         detailField('Request ID', detail.request_id),
-        detailField(
-          'Latency',
-          detail.duration_ms != null ? `${compact(detail.duration_ms)} ms` : '—'
-        ),
+        detailField('Latency', detail.duration_ms != null ? duration(detail.duration_ms) : '—'),
         detailField('Stream', detail.streamed ?? detail.stream ?? detail.is_stream),
         detailField('Error', detail.error ?? detail.error_message)
       ]
@@ -211,7 +241,22 @@
       {data.logging_enabled === false ? 'Disabled' : 'Recording'}
     </span>
   </div>
-  <DataTable {rows} {columns} emptyTitle="No request logs">
+  <div class="panel-body filter-bar">
+    <label class="checkbox-row">
+      <input
+        type="checkbox"
+        checked={failedOnly}
+        on:change={(event) =>
+          navigateQuery({ failed_attempts: event.currentTarget.checked ? 'true' : '' })}
+      />
+      <span>Only requests with failed attempts</span>
+    </label>
+  </div>
+  <DataTable
+    {rows}
+    {columns}
+    emptyTitle={failedOnly ? 'No requests with failed attempts' : 'No request logs'}
+  >
     <svelte:fragment slot="actions" let:row>
       <button class="icon-button" title="Inspect" on:click={() => inspect(row)}>
         <Icon name="eye" size={15} />
@@ -260,6 +305,12 @@
       {#if !correlationAvailable}
         <p class="muted">Legacy request log. Attempt correlation is unavailable for this row.</p>
       {:else if attempts.length}
+        <p class="attempt-summary" data-testid="attempt-summary">
+          {plural(summaryTotal, 'attempt')} · {summaryFailed} failed
+          {#if recoveredAfterFailures}
+            — succeeded after {plural(summaryFailed, 'failed attempt')}
+          {/if}
+        </p>
         <ol class="attempt-list">
           {#each attempts as attempt}
             <li>
@@ -274,7 +325,7 @@
               <div class="attempt-meta">
                 <span>{text(attempt.model)}</span>
                 <span>{text(attempt.account, 'Unknown account')}</span>
-                <span>{compact(attempt.duration_ms)} ms</span>
+                <span>{duration(attempt.duration_ms)}</span>
               </div>
               <div class="attempt-diagnostics">
                 {#if attempt.failure_class}<span>
@@ -297,6 +348,11 @@
             </li>
           {/each}
         </ol>
+        {#if summaryOmitted > 0}
+          <p class="muted attempt-omitted">
+            Showing {attempts.length} of {summaryTotal} attempts; {summaryOmitted} not shown on this page.
+          </p>
+        {/if}
         {#if attemptTotal > attemptLimit}
           <div class="attempt-pagination">
             <button
@@ -383,6 +439,24 @@
   .timeline-header h3 {
     margin: 0;
     font-size: 15px;
+  }
+  .attempt-summary {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .filter-bar {
+    padding-bottom: 0;
+  }
+  .checkbox-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .attempt-omitted {
+    margin: 10px 0 0;
+    font-size: 12px;
   }
   .attempt-list {
     list-style: none;

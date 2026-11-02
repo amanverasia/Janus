@@ -4,12 +4,23 @@
   import PageHeader from '#lib/components/PageHeader.svelte';
   import Pagination from '#lib/components/Pagination.svelte';
   import StatCard from '#lib/components/StatCard.svelte';
-  import { bool, compact, firstList, money, number, object, text } from '#lib/data.ts';
+  import {
+    bool,
+    compact,
+    dateTime,
+    duration,
+    firstList,
+    money,
+    number,
+    object,
+    text
+  } from '#lib/data.ts';
   import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;
   export let navigateQuery: (params: Record<string, string>) => void;
+  export let navigate: (href: string) => void;
 
   $: overview = object(data.overview);
   $: live = object(data.routing_live ?? data.live);
@@ -20,11 +31,13 @@
   // cooling-down subset arrives whole (it is small).
   $: accounts = firstList(data, 'accounts');
   $: cooldowns = firstList(data, 'cooldowns');
+  $: unhealthy = firstList(data, 'unhealthy');
   $: auto = object(data.auto);
   $: autoStrategy = text(auto.strategy, 'balanced');
   $: autoModels = Array.isArray(auto.models)
     ? auto.models.filter((model): model is string => typeof model === 'string' && !!model.trim())
     : [];
+  $: autoNote = `Top ${number(auto.top_n, 5)} model families with every eligible provider route (${autoModels.length} ${autoModels.length === 1 ? 'route' : 'routes'} in the chain). Signals are per provider route.`;
   $: autoPreview = firstList(auto, 'preview');
   $: autoOverrides = firstList(auto, 'overrides');
   let overrideModel = '';
@@ -75,6 +88,21 @@
   }
   $: totalAccounts = number(overview.total_accounts, accounts.length);
   $: readyAccounts = number(overview.ready_accounts, accounts.length);
+  $: unhealthyAccounts = number(overview.unhealthy_accounts, unhealthy.length);
+  $: cooldownsOn = bool(settings.cooldowns_enabled ?? live.cooldowns_enabled, true);
+  $: coolingCount = cooldowns.length || number(overview.cooldown_count, 0);
+  $: coolingDetail = !cooldownsOn
+    ? 'Cooldowns are disabled'
+    : coolingCount
+      ? 'Temporarily tried last'
+      : 'None right now';
+  $: strategyKey = text(settings.account_strategy ?? live.account_strategy, 'round_robin');
+  $: strategyDetail =
+    strategyKey === 'fill_first'
+      ? 'Uses accounts in order'
+      : strategyKey === 'sticky_rr'
+        ? `Stays on one account for ${number(settings.sticky_limit, 3)} requests`
+        : 'Rotates the first account per request';
   $: strategy = text(settings.account_strategy ?? live.account_strategy, 'round_robin')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -96,6 +124,19 @@
       labeled || account.key_masked || account.config_id || account.account_id,
       'Unnamed account'
     );
+  }
+
+  function healthReason(account: JsonObject): string {
+    const code = account.routing_health_status_code;
+    const status = code === null || code === undefined ? '' : ` (HTTP ${text(code, '')})`;
+    const reason = text(account.routing_health_reason, 'auth_error');
+    const label =
+      reason === 'payment_error'
+        ? 'Payment required'
+        : reason === 'auth_error'
+          ? 'Authentication failed'
+          : reason.replaceAll('_', ' ');
+    return `${label}${status}`;
   }
 
   function cooldownRemaining(account: JsonObject): string {
@@ -136,7 +177,8 @@
       <strong>Account cooldowns are disabled</strong>
       <span>
         Failing accounts stay in rotation. Repeated authentication, payment, or rate-limit errors
-        can make requests slow or exhaust every provider.
+        can make requests slow or exhaust every provider. Credentials that keep returning payment or
+        authentication errors are still tried last.
         <a href="/dashboard/ui/settings">Enable account cooldowns in Settings</a>
         .
       </span>
@@ -149,18 +191,21 @@
   <StatCard
     label="Ready accounts"
     value={compact(readyAccounts)}
-    detail={`${compact(totalAccounts)} configured`}
+    detail={unhealthyAccounts
+      ? `${compact(totalAccounts)} configured · ${compact(unhealthyAccounts)} failing`
+      : `${compact(totalAccounts)} configured`}
     tone="teal"
   />
   <StatCard
     label="Cooling down"
-    value={compact(cooldowns.length || number(overview.cooldown_count, 0))}
+    value={compact(coolingCount)}
+    detail={coolingDetail}
     tone="amber"
   />
-  <StatCard label="Strategy" value={strategy} tone="violet" />
+  <StatCard label="Strategy" value={strategy} detail={strategyDetail} tone="violet" />
 </div>
 
-<section class="panel">
+<section class="panel auto-card">
   <div class="panel-header">
     <div>
       <h2>Auto routing</h2>
@@ -169,27 +214,34 @@
         try-order
       </p>
     </div>
-    <select
-      aria-label="Auto routing strategy"
-      disabled={autoSaving}
-      value={autoStrategy}
-      on:change={(event) => saveAutoStrategy((event.currentTarget as HTMLSelectElement).value)}
-    >
-      <option value="balanced">Balanced</option>
-      <option value="cheapest">Cheapest</option>
-      <option value="fastest">Fastest</option>
-      <option value="quality">Quality</option>
-    </select>
+    <div class="field auto-strategy">
+      <select
+        aria-label="Auto routing strategy"
+        disabled={autoSaving}
+        value={autoStrategy}
+        on:change={(event) => saveAutoStrategy((event.currentTarget as HTMLSelectElement).value)}
+      >
+        <option value="balanced">Balanced</option>
+        <option value="cheapest">Cheapest</option>
+        <option value="fastest">Fastest</option>
+        <option value="quality">Quality</option>
+      </select>
+    </div>
   </div>
-  {#if autoModels.length}
-    <p class="auto-chain">
-      <span class="mono">{text(auto.top, '')}</span>
-      <span class="muted">would pick now</span>
-      {#each autoModels as model, index}<span class="status mono">{index + 1}. {model}</span>{/each}
-    </p>
-  {:else}
-    <p class="muted">No priced, routable models for auto yet.</p>
-  {/if}
+  <div class="panel-body auto-chain-body">
+    {#if autoModels.length}
+      <p class="auto-chain">
+        <span class="mono">{text(auto.top, '')}</span>
+        <span class="muted">would pick now</span>
+        {#each autoModels as model, index}<span class="status mono">
+            {index + 1}. {model}
+          </span>{/each}
+      </p>
+      <p class="muted auto-note">{autoNote}</p>
+    {:else}
+      <p class="muted">No priced, routable models for auto yet.</p>
+    {/if}
+  </div>
   {#if autoPreview.length}
     <div class="table-wrap">
       <table>
@@ -218,59 +270,66 @@
               </td>
               <td data-label="TPS">{row.tps_p50 != null ? number(row.tps_p50).toFixed(1) : '—'}</td>
               <td data-label="TTFT">
-                {row.ttft_p50_ms != null ? `${compact(row.ttft_p50_ms)}ms` : '—'}
+                {duration(row.ttft_p50_ms)}
               </td>
-              <td data-label="Samples">{compact(row.samples)}</td>
+              <td data-label="Samples">
+                {number(row.samples).toLocaleString()}
+                {#if row.signal_scope === 'model'}<small class="muted scope-note">
+                    model-wide
+                  </small>{/if}
+              </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
   {/if}
-  <div class="override-row">
-    <label>
-      <span>Quality override</span>
-      <input
-        placeholder="model id, e.g. deepseek-chat"
-        bind:value={overrideModel}
-        aria-label="Override model"
-      />
-    </label>
-    <label>
-      <span>Quality 0–1</span>
-      <input
-        type="number"
-        min="0"
-        max="1"
-        step="0.05"
-        bind:value={overrideQuality}
-        aria-label="Override quality"
-      />
-    </label>
-    <button
-      class="button"
-      disabled={!overrideModel.trim() || overrideSaving}
-      on:click={saveOverride}
-    >
-      Save override
-    </button>
-  </div>
-  {#if autoOverrides.length}
-    <div class="chips">
-      {#each autoOverrides as override (override.model)}
-        <span class="status mono">
-          {override.model} = {number(override.quality).toFixed(2)}
-          <button
-            class="link"
-            aria-label={`Remove override for ${override.model}`}
-            on:click={() => removeOverride(text(override.model))}
-          >
-            remove
-          </button>
-        </span>
-      {/each}
+  <div class="panel-body override-body">
+    <div class="override-row">
+      <label class="field override-model">
+        <span>Quality override</span>
+        <input
+          placeholder="model id, e.g. deepseek-chat"
+          bind:value={overrideModel}
+          aria-label="Override model"
+        />
+      </label>
+      <label class="field override-quality">
+        <span>Quality 0–1</span>
+        <input
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          bind:value={overrideQuality}
+          aria-label="Override quality"
+        />
+      </label>
+      <button
+        class="button primary"
+        disabled={!overrideModel.trim() || overrideSaving}
+        on:click={saveOverride}
+      >
+        Save override
+      </button>
     </div>
-  {/if}
+    {#if autoOverrides.length}
+      <div class="chips">
+        {#each autoOverrides as override (override.model)}
+          <span class="status mono">
+            {override.model} = {number(override.quality).toFixed(2)}
+            <button
+              class="link"
+              aria-label={`Remove override for ${override.model}`}
+              on:click={() => removeOverride(text(override.model))}
+            >
+              remove
+            </button>
+          </span>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </section>
 <div class="panel-grid equal">
   <section class="panel">
@@ -306,11 +365,61 @@
         </table>
       </div>
     {:else}
-      <EmptyState
-        icon="route"
-        title="No active cooldowns"
-        message="All configured accounts are eligible for routing."
-      />
+      <p class="panel-empty muted">
+        {cooldownsOn
+          ? 'No accounts are cooling down. All configured accounts are eligible for routing.'
+          : 'Cooldowns are disabled, so no account is being paused.'}
+      </p>
+    {/if}
+    {#if unhealthy.length}
+      <div class="panel-header failing-header">
+        <div>
+          <h2>Failing credentials</h2>
+          <p>
+            {compact(unhealthyAccounts)} repeatedly returned payment or authentication errors and are
+            tried last
+          </p>
+        </div>
+        <a
+          class="button ghost"
+          href="/dashboard/ui/inventory/keys?status=routing_unhealthy"
+          on:click|preventDefault={() =>
+            navigate('/dashboard/ui/inventory/keys?status=routing_unhealthy')}
+        >
+          Review in Inventory
+        </a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Account</th>
+              <th>Reason</th>
+              <th>Since</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each unhealthy as account}
+              <tr>
+                <td data-label="Provider">
+                  <strong>{text(account.prefix ?? account.provider_id)}</strong>
+                </td>
+                <td data-label="Account">{accountName(account)}</td>
+                <td data-label="Reason">
+                  <span class="status error">{healthReason(account)}</span>
+                </td>
+                <td data-label="Since">{dateTime(account.routing_health_at)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      {#if unhealthyAccounts > unhealthy.length}
+        <p class="panel-empty muted">
+          Showing {compact(unhealthy.length)} of {compact(unhealthyAccounts)}.
+        </p>
+      {/if}
     {/if}
   </section>
 
@@ -331,7 +440,9 @@
               {text(account.prefix ?? account.provider_id)} · {text(account.source, 'config')}
             </small>
           </div>
-          {#if bool(account.cooldown_active)}
+          {#if bool(account.routing_unhealthy)}
+            <span class="status error" title={healthReason(account)}>Failing</span>
+          {:else if bool(account.cooldown_active)}
             <span class="status cooldown">Cooling</span>
           {:else if bool(account.quota_deprioritized)}
             <span class="status pending">Quota low</span>
@@ -352,26 +463,72 @@
 </div>
 
 <style>
+  .auto-card .status {
+    text-transform: none;
+  }
+
+  .auto-strategy select {
+    width: auto;
+    min-width: 140px;
+  }
+
+  .auto-chain-body {
+    display: grid;
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .auto-chain-body p {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+  }
+
+  .auto-note {
+    font-size: 12px;
+  }
+
+  .scope-note {
+    margin-left: 6px;
+    font-size: 11px;
+  }
+
+  .override-body {
+    border-top: 1px solid var(--line);
+  }
+
+  .panel-empty {
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    font-size: 13px;
+  }
+
+  .failing-header {
+    border-top: 1px solid var(--line);
+  }
+
   .override-row {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: 8px;
-    margin-top: 12px;
+    gap: 12px;
   }
 
-  .override-row label {
-    display: grid;
-    gap: 4px;
-    font-size: 11px;
-    color: var(--muted);
+  .override-model {
+    flex: 1 1 240px;
+  }
+
+  .override-quality {
+    flex: 0 1 140px;
   }
 
   .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-top: 10px;
+    margin-top: 14px;
   }
 
   .account-list {

@@ -24,6 +24,7 @@ from janus.inventory.xiaomi_tokenplan import (
     region_id_for_base_url,
     tokenplan_region_base_urls,
 )
+from janus.storage.routing_health import clear_routing_unhealthy
 from janus.storage.upstream_keys import (
     get_upstream_key,
     record_upstream_key_history,
@@ -1618,6 +1619,7 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
                     ),
                 },
             )
+            await clear_routing_unhealthy(db_path, key_id)
         elif result.get("is_valid"):
             merged_meta = metadata
             if result.get("metadata"):
@@ -1653,6 +1655,7 @@ async def _check_upstream_key(db_path: str | Path, key_id: str) -> None:
                 key_id,
                 update_fields,
             )
+            await clear_routing_unhealthy(db_path, key_id)
 
             models = result.get("models")
             if isinstance(models, list):

@@ -55,6 +55,7 @@ from janus.storage.settings import (
     validate_reporting_timezone,
 )
 from janus.storage.usage import get_unpriced_models, get_usage_stats
+from janus.tokensavers.pipeline import SaverPipeline
 
 router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
@@ -382,21 +383,32 @@ async def _request_logs_context(
     limit: int = 100,
     offset: int = 0,
     settings: dict[str, str] | None = None,
+    failed_attempts_only: bool = False,
 ) -> dict[str, Any]:
-    from janus.storage.request_logs import count_request_logs, list_request_logs
+    from janus.storage.request_logs import (
+        attach_attempt_summaries,
+        count_request_logs,
+        list_request_logs,
+    )
     from janus.storage.settings import get_all_settings, resolve_request_log_retention
 
     limit = _clamp_page_size(limit)
-    total = await count_request_logs(db_path)
+    total = await count_request_logs(db_path, failed_attempts_only=failed_attempts_only)
     if offset < 0:
         offset = 0
     if total and offset >= total:
         offset = max(0, ((total - 1) // limit) * limit)
-    logs = await list_request_logs(db_path, limit=limit, offset=offset)
+    logs = await attach_attempt_summaries(
+        db_path,
+        await list_request_logs(
+            db_path, limit=limit, offset=offset, failed_attempts_only=failed_attempts_only
+        ),
+    )
     if settings is None:
         settings = await get_all_settings(db_path)
     return {
         "logs": logs,
+        "failed_attempts_only": failed_attempts_only,
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -1541,7 +1553,18 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
     saver_pipeline = getattr(request.app.state, "saver_pipeline", None)
     raw_stats = getattr(saver_pipeline, "stats", {}) if saver_pipeline is not None else {}
     saver_stats = _saver_display_stats(raw_stats)
-    return {"request": request, "settings": settings, "saver_stats": saver_stats}
+    saver_health: dict[str, Any] = {}
+    if isinstance(saver_pipeline, SaverPipeline):
+        try:
+            saver_health = await saver_pipeline.health()
+        except Exception:
+            logger.warning("Saver health probe failed", exc_info=True)
+    return {
+        "request": request,
+        "settings": settings,
+        "saver_stats": saver_stats,
+        "saver_health": saver_health,
+    }
 
 
 VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})

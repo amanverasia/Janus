@@ -57,10 +57,31 @@ export const money = (value: unknown): string => {
 /** Per-MTok pricing, where the fourth decimal is meaningful. */
 export const rate = (value: unknown): string => currency(number(value), 4);
 
-export const compact = (value: unknown): string =>
-  new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
-    number(value)
+const COMPACT_THRESHOLD = 10_000;
+
+export const compact = (value: unknown): string => {
+  const amount = number(value);
+  if (Math.abs(amount) < COMPACT_THRESHOLD) {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(amount);
+  }
+  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+    amount
   );
+};
+
+/** Latency: 675 ms, 1.1 s, 2m 5s. */
+export const duration = (value: unknown, fallback = '—'): string => {
+  if (value === null || value === undefined || value === '') return fallback;
+  const ms = number(value, Number.NaN);
+  if (!Number.isFinite(ms)) return fallback;
+  const abs = Math.abs(ms);
+  if (abs < 1000) return `${Math.round(ms)} ms`;
+  if (abs < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+};
 
 export const percent = (value: unknown): string =>
   `${number(value).toFixed(number(value) < 10 ? 1 : 0)}%`;

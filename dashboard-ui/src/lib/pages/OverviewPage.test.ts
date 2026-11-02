@@ -59,3 +59,93 @@ describe('OverviewPage savings tile', () => {
     expect(view.container.querySelector('img')).toBeNull();
   });
 });
+
+describe('OverviewPage stat grid', () => {
+  it('states the actual window behind Total requests', () => {
+    const view = setup({ ...baseData, stats: { ...baseData.stats, period_days: 30 } });
+    expect(view.getByText('Last 30 days')).toBeTruthy();
+    expect(view.container.textContent).not.toContain('selected period');
+  });
+
+  it('defaults the window to 30 days and names a 24-hour window', () => {
+    expect(setup().getByText('Last 30 days')).toBeTruthy();
+    const day = setup({ ...baseData, stats: { ...baseData.stats, period_days: 1 } });
+    expect(day.getByText('Last 24 hours')).toBeTruthy();
+  });
+
+  it('marks the five-card layout only when the savings tile is present', () => {
+    const five = setup();
+    expect(five.container.querySelector('.stats-grid.five')).not.toBeNull();
+    const four = setup({ ...baseData, savings_today: null });
+    expect(four.container.querySelector('.stats-grid.five')).toBeNull();
+  });
+});
+
+describe('OverviewPage provider health', () => {
+  const healthy = {
+    credentials_total: 40,
+    credentials_needing_attention: 0,
+    credentials_routing_unhealthy: 0,
+    attempts: {
+      window_hours: 24,
+      total: 100,
+      ok: 98,
+      failed: 2,
+      aborted: 0,
+      success_rate: 98,
+      failed_by_class: {}
+    }
+  };
+
+  it('reports Operational only when credentials and attempts are healthy', () => {
+    const view = setup({ ...baseData, provider_health: healthy });
+    expect(view.getByText('Operational')).toBeTruthy();
+    expect(view.container.textContent).toContain('98% succeeded');
+  });
+
+  it('is not Operational when credentials fail at routing, and links to them', async () => {
+    const navigate = vi.fn();
+    const view = render(OverviewPage, {
+      props: {
+        data: {
+          ...baseData,
+          provider_health: {
+            ...healthy,
+            credentials_needing_attention: 30,
+            credentials_routing_unhealthy: 30
+          }
+        },
+        navigate
+      }
+    });
+    expect(view.queryByText('Operational')).toBeNull();
+    expect(view.getByText('Failing')).toBeTruthy();
+    expect(view.container.textContent).toContain('30 failing');
+    await fireEvent.click(view.getByText('Review failing credentials'));
+    expect(navigate).toHaveBeenCalledWith('/dashboard/ui/inventory/keys?status=routing_unhealthy');
+  });
+
+  it('reflects a high recent upstream attempt failure rate', () => {
+    const view = setup({
+      ...baseData,
+      provider_health: {
+        ...healthy,
+        attempts: { ...healthy.attempts, total: 100, ok: 10, failed: 90, success_rate: 10 }
+      }
+    });
+    expect(view.queryByText('Operational')).toBeNull();
+    expect(view.getByText('Failing')).toBeTruthy();
+    expect(view.container.textContent).toContain('90 of 100 attempts failed');
+  });
+
+  it('ignores a failure rate from too few attempts', () => {
+    const view = setup({
+      ...baseData,
+      provider_health: {
+        ...healthy,
+        attempts: { ...healthy.attempts, total: 3, ok: 1, failed: 2, success_rate: 33 }
+      }
+    });
+    expect(view.getByText('Operational')).toBeTruthy();
+  });
+});

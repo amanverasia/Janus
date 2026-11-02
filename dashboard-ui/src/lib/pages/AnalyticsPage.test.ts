@@ -87,3 +87,62 @@ describe('AnalyticsPage savings panel', () => {
     expect(view.queryByText('deepseek-chat')).toBeNull();
   });
 });
+
+describe('AnalyticsPage breakdown pagination', () => {
+  const rows = Array.from({ length: 60 }, (_, index) => ({
+    name: `model-${String(index).padStart(2, '0')}`,
+    requests: 100 - index,
+    tokens: 1000,
+    cost: 60 - index
+  }));
+
+  it('renders one page of rows in server order and pages through the rest', async () => {
+    const view = setup({ ...baseData, breakdown: rows });
+    expect(view.container.querySelectorAll('tbody tr').length).toBeGreaterThanOrEqual(25);
+    expect(view.queryByText('model-30')).toBeNull();
+    expect(view.getByText('model-00')).toBeTruthy();
+    expect(view.getByText(/page 1 of 3/)).toBeTruthy();
+    await fireEvent.click(view.getByRole('button', { name: 'Next' }));
+    expect(view.getByText('model-25')).toBeTruthy();
+    expect(view.queryByText('model-00')).toBeNull();
+    expect(view.getByText(/page 2 of 3/)).toBeTruthy();
+  });
+
+  it('shows no pager when the breakdown fits one page', () => {
+    const view = setup({ ...baseData, breakdown: rows.slice(0, 5) });
+    expect(view.queryByRole('button', { name: 'Next' })).toBeNull();
+  });
+});
+
+describe('AnalyticsPage success semantics', () => {
+  it('labels terminal client success separately from upstream attempt success', () => {
+    const view = setup({
+      ...baseData,
+      attempts: {
+        window_hours: 168,
+        total: 100,
+        ok: 10,
+        failed: 90,
+        aborted: 0,
+        success_rate: 10,
+        failed_by_class: { payment_error: 80, auth_error: 10 }
+      }
+    });
+    expect(view.getByText('Client success rate')).toBeTruthy();
+    expect(view.getByText('95%')).toBeTruthy();
+    expect(view.getByText('Upstream attempt success')).toBeTruthy();
+    expect(view.getByText('10%')).toBeTruthy();
+    expect(view.container.textContent).toContain('90 of 100 attempts failed');
+    expect(view.container.textContent).toContain('last 7 days');
+  });
+
+  it('shows a dash instead of 0% when nothing was recorded', () => {
+    const view = setup({
+      ...baseData,
+      success: { success_2xx: 0, client_4xx: 0, server_5xx: 0, total: 0 },
+      attempts: { window_hours: 168, total: 0, success_rate: null }
+    });
+    expect(view.container.textContent).toContain('No upstream attempts recorded');
+    expect(view.queryByText('0%')).toBeNull();
+  });
+});

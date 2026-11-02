@@ -142,3 +142,41 @@ async def test_savers_page_shows_headroom(app):
         r = await client.get("/dashboard/api/v2/state/savers")
         assert r.status_code == 200
         assert "saver_headroom_enabled" in r.json()["data"]["settings"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_savers_state_reports_unreachable_headroom_and_alert(app):
+    respx.get("http://localhost:8787/health").mock(side_effect=httpx.ConnectError("refused"))
+    await _enable_headroom(app)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.get("/dashboard/api/v2/state/savers")
+        assert r.status_code == 200
+        body = r.json()
+        health = body["data"]["saver_health"]["HeadroomSaver"]
+        assert health["reachable"] is False
+        assert health["reason"] == "Connection refused or host unreachable"
+        assert health["checked_at"]
+        alert_ids = [a["id"] for a in body["alerts"]]
+        assert "saver:headroom_unreachable" in alert_ids
+        alert = next(a for a in body["alerts"] if a["id"] == "saver:headroom_unreachable")
+        assert alert["severity"] == "warning"
+        assert alert["href"] == "/dashboard/ui/savers"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_savers_state_reports_reachable_headroom_without_alert(app):
+    respx.get("http://localhost:8787/health").mock(return_value=httpx.Response(200))
+    await _enable_headroom(app)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        body = (await client.get("/dashboard/api/v2/state/savers")).json()
+    assert body["data"]["saver_health"]["HeadroomSaver"]["reachable"] is True
+    assert "saver:headroom_unreachable" not in [a["id"] for a in body["alerts"]]
+
+
+@pytest.mark.asyncio
+async def test_savers_state_has_no_health_when_headroom_disabled(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        body = (await client.get("/dashboard/api/v2/state/savers")).json()
+    assert body["data"]["saver_health"] == {}

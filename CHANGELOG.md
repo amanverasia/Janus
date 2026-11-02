@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stopping reason plus attempted/skipped counts. (#267)
 
 ### Fixed
+- Routing failures now feed credential health: three consecutive payment or authentication
+  failures mark an inventory credential as failing at routing (reversible, persisted), try it
+  last regardless of the cooldown setting, and show it in Inventory, Routing health, Home
+  provider health, and alerts; a successful request or recheck restores it. Analytics now
+  separates client success from upstream attempt success. (QA-1, QA-2, QA-3)
 - Remove the remaining dashboard dependency advisories with SvelteKit 3 and its
   supported toolchain; patch the unmaintained build-time deepmerge dependency with
   tested prototype-key filtering and enforce audits at every severity.

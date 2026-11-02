@@ -74,8 +74,26 @@ export interface SavingsSummary extends JsonObject {
   by_model?: SavingsByModelRow[];
 }
 
+export interface AttemptHealth extends JsonObject {
+  window_hours: number;
+  total: number;
+  ok: number;
+  failed: number;
+  aborted: number;
+  success_rate: number | null;
+  failed_by_class: Record<string, number>;
+}
+
+export interface ProviderHealthState extends JsonObject {
+  credentials_total: number;
+  credentials_needing_attention: number;
+  credentials_routing_unhealthy: number;
+  attempts: AttemptHealth | null;
+}
+
 export interface OverviewState extends JsonObject {
   stats: Omit<UsageStats, 'by_model'>;
+  provider_health: ProviderHealthState;
   provider_count: number;
   today_cost: number;
   savings_today: SavingsSummary | null;
@@ -109,6 +127,7 @@ export interface AnalyticsState extends JsonObject {
   summary: Omit<UsageStats, 'by_model' | 'period_days' | 'reporting_timezone'>;
   breakdown: AnalyticsBreakdownRow[];
   success: SuccessBreakdown;
+  attempts: AttemptHealth;
   savings: SavingsSummary;
 }
 
@@ -143,10 +162,14 @@ export interface RequestLogRow extends JsonObject {
   client_key_id: number | null;
   client_key_label: string | null;
   client_key_name: string | null;
+  attempt_count: number | null;
+  failed_attempt_count: number | null;
+  attempt_details_available: boolean;
 }
 
 export interface RequestLogsState extends JsonObject {
   logs: RequestLogRow[];
+  failed_attempts_only: boolean;
   logging_enabled: boolean;
   retention_max: number;
 }
@@ -224,9 +247,16 @@ export interface KeysState extends JsonObject {
   counts: { active: number; revoked: number; all: number };
 }
 
+export interface SaverHealth extends JsonObject {
+  reachable: boolean | null;
+  reason: string | null;
+  checked_at: string | null;
+}
+
 export interface SaversState extends JsonObject {
   settings: Record<string, string>;
   saver_stats: JsonObject;
+  saver_health: Record<string, SaverHealth>;
 }
 
 export interface ToolsState extends JsonObject {

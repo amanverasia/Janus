@@ -11,7 +11,8 @@
       "saver_headroom_enabled": "false",
       "saver_headroom_url": "http://localhost:8787"
     },
-    "saver_stats": {}
+    "saver_stats": {},
+    "saver_health": {}
   },
   "meta": {
     "alert_summary": "ok",

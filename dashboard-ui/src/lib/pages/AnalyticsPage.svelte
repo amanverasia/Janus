@@ -3,6 +3,7 @@
   import StatCard from '#lib/components/StatCard.svelte';
   import MiniChart from '#lib/components/MiniChart.svelte';
   import DataTable from '#lib/components/DataTable.svelte';
+  import Pagination from '#lib/components/Pagination.svelte';
   import { compact, firstList, money, number, object, percent, text } from '#lib/data.ts';
   import type { JsonObject } from '#lib/types.ts';
   export let data: JsonObject;
@@ -10,9 +11,36 @@
   $: summary = object(data.summary);
   $: breakdown = firstList(data, 'breakdown', 'items');
   $: success = object(data.success);
+  $: attempts = object(data.attempts);
+  $: attemptTotal = number(attempts.total);
+  $: attemptRate =
+    attempts.success_rate === null || attempts.success_rate === undefined
+      ? null
+      : number(attempts.success_rate);
+  $: attemptDays = Math.max(1, Math.round(number(attempts.window_hours, 168) / 24));
+  $: terminalTotal = number(success.total);
   $: daily = firstList(summary, 'daily', 'series');
   $: days = text(data.days, '30');
   $: dimension = text(data.dimension, 'model');
+  const BREAKDOWN_PAGE_SIZE = 25;
+  let breakdownOffset = 0;
+  let breakdownScope = '';
+  $: {
+    const scope = `${dimension}|${days}|${breakdown.length}`;
+    if (scope !== breakdownScope) {
+      breakdownScope = scope;
+      breakdownOffset = 0;
+    }
+  }
+  $: breakdownPage = breakdown.slice(breakdownOffset, breakdownOffset + BREAKDOWN_PAGE_SIZE);
+  $: breakdownMeta = {
+    offset: breakdownOffset,
+    limit: BREAKDOWN_PAGE_SIZE,
+    total: breakdown.length
+  } as JsonObject;
+  function pageBreakdown(params: Record<string, string>) {
+    breakdownOffset = Math.max(0, number(params.offset, 0));
+  }
   $: savings = object(data.savings);
   $: savingsRows = firstList(savings, 'by_model');
   $: baseline = text(savings.baseline, 'gpt-4o');
@@ -73,10 +101,16 @@
     value={compact(number(summary.total_input_tokens) + number(summary.total_output_tokens))}
     tone="violet"
   /><StatCard
-    label="Success rate"
-    value={percent(
-      number(success.total) ? (number(success.success_2xx) / number(success.total)) * 100 : 0
-    )}
+    label="Client success rate"
+    value={terminalTotal ? percent((number(success.success_2xx) / terminalTotal) * 100) : '—'}
+    detail="Final response to the client (2xx), after retries"
+    tone="amber"
+  /><StatCard
+    label="Upstream attempt success"
+    value={attemptRate === null ? '—' : percent(attemptRate)}
+    detail={attemptTotal
+      ? `${compact(number(attempts.failed))} of ${compact(attemptTotal)} attempts failed · last ${attemptDays} days`
+      : `No upstream attempts recorded · last ${attemptDays} days`}
     tone="amber"
   />
 </div>
@@ -206,7 +240,8 @@
         </button>{/each}
     </div>
   </div>
-  <DataTable rows={breakdown} {columns} emptyTitle="No analytics data" />
+  <DataTable rows={breakdownPage} {columns} emptyTitle="No analytics data" />
+  <Pagination data={breakdownMeta} navigateQuery={pageBreakdown} label={`${dimension} rows`} />
 </section>
 
 <style>

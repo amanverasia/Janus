@@ -16,6 +16,7 @@ from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.database import get_connection
 from janus.storage.providers_db import list_providers
 from janus.storage.usage import get_unpriced_models
+from janus.tokensavers.pipeline import SaverPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ _BAD_INVENTORY_STATUSES = frozenset(
 )
 _BAD_INVENTORY_HEALTH = frozenset({"critical", "exhausted"})
 _ALERT_CACHE_TTL_SECONDS = 5.0
+_ATTEMPT_ALERT_WINDOW_HOURS = 24
+_ATTEMPT_ALERT_MIN_ATTEMPTS = 20
+_ATTEMPT_ALERT_FAILURE_PERCENT = 50.0
 
 
 @dataclass(frozen=True)
@@ -76,9 +80,11 @@ async def _collect_dashboard_alerts_with_status(
         _budget_alerts,
         _quota_alerts,
         _cooldown_alerts,
+        _attempt_failure_alerts,
         _inventory_alerts,
         _credential_alerts,
         _unpriced_alerts,
+        _saver_alerts,
         _setup_alerts,
     )
     results = await asyncio.gather(
@@ -316,6 +322,33 @@ async def _cooldown_alerts(db_path: Path, request: Request) -> list[DashboardAle
     ]
 
 
+async def _attempt_failure_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
+    del request
+    from janus.storage.attempt_signals import get_attempt_health
+
+    health = await get_attempt_health(db_path, hours=_ATTEMPT_ALERT_WINDOW_HOURS)
+    total = int(health["total"])
+    rate = health["success_rate"]
+    if total < _ATTEMPT_ALERT_MIN_ATTEMPTS or rate is None:
+        return []
+    failed_percent = 100.0 - float(rate)
+    if failed_percent < _ATTEMPT_ALERT_FAILURE_PERCENT:
+        return []
+    return [
+        DashboardAlert(
+            id="routing:attempt_failures",
+            severity="warning",
+            title="Most upstream attempts are failing",
+            detail=(
+                f"{health['failed']:,} of {total:,} upstream attempts failed in the last "
+                f"{_ATTEMPT_ALERT_WINDOW_HOURS} hours ({failed_percent:.0f}%). Requests may "
+                "still succeed after retrying other accounts."
+            ),
+            href="/dashboard/ui/routing",
+        )
+    ]
+
+
 def _worst_account_window(account_value: Any) -> float:
     if not isinstance(account_value, str) or not account_value:
         return 0.0
@@ -342,7 +375,7 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
     async with get_connection(db_path) as db:
         async with db.execute(
             """SELECT k.status, k.health_status, k.credits_remaining, k.account_value,
-                      p.billing_model
+                      k.routing_health_status, p.billing_model
                FROM upstream_keys k
                JOIN inventory_providers p ON k.provider_id = p.id
                WHERE k.status != 'revoked' AND k.is_archived = 0"""
@@ -350,12 +383,15 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
             rows = await cur.fetchall()
 
     bad_status_count = 0
+    routing_unhealthy_count = 0
     low_credit_count = 0
     exhausted_quota_count = 0
     for row in rows:
         billing_model = str(row["billing_model"] or "")
         status = str(row["status"] or "")
         health_status = str(row["health_status"] or "")
+        if row["routing_health_status"] == "unhealthy":
+            routing_unhealthy_count += 1
         if status in _BAD_INVENTORY_STATUSES or health_status in _BAD_INVENTORY_HEALTH:
             bad_status_count += 1
         if billing_model == "subscription":
@@ -378,6 +414,23 @@ async def _inventory_alerts(db_path: Path, request: Request) -> list[DashboardAl
                     f"{_EXHAUSTED_WINDOW_PERCENT:.0f}% of a usage window."
                 ),
                 href="/dashboard/ui/inventory/keys",
+            )
+        )
+
+    if routing_unhealthy_count:
+        noun = "credential" if routing_unhealthy_count == 1 else "credentials"
+        verb = "is" if routing_unhealthy_count == 1 else "are"
+        alerts.append(
+            DashboardAlert(
+                id="inventory:routing_unhealthy",
+                severity="critical",
+                title="Credentials failing at routing",
+                detail=(
+                    f"{routing_unhealthy_count} {noun} {verb} still active in inventory but "
+                    "keep returning payment or authentication errors from live requests. "
+                    "They are tried last until a recheck or a successful request restores them."
+                ),
+                href="/dashboard/ui/inventory/keys?status=routing_unhealthy",
             )
         )
 
@@ -453,6 +506,30 @@ async def _unpriced_alerts(db_path: Path, request: Request) -> list[DashboardAle
             href="/dashboard/ui/pricing",
         )
     ]
+
+
+async def _saver_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
+    pipeline = getattr(request.app.state, "saver_pipeline", None)
+    if not isinstance(pipeline, SaverPipeline):
+        return []
+    health = await pipeline.health()
+    alerts: list[DashboardAlert] = []
+    for name, status in health.items():
+        if status.get("reachable") is False:
+            label = name.removesuffix("Saver")
+            alerts.append(
+                DashboardAlert(
+                    id=f"saver:{label.lower()}_unreachable",
+                    severity="warning",
+                    title=f"{label} token saver unreachable",
+                    detail=(
+                        f"{status.get('reason') or 'Not responding'}. Requests skip it until "
+                        "it recovers; fix the URL or disable it."
+                    ),
+                    href="/dashboard/ui/savers",
+                )
+            )
+    return alerts
 
 
 async def _setup_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:

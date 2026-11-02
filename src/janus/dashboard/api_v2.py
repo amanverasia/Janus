@@ -35,7 +35,7 @@ from janus.models.catalog import (
     set_model_visibility,
 )
 from janus.pricing.registry import PricingRegistry
-from janus.routing.auto import AutoStrategy, plan_auto, serialize_trace
+from janus.routing.auto import TOP_N, AutoStrategy, plan_auto, serialize_chain
 from janus.routing.provider_snapshots import ensure_provider_snapshot
 from janus.routing.reachability import UnreachableReason, connect_target, cooled_down
 from janus.storage.analytics import (
@@ -46,6 +46,7 @@ from janus.storage.analytics import (
     get_spend_summary,
 )
 from janus.storage.api_keys import create_key, list_keys
+from janus.storage.attempt_signals import get_attempt_health
 from janus.storage.budgets import create_or_update_budget, get_budget_statuses
 from janus.storage.combos_db import list_combos
 from janus.storage.cooldowns import get_active_cooldowns
@@ -135,9 +136,12 @@ _SECTIONS = frozenset(
 _DIMENSIONS = frozenset({"model", "provider", "account", "client_key"})
 _LEADERBOARD_SORTS = frozenset({"tokens", "cost", "requests"})
 _KEY_STATUSES = frozenset({"active", "revoked", "all"})
+ROUTING_UNHEALTHY_LIST_CAP = 50
+ATTEMPT_HEALTH_HOURS = 24
 _INVENTORY_STATUSES = frozenset(
     {
         "active",
+        "routing_unhealthy",
         "invalid",
         "validation_paused",
         "pending_validation",
@@ -292,8 +296,20 @@ async def _overview_data(
     except Exception:
         logger.warning("Failed to compute today's savings", exc_info=True)
         savings_today = None
+    inventory_summary = await get_inventory_summary(db_path)
+    try:
+        attempts = await get_attempt_health(db_path, hours=ATTEMPT_HEALTH_HOURS)
+    except Exception:
+        logger.warning("Failed to compute attempt health", exc_info=True)
+        attempts = None
     return {
         "stats": stats,
+        "provider_health": {
+            "credentials_total": inventory_summary["total"],
+            "credentials_needing_attention": inventory_summary["needs_attention"],
+            "credentials_routing_unhealthy": inventory_summary["routing_unhealthy"],
+            "attempts": attempts,
+        },
         "provider_count": len(providers),
         "today_cost": summary["total_cost"],
         "savings_today": savings_today,
@@ -326,22 +342,31 @@ async def _analytics_data(
     savings = await savings_for_days(
         db_path, baseline=baseline or None, registry=pricing_registry, days=days
     )
+    attempts = await get_attempt_health(db_path, hours=days * 24)
     return {
         "summary": summary,
         "breakdown": breakdown,
         "success": success,
+        "attempts": attempts,
         "savings": savings,
     }
 
 
 async def _request_logs_data(
-    db_path: Path, *, limit: int, offset: int
+    db_path: Path, *, limit: int, offset: int, failed_attempts_only: bool = False
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     settings = await get_all_settings(db_path)
-    context = await _request_logs_context(db_path, limit=limit, offset=offset, settings=settings)
+    context = await _request_logs_context(
+        db_path,
+        limit=limit,
+        offset=offset,
+        settings=settings,
+        failed_attempts_only=failed_attempts_only,
+    )
     return (
         {
             "logs": context["logs"],
+            "failed_attempts_only": context["failed_attempts_only"],
             "logging_enabled": request_logging_enabled(settings),
             "retention_max": context["retention_max"],
         },
@@ -716,9 +741,13 @@ async def _routing_data(
     overview["ready_accounts"] = sum(
         1
         for account in flat
-        if not account.get("cooldown_active") and not account.get("quota_deprioritized")
+        if not account.get("cooldown_active")
+        and not account.get("quota_deprioritized")
+        and not account.get("routing_unhealthy")
     )
     cooldowns = [account for account in flat if account.get("cooldown_active")]
+    unhealthy = [account for account in flat if account.get("routing_unhealthy")]
+    overview["unhealthy_accounts"] = len(unhealthy)
     needle = search.strip().lower()
     if needle:
         filtered = [
@@ -743,7 +772,7 @@ async def _routing_data(
             overrides=await get_override_map(db_path),
         )
         auto_models = auto_plan.models
-        auto_preview = serialize_trace(auto_plan)
+        auto_preview = serialize_chain(auto_plan)
     except Exception:
         logger.warning("Auto routing preview failed", exc_info=True)
         auto_models = []
@@ -755,6 +784,8 @@ async def _routing_data(
             "models": auto_models,
             "top": auto_models[0] if auto_models else None,
             "preview": auto_preview,
+            "top_n": TOP_N,
+            "chain_length": len(auto_models),
             "overrides": await list_overrides(db_path),
         },
         "live": request.app.state.fallback_handler.routing_snapshot(),
@@ -767,6 +798,7 @@ async def _routing_data(
         },
         "accounts": page,
         "cooldowns": cooldowns,
+        "unhealthy": unhealthy[:ROUTING_UNHEALTHY_LIST_CAP],
         "routing_total": total,
     }
 
@@ -1324,6 +1356,7 @@ async def get_dashboard_state(
     provider_id: str = Query("", max_length=100),
     search: str = Query("", max_length=200),
     reason: str = Query("", max_length=40),
+    failed_attempts: bool = Query(False),
     baseline: str = Query("", max_length=100),
     direction: Literal["asc", "desc"] = Query("desc", alias="dir"),
 ) -> JSONResponse:
@@ -1374,7 +1407,9 @@ async def get_dashboard_state(
             meta={"query": {"days": days, "sort": board_sort, "limit": limit}},
         )
     if section == "request-logs":
-        data, meta = await _request_logs_data(db_path, limit=limit, offset=offset)
+        data, meta = await _request_logs_data(
+            db_path, limit=limit, offset=offset, failed_attempts_only=failed_attempts
+        )
         return await _response(request, db_path, section, data, meta=meta)
     if section == "inventory":
         return await _response(request, db_path, section, await _inventory_data(db_path))

@@ -41,6 +41,9 @@ PRICING = PricingRegistry(
 )
 
 
+PRICING_WITH_GPT = PricingRegistry({}, {"gpt-4o": _rates(2.5, 10.0)})
+
+
 def _config(prefix: str, models: list[str]) -> ProviderConfig:
     return ProviderConfig(
         id=prefix,
@@ -417,3 +420,106 @@ async def test_plan_auto_preserves_multi_account_fallback(tmp_path):
     assert plan.models == ["alpha/gpt-4o", "beta/gpt-4o"]
     attempts = handler.resolve_attempts("auto", model_chain=plan.models)
     assert [target.account_id for target in attempts] == ["alpha-2", "beta"]
+
+
+def _rows(provider_id: str, outcome: str, count: int, *, tps: float, ttft: int) -> list[dict]:
+    return [
+        {
+            "timestamp": "2026-11-02 00:00:00",
+            "model": "gpt-4o",
+            "provider_id": provider_id,
+            "account_id": provider_id,
+            "streamed": 1,
+            "outcome": outcome,
+            "ttft_ms": ttft,
+            "output_tps": tps,
+        }
+        for _ in range(count)
+    ]
+
+
+def test_signals_attribute_per_provider_and_not_by_bare_model():
+    from janus.storage.model_signals import _aggregate
+
+    rows = (
+        _rows("alpha", "ok", 10, tps=200.0, ttft=100)
+        + _rows("beta", "ok", 6, tps=20.0, ttft=900)
+        + _rows("beta", "error", 4, tps=0.0, ttft=0)
+    )
+    signals = _aggregate(rows)
+    alpha = signals.for_providers("gpt-4o", {"alpha"})
+    beta = signals.for_providers("gpt-4o", {"beta"})
+    assert alpha is not None and beta is not None
+    assert alpha.samples == 10 and alpha.error_rate == 0.0
+    assert beta.samples == 10 and beta.error_rate == pytest.approx(0.4)
+    assert alpha.tps_p50 != beta.tps_p50
+    assert signals.for_providers("gpt-4o", {"gamma"}) is None
+    merged = signals.for_providers("gpt-4o", {"alpha", "beta"})
+    assert merged is not None and merged.samples == 20
+
+
+def test_score_candidates_uses_provider_stats_and_marks_model_wide_fallback():
+    from janus.storage.model_signals import _aggregate
+
+    rows = _rows("alpha", "ok", 10, tps=200.0, ttft=100) + _rows(
+        "beta", "ok", 10, tps=20.0, ttft=900
+    )
+    signals = _aggregate(rows)
+    scored = score_candidates(
+        ["alpha/gpt-4o", "beta/gpt-4o", "gamma/gpt-4o"],
+        strategy=AutoStrategy.FASTEST,
+        pricing_registry=PRICING_WITH_GPT,
+        signals=signals,
+        provider_ids={
+            "alpha": frozenset({"alpha"}),
+            "beta": frozenset({"beta"}),
+            "gamma": frozenset({"gamma"}),
+        },
+    )
+    by_model = {candidate.model_str: candidate for candidate in scored}
+    assert by_model["alpha/gpt-4o"].signal_scope == "provider"
+    assert by_model["alpha/gpt-4o"].tps_p50 == 200.0
+    assert by_model["beta/gpt-4o"].signal_scope == "provider"
+    assert by_model["beta/gpt-4o"].tps_p50 == 20.0
+    assert by_model["gamma/gpt-4o"].signal_scope == "model"
+    assert by_model["gamma/gpt-4o"].samples == 20
+    assert scored[0].model_str == "alpha/gpt-4o"
+
+
+def test_score_candidates_without_any_signal_is_scope_none():
+    scored = score_candidates(
+        ["alpha/gpt-4o"],
+        strategy=AutoStrategy.BALANCED,
+        pricing_registry=PRICING_WITH_GPT,
+        signals=ModelSignals(by_model={}, by_account={}),
+        provider_ids={"alpha": frozenset({"alpha"})},
+    )
+    assert scored[0].signal_scope == "none"
+    assert scored[0].samples == 0
+
+
+async def test_preview_chain_matches_real_chain_length(tmp_path):
+    from janus.routing.auto import serialize_chain
+
+    db_path = tmp_path / "auto.db"
+    await init_db(db_path)
+    prefixes = [f"provider-{i}" for i in range(4)]
+    models = ["cheap-model", "mid-model", "pricey-model", "sibling-a", "gpt-4o", "tail-model"]
+    pricing = PricingRegistry(
+        {},
+        {
+            **{m: _rates(0.1 * (i + 1), 0.2 * (i + 1)) for i, m in enumerate(models)},
+        },
+    )
+    registry = _registry(*(_config(prefix, models) for prefix in prefixes))
+    plan = await plan_auto(
+        registry=registry,
+        db_path=db_path,
+        pricing_registry=pricing,
+        strategy=AutoStrategy.CHEAPEST,
+    )
+    preview = serialize_chain(plan)
+    assert [row["model"] for row in preview] == plan.models
+    assert len({canonical_model_base(m.split("/", 1)[1]) for m in plan.models}) == 5
+    assert len(plan.models) == 5 * len(prefixes)
+    assert all(row["signal_scope"] == "none" for row in preview)

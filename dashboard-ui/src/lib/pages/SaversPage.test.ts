@@ -20,13 +20,18 @@ const bodyOf = (action: ReturnType<typeof makeAction>, call: number) => {
   return body as FormData;
 };
 
-const renderPage = (action = makeAction(), settings: JsonObject = {}) => ({
+const renderPage = (
+  action = makeAction(),
+  settings: JsonObject = {},
+  saverHealth: JsonObject = {}
+) => ({
   action,
   ...render(SaversPage, {
     props: {
       data: {
         settings: { saver_caveman_enabled: true, saver_caveman_level: 'lite', ...settings },
-        saver_stats: {}
+        saver_stats: {},
+        saver_health: saverHealth
       },
       action
     }
@@ -85,5 +90,45 @@ describe('SaversPage in-flight guards', () => {
     await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
     expect(bodyOf(action, 1).get('key')).toBe('saver_caveman_level');
     expect(bodyOf(action, 1).get('value')).toBe('full');
+  });
+});
+
+describe('SaversPage Headroom reachability', () => {
+  const down = {
+    HeadroomSaver: {
+      reachable: false,
+      reason: 'Connection refused or host unreachable',
+      checked_at: '2026-11-02T10:00:00Z'
+    }
+  };
+
+  it('shows an error state and recovery guidance when enabled Headroom is unreachable', async () => {
+    const action = makeAction();
+    const page = renderPage(action, { saver_headroom_enabled: true }, down);
+    expect(page.queryByText('Pipeline ready')).toBeNull();
+    expect(page.getByText('Headroom unreachable')).toBeTruthy();
+    const alert = page.getByRole('alert');
+    expect(alert.textContent).toContain('Connection refused or host unreachable');
+    expect(alert.textContent).toContain('Correct the proxy URL');
+    await fireEvent.click(page.getByRole('button', { name: 'Disable Headroom' }));
+    await waitFor(() => expect(action).toHaveBeenCalledOnce());
+    expect(bodyOf(action, 0).get('key')).toBe('saver_headroom_enabled');
+    expect(bodyOf(action, 0).get('value')).toBe('false');
+  });
+
+  it('stays ready when Headroom is reachable or disabled', () => {
+    const reachable = renderPage(
+      makeAction(),
+      { saver_headroom_enabled: true },
+      {
+        HeadroomSaver: { reachable: true, reason: null, checked_at: '2026-11-02T10:00:00Z' }
+      }
+    );
+    expect(reachable.getByText('Pipeline ready')).toBeTruthy();
+    expect(reachable.queryByRole('alert')).toBeNull();
+    reachable.unmount();
+    const disabled = renderPage(makeAction(), { saver_headroom_enabled: false }, down);
+    expect(disabled.getByText('Pipeline ready')).toBeTruthy();
+    expect(disabled.queryByRole('alert')).toBeNull();
   });
 });

@@ -416,6 +416,10 @@ _UPSTREAM_KEY_NEW_COLUMNS = [
     ("account_value_error", "TEXT"),
     ("account_value_fetched_at", "TEXT"),
     ("account_value_checked_at", "TEXT"),
+    ("routing_health_status", "TEXT"),
+    ("routing_health_reason", "TEXT"),
+    ("routing_health_status_code", "INTEGER"),
+    ("routing_health_at", "TEXT"),
 ]
 
 _NEW_USAGE_COLUMNS = [
