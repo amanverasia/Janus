@@ -143,10 +143,14 @@ export interface RequestLogRow extends JsonObject {
   client_key_id: number | null;
   client_key_label: string | null;
   client_key_name: string | null;
+  attempt_count: number | null;
+  failed_attempt_count: number | null;
+  attempt_details_available: boolean;
 }
 
 export interface RequestLogsState extends JsonObject {
   logs: RequestLogRow[];
+  failed_attempts_only: boolean;
   logging_enabled: boolean;
   retention_max: number;
 }

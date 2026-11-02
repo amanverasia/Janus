@@ -335,13 +335,20 @@ async def _analytics_data(
 
 
 async def _request_logs_data(
-    db_path: Path, *, limit: int, offset: int
+    db_path: Path, *, limit: int, offset: int, failed_attempts_only: bool = False
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     settings = await get_all_settings(db_path)
-    context = await _request_logs_context(db_path, limit=limit, offset=offset, settings=settings)
+    context = await _request_logs_context(
+        db_path,
+        limit=limit,
+        offset=offset,
+        settings=settings,
+        failed_attempts_only=failed_attempts_only,
+    )
     return (
         {
             "logs": context["logs"],
+            "failed_attempts_only": context["failed_attempts_only"],
             "logging_enabled": request_logging_enabled(settings),
             "retention_max": context["retention_max"],
         },
@@ -1324,6 +1331,7 @@ async def get_dashboard_state(
     provider_id: str = Query("", max_length=100),
     search: str = Query("", max_length=200),
     reason: str = Query("", max_length=40),
+    failed_attempts: bool = Query(False),
     baseline: str = Query("", max_length=100),
     direction: Literal["asc", "desc"] = Query("desc", alias="dir"),
 ) -> JSONResponse:
@@ -1374,7 +1382,9 @@ async def get_dashboard_state(
             meta={"query": {"days": days, "sort": board_sort, "limit": limit}},
         )
     if section == "request-logs":
-        data, meta = await _request_logs_data(db_path, limit=limit, offset=offset)
+        data, meta = await _request_logs_data(
+            db_path, limit=limit, offset=offset, failed_attempts_only=failed_attempts
+        )
         return await _response(request, db_path, section, data, meta=meta)
     if section == "inventory":
         return await _response(request, db_path, section, await _inventory_data(db_path))

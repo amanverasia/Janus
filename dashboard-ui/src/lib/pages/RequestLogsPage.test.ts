@@ -260,3 +260,86 @@ describe('RequestLogsPage routing timeline', () => {
     );
   });
 });
+
+describe('RequestLogsPage attempt visibility', () => {
+  it('shows the attempt count and flags success after failed attempts', () => {
+    const page = renderPage([
+      log({
+        id: 1,
+        request_id: 'r-1',
+        attempt_count: 20,
+        failed_attempt_count: 19,
+        attempt_details_available: true
+      }),
+      log({
+        id: 2,
+        request_id: 'r-2',
+        attempt_count: 1,
+        failed_attempt_count: 0,
+        attempt_details_available: true
+      }),
+      log({
+        id: 3,
+        request_id: 'r-3',
+        status: 503,
+        attempt_count: 4,
+        failed_attempt_count: 4,
+        attempt_details_available: true
+      })
+    ]);
+    expect(page.getByRole('columnheader', { name: 'Attempts' })).toBeTruthy();
+    expect(
+      page.getByRole('cell', { name: '20 · succeeded after 19 failed attempts' })
+    ).toBeTruthy();
+    expect(page.getByRole('cell', { name: '1' })).toBeTruthy();
+    expect(page.getByRole('cell', { name: '4 · 4 failed' })).toBeTruthy();
+  });
+
+  it('says details are unavailable instead of showing a fake zero', () => {
+    const page = renderPage([
+      log({ id: 1, attempt_count: null, failed_attempt_count: null }),
+      log({
+        id: 2,
+        request_id: 'r-pruned',
+        attempt_count: 3,
+        failed_attempt_count: null,
+        attempt_details_available: false
+      })
+    ]);
+    expect(page.getByRole('cell', { name: 'Unavailable (legacy)' })).toBeTruthy();
+    expect(page.getByRole('cell', { name: '3' })).toBeTruthy();
+  });
+
+  it('filters to requests with failed attempts through the query string', async () => {
+    const navigateQuery = vi.fn();
+    const page = render(RequestLogsPage, {
+      props: {
+        data: { logs: [log({})], logging_enabled: true, offset: 0, limit: 100, total: 1 },
+        action: vi.fn(),
+        navigateQuery
+      }
+    });
+    await fireEvent.click(
+      page.getByRole('checkbox', { name: 'Only requests with failed attempts' })
+    );
+    expect(navigateQuery).toHaveBeenCalledWith({ failed_attempts: 'true' });
+  });
+
+  it('summarises a recovered request and the attempts not shown in the inspector', async () => {
+    const detail = timelineDetail({
+      attempt_summary: { total: 60, failed: 59, omitted: 35 },
+      attempt_pagination: { total: 60, limit: 25, offset: 0, page: 1, total_pages: 3 }
+    });
+    vi.mocked(dashboardFetch).mockResolvedValue({
+      ok: true,
+      json: async () => detail
+    } as unknown as Response);
+    const page = renderPage([log({ id: 9 })]);
+    await fireEvent.click(page.getByTitle('Inspect'));
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Request detail' });
+    const summary = await within(dialog).findByTestId('attempt-summary');
+    expect(summary.textContent).toMatch(/60 attempts · 59 failed/);
+    expect(summary.textContent).toMatch(/succeeded after 59 failed attempts/);
+    expect(within(dialog).getByText(/Showing 3 of 60 attempts; 57 not shown/)).toBeTruthy();
+  });
+});

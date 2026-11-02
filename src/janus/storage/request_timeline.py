@@ -130,6 +130,7 @@ async def get_request_timeline(
         "correlation": {"available": bool(request_id), "request_id": request_id},
         "outcome": None,
         "attempts": [],
+        "attempt_summary": {"total": 0, "failed": 0, "omitted": 0},
         "attempt_pagination": {
             "total": 0,
             "limit": limit,
@@ -152,10 +153,15 @@ async def get_request_timeline(
         ) as cur:
             outcome_row = await cur.fetchone()
         async with db.execute(
-            "SELECT COUNT(*) AS n FROM attempt_signals WHERE request_id = ?", (request_id,)
+            """SELECT COUNT(*) AS n,
+                      SUM(CASE WHEN outcome IN ('error', 'client_error')
+                               THEN 1 ELSE 0 END) AS failed
+               FROM attempt_signals WHERE request_id = ?""",
+            (request_id,),
         ) as cur:
             count_row = await cur.fetchone()
         total = int(count_row["n"]) if count_row else 0
+        failed_total = int(count_row["failed"] or 0) if count_row else 0
         if total and offset >= total:
             offset = max(0, ((total - 1) // limit) * limit)
         async with db.execute(
@@ -264,6 +270,11 @@ async def get_request_timeline(
         {
             "outcome": outcome,
             "attempts": attempts,
+            "attempt_summary": {
+                "total": total,
+                "failed": failed_total,
+                "omitted": max(0, total - len(attempts)),
+            },
             "attempt_pagination": {
                 "total": total,
                 "limit": limit,

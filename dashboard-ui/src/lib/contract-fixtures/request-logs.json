@@ -18,7 +18,10 @@
         "error": "upstream connect error",
         "client_key_id": null,
         "client_key_label": null,
-        "client_key_name": null
+        "client_key_name": null,
+        "attempt_count": null,
+        "failed_attempt_count": null,
+        "attempt_details_available": false
       },
       {
         "id": 1,
@@ -35,9 +38,13 @@
         "error": null,
         "client_key_id": 1,
         "client_key_label": "fixture dashboard key",
-        "client_key_name": "fixture dashboard key"
+        "client_key_name": "fixture dashboard key",
+        "attempt_count": null,
+        "failed_attempt_count": null,
+        "attempt_details_available": false
       }
     ],
+    "failed_attempts_only": false,
     "logging_enabled": false,
     "retention_max": 500
   },
