@@ -130,6 +130,7 @@ export interface LeaderboardState extends JsonObject {
 export interface RequestLogRow extends JsonObject {
   id: number;
   timestamp: string;
+  request_id: string | null;
   client_format: string | null;
   model: string | null;
   resolved_model: string | null;

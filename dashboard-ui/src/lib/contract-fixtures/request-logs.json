@@ -6,6 +6,7 @@
       {
         "id": 2,
         "timestamp": "2000-01-01T00:00:00Z",
+        "request_id": null,
         "client_format": "openai",
         "model": "anthropic/fixture-model-002",
         "resolved_model": null,
@@ -22,6 +23,7 @@
       {
         "id": 1,
         "timestamp": "2000-01-01T00:00:00Z",
+        "request_id": null,
         "client_format": "openai",
         "model": "openai/fixture-model-001",
         "resolved_model": null,

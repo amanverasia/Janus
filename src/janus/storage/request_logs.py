@@ -23,6 +23,7 @@ def _truncate(body: str | None) -> str | None:
 async def record_request_log(
     db_path: str | Path,
     *,
+    request_id: str | None = None,
     client_format: str | None = None,
     model: str | None = None,
     resolved_model: str | None = None,
@@ -43,11 +44,12 @@ async def record_request_log(
         async with get_connection(db_path) as db:
             await db.execute(
                 """INSERT INTO request_logs
-                   (client_format, model, resolved_model, provider_id, account_id, status,
-                    duration_ms, streamed, request_body, response_body, error,
+                   (request_id, client_format, model, resolved_model, provider_id, account_id,
+                    status, duration_ms, streamed, request_body, response_body, error,
                     client_key_id, client_key_label)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
+                    request_id,
                     client_format,
                     model,
                     resolved_model,
@@ -81,7 +83,8 @@ async def list_request_logs(
 ) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT r.id, r.timestamp, r.client_format, r.model, r.resolved_model, r.provider_id,
+            """SELECT r.id, r.timestamp, r.request_id, r.client_format, r.model,
+                      r.resolved_model, r.provider_id,
                       r.account_id, r.status, r.duration_ms, r.streamed, r.error,
                       r.client_key_id, r.client_key_label, k.name AS client_key_name
                FROM request_logs r

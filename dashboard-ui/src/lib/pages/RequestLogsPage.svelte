@@ -4,7 +4,7 @@
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import { compact, dateTime, firstList, idOf, text } from '$lib/data';
+  import { compact, dateTime, firstList, idOf, list, number, object, text } from '$lib/data';
   import type { JsonObject, MutationOptions } from '$lib/types';
 
   export let data: JsonObject;
@@ -15,6 +15,8 @@
   let detailOpen = false;
   let detailError = '';
   let showBodies = false;
+  let loadingBodies = false;
+  let detailLogId = '';
   let clearing = false;
   // Rapid clicks resolved out of order and showed the wrong row's detail.
   let detailRequest: AbortController | undefined;
@@ -23,6 +25,13 @@
   $: offset = Number(data.offset ?? 0);
   $: limit = Number(data.limit ?? 100);
   $: total = Number(data.total ?? rows.length);
+  $: attempts = detail ? list(detail.attempts) : [];
+  $: attemptPagination = object(detail?.attempt_pagination);
+  $: attemptOffset = Math.max(0, number(attemptPagination.offset, 0));
+  $: attemptLimit = Math.max(1, number(attemptPagination.limit, 25));
+  $: attemptTotal = Math.max(0, number(attemptPagination.total, attempts.length));
+  $: correlationAvailable = object(detail?.correlation).available === true;
+  $: finalOutcome = text(detail?.final_outcome, 'unknown').replaceAll('_', ' ');
 
   function providerLabel(value: unknown, row: JsonObject): string {
     const raw = text(value ?? row.provider, '');
@@ -65,17 +74,24 @@
     }
   ];
 
-  async function inspect(row: JsonObject) {
+  async function loadDetail(
+    offset: number,
+    includeBodies = false,
+    preserve = false
+  ): Promise<boolean> {
     detailRequest?.abort();
     const controller = new AbortController();
     detailRequest = controller;
     detailError = '';
-    detail = undefined;
-    showBodies = false;
-    detailOpen = true;
+    if (!preserve) detail = undefined;
+    const query = new URLSearchParams({
+      attempt_limit: String(attemptLimit),
+      attempt_offset: String(offset)
+    });
+    if (includeBodies) query.set('include_bodies', 'true');
     try {
       const response = await dashboardFetch(
-        `/dashboard/api/request-logs/${encodeURIComponent(idOf(row))}`,
+        `/dashboard/api/request-logs/${encodeURIComponent(detailLogId)}?${query}`,
         {
           headers: { Accept: 'application/json' },
           signal: controller.signal
@@ -86,12 +102,42 @@
       if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
         throw new Error('The request detail response was not valid.');
       }
-      if (detailRequest !== controller) return;
+      if (detailRequest !== controller) return false;
       detail = payload as JsonObject;
+      return true;
     } catch (error) {
-      if (controller.signal.aborted || detailRequest !== controller) return;
+      if (controller.signal.aborted || detailRequest !== controller) return false;
       detailError = error instanceof Error ? error.message : 'Request details could not be loaded.';
+      return false;
     }
+  }
+
+  async function inspect(row: JsonObject) {
+    detailLogId = idOf(row);
+    showBodies = false;
+    detailOpen = true;
+    await loadDetail(0);
+  }
+
+  async function changeAttemptPage(offset: number) {
+    showBodies = false;
+    await loadDetail(offset, false, true);
+  }
+
+  async function toggleBodies() {
+    if (showBodies) {
+      showBodies = false;
+      return;
+    }
+    if (detail?.request_body != null || detail?.response_body != null) {
+      showBodies = true;
+      return;
+    }
+    if (loadingBodies) return;
+    loadingBodies = true;
+    const loaded = await loadDetail(attemptOffset, true, true);
+    showBodies = loaded;
+    loadingBodies = false;
   }
 
   function detailField(label: string, value: unknown): { label: string; value: string } {
@@ -106,6 +152,8 @@
         detailField('Provider', providerLabel(detail.provider_id ?? detail.provider, detail)),
         detailField('API key', detail.client_key_name ?? detail.client_key_label),
         detailField('Status', detail.status),
+        detailField('Final outcome', finalOutcome),
+        detailField('Request ID', detail.request_id),
         detailField(
           'Latency',
           detail.duration_ms != null ? `${compact(detail.duration_ms)} ms` : '—'
@@ -117,7 +165,8 @@
 
   $: hasBodies =
     !!detail &&
-    (detail.request_body != null ||
+    (detail.has_bodies === true ||
+      detail.request_body != null ||
       detail.response_body != null ||
       detail.body != null ||
       detail.request != null);
@@ -201,10 +250,84 @@
         </div>
       {/each}
     </div>
+    <section class="timeline" aria-label="Routing timeline">
+      <div class="timeline-header">
+        <h3>Routing timeline</h3>
+        <span class="status {finalOutcome === 'success' ? 'active' : 'warning'}">
+          {finalOutcome}
+        </span>
+      </div>
+      {#if !correlationAvailable}
+        <p class="muted">Legacy request log. Attempt correlation is unavailable for this row.</p>
+      {:else if attempts.length}
+        <ol class="attempt-list">
+          {#each attempts as attempt}
+            <li>
+              <div class="attempt-heading">
+                <strong>Attempt {text(attempt.attempt_order)}</strong>
+                <span>
+                  {text(attempt.outcome)}{attempt.status != null
+                    ? ` · ${text(attempt.status)}`
+                    : ''}
+                </span>
+              </div>
+              <div class="attempt-meta">
+                <span>{text(attempt.model)}</span>
+                <span>{text(attempt.account, 'Unknown account')}</span>
+                <span>{compact(attempt.duration_ms)} ms</span>
+              </div>
+              <div class="attempt-diagnostics">
+                {#if attempt.failure_class}<span>
+                    {text(attempt.failure_class).replaceAll('_', ' ')}
+                  </span>{/if}
+                {#if object(attempt.cooldown).decision && object(attempt.cooldown).decision !== 'none'}
+                  <span>
+                    Cooldown {text(object(attempt.cooldown).decision)}{object(attempt.cooldown)
+                      .seconds != null
+                      ? ` · ${compact(object(attempt.cooldown).seconds)}s`
+                      : ''}
+                  </span>
+                {/if}
+              </div>
+              {#if object(attempt.recovery).href}
+                <a class="recovery-link" href={text(object(attempt.recovery).href, '#')}>
+                  {text(object(attempt.recovery).label, 'Review account')}
+                </a>
+              {/if}
+            </li>
+          {/each}
+        </ol>
+        {#if attemptTotal > attemptLimit}
+          <div class="attempt-pagination">
+            <button
+              class="button"
+              aria-label="Previous attempts"
+              disabled={attemptOffset <= 0}
+              on:click={() => changeAttemptPage(Math.max(0, attemptOffset - attemptLimit))}
+            >
+              Previous
+            </button>
+            <span>
+              {attemptOffset + 1}–{Math.min(attemptOffset + attemptLimit, attemptTotal)} of {attemptTotal}
+            </span>
+            <button
+              class="button"
+              aria-label="Next attempts"
+              disabled={attemptOffset + attemptLimit >= attemptTotal}
+              on:click={() => changeAttemptPage(attemptOffset + attemptLimit)}
+            >
+              Next
+            </button>
+          </div>
+        {/if}
+      {:else}
+        <p class="muted">No upstream attempts were recorded for this request.</p>
+      {/if}
+    </section>
     {#if hasBodies}
       <div class="detail-body-controls">
-        <button class="button" on:click={() => (showBodies = !showBodies)}>
-          {showBodies ? 'Hide bodies' : 'Show bodies'}
+        <button class="button" disabled={loadingBodies} on:click={toggleBodies}>
+          {loadingBodies ? 'Loading bodies…' : showBodies ? 'Hide bodies' : 'Show bodies'}
         </button>
       </div>
       {#if showBodies}
@@ -237,6 +360,62 @@
     display: block;
     word-break: break-word;
     font-size: 13px;
+  }
+  .timeline {
+    margin-top: 20px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  .timeline-header,
+  .attempt-heading,
+  .attempt-meta,
+  .attempt-diagnostics,
+  .attempt-pagination {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .timeline-header {
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .timeline-header h3 {
+    margin: 0;
+    font-size: 15px;
+  }
+  .attempt-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .attempt-list li {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .attempt-heading {
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  .attempt-meta,
+  .attempt-diagnostics {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 7px;
+  }
+  .recovery-link {
+    display: inline-block;
+    margin-top: 9px;
+    font-size: 12px;
+  }
+  .attempt-pagination {
+    justify-content: flex-end;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--muted);
   }
   .detail-body-controls {
     margin: 16px 0 10px;

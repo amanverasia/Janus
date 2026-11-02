@@ -5,6 +5,7 @@ import datetime
 import json
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator, Coroutine, Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,6 +59,7 @@ from janus.routing.claude_oauth_tools import (
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
 from janus.routing.dispatch import DispatchBudget, DispatchStoppedError
 from janus.routing.errors import (
+    classify_error,
     is_200_wrapped_error,
     is_fallback_eligible_refined,
     refine_error_type,
@@ -398,11 +400,13 @@ async def _maybe_log_client_error(
     request_body: str | None,
     error: str,
     max_rows: int = MAX_ROWS,
+    request_id: str | None,
 ) -> None:
     if not log_requests:
         return
     await record_request_log(
         db_path,
+        request_id=request_id,
         client_format=client_format,
         model=model,
         status=status,
@@ -436,7 +440,12 @@ async def _log_error_and_raise(
     """Record a non-fallback upstream error then raise HTTPException."""
     signal = outcome.attempt_signal
     if signal is not None and not signal.finished:
-        signal.finish("client_error" if 400 <= status < 500 else "error", status=status)
+        signal.finish(
+            "client_error" if 400 <= status < 500 else "error",
+            status=status,
+            failure_class=classify_error(status).value,
+            cooldown_decision="none",
+        )
     await outcome.record(
         status=status,
         model=model,
@@ -459,6 +468,7 @@ async def _log_error_and_raise(
                 resp_text = str(response_body)
         await record_request_log(
             db_path,
+            request_id=outcome.request_id,
             client_format=client_format,
             model=model,
             resolved_model=resolved_model,
@@ -549,6 +559,7 @@ async def _malformed_request_response(
             logged_request_body = json.dumps(body, ensure_ascii=False)
         except (TypeError, ValueError):
             logged_request_body = str(body)
+    request_id = uuid.uuid4().hex
     await _maybe_log_client_error(
         log_requests=log_requests,
         db_path=db_path,
@@ -558,9 +569,11 @@ async def _malformed_request_response(
         request_body=logged_request_body,
         error=f"malformed_request: {message}",
         max_rows=retention,
+        request_id=request_id,
     )
     await record_request_outcome(
         db_path,
+        request_id=request_id,
         client_format=client_format,
         status=400,
         client_key_id=getattr(request.state, "client_key_id", None),
@@ -602,6 +615,8 @@ class _OutcomeRecorder:
         self._client_key_id = client_key_id
         self._client_key_label = client_key_label
         self._start_time = time.monotonic()
+        self.request_id = uuid.uuid4().hex
+        self.attempt_order = 0
         self.recorded = False
         self.attempt_signal: AttemptSignal | None = None
         self.dispatch: DispatchBudget | None = None
@@ -656,6 +671,7 @@ class _OutcomeRecorder:
         self.recorded = True
         await record_request_outcome(
             self._db_path,
+            request_id=self.request_id,
             client_format=self._client_format,
             model=model if model is not None else self._model,
             provider_id=provider_id,
@@ -748,6 +764,7 @@ async def _persist_stream_telemetry(
     if log_requests and (outcome.dispatch is None or outcome.dispatch.reason is None):
         await record_request_log(
             db_path,
+            request_id=outcome.request_id,
             client_format=client_format,
             model=client_model,
             resolved_model=target.model,
@@ -856,6 +873,7 @@ async def _handle(
         if request_logging_enabled(settings):
             await record_request_log(
                 request.app.state.db_path,
+                request_id=outcome.request_id,
                 client_format=client_format,
                 model=model_raw if isinstance(model_raw, str) else None,
                 status=e.status,
@@ -942,8 +960,11 @@ async def _handle_with_snapshot(
     def _start_signal(target: ResolvedTarget, streamed: bool) -> AttemptSignal:
         if outcome.dispatch is not None:
             outcome.dispatch.start_attempt()
+        outcome.attempt_order += 1
         signal = AttemptSignal(
             db_path,
+            request_id=outcome.request_id,
+            attempt_order=outcome.attempt_order,
             model=target.model,
             account_id=target.account_id,
             provider_id=target.provider_config.id,
@@ -995,6 +1016,7 @@ async def _handle_with_snapshot(
             request_body=logged_request_body,
             error="budget_exceeded",
             max_rows=retention,
+            request_id=outcome.request_id,
         )
         await outcome.record(status=429, model=budget_model)
         return blocked_response
@@ -1012,6 +1034,7 @@ async def _handle_with_snapshot(
             request_body=logged_request_body,
             error=f"malformed_request: {exc}",
             max_rows=retention,
+            request_id=outcome.request_id,
         )
         await outcome.record(status=400, model=None)
         return JSONResponse(
@@ -1058,6 +1081,7 @@ async def _handle_with_snapshot(
             request_body=logged_request_body,
             error=f"Model '{model}' is not allowed for this API key",
             max_rows=retention,
+            request_id=outcome.request_id,
         )
         await outcome.record(status=403, model=model)
         return JSONResponse(
@@ -1118,6 +1142,7 @@ async def _handle_with_snapshot(
                 request_body=logged_request_body,
                 error="No models match model='auto' under the active routing strategy",
                 max_rows=retention,
+                request_id=outcome.request_id,
             )
             return JSONResponse(
                 content={
@@ -1205,6 +1230,7 @@ async def _handle_with_snapshot(
                     cached_response_body = str(cached.payload)
                 await record_request_log(
                     db_path,
+                    request_id=outcome.request_id,
                     client_format=client_format,
                     model=canonical_req.model,
                     provider_id=PROMPT_CACHE_PROVIDER_ID,
@@ -1300,6 +1326,7 @@ async def _handle_with_snapshot(
         if log_requests:
             await record_request_log(
                 db_path,
+                request_id=outcome.request_id,
                 client_format=client_format,
                 model=requested_model,
                 status=503,
@@ -1330,6 +1357,7 @@ async def _handle_with_snapshot(
             request_body=logged_request_body,
             error=str(e),
             max_rows=retention,
+            request_id=outcome.request_id,
         )
         await outcome.record(status=400, model=canonical_req.model)
         raise HTTPException(
@@ -1353,12 +1381,38 @@ async def _handle_with_snapshot(
     if outcome.dispatch is not None:
         outcome.dispatch.candidates += len(attempts)
 
+    def _cooldown_details(failed: ResolvedTarget) -> tuple[str, int | None]:
+        expiry = handler.earliest_cooldown_expiry([failed.account_id], failed.model)
+        return (
+            "applied" if handler.cooldowns_enabled else "disabled",
+            max(0, int(expiry - time.time() + 0.999)) if expiry is not None else None,
+        )
+
     def _note_attempt_failure(
-        failed: ResolvedTarget, detail: str, *, status: int | None = None
+        failed: ResolvedTarget,
+        detail: str,
+        *,
+        status: int | None = None,
+        error_type: str | None = None,
     ) -> None:
         signal = outcome.attempt_signal
         if signal is not None and not signal.finished:
-            signal.finish("error", status=status)
+            if error_type is not None:
+                failure_class = error_type
+            elif status is None:
+                failure_class = "network"
+            elif status == 200:
+                failure_class = "rate_limit" if "quota" in detail.lower() else "server_error"
+            else:
+                failure_class = classify_error(status).value
+            cooldown_decision, cooldown_seconds = _cooldown_details(failed)
+            signal.finish(
+                "error",
+                status=status,
+                failure_class=failure_class,
+                cooldown_decision=cooldown_decision,
+                cooldown_seconds=cooldown_seconds,
+            )
         probed_percent = probe_demoted.get(failed.account_id)
         if probed_percent is not None:
             detail = f"{detail} (probed window {probed_percent:.0f}% used)"
@@ -1458,14 +1512,18 @@ async def _handle_with_snapshot(
                     continue
                 if result.status_code >= 400:
                     if is_fallback_eligible_refined(result.status_code, result.json_data):
+                        error_type = refine_error_type(result.status_code, result.json_data).value
                         handler.mark_cooldown(
                             target.account_id,
-                            refine_error_type(result.status_code, result.json_data).value,
+                            error_type,
                             model=target.model,
                             retry_after=getattr(result, "retry_after", None),
                         )
                         _note_attempt_failure(
-                            target, str(result.status_code), status=result.status_code
+                            target,
+                            str(result.status_code),
+                            status=result.status_code,
+                            error_type=error_type,
                         )
                         continue
                     await _log_error_and_raise(
@@ -1561,6 +1619,27 @@ async def _handle_with_snapshot(
                             else:
                                 final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
+                            if upstream_failure and not stream_ok:
+                                handler.mark_cooldown(
+                                    target.account_id, "network", model=target.model
+                                )
+                            cooldown_decision, cooldown_seconds = (
+                                _cooldown_details(target)
+                                if upstream_failure and not stream_ok
+                                else ("none", None)
+                            )
+                            failure_class = (
+                                "network"
+                                if upstream_failure and not stream_ok
+                                else (
+                                    "server_error"
+                                    if final_status >= 400
+                                    and not (
+                                        client_aborted and final_status == _CLIENT_ABORTED_STATUS
+                                    )
+                                    else None
+                                )
+                            )
                             pt_signal.finish(
                                 "aborted"
                                 if client_aborted and final_status == _CLIENT_ABORTED_STATUS
@@ -1568,15 +1647,14 @@ async def _handle_with_snapshot(
                                 status=final_status,
                                 output_tokens=usage.output_tokens,
                                 first_content_at=tracker.first_content_at,
+                                failure_class=failure_class,
+                                cooldown_decision=cooldown_decision,
+                                cooldown_seconds=cooldown_seconds,
                             )
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
                             )
-                            if upstream_failure and not stream_ok:
-                                handler.mark_cooldown(
-                                    target.account_id, "network", model=target.model
-                                )
                             persist = _persist_stream_telemetry(
                                 db_path=db_path,
                                 outcome=outcome,
@@ -1641,6 +1719,7 @@ async def _handle_with_snapshot(
                         pt_response_body = str(result.json_data)
                     await record_request_log(
                         db_path,
+                        request_id=outcome.request_id,
                         client_format=client_format,
                         model=canonical_req.model,
                         resolved_model=target.model,
@@ -1725,11 +1804,12 @@ async def _handle_with_snapshot(
                     if is_fallback_eligible_refined(
                         native_result.status_code, native_result.json_data
                     ):
+                        error_type = refine_error_type(
+                            native_result.status_code, native_result.json_data
+                        ).value
                         handler.mark_cooldown(
                             target.account_id,
-                            refine_error_type(
-                                native_result.status_code, native_result.json_data
-                            ).value,
+                            error_type,
                             model=target.model,
                             retry_after=getattr(native_result, "retry_after", None),
                         )
@@ -1737,6 +1817,7 @@ async def _handle_with_snapshot(
                             target,
                             str(native_result.status_code),
                             status=native_result.status_code,
+                            error_type=error_type,
                         )
                         continue
                     await _log_error_and_raise(
@@ -1836,6 +1917,27 @@ async def _handle_with_snapshot(
                             else:
                                 final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
+                            if upstream_failure and not stream_ok:
+                                handler.mark_cooldown(
+                                    target.account_id, "network", model=target.model
+                                )
+                            cooldown_decision, cooldown_seconds = (
+                                _cooldown_details(target)
+                                if upstream_failure and not stream_ok
+                                else ("none", None)
+                            )
+                            failure_class = (
+                                "network"
+                                if upstream_failure and not stream_ok
+                                else (
+                                    "server_error"
+                                    if final_status >= 400
+                                    and not (
+                                        client_aborted and final_status == _CLIENT_ABORTED_STATUS
+                                    )
+                                    else None
+                                )
+                            )
                             native_signal.finish(
                                 "aborted"
                                 if client_aborted and final_status == _CLIENT_ABORTED_STATUS
@@ -1843,15 +1945,14 @@ async def _handle_with_snapshot(
                                 status=final_status,
                                 output_tokens=usage.output_tokens,
                                 first_content_at=tracker.first_content_at,
+                                failure_class=failure_class,
+                                cooldown_decision=cooldown_decision,
+                                cooldown_seconds=cooldown_seconds,
                             )
                             cost = attempt_cost(usage, target, pricing_registry)
                             handler.record_quota_tokens(
                                 target, usage.input_tokens + usage.output_tokens
                             )
-                            if upstream_failure and not stream_ok:
-                                handler.mark_cooldown(
-                                    target.account_id, "network", model=target.model
-                                )
                             persist = _persist_stream_telemetry(
                                 db_path=db_path,
                                 outcome=outcome,
@@ -1921,6 +2022,7 @@ async def _handle_with_snapshot(
                         native_response_body = str(native_result.json_data)
                     await record_request_log(
                         db_path,
+                        request_id=outcome.request_id,
                         client_format=client_format,
                         model=canonical_req.model,
                         resolved_model=target.model,
@@ -2003,14 +2105,18 @@ async def _handle_with_snapshot(
                 result = await provider.call(upstream_payload, stream=True, **provider_kwargs)
                 if result.status_code >= 400:
                     if is_fallback_eligible_refined(result.status_code, result.json_data):
+                        error_type = refine_error_type(result.status_code, result.json_data).value
                         handler.mark_cooldown(
                             target.account_id,
-                            refine_error_type(result.status_code, result.json_data).value,
+                            error_type,
                             model=target.model,
                             retry_after=result.retry_after,
                         )
                         _note_attempt_failure(
-                            target, str(result.status_code), status=result.status_code
+                            target,
+                            str(result.status_code),
+                            status=result.status_code,
+                            error_type=error_type,
                         )
                         continue
                     await _log_error_and_raise(
@@ -2132,11 +2238,35 @@ async def _handle_with_snapshot(
                             canon_outcome = "ok"
                         else:
                             canon_outcome = "error"
+                        failure_class = (
+                            "server_error"
+                            if void_completion
+                            else (
+                                "network"
+                                if upstream_failure and not stream_ok
+                                else (
+                                    "server_error"
+                                    if final_status >= 400
+                                    and not (
+                                        client_aborted and final_status == _CLIENT_ABORTED_STATUS
+                                    )
+                                    else None
+                                )
+                            )
+                        )
+                        cooldown_decision, cooldown_seconds = (
+                            _cooldown_details(target)
+                            if void_completion or (upstream_failure and not stream_ok)
+                            else ("none", None)
+                        )
                         canon_signal.finish(
                             canon_outcome,
                             status=final_status,
                             output_tokens=usage.output_tokens,
                             first_content_at=tracker.first_content_at,
+                            failure_class=failure_class,
+                            cooldown_decision=cooldown_decision,
+                            cooldown_seconds=cooldown_seconds,
                         )
                         persist = _persist_stream_telemetry(
                             db_path=db_path,
@@ -2179,14 +2309,18 @@ async def _handle_with_snapshot(
             result = await provider.call(upstream_payload, stream=False, **provider_kwargs)
             if result.status_code >= 400:
                 if is_fallback_eligible_refined(result.status_code, result.json_data):
+                    error_type = refine_error_type(result.status_code, result.json_data).value
                     handler.mark_cooldown(
                         target.account_id,
-                        refine_error_type(result.status_code, result.json_data).value,
+                        error_type,
                         model=target.model,
                         retry_after=result.retry_after,
                     )
                     _note_attempt_failure(
-                        target, str(result.status_code), status=result.status_code
+                        target,
+                        str(result.status_code),
+                        status=result.status_code,
+                        error_type=error_type,
                     )
                     continue
                 await _log_error_and_raise(
@@ -2281,6 +2415,7 @@ async def _handle_with_snapshot(
                     logged_response_body = str(client_payload)
                 await record_request_log(
                     db_path,
+                    request_id=outcome.request_id,
                     client_format=client_format,
                     model=canonical_req.model,
                     resolved_model=target.model,
@@ -2348,6 +2483,7 @@ async def _handle_with_snapshot(
         )
         await record_request_log(
             db_path,
+            request_id=outcome.request_id,
             client_format=client_format,
             model=canonical_req.model,
             status=503,
