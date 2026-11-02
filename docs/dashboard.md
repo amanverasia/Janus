@@ -301,6 +301,26 @@ and the Settings toggle.
   errors are skipped until their cooldown expires. Turn off to override and keep
   retrying those accounts immediately (`server_cooldowns_enabled`). Also available
   via `janus settings set server_cooldowns_enabled false`
+
+**Dispatch limits** in Settings bound each gateway request, including when cooldowns
+are disabled. **Dispatch timeout** defaults to 60 seconds (range 1–600), and
+**Maximum dispatch attempts** defaults to 20 (range 1–100). Changes apply to new
+requests without restarting. These controls use the same DB settings as automation:
+`server_dispatch_timeout_s` and `server_dispatch_max_attempts`.
+
+The deadline starts after authentication and loading the runtime settings. It
+includes budget checks, parsing, token savers, image prefetch, credential refresh,
+upstream waits, and fusion panel/judge work. For streaming it ends when the first
+nonempty client-visible output is ready; the remaining stream uses existing
+upstream transport timeouts and never retries after output starts. Final terminal
+accounting runs after dispatch. Cancellation closes pending work and prevents
+further attempts.
+
+On a limit failure, use **Inspect Request Logs** to see the stopping reason and
+attempted/skipped counts. Repair failed credentials and enable cooldowns before
+raising limits. A deadline returns HTTP 504; an attempt limit returns HTTP 503.
+Client disconnections are recorded separately as 499. Limits do not bypass API-key
+model allowlists or spending budgets.
 - **Sticky client routing** and account strategy
 - **Reporting timezone** and request-log retention
 - **Request Logging** — capture full request/response bodies for debugging (off by default), plus the log retention limit

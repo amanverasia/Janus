@@ -43,6 +43,8 @@ SERVER_SETTING_DEFAULTS: dict[str, str] = {
     "server_sticky_limit": "3",
     "server_gateway_rate_limit_rpm": "0",
     "server_cooldowns_enabled": "true",
+    "server_dispatch_timeout_s": "60",
+    "server_dispatch_max_attempts": "20",
     "server_reporting_timezone": "UTC",
     "server_prompt_cache_enabled": "false",
     "server_prompt_cache_ttl_s": "3600",
@@ -122,6 +124,39 @@ def resolve_gateway_rate_limit_rpm(settings: dict[str, str]) -> int:
         return max(0, int(value))
     except ValueError:
         return 0
+
+
+def _validate_dispatch_limit(value: str, *, maximum: int) -> None:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError("must be an integer") from exc
+    if not 1 <= parsed <= maximum:
+        raise ValueError(f"must be between 1 and {maximum}")
+
+
+def validate_dispatch_timeout_s(value: str) -> None:
+    _validate_dispatch_limit(value, maximum=600)
+
+
+def validate_dispatch_max_attempts(value: str) -> None:
+    _validate_dispatch_limit(value, maximum=100)
+
+
+def resolve_dispatch_timeout_s(settings: dict[str, str]) -> int:
+    try:
+        value = int(settings.get("server_dispatch_timeout_s", "60"))
+    except (ValueError, TypeError):
+        return 60
+    return max(1, min(value, 600))
+
+
+def resolve_dispatch_max_attempts(settings: dict[str, str]) -> int:
+    try:
+        value = int(settings.get("server_dispatch_max_attempts", "20"))
+    except (ValueError, TypeError):
+        return 20
+    return max(1, min(value, 100))
 
 
 def validate_reporting_timezone(value: str) -> str:

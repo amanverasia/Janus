@@ -52,12 +52,12 @@ async def test_record_request_outcome_full_fields(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_record_request_outcome_clamps_zero_attempts(tmp_path):
+async def test_record_request_outcome_preserves_zero_attempts(tmp_path):
     db_path = tmp_path / "test.db"
     await init_db(db_path)
     await record_request_outcome(db_path, model="gpt-4o", status=429, attempts=0)
     rows = await list_request_outcomes(db_path)
-    assert rows[0]["attempts"] == 1
+    assert rows[0]["attempts"] == 0
 
 
 @pytest.mark.asyncio

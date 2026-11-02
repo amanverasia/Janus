@@ -56,6 +56,7 @@ from janus.routing.claude_oauth_tools import (
     restore_oauth_tool_names_stream_line,
 )
 from janus.routing.client_detect import detect_client_tool, is_native_passthrough
+from janus.routing.dispatch import DispatchBudget, DispatchStoppedError
 from janus.routing.errors import (
     is_200_wrapped_error,
     is_fallback_eligible_refined,
@@ -603,6 +604,26 @@ class _OutcomeRecorder:
         self._start_time = time.monotonic()
         self.recorded = False
         self.attempt_signal: AttemptSignal | None = None
+        self.dispatch: DispatchBudget | None = None
+        self.defer_recording = False
+        self._pending_outcome: dict[str, Any] | None = None
+
+    async def flush(self) -> None:
+        self.defer_recording = False
+        pending = self._pending_outcome
+        self._pending_outcome = None
+        if pending is not None:
+            await self.record(**pending)
+
+    def discard_pending(self) -> None:
+        self.defer_recording = False
+        self._pending_outcome = None
+
+    @property
+    def abort_status(self) -> int:
+        if self.dispatch is not None and self.dispatch.reason is not None:
+            return DispatchStoppedError(self.dispatch.reason).status
+        return _CLIENT_ABORTED_STATUS
 
     def elapsed_ms(self) -> int:
         return int((time.monotonic() - self._start_time) * 1000)
@@ -620,6 +641,18 @@ class _OutcomeRecorder:
     ) -> None:
         if self.recorded:
             return
+        if self.defer_recording:
+            if self._pending_outcome is None:
+                self._pending_outcome = {
+                    "status": status,
+                    "model": model,
+                    "provider_id": provider_id,
+                    "account_id": account_id,
+                    "duration_ms": duration_ms,
+                    "streamed": streamed,
+                    "attempts": attempts,
+                }
+            return
         self.recorded = True
         await record_request_outcome(
             self._db_path,
@@ -630,7 +663,11 @@ class _OutcomeRecorder:
             status=status,
             duration_ms=duration_ms if duration_ms is not None else self.elapsed_ms(),
             streamed=streamed,
-            attempts=attempts,
+            attempts=(
+                self.dispatch.attempted
+                if self.dispatch is not None and (self.dispatch.attempted or self.dispatch.reason)
+                else attempts
+            ),
             client_key_id=self._client_key_id,
             client_key_label=self._client_key_label,
         )
@@ -708,7 +745,7 @@ async def _persist_stream_telemetry(
         client_key_label=client_key_label,
         cost=cost,
     )
-    if log_requests:
+    if log_requests and (outcome.dispatch is None or outcome.dispatch.reason is None):
         await record_request_log(
             db_path,
             client_format=client_format,
@@ -758,17 +795,106 @@ async def _handle(
         client_key_id=getattr(request.state, "client_key_id", None),
         client_key_label=getattr(request.state, "client_key_label", None),
     )
-    try:
+
+    async def dispatch() -> Response:
         response = await _handle_with_snapshot(client_format, body, request, snapshot, outcome)
+        if isinstance(response, StreamingResponse):
+            iterator = response.body_iterator
+            first: Any = None
+            async for chunk in iterator:
+                if chunk:
+                    first = chunk
+                    break
+
+            async def primed_body() -> AsyncIterator[Any]:
+                try:
+                    if first is not None:
+                        yield first
+                    async for chunk in iterator:
+                        yield chunk
+                finally:
+                    close = getattr(iterator, "aclose", None)
+                    if close is not None:
+                        await close()
+
+            response.body_iterator = primed_body()
+        return response
+
+    try:
+        from janus.storage.settings import (
+            get_all_settings,
+            resolve_dispatch_max_attempts,
+            resolve_dispatch_timeout_s,
+        )
+
+        settings = await get_all_settings(request.app.state.db_path)
+        outcome.dispatch = DispatchBudget(
+            resolve_dispatch_timeout_s(settings), resolve_dispatch_max_attempts(settings)
+        )
+        outcome.defer_recording = True
+        response = await outcome.dispatch.run(dispatch(), request.is_disconnected)
+        await outcome.flush()
+    except DispatchStoppedError as e:
+        outcome.discard_pending()
+        budget = outcome.dispatch
+        assert budget is not None
+        signal = outcome.attempt_signal
+        if signal is not None and not signal.finished:
+            signal.finish("aborted" if e.status == 499 else "error", status=e.status)
+        detail = {
+            "type": e.reason,
+            "message": (
+                "Dispatch stopped. Inspect Request Logs and account health in the dashboard; "
+                "repair failing credentials or enable cooldowns before increasing dispatch limits."
+            ),
+            "attempted": budget.attempted,
+            "skipped": budget.skipped,
+        }
+        await outcome.record(status=e.status, attempts=budget.attempted)
+        from janus.storage.settings import request_logging_enabled, resolve_request_log_retention
+
+        if request_logging_enabled(settings):
+            await record_request_log(
+                request.app.state.db_path,
+                client_format=client_format,
+                model=model_raw if isinstance(model_raw, str) else None,
+                status=e.status,
+                duration_ms=outcome.elapsed_ms(),
+                streamed=bool(body.get("stream")),
+                response_body=json.dumps({"error": detail}),
+                error=f"{e.reason}: attempted={budget.attempted}, skipped={budget.skipped}",
+                client_key_id=getattr(request.state, "client_key_id", None),
+                client_key_label=getattr(request.state, "client_key_label", None),
+                max_rows=resolve_request_log_retention(settings),
+            )
+        response = JSONResponse(
+            {"error": detail},
+            status_code=e.status,
+            headers={
+                "x-janus-error-type": e.reason,
+                "x-janus-attempts": str(budget.attempted),
+                "x-janus-skipped-attempts": str(budget.skipped),
+            },
+        )
     except HTTPException as e:
+        await outcome.flush()
         await outcome.record(status=e.status_code, duration_ms=outcome.elapsed_ms())
         await release_provider_snapshot(request.app, snapshot)
         raise
     except Exception:
+        outcome.discard_pending()
         signal = outcome.attempt_signal
         if signal is not None and not signal.finished:
             signal.finish("error", status=500)
         await outcome.record(status=500, duration_ms=outcome.elapsed_ms())
+        await release_provider_snapshot(request.app, snapshot)
+        raise
+    except asyncio.CancelledError:
+        outcome.discard_pending()
+        signal = outcome.attempt_signal
+        if signal is not None and not signal.finished:
+            signal.finish("aborted", status=_CLIENT_ABORTED_STATUS)
+        _schedule_stream_persist(outcome.record(status=_CLIENT_ABORTED_STATUS))
         await release_provider_snapshot(request.app, snapshot)
         raise
     except BaseException:
@@ -782,7 +908,12 @@ async def _handle(
                 async for chunk in body_iterator:
                     yield chunk
             finally:
-                await release_provider_snapshot(request.app, snapshot)
+                try:
+                    close = getattr(body_iterator, "aclose", None)
+                    if close is not None:
+                        await close()
+                finally:
+                    await release_provider_snapshot(request.app, snapshot)
 
         response.body_iterator = _leased_body()
         return response
@@ -809,6 +940,8 @@ async def _handle_with_snapshot(
         return outcome.elapsed_ms()
 
     def _start_signal(target: ResolvedTarget, streamed: bool) -> AttemptSignal:
+        if outcome.dispatch is not None:
+            outcome.dispatch.start_attempt()
         signal = AttemptSignal(
             db_path,
             model=target.model,
@@ -1100,6 +1233,8 @@ async def _handle_with_snapshot(
     if combo_strat == "fusion":
         fusion_panel = handler.registry.lookup_combo(canonical_req.model)
         if fusion_panel is not None and len(fusion_panel) >= 2:
+            if outcome.dispatch is not None:
+                outcome.dispatch.candidates += len(fusion_panel)
             judge_setting = resolve_combo_fusion_judge(settings)
             if judge_setting and handler.registry.lookup_combo(judge_setting) is not None:
                 raise HTTPException(
@@ -1133,6 +1268,7 @@ async def _handle_with_snapshot(
                     pricing_registry=pricing_registry,
                     client_key_id=client_key_id,
                     client_key_label=client_key_label,
+                    before_attempt=(outcome.dispatch.start_attempt if outcome.dispatch else None),
                 ),
                 min_panel=resolve_combo_fusion_min_panel(settings),
                 straggler_grace_s=resolve_combo_fusion_straggler_grace_s(settings),
@@ -1214,6 +1350,8 @@ async def _handle_with_snapshot(
     attempt_errors: list[str] = []
     public_attempt_errors: list[str] = []
     probe_demoted: dict[str, float] = dict(handler.last_probe_demotions)
+    if outcome.dispatch is not None:
+        outcome.dispatch.candidates += len(attempts)
 
     def _note_attempt_failure(
         failed: ResolvedTarget, detail: str, *, status: int | None = None
@@ -1237,6 +1375,11 @@ async def _handle_with_snapshot(
         outcome.attempt_signal = None
         if not handler.is_available(target.account_id, target.model):
             continue
+        if await request.is_disconnected():
+            assert outcome.dispatch is not None
+            raise outcome.dispatch.stop("client_disconnected")
+        if outcome.dispatch is not None:
+            outcome.dispatch.check()
 
         upstream_model, alias_intent = resolve_model_alias(target.prefix, target.model)
         attempt_thinking = thinking_intent or alias_intent
@@ -1414,13 +1557,13 @@ async def _handle_with_snapshot(
                             pass
                         finally:
                             if client_aborted:
-                                final_status = _CLIENT_ABORTED_STATUS
+                                final_status = outcome.abort_status
                             else:
                                 final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
                             pt_signal.finish(
                                 "aborted"
-                                if client_aborted
+                                if client_aborted and final_status == _CLIENT_ABORTED_STATUS
                                 else ("ok" if final_status < 400 else "error"),
                                 status=final_status,
                                 output_tokens=usage.output_tokens,
@@ -1449,7 +1592,12 @@ async def _handle_with_snapshot(
                                 client_key_label=client_key_label,
                                 log_requests=log_requests,
                                 retention=retention,
-                                mark_success=stream_ok or (client_aborted and not upstream_failure),
+                                mark_success=stream_ok
+                                or (
+                                    client_aborted
+                                    and outcome.abort_status == _CLIENT_ABORTED_STATUS
+                                    and not upstream_failure
+                                ),
                                 attempts=len(attempt_errors) + 1,
                             )
                             if client_aborted:
@@ -1530,7 +1678,6 @@ async def _handle_with_snapshot(
         if client_format == effective_native_format:
             provider_p = providers.get(target.provider_config.id)
             if provider_p is not None:
-                handler.record_attempt(target)
                 native_body = client_adapter.build_upstream_request(attempt_req, upstream_model)
                 apply_thinking_to_payload(
                     native_body,
@@ -1558,6 +1705,7 @@ async def _handle_with_snapshot(
                 native_stream = attempt_req.stream
                 native_media = getattr(client_adapter, "stream_media_type", "text/event-stream")
                 native_signal = _start_signal(target, native_stream)
+                handler.record_attempt(target)
                 try:
                     native_result = await provider_p.call(
                         native_body,
@@ -1684,13 +1832,13 @@ async def _handle_with_snapshot(
                             pass
                         finally:
                             if client_aborted:
-                                final_status = _CLIENT_ABORTED_STATUS
+                                final_status = outcome.abort_status
                             else:
                                 final_status = 200 if stream_ok else 502
                             usage = tracker.get_usage()
                             native_signal.finish(
                                 "aborted"
-                                if client_aborted
+                                if client_aborted and final_status == _CLIENT_ABORTED_STATUS
                                 else ("ok" if final_status < 400 else "error"),
                                 status=final_status,
                                 output_tokens=usage.output_tokens,
@@ -1719,7 +1867,12 @@ async def _handle_with_snapshot(
                                 client_key_label=client_key_label,
                                 log_requests=log_requests,
                                 retention=retention,
-                                mark_success=stream_ok or (client_aborted and not upstream_failure),
+                                mark_success=stream_ok
+                                or (
+                                    client_aborted
+                                    and outcome.abort_status == _CLIENT_ABORTED_STATUS
+                                    and not upstream_failure
+                                ),
                                 attempts=len(attempt_errors) + 1,
                             )
                             if client_aborted:
@@ -1836,8 +1989,8 @@ async def _handle_with_snapshot(
             oauth_upstream=_oauth_upstream(target),
         )
         provider = providers[target.provider_config.id]
-        handler.record_attempt(target)
         canon_signal = _start_signal(target, attempt_req.stream)
+        handler.record_attempt(target)
         provider_kwargs = _claude_provider_kwargs(
             request,
             upstream_prep,
@@ -1954,7 +2107,7 @@ async def _handle_with_snapshot(
                         pass
                     finally:
                         if client_aborted:
-                            final_status = _CLIENT_ABORTED_STATUS
+                            final_status = outcome.abort_status
                         else:
                             final_status = 200 if stream_ok else 502
                         usage = tracker.get_usage()
@@ -1973,7 +2126,7 @@ async def _handle_with_snapshot(
                             )
                         elif upstream_failure and not stream_ok:
                             handler.mark_cooldown(target.account_id, "network", model=target.model)
-                        if client_aborted:
+                        if client_aborted and final_status == _CLIENT_ABORTED_STATUS:
                             canon_outcome = "aborted"
                         elif final_status < 400 and not void_completion:
                             canon_outcome = "ok"
@@ -2001,7 +2154,14 @@ async def _handle_with_snapshot(
                             log_requests=log_requests,
                             retention=retention,
                             mark_success=produced_output
-                            and (stream_ok or (client_aborted and not upstream_failure)),
+                            and (
+                                stream_ok
+                                or (
+                                    client_aborted
+                                    and outcome.abort_status == _CLIENT_ABORTED_STATUS
+                                    and not upstream_failure
+                                )
+                            ),
                             attempts=len(attempt_errors) + 1,
                         )
                         if client_aborted:

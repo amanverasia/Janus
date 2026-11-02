@@ -34,6 +34,7 @@ from janus.formats.base import FormatAdapter
 from janus.pricing.calculator import attempt_cost
 from janus.pricing.registry import PricingRegistry
 from janus.providers.base import Provider
+from janus.routing.dispatch import DispatchStoppedError
 from janus.routing.errors import is_fallback_eligible_refined, refine_error_type
 from janus.routing.fallback import AllAccountsCooledDown, FallbackHandler
 from janus.routing.model_aliases import resolve_model_alias
@@ -66,6 +67,7 @@ class FusionDeps:
     pricing_registry: PricingRegistry
     client_key_id: int | None
     client_key_label: str | None
+    before_attempt: Callable[[], None] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +197,8 @@ async def _call_panel_model(
     upstream_model, _ = resolve_model_alias(target.prefix, target.model)
     adapter = deps.resolve_format(target.native_format)
     payload = adapter.build_upstream_request(panel_req, upstream_model)
+    if deps.before_attempt is not None:
+        deps.before_attempt()
     handler.record_attempt(target)
     try:
         result = await provider.call(payload, stream=False)
@@ -275,6 +279,8 @@ async def collect_panel(
             for task in done:
                 try:
                     answer = task.result()
+                except DispatchStoppedError:
+                    raise
                 except Exception:
                     continue
                 if answer is not None and answer.text:
@@ -287,8 +293,7 @@ async def collect_panel(
         # their individual hard_timeout_s wait_for caps.
         for task in pending:
             task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     answers: list[PanelAnswer] = []
     for task in tasks:
@@ -296,6 +301,8 @@ async def collect_panel(
             continue
         try:
             answer = task.result()
+        except DispatchStoppedError:
+            raise
         except Exception:
             continue
         if answer is not None and answer.text:

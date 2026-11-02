@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
@@ -15,6 +16,7 @@ from janus.routing.provider_snapshots import (
     install_provider_snapshot,
     release_provider_snapshot,
 )
+from janus.storage.database import init_db
 
 
 class FakeProvider:
@@ -45,12 +47,13 @@ def _request(app: FastAPI) -> Request:
         "path": "/v1/chat/completions",
         "headers": [],
     }
-    return Request(scope)
+    return Request(scope, receive=AsyncMock(return_value={"type": "http.request", "body": b""}))
 
 
 async def test_stream_holds_snapshot_until_body_finishes(monkeypatch, tmp_path) -> None:
     old_provider = FakeProvider()
     app = _app_with_provider(old_provider, tmp_path)
+    await init_db(app.state.db_path)
 
     async def fake_handle(
         client_format: str,

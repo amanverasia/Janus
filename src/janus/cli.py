@@ -947,6 +947,8 @@ _ALLOWED_SETTING_KEYS = {
     "server_sticky_limit",
     "server_gateway_rate_limit_rpm",
     "server_cooldowns_enabled",
+    "server_dispatch_timeout_s",
+    "server_dispatch_max_attempts",
     "server_reporting_timezone",
     "saver_rtk_enabled",
     "saver_caveman_enabled",
@@ -1017,12 +1019,26 @@ def settings_set(
     import asyncio
 
     from janus.storage.database import init_db
-    from janus.storage.settings import set_setting
+    from janus.storage.settings import (
+        set_setting,
+        validate_dispatch_max_attempts,
+        validate_dispatch_timeout_s,
+    )
 
     if key not in _ALLOWED_SETTING_KEYS:
         allowed = ", ".join(sorted(_ALLOWED_SETTING_KEYS))
         typer.echo(f"Unknown setting '{key}'. Allowed keys: {allowed}")
         raise typer.Exit(code=1)
+    validator = {
+        "server_dispatch_timeout_s": validate_dispatch_timeout_s,
+        "server_dispatch_max_attempts": validate_dispatch_max_attempts,
+    }.get(key)
+    if validator is not None:
+        try:
+            validator(value)
+        except ValueError as exc:
+            typer.echo(f"Invalid value for {key}: {exc}")
+            raise typer.Exit(code=1) from exc
     db_path = _get_db_path(config)
     asyncio.run(init_db(db_path))
     asyncio.run(set_setting(db_path, key, value))
