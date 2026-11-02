@@ -39,12 +39,28 @@ def _should_invalidate(request: Request, response: Response) -> bool:
 
 
 def _is_same_origin(request: Request) -> bool:
-    origin = request.headers.get("origin")
-    if not origin:
+    origins = request.headers.getlist("origin")
+    if not origins:
         return True
+    if len(origins) != 1:
+        return False
+    origin = origins[0]
+    if not origin or any(char.isspace() or ord(char) < 32 for char in origin) or "\\" in origin:
+        return False
     try:
         origin_parts = urlsplit(origin)
         request_parts = urlsplit(str(request.base_url))
+        if (
+            origin_parts.scheme not in {"http", "https"}
+            or not origin_parts.hostname
+            or origin_parts.username is not None
+            or origin_parts.password is not None
+            or origin_parts.path
+            or "?" in origin
+            or "#" in origin
+            or (origin_parts.port is not None and not 1 <= origin_parts.port <= 65535)
+        ):
+            return False
     except ValueError:
         return False
     return (

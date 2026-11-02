@@ -5,6 +5,9 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
 FROM python:3.11-slim
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.source="https://github.com/amanverasia/Janus" \
+    org.opencontainers.image.revision=$VCS_REF
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gosu \
     && rm -rf /var/lib/apt/lists/* \
