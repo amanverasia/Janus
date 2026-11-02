@@ -217,6 +217,11 @@ your evals disagree with the recorded data. API clients can fetch the same trace
 `GET /v1/quality/auto-preview?strategy=`. Request Logs show the model the request resolved to
 next to the requested one.
 
+The preview lists exactly the chain a request would use: up to five model families, each
+with every eligible provider route, so the chain can hold more than five entries. Signals are
+attributed per provider route; a route with no recorded attempts of its own falls back to the
+model-wide signal and is marked "model-wide". Model IDs are case-sensitive and shown verbatim.
+
 Auto selects up to five model families and retains the eligible provider routes for
 each family. Version siblings are deduplicated within a provider, so a cooled or
 failing provider cannot hide another provider serving that model. Request-specific

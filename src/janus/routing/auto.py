@@ -44,6 +44,7 @@ class ScoredCandidate:
     samples: int
     overridden: bool
     quality: float | None
+    signal_scope: str = "none"
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,26 @@ def _quality_axis(stats: SignalStats | None, override: float | None) -> float | 
     return 1.0 - float(error_rate)
 
 
+def _resolve_signal(
+    signals: ModelSignals | None,
+    model_str: str,
+    bare: str,
+    provider_map: dict[str, frozenset[str]],
+) -> tuple[SignalStats | None, str]:
+    if signals is None:
+        return None, "none"
+    prefix = model_str.split("/", 1)[0] if "/" in model_str else ""
+    ids = provider_map.get(prefix)
+    if ids:
+        scoped = signals.for_providers(bare, ids)
+        if scoped is not None:
+            return scoped, "provider"
+    model_wide = signals.by_model.get(bare)
+    if model_wide is not None and model_wide.samples > 0:
+        return model_wide, "model"
+    return None, "none"
+
+
 def collect_candidates(registry: ProviderRegistry) -> list[str]:
     return sorted(registry.auto_candidates())
 
@@ -98,13 +119,15 @@ def score_candidates(
     pricing_registry: PricingRegistry,
     signals: ModelSignals | None,
     overrides: dict[str, float] | None = None,
+    provider_ids: dict[str, frozenset[str]] | None = None,
 ) -> list[ScoredCandidate]:
     override_map = overrides or {}
+    provider_map = provider_ids or {}
     scored: list[ScoredCandidate] = []
     for model_str in candidates:
         bare = _bare(model_str)
         pricing = pricing_registry.get(bare)
-        stats = signals.by_model.get(bare) if signals is not None else None
+        stats, scope = _resolve_signal(signals, model_str, bare, provider_map)
         override = override_map.get(bare)
         if override is None:
             override = override_map.get(model_str)
@@ -133,6 +156,7 @@ def score_candidates(
                 samples=stats.samples if stats is not None else 0,
                 overridden=override is not None,
                 quality=quality,
+                signal_scope=scope,
             )
         )
 
@@ -168,21 +192,28 @@ def score_candidates(
     return scored
 
 
+def _trace_row(candidate: ScoredCandidate) -> dict[str, Any]:
+    return {
+        "model": candidate.model_str,
+        "tier": candidate.tier,
+        "score": round(candidate.score, 4),
+        "blended_cost": candidate.blended_cost,
+        "error_rate": candidate.error_rate,
+        "tps_p50": candidate.tps_p50,
+        "ttft_p50_ms": candidate.ttft_p50_ms,
+        "samples": candidate.samples,
+        "overridden": candidate.overridden,
+        "signal_scope": candidate.signal_scope,
+    }
+
+
+def serialize_chain(plan: AutoPlan) -> list[dict[str, Any]]:
+    by_model = {candidate.model_str: candidate for candidate in plan.trace}
+    return [_trace_row(by_model[model]) for model in plan.models if model in by_model]
+
+
 def serialize_trace(plan: AutoPlan, *, limit: int = 10) -> list[dict[str, Any]]:
-    return [
-        {
-            "model": candidate.model_str,
-            "tier": candidate.tier,
-            "score": round(candidate.score, 4),
-            "blended_cost": candidate.blended_cost,
-            "error_rate": candidate.error_rate,
-            "tps_p50": candidate.tps_p50,
-            "ttft_p50_ms": candidate.ttft_p50_ms,
-            "samples": candidate.samples,
-            "overridden": candidate.overridden,
-        }
-        for candidate in plan.trace[: max(1, limit)]
-    ]
+    return [_trace_row(candidate) for candidate in plan.trace[: max(1, limit)]]
 
 
 def _caps_satisfied(model_str: str, required: frozenset[str]) -> bool:
@@ -232,6 +263,10 @@ async def plan_auto(
         pricing_registry=pricing_registry,
         signals=signals,
         overrides=overrides,
+        provider_ids={
+            prefix: frozenset(config.id for config in configs)
+            for prefix, configs in registry.providers.items()
+        },
     )
 
     deduped: list[ScoredCandidate] = []

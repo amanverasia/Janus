@@ -9,6 +9,9 @@
 
   $: settings = object(data.settings);
   $: stats = object(data.saver_stats ?? data.stats);
+  $: health = object(data.saver_health);
+  $: headroomHealth = object(health.HeadroomSaver);
+  $: headroomDown = enabled('headroom') && headroomHealth.reachable === false;
 
   const savers = [
     {
@@ -72,6 +75,18 @@
     return save(`saver_${id}_enabled`, enabled(id) ? 'false' : 'true', `${name} updated`);
   }
 
+  function unreachable(className: string): JsonObject | null {
+    const status = object(health[className]);
+    return status.reachable === false ? status : null;
+  }
+
+  function checkedAt(status: JsonObject): string {
+    const value = text(status.checked_at, '');
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString();
+  }
+
   function saverStats(className: string): JsonObject {
     return object(stats[className]);
   }
@@ -81,13 +96,18 @@
   title="Token savers"
   description="Reduce repetitive context before it reaches an upstream model. Every saver fails safely."
 >
-  <span class="status active"><Icon name="spark" size={13} />Pipeline ready</span>
+  {#if headroomDown}
+    <span class="status error"><Icon name="spark" size={13} />Headroom unreachable</span>
+  {:else}
+    <span class="status active"><Icon name="spark" size={13} />Pipeline ready</span>
+  {/if}
 </PageHeader>
 
 <div class="saver-grid">
   {#each savers as saver}
     {@const usage = saverStats(saver.className)}
-    <article class="saver-card" class:enabled={enabled(saver.id)}>
+    {@const down = enabled(saver.id) ? unreachable(saver.className) : null}
+    <article class="saver-card" class:enabled={enabled(saver.id)} class:unhealthy={down !== null}>
       <header>
         <span class="saver-icon"><Icon name="spark" size={18} /></span>
         <div>
@@ -148,6 +168,25 @@
         </div>
       {/if}
 
+      {#if down}
+        <div class="saver-alert" role="alert">
+          <strong>{saver.name} is unreachable</strong>
+          <p>
+            {text(down.reason, 'No response')}{#if checkedAt(down)}
+              (checked {checkedAt(down)}){/if}. Requests skip it and are sent uncompressed until it
+            responds again. Correct the proxy URL above, or turn {saver.name} off.
+          </p>
+          <button
+            class="button compact"
+            type="button"
+            disabled={pending.has(`saver_${saver.id}_enabled`)}
+            on:click={() => toggle(saver.id, saver.name)}
+          >
+            Disable {saver.name}
+          </button>
+        </div>
+      {/if}
+
       <footer>
         <div>
           <span>Requests processed</span>
@@ -179,6 +218,26 @@
     background: var(--surface);
     box-shadow: 0 4px 18px rgba(44, 85, 92, 0.035);
     transition: 0.18s ease;
+  }
+  .saver-card.enabled.unhealthy {
+    border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  }
+  .saver-alert {
+    margin-top: 12px;
+    padding: 11px 12px;
+    border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+    border-radius: 11px;
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .saver-alert strong {
+    display: block;
+    font-size: 12px;
+  }
+  .saver-alert p {
+    margin: 4px 0 10px;
+    font-size: 11px;
+    line-height: 1.5;
   }
   .saver-card.enabled {
     border-color: color-mix(in srgb, var(--accent) 25%, var(--line));

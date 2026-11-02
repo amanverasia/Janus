@@ -39,3 +39,61 @@ describe('RoutingPage cooldown protection', () => {
     }
   );
 });
+
+describe('RoutingPage auto preview', () => {
+  const preview = [
+    {
+      model: 'deepseek/Deepseek-Flash',
+      score: 0.9,
+      blended_cost: 0.2,
+      error_rate: 0.1,
+      tps_p50: 40,
+      ttft_p50_ms: 300,
+      samples: 12,
+      overridden: false,
+      signal_scope: 'provider'
+    },
+    {
+      model: 'harbor/Deepseek-Flash',
+      score: 0.5,
+      blended_cost: 0.2,
+      error_rate: null,
+      tps_p50: null,
+      ttft_p50_ms: null,
+      samples: 30,
+      overridden: false,
+      signal_scope: 'model'
+    }
+  ];
+  const data = {
+    auto: {
+      top: 'deepseek/Deepseek-Flash',
+      top_n: 5,
+      chain_length: 2,
+      models: ['deepseek/Deepseek-Flash', 'harbor/Deepseek-Flash'],
+      preview,
+      overrides: []
+    }
+  };
+
+  it('describes the chain length and flags model-wide signal fallback', () => {
+    const page = renderPage(data);
+    expect(page.getByText(/Top 5 model families/).textContent).toContain('2 routes in the chain');
+    expect(page.getAllByText('model-wide')).toHaveLength(1);
+  });
+
+  it('keeps model ID casing intact', () => {
+    const page = renderPage(data);
+    const pill = page.getByText('1. deepseek/Deepseek-Flash');
+    expect(getComputedStyle(pill).textTransform).not.toBe('capitalize');
+    expect(page.getAllByText('deepseek/Deepseek-Flash').length).toBeGreaterThan(0);
+  });
+
+  it('styles the override form with shared field controls', () => {
+    const page = renderPage(data);
+    expect(
+      page.getByLabelText('Override model').closest('label')?.classList.contains('field')
+    ).toBe(true);
+    expect(page.getByLabelText('Auto routing strategy').closest('.field')).toBeTruthy();
+  });
+});

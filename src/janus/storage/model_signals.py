@@ -4,7 +4,8 @@ import asyncio
 import logging
 import math
 import time
-from dataclasses import dataclass
+from collections.abc import Collection
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,20 @@ class SignalStats:
 class ModelSignals:
     by_model: dict[str, SignalStats]
     by_account: dict[tuple[str, str], SignalStats]
+    by_provider: dict[tuple[str, str], _Acc] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+
+    def for_providers(self, model: str, provider_ids: Collection[str]) -> SignalStats | None:
+        merged: _Acc | None = None
+        for provider_id in provider_ids:
+            acc = self.by_provider.get((model, provider_id))
+            if acc is None or acc.samples == 0:
+                continue
+            if merged is None:
+                merged = _Acc()
+            merged.merge(acc)
+        return merged.stats() if merged is not None else None
 
 
 _cache: dict[_CacheKey, tuple[float, ModelSignals]] = {}
@@ -65,7 +80,8 @@ def invalidate_model_signals_cache(db_path: str | Path | None = None) -> None:
 async def _query(db_path: str | Path, window_days: int, max_rows: int) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT timestamp, model, account_id, streamed, outcome, ttft_ms, output_tps
+            """SELECT timestamp, model, provider_id, account_id, streamed, outcome,
+                      ttft_ms, output_tps
                FROM attempt_signals
                WHERE timestamp >= datetime('now', ?)
                ORDER BY id DESC LIMIT ?""",
@@ -83,6 +99,17 @@ class _Acc:
         self.tps: list[float] = []
         self.nonstream_tps: list[float] = []
         self.last_seen: str | None = None
+
+    def merge(self, other: _Acc) -> None:
+        self.samples += other.samples
+        self.errors += other.errors
+        self.ttft.extend(other.ttft)
+        self.tps.extend(other.tps)
+        self.nonstream_tps.extend(other.nonstream_tps)
+        if other.last_seen is not None and (
+            self.last_seen is None or other.last_seen > self.last_seen
+        ):
+            self.last_seen = other.last_seen
 
     def add(self, row: dict[str, Any]) -> None:
         ts = row["timestamp"]
@@ -123,13 +150,17 @@ class _Acc:
 def _aggregate(rows: list[dict[str, Any]]) -> ModelSignals:
     by_model: dict[str, _Acc] = {}
     by_account: dict[tuple[str, str], _Acc] = {}
+    by_provider: dict[tuple[str, str], _Acc] = {}
     for row in rows:
         model = str(row["model"])
         by_model.setdefault(model, _Acc()).add(row)
         by_account.setdefault((model, str(row["account_id"])), _Acc()).add(row)
+        if row["provider_id"] is not None:
+            by_provider.setdefault((model, str(row["provider_id"])), _Acc()).add(row)
     return ModelSignals(
         by_model={k: v.stats() for k, v in by_model.items()},
         by_account={k: v.stats() for k, v in by_account.items()},
+        by_provider=by_provider,
     )
 
 
