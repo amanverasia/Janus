@@ -22,6 +22,7 @@ async def prune_outcome_rows(db_path: str | Path, retention_days: int) -> int:
 async def record_request_outcome(
     db_path: str | Path,
     *,
+    request_id: str | None = None,
     client_format: str | None = None,
     model: str | None = None,
     provider_id: str | None = None,
@@ -45,10 +46,11 @@ async def record_request_outcome(
         async with get_connection(db_path) as db:
             await db.execute(
                 """INSERT INTO request_outcomes
-                   (client_format, model, provider_id, account_id, status,
+                   (request_id, client_format, model, provider_id, account_id, status,
                     duration_ms, streamed, attempts, client_key_id, client_key_label)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
+                    request_id,
                     client_format,
                     model,
                     provider_id,
@@ -73,7 +75,7 @@ async def list_request_outcomes(
 ) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT timestamp, client_format, model, provider_id, account_id,
+            """SELECT timestamp, request_id, client_format, model, provider_id, account_id,
                       status, duration_ms, streamed, attempts, client_key_id,
                       client_key_label
                FROM request_outcomes

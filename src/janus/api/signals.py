@@ -46,6 +46,8 @@ class AttemptSignal:
         provider_id: str | None,
         client_format: str | None,
         streamed: bool,
+        request_id: str | None = None,
+        attempt_order: int | None = None,
     ) -> None:
         self._db_path = db_path
         self._model = model
@@ -53,6 +55,8 @@ class AttemptSignal:
         self._provider_id = provider_id
         self._client_format = client_format
         self._streamed = streamed
+        self._request_id = request_id
+        self._attempt_order = attempt_order
         self.started_at = time.monotonic()
         self.finished = False
 
@@ -63,6 +67,9 @@ class AttemptSignal:
         status: int | None,
         output_tokens: int = 0,
         first_content_at: float | None = None,
+        failure_class: str | None = None,
+        cooldown_decision: str | None = None,
+        cooldown_seconds: int | None = None,
     ) -> None:
         if self.finished:
             return
@@ -80,8 +87,12 @@ class AttemptSignal:
                     tps = compute_output_tps(output_tokens, ended - first_content_at)
             else:
                 tps = compute_output_tps(output_tokens, ended - self.started_at)
+        if outcome == "aborted" and failure_class is None:
+            failure_class = "cancelled"
         coro = record_attempt_signal(
             self._db_path,
+            request_id=self._request_id,
+            attempt_order=self._attempt_order,
             model=self._model,
             account_id=self._account_id,
             provider_id=self._provider_id,
@@ -93,6 +104,9 @@ class AttemptSignal:
             duration_ms=int((ended - self.started_at) * 1000),
             output_tokens=output_tokens,
             output_tps=tps,
+            failure_class=failure_class,
+            cooldown_decision=cooldown_decision,
+            cooldown_seconds=cooldown_seconds,
         )
         try:
             loop = asyncio.get_running_loop()

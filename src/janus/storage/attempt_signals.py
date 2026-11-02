@@ -32,15 +32,23 @@ async def record_attempt_signal(
     duration_ms: int,
     output_tokens: int,
     output_tps: float | None,
+    failure_class: str | None = None,
+    cooldown_decision: str | None = None,
+    cooldown_seconds: int | None = None,
+    request_id: str | None = None,
+    attempt_order: int | None = None,
 ) -> None:
     try:
         async with get_connection(db_path) as db:
             await db.execute(
                 """INSERT INTO attempt_signals
-                   (model, provider_id, account_id, client_format, streamed, outcome,
-                    status, ttft_ms, duration_ms, output_tokens, output_tps)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (request_id, attempt_order, model, provider_id, account_id, client_format,
+                    streamed, outcome, status, ttft_ms, duration_ms, output_tokens, output_tps,
+                    failure_class, cooldown_decision, cooldown_seconds)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
+                    request_id,
+                    attempt_order,
                     model,
                     provider_id,
                     account_id,
@@ -52,6 +60,9 @@ async def record_attempt_signal(
                     max(duration_ms, 0),
                     max(output_tokens, 0),
                     output_tps,
+                    failure_class,
+                    cooldown_decision,
+                    cooldown_seconds,
                 ),
             )
             await db.commit()
@@ -89,8 +100,10 @@ async def prune_attempt_signals(
 async def list_attempt_signals(db_path: str | Path, *, limit: int = 100) -> list[dict[str, Any]]:
     async with get_connection(db_path) as db:
         async with db.execute(
-            """SELECT id, timestamp, model, provider_id, account_id, client_format, streamed,
-                      outcome, status, ttft_ms, duration_ms, output_tokens, output_tps
+            """SELECT id, timestamp, request_id, attempt_order, model, provider_id, account_id,
+                      client_format, streamed, outcome, status, ttft_ms, duration_ms,
+                      output_tokens, output_tps, failure_class, cooldown_decision,
+                      cooldown_seconds
                FROM attempt_signals ORDER BY id DESC LIMIT ?""",
             (limit,),
         ) as cur:

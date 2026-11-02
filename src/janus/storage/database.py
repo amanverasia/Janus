@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS attempt_counters (
 CREATE TABLE IF NOT EXISTS request_outcomes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    request_id TEXT,
     client_format TEXT,
     model TEXT,
     provider_id TEXT,
@@ -159,6 +160,8 @@ CREATE TABLE IF NOT EXISTS request_outcomes (
 CREATE TABLE IF NOT EXISTS attempt_signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    request_id TEXT,
+    attempt_order INTEGER,
     model TEXT NOT NULL,
     provider_id TEXT,
     account_id TEXT NOT NULL,
@@ -169,7 +172,10 @@ CREATE TABLE IF NOT EXISTS attempt_signals (
     ttft_ms INTEGER,
     duration_ms INTEGER NOT NULL,
     output_tokens INTEGER NOT NULL DEFAULT 0,
-    output_tps REAL
+    output_tps REAL,
+    failure_class TEXT,
+    cooldown_decision TEXT,
+    cooldown_seconds INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
@@ -285,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_upstream_keys_key_hash ON upstream_keys(key_hash)
 CREATE TABLE IF NOT EXISTS request_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    request_id TEXT,
     client_format TEXT,
     model TEXT,
     provider_id TEXT,
@@ -749,6 +756,37 @@ async def _migrate_request_log_columns(db: aiosqlite.Connection) -> None:
             await db.execute(f"ALTER TABLE request_logs ADD COLUMN {col} {col_type}")
 
 
+_REQUEST_CORRELATION_COLUMNS = {
+    "request_logs": {"request_id": "TEXT"},
+    "request_outcomes": {"request_id": "TEXT"},
+    "attempt_signals": {
+        "request_id": "TEXT",
+        "attempt_order": "INTEGER",
+        "failure_class": "TEXT",
+        "cooldown_decision": "TEXT",
+        "cooldown_seconds": "INTEGER",
+    },
+}
+
+
+async def _migrate_request_correlation_columns(db: aiosqlite.Connection) -> None:
+    for table, columns in _REQUEST_CORRELATION_COLUMNS.items():
+        existing = await _table_columns(db, table)
+        for column, column_type in columns.items():
+            if column not in existing:
+                await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_request_logs_request_id ON request_logs(request_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_request_outcomes_request_id ON request_outcomes(request_id)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_attempt_signals_request_order "
+        "ON attempt_signals(request_id, attempt_order, id)"
+    )
+
+
 async def _migrate_api_key_columns(db: aiosqlite.Connection) -> None:
     cursor = await db.execute("PRAGMA table_info(api_keys)")
     rows = await cursor.fetchall()
@@ -900,6 +938,7 @@ async def init_db(db_path: str | Path) -> None:
         await _migrate_custom_model_columns(db)
         await _migrate_upstream_key_columns(db)
         await _migrate_request_log_columns(db)
+        await _migrate_request_correlation_columns(db)
         await _migrate_cooldowns_per_model(db)
         await _migrate_api_key_columns(db)
         await _migrate_budget_columns(db)

@@ -112,7 +112,150 @@ describe('RequestLogsPage API key column', () => {
     expect(within(dialog).getByText('API key')).toBeTruthy();
     expect(within(dialog).getByText('labelled-key')).toBeTruthy();
     expect(dashboardFetch).toHaveBeenCalledWith(
-      '/dashboard/api/request-logs/7',
+      '/dashboard/api/request-logs/7?attempt_limit=25&attempt_offset=0',
+      expect.objectContaining({ headers: { Accept: 'application/json' } })
+    );
+  });
+});
+
+const timelineDetail = (overrides: JsonObject = {}): JsonObject => ({
+  ...log({
+    id: 9,
+    request_id: 'request-123',
+    resolved_model: 'm1',
+    status: 200,
+    has_bodies: false,
+    final_outcome: 'success'
+  }),
+  correlation: { available: true, request_id: 'request-123' },
+  outcome: { status: 200, attempts: 3, kind: 'success' },
+  attempt_pagination: { total: 3, limit: 25, offset: 0, page: 1, total_pages: 1 },
+  attempts: [
+    {
+      id: 1,
+      attempt_order: 1,
+      model: 'm1',
+      account: 'acc…-a',
+      outcome: 'error',
+      status: 401,
+      duration_ms: 20,
+      failure_class: 'auth_error',
+      cooldown: { decision: 'applied', seconds: 300 },
+      recovery: {
+        label: 'Review credentials',
+        href: '/dashboard/ui/inventory/keys?provider_id=openai'
+      }
+    },
+    {
+      id: 2,
+      attempt_order: 2,
+      model: 'm1',
+      account: 'acc…-b',
+      outcome: 'error',
+      status: 402,
+      duration_ms: 25,
+      failure_class: 'payment_error',
+      cooldown: { decision: 'applied', seconds: 300 },
+      recovery: { label: 'Review billing and quota', href: '/dashboard/ui/inventory/keys' }
+    },
+    {
+      id: 3,
+      attempt_order: 3,
+      model: 'm1',
+      account: 'acc…-c',
+      outcome: 'ok',
+      status: 200,
+      duration_ms: 80,
+      failure_class: null,
+      cooldown: { decision: 'none', seconds: null },
+      recovery: null
+    }
+  ],
+  ...overrides
+});
+
+describe('RequestLogsPage routing timeline', () => {
+  it('shows ordered attempts, failure classes, cooldowns, and recovery actions', async () => {
+    vi.mocked(dashboardFetch).mockResolvedValue({
+      ok: true,
+      json: async () => timelineDetail()
+    } as unknown as Response);
+    const page = renderPage([log({ id: 9 })]);
+    await fireEvent.click(page.getByTitle('Inspect'));
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Request detail' });
+    expect(within(dialog).getByText('Routing timeline')).toBeTruthy();
+    expect(within(dialog).getByText('Attempt 1')).toBeTruthy();
+    expect(within(dialog).getByText('Attempt 3')).toBeTruthy();
+    expect(within(dialog).getByText('auth error')).toBeTruthy();
+    expect(within(dialog).getAllByText(/Cooldown applied/)).toHaveLength(2);
+    expect(within(dialog).getByText('acc…-a')).toBeTruthy();
+    const recovery = within(dialog).getByRole('link', { name: 'Review credentials' });
+    expect(recovery.getAttribute('href')).toBe('/dashboard/ui/inventory/keys?provider_id=openai');
+  });
+
+  it('loads bounded attempt pages without losing the request detail', async () => {
+    const allAttempts = timelineDetail().attempts as JsonObject[];
+    const first = timelineDetail({
+      attempts: allAttempts.slice(0, 2),
+      attempt_pagination: { total: 3, limit: 2, offset: 0, page: 1, total_pages: 2 }
+    });
+    const second = timelineDetail({
+      attempts: allAttempts.slice(2),
+      attempt_pagination: { total: 3, limit: 2, offset: 2, page: 2, total_pages: 2 }
+    });
+    vi.mocked(dashboardFetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => first } as unknown as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => second } as unknown as Response);
+    const page = renderPage([log({ id: 9 })]);
+    await fireEvent.click(page.getByTitle('Inspect'));
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Request detail' });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Next attempts' }));
+    await waitFor(() => expect(within(dialog).getByText('Attempt 3')).toBeTruthy());
+    expect(dashboardFetch).toHaveBeenLastCalledWith(
+      '/dashboard/api/request-logs/9?attempt_limit=2&attempt_offset=2',
+      expect.objectContaining({ headers: { Accept: 'application/json' } })
+    );
+  });
+
+  it('keeps legacy rows readable without inventing a timeline', async () => {
+    vi.mocked(dashboardFetch).mockResolvedValue({
+      ok: true,
+      json: async () =>
+        timelineDetail({
+          correlation: { available: false, request_id: null },
+          request_id: null,
+          outcome: null,
+          attempts: []
+        })
+    } as unknown as Response);
+    const page = renderPage([log({ id: 9 })]);
+    await fireEvent.click(page.getByTitle('Inspect'));
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Request detail' });
+    expect(within(dialog).getByText(/Attempt correlation is unavailable/)).toBeTruthy();
+    expect(within(dialog).queryByText('Attempt 1')).toBeNull();
+  });
+
+  it('fetches bodies only after an explicit reveal action', async () => {
+    const initial = timelineDetail({ has_bodies: true });
+    vi.mocked(dashboardFetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => initial } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ...initial,
+          request_body: '{"private":true}',
+          response_body: '{"answer":"OK"}'
+        })
+      } as unknown as Response);
+    const page = renderPage([log({ id: 9 })]);
+    await fireEvent.click(page.getByTitle('Inspect'));
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Request detail' });
+    expect(dashboardFetch).toHaveBeenCalledTimes(1);
+    expect(within(dialog).queryByText(/private/)).toBeNull();
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Show bodies' }));
+    await waitFor(() => expect(within(dialog).getByText(/private/)).toBeTruthy());
+    expect(dashboardFetch).toHaveBeenLastCalledWith(
+      '/dashboard/api/request-logs/9?attempt_limit=25&attempt_offset=0&include_bodies=true',
       expect.objectContaining({ headers: { Accept: 'application/json' } })
     );
   });

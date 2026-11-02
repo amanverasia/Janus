@@ -422,14 +422,23 @@ async def api_export_request_logs(request: Request) -> StreamingResponse:
 
 
 @router.get("/api/request-logs/{log_id}")
-async def api_get_request_log(request: Request, log_id: int) -> JSONResponse:
+async def api_get_request_log(
+    request: Request,
+    log_id: int,
+    attempt_limit: int = Query(25, ge=1, le=50),
+    attempt_offset: int = Query(0, ge=0),
+    include_bodies: bool = False,
+) -> JSONResponse:
     db_path = await _ensure_db(request)
-    from janus.storage.request_logs import get_request_log
+    from janus.storage.request_timeline import get_request_timeline
 
-    log = await get_request_log(db_path, log_id)
-    if log is None:
+    detail = await get_request_timeline(db_path, log_id, limit=attempt_limit, offset=attempt_offset)
+    if detail is None:
         return JSONResponse(content={"error": "not found"}, status_code=404)
-    return JSONResponse(content=log)
+    if not include_bodies:
+        detail.pop("request_body", None)
+        detail.pop("response_body", None)
+    return JSONResponse(content=detail, headers={"Cache-Control": "no-store"})
 
 
 @router.delete("/api/request-logs")

@@ -273,7 +273,12 @@ Debug view of captured API requests (**off by default** — enable **Request
 Logging** under Settings → General, or set `server_request_logging=true`):
 
 - Paginated table of recent requests: time, model, provider, status, and latency
-- Per-request JSON detail (full request/response bodies, truncated at 64 KB)
+- **Routing timeline** in each request's Inspect view: requested/resolved model,
+  ordered upstream attempts, masked account references, timing, failure class,
+  cooldown decision, and final outcome. Failed attempts link to the relevant
+  inventory recovery view. Attempt pages are bounded to 50 rows.
+- Request and response bodies (truncated at 64 KB) are fetched only after the
+  explicit **Show bodies** action; they are absent from the default detail payload
 - Successful completions (stream + non-stream), exhausted fallbacks (`503`), and
   non-fallback upstream errors (e.g. `400`) are recorded when logging is on
 - Export all logs as JSON; Clear button wipes the table
@@ -284,6 +289,11 @@ Logging** under Settings → General, or set `server_request_logging=true`):
 The table also has a **User** column. It shows the DB-issued key name,
 the configured static-key label (`client_key_label`), or `—` when an API request
 was allowed without a client key.
+
+New requests share a durable request ID across their terminal outcome and attempt
+signals, including when request logging is disabled. Logs written before this
+correlation existed remain readable and explicitly report that no attempt timeline
+is available; Janus does not infer correlations from timestamps.
 
 If the page is empty, logging is almost always still disabled — check the banner
 and the Settings toggle.
@@ -474,7 +484,7 @@ See [Budgets](budgets.md) for setup examples and enforcement details.
 | `GET` | `/dashboard/api/export` | Export DB config as a YAML download (provider API keys omitted unless `?include_secrets=true`) |
 | `POST` | `/dashboard/api/reset` | Reset DB and re-seed from YAML |
 | `GET` | `/dashboard/api/request-logs/export` | Export captured request logs as JSON |
-| `GET` | `/dashboard/api/request-logs/{id}` | Full detail for one captured request |
+| `GET` | `/dashboard/api/request-logs/{id}?attempt_limit=25&attempt_offset=0` | Body-free request outcome and paginated attempt timeline; add `include_bodies=true` only for an explicit body reveal |
 | `DELETE` | `/dashboard/api/request-logs` | Clear all captured request logs |
 
 ### Pricing
