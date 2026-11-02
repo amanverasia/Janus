@@ -3,7 +3,7 @@
   import Icon from '#lib/components/Icon.svelte';
   import Modal from '#lib/components/Modal.svelte';
   import PageHeader from '#lib/components/PageHeader.svelte';
-  import { bool, firstList, number, text } from '#lib/data.ts';
+  import { bool, compact, firstList, number, text } from '#lib/data.ts';
   import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
@@ -353,7 +353,7 @@
     >
       <span>
         <strong>All providers</strong>
-        <small>{visibleCount}/{catalogTotal} visible</small>
+        <small>{compact(visibleCount)}/{compact(catalogTotal)} visible</small>
       </span>
       <Icon name="arrow" size={14} />
     </button>
@@ -384,18 +384,22 @@
   <main class="model-workspace-detail" aria-label="Model details">
     <section class="model-overview" aria-label="Model catalog summary">
       <div>
-        <span>Providers</span>
+        <span>Routing providers</span>
         <strong>{allGroups.length}</strong>
       </div>
       <div>
-        <span>Visible</span>
-        <strong>{visibleCount}</strong>
+        <span>Shown in shared catalog</span>
+        <strong>{compact(visibleCount)}</strong>
       </div>
       <div>
-        <span>Total catalog</span>
-        <strong>{catalogTotal}</strong>
+        <span>Configured on providers</span>
+        <strong>{compact(catalogTotal)}</strong>
       </div>
     </section>
+    <p class="model-count-note">
+      Counts every model entry configured on a routing provider. The public model list shows each
+      model ID once, and Models you can't reach also counts catalog defaults and discovered models.
+    </p>
 
     <div class="model-toolbar">
       <label class="model-search">

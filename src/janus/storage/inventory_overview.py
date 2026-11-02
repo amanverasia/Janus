@@ -36,6 +36,17 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
         ) as cur:
             providers_row = await cur.fetchone()
         async with db.execute(
+            """SELECT COUNT(DISTINCT k.provider_id)
+               FROM upstream_keys k
+               JOIN inventory_providers p ON p.id = k.provider_id AND p.is_active = 1
+               WHERE k.status != 'revoked' AND k.is_archived = 0"""
+        ) as cur:
+            keyed_row = await cur.fetchone()
+        async with db.execute(
+            "SELECT COUNT(*) FROM upstream_keys WHERE status != 'revoked' AND is_archived = 1"
+        ) as cur:
+            archived_row = await cur.fetchone()
+        async with db.execute(
             "SELECT COUNT(DISTINCT model_id) FROM upstream_models WHERE is_available = 1"
         ) as cur:
             models_row = await cur.fetchone()
@@ -53,6 +64,8 @@ async def get_inventory_summary(db_path: str | Path) -> dict[str, int]:
     return {
         **counts,
         "providers": int(providers_row[0]) if providers_row else 0,
+        "providers_with_keys": int(keyed_row[0]) if keyed_row else 0,
+        "archived": int(archived_row[0]) if archived_row else 0,
         "models": int(models_row[0]) if models_row else 0,
     }
 
@@ -76,7 +89,7 @@ async def get_provider_cards(db_path: str | Path) -> list[dict[str, Any]]:
                  ROUND(COALESCE(SUM(k.credits_remaining), 0), 2) as total_credits
                FROM inventory_providers p
                LEFT JOIN upstream_keys k
-                 ON p.id = k.provider_id AND k.status != 'revoked'
+                 ON p.id = k.provider_id AND k.status != 'revoked' AND k.is_archived = 0
                WHERE p.is_active = 1
                GROUP BY p.id
                ORDER BY usable_keys DESC, active_keys DESC, total_keys DESC"""

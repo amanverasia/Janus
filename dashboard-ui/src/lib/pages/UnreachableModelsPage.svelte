@@ -96,13 +96,13 @@
   <StatCard
     label="Can't reach"
     value={compact(unreachableTotal)}
-    detail={`Across ${compact(groups.length)} providers`}
+    detail={`Known models without a route, across ${compact(groups.length)} providers`}
     tone="amber"
   />
   <StatCard
     label="Reachable"
     value={compact(reachableTotal)}
-    detail="Known models with a route"
+    detail="Catalog defaults, configured and discovered models with a route"
     tone="teal"
   />
   <StatCard

@@ -3,6 +3,7 @@
   import StatCard from '#lib/components/StatCard.svelte';
   import MiniChart from '#lib/components/MiniChart.svelte';
   import DataTable from '#lib/components/DataTable.svelte';
+  import Pagination from '#lib/components/Pagination.svelte';
   import { compact, firstList, money, number, object, percent, text } from '#lib/data.ts';
   import type { JsonObject } from '#lib/types.ts';
   export let data: JsonObject;
@@ -13,6 +14,25 @@
   $: daily = firstList(summary, 'daily', 'series');
   $: days = text(data.days, '30');
   $: dimension = text(data.dimension, 'model');
+  const BREAKDOWN_PAGE_SIZE = 25;
+  let breakdownOffset = 0;
+  let breakdownScope = '';
+  $: {
+    const scope = `${dimension}|${days}|${breakdown.length}`;
+    if (scope !== breakdownScope) {
+      breakdownScope = scope;
+      breakdownOffset = 0;
+    }
+  }
+  $: breakdownPage = breakdown.slice(breakdownOffset, breakdownOffset + BREAKDOWN_PAGE_SIZE);
+  $: breakdownMeta = {
+    offset: breakdownOffset,
+    limit: BREAKDOWN_PAGE_SIZE,
+    total: breakdown.length
+  } as JsonObject;
+  function pageBreakdown(params: Record<string, string>) {
+    breakdownOffset = Math.max(0, number(params.offset, 0));
+  }
   $: savings = object(data.savings);
   $: savingsRows = firstList(savings, 'by_model');
   $: baseline = text(savings.baseline, 'gpt-4o');
@@ -206,7 +226,8 @@
         </button>{/each}
     </div>
   </div>
-  <DataTable rows={breakdown} {columns} emptyTitle="No analytics data" />
+  <DataTable rows={breakdownPage} {columns} emptyTitle="No analytics data" />
+  <Pagination data={breakdownMeta} navigateQuery={pageBreakdown} label={`${dimension} rows`} />
 </section>
 
 <style>
