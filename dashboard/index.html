@@ -2350,7 +2350,12 @@ capabilities and client-key allowlists still filter routes before dispatch.</p>
 Logging</strong> under Settings → General, or set <code>server_request_logging=true</code>):</p>
 <ul>
 <li>Paginated table of recent requests: time, model, provider, status, and latency</li>
-<li>Per-request JSON detail (full request/response bodies, truncated at 64 KB)</li>
+<li><strong>Routing timeline</strong> in each request's Inspect view: requested/resolved model,
+  ordered upstream attempts, masked account references, timing, failure class,
+  cooldown decision, and final outcome. Failed attempts link to the relevant
+  inventory recovery view. Attempt pages are bounded to 50 rows.</li>
+<li>Request and response bodies (truncated at 64 KB) are fetched only after the
+  explicit <strong>Show bodies</strong> action; they are absent from the default detail payload</li>
 <li>Successful completions (stream + non-stream), exhausted fallbacks (<code>503</code>), and
   non-fallback upstream errors (e.g. <code>400</code>) are recorded when logging is on</li>
 <li>Export all logs as JSON; Clear button wipes the table</li>
@@ -2361,6 +2366,10 @@ Logging</strong> under Settings → General, or set <code>server_request_logging
 <p>The table also has a <strong>User</strong> column. It shows the DB-issued key name,
 the configured static-key label (<code>client_key_label</code>), or <code>—</code> when an API request
 was allowed without a client key.</p>
+<p>New requests share a durable request ID across their terminal outcome and attempt
+signals, including when request logging is disabled. Logs written before this
+correlation existed remain readable and explicitly report that no attempt timeline
+is available; Janus does not infer correlations from timestamps.</p>
 <p>If the page is empty, logging is almost always still disabled — check the banner
 and the Settings toggle.</p>
 <div class="admonition warning">
@@ -2651,8 +2660,8 @@ See <a href="../budgets/">Budgets</a> for setup examples and enforcement details
 </tr>
 <tr>
 <td><code>GET</code></td>
-<td><code>/dashboard/api/request-logs/{id}</code></td>
-<td>Full detail for one captured request</td>
+<td><code>/dashboard/api/request-logs/{id}?attempt_limit=25&amp;attempt_offset=0</code></td>
+<td>Body-free request outcome and paginated attempt timeline; add <code>include_bodies=true</code> only for an explicit body reveal</td>
 </tr>
 <tr>
 <td><code>DELETE</code></td>
