@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -14,6 +15,7 @@ from janus.routing.auto import (
     plan_auto,
     score_candidates,
 )
+from janus.routing.fallback import FallbackHandler
 from janus.storage.database import get_connection, init_db
 from janus.storage.model_signals import ModelSignals, SignalStats
 
@@ -257,3 +259,161 @@ async def test_signals_window_query_isolated(tmp_path):
         strategy=AutoStrategy.CHEAPEST,
     )
     assert plan.models == ["acme/cheap-model"]
+
+
+@pytest.mark.parametrize("strategy", list(AutoStrategy))
+@pytest.mark.parametrize("signal_kind", ["missing", "sparse", "contradictory"])
+async def test_plan_auto_retains_same_model_providers_with_cooled_primary(
+    tmp_path, monkeypatch, strategy, signal_kind
+):
+    signals = None
+    if signal_kind != "missing":
+        samples = 1 if signal_kind == "sparse" else 10
+        signals = ModelSignals(
+            by_model={"gpt-4o": _stats(samples=samples, error_rate=0.5)},
+            by_account={
+                ("gpt-4o", "alpha"): _stats(samples=samples, error_rate=1.0, tps=None),
+                ("gpt-4o", "beta"): _stats(samples=samples, error_rate=0.0, tps=100.0),
+            },
+        )
+    monkeypatch.setattr("janus.routing.auto.get_model_signals", AsyncMock(return_value=signals))
+    registry = _registry(_config("alpha", ["gpt-4o"]), _config("beta", ["gpt-4o"]))
+    handler = FallbackHandler(registry)
+    handler.mark_cooldown("alpha", "auth", model="gpt-4o")
+
+    plan = await plan_auto(
+        registry=registry,
+        db_path=tmp_path / "auto.db",
+        pricing_registry=PRICING,
+        strategy=strategy,
+        top_n=1,
+    )
+
+    assert plan.models == ["alpha/gpt-4o", "beta/gpt-4o"]
+    assert [candidate.model_str for candidate in plan.trace] == plan.models
+    assert plan.excluded == []
+    attempts = handler.resolve_attempts("auto", model_chain=plan.models)
+    assert [(target.account_id, target.model) for target in attempts] == [("beta", "gpt-4o")]
+
+
+async def test_plan_auto_dedupes_version_siblings_within_each_provider(tmp_path):
+    db_path = tmp_path / "auto.db"
+    await init_db(db_path)
+    registry = _registry(
+        _config("alpha", ["sibling-a", "sibling-a-001"]),
+        _config("beta", ["sibling-a-001"]),
+    )
+
+    plan = await plan_auto(
+        registry=registry,
+        db_path=db_path,
+        pricing_registry=PRICING,
+        strategy=AutoStrategy.CHEAPEST,
+        top_n=1,
+    )
+
+    assert plan.models == ["alpha/sibling-a", "beta/sibling-a-001"]
+    assert plan.excluded == [("alpha/sibling-a-001", "version sibling")]
+
+
+@pytest.mark.parametrize("top_n", [0, 1, 2])
+async def test_plan_auto_top_n_limits_families_without_truncating_provider_alternates(
+    tmp_path, top_n
+):
+    db_path = tmp_path / "auto.db"
+    await init_db(db_path)
+    prefixes = [f"provider-{i}" for i in range(7)]
+    registry = _registry(
+        *(
+            _config(prefix, ["cheap-model", "sibling-a", "sibling-a-001", "mid-model"])
+            for prefix in prefixes
+        )
+    )
+
+    plan = await plan_auto(
+        registry=registry,
+        db_path=db_path,
+        pricing_registry=PRICING,
+        strategy=AutoStrategy.CHEAPEST,
+        top_n=top_n,
+    )
+
+    expected = [f"{prefix}/cheap-model" for prefix in prefixes]
+    if top_n == 2:
+        expected.extend(f"{prefix}/sibling-a" for prefix in prefixes)
+    assert plan.models == expected
+    assert len({canonical_model_base(model.split("/", 1)[1]) for model in plan.models}) == max(
+        1, top_n
+    )
+    assert all(reason == "version sibling" for _, reason in plan.excluded)
+
+
+@pytest.mark.parametrize(
+    ("allowed", "expected"),
+    [
+        (None, ["beta/cheap-model", "gamma/cheap-model"]),
+        (["beta/*"], ["beta/cheap-model"]),
+        (["gamma/cheap-model"], ["gamma/cheap-model"]),
+        (["alpha/*"], []),
+    ],
+)
+async def test_plan_auto_filters_provider_alternates_before_selection(
+    tmp_path, monkeypatch, allowed, expected
+):
+    db_path = tmp_path / "auto.db"
+    await init_db(db_path)
+    registry = _registry(
+        *(_config(prefix, ["cheap-model"]) for prefix in ["alpha", "beta", "gamma"])
+    )
+    monkeypatch.setattr(
+        "janus.routing.auto.get_capabilities_for_model",
+        lambda prefix, model: {"vision": prefix != "alpha"},
+    )
+    request = CanonicalRequest(
+        model="auto",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "url", "url": "https://x.test/a.png"}}
+                ],
+            }
+        ],
+    )
+
+    plan = await plan_auto(
+        registry=registry,
+        db_path=db_path,
+        pricing_registry=PRICING,
+        request=request,
+        strategy=AutoStrategy.CHEAPEST,
+        allowed_models=allowed,
+        top_n=1,
+    )
+
+    assert plan.models == expected
+    assert all(reason == "capabilities" for _, reason in plan.excluded)
+
+
+async def test_plan_auto_preserves_multi_account_fallback(tmp_path):
+    db_path = tmp_path / "auto.db"
+    await init_db(db_path)
+    accounts = [
+        _config("alpha", ["gpt-4o"]).model_copy(update={"id": account_id})
+        for account_id in ["alpha-1", "alpha-2"]
+    ]
+    registry = _registry(*accounts, _config("beta", ["gpt-4o"]))
+    handler = FallbackHandler(registry)
+    handler.mark_cooldown("alpha-1", "auth")
+
+    plan = await plan_auto(
+        registry=registry,
+        db_path=db_path,
+        pricing_registry=PRICING,
+        strategy=AutoStrategy.CHEAPEST,
+        top_n=1,
+    )
+
+    assert plan.models == ["alpha/gpt-4o", "beta/gpt-4o"]
+    attempts = handler.resolve_attempts("auto", model_chain=plan.models)
+    assert [target.account_id for target in attempts] == ["alpha-2", "beta"]

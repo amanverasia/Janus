@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(nothing yet)
+### Fixed
+- Auto routing retains provider alternatives for each selected model family, while
+  deduplicating version siblings within each provider. The top-five limit applies to
+  model families so a cooled provider cannot hide a healthy alternate. (#274)
+- Invalid or non-finite upstream retry hints fall back to another usable reset header
+  or the normal error cooldown. Direct cooldown hints receive the same validation. (#275)
+- Later failures and stale persisted state cannot shorten an active cooldown. Retry
+  timing waits for both account-wide and model-specific locks before selecting the
+  earliest usable account. (#276)
 
 ## [5.0.0] - 2026-10-05
 ### Fixed

@@ -732,6 +732,50 @@ async def test_all_accounts_cooled_down_returns_503_with_retry_after(tmp_path):
         assert 0 < retry_after <= 120
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("raw", ["NaN", "-5", "1e999"])
+@respx.mock
+async def test_invalid_retry_hint_still_prevents_repeat_upstream_calls(
+    app, monkeypatch, raw, stream
+):
+    monkeypatch.setattr("janus.routing.fallback.time.time", lambda: 1000.0)
+    route = respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            429, json={"error": "rate limited"}, headers={"Retry-After": raw}
+        )
+    )
+    payload = {
+        "model": "test/test-m1",
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": stream,
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/v1/chat/completions", json=payload)
+        assert first.status_code == 503
+        second = await client.post("/v1/chat/completions", json=payload)
+        assert second.status_code == 503
+        assert second.headers["Retry-After"] == "2"
+    assert route.call_count == 1
+    await app.state.fallback_handler._drain_persist_tasks()
+
+
+@pytest.mark.parametrize("model", ["test/test-m1", "test-combo"])
+async def test_retry_after_waits_for_overlapping_locks(app, monkeypatch, model):
+    monkeypatch.setattr("janus.routing.fallback.time.time", lambda: 1000.0)
+    handler = app.state.fallback_handler
+    account = app.state.registry.lookup("test/test-m1")[0].account_id
+    handler.mark_cooldown(account, "auth_error")
+    handler.mark_cooldown(account, "server_error", model="test-m1")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": model, "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "300"
+    await handler._drain_persist_tasks()
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_combo_expansion(tmp_path):

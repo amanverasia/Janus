@@ -217,6 +217,11 @@ your evals disagree with the recorded data. API clients can fetch the same trace
 `GET /v1/quality/auto-preview?strategy=`. Request Logs show the model the request resolved to
 next to the requested one.
 
+Auto selects up to five model families and retains the eligible provider routes for
+each family. Version siblings are deduplicated within a provider, so a cooled or
+failing provider cannot hide another provider serving that model. Request-specific
+capabilities and client-key allowlists still filter routes before dispatch.
+
 ![Routing hub with section tabs on the Health page](assets/dashboard-routing-tabs.png)
 
 - Enabled provider and account readiness at a glance

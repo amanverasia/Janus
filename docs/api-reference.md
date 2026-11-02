@@ -472,7 +472,7 @@ curl http://localhost:20128/v1/health
 | `401` | Invalid API key | Returned when `require_api_key` is on and the key is missing or unrecognized |
 | `402` → fallback | Upstream payment error | Classified as a payment error, fallback-eligible, cools the account for 300s (5 minutes) |
 | `429` | Budget exceeded | Daily or absolute spend limit reached. Daily rejections include `Retry-After` until midnight; absolute rejections never reset and omit it |
-| `503` | All accounts cooling down | Every account for the requested model is currently in cooldown (none exhausted, all just waiting). Includes a `Retry-After` header — seconds until the **earliest** cooldown expiry across those accounts |
+| `503` | All accounts cooling down | Every account for the requested model is currently in cooldown (none exhausted, all just waiting). Includes a `Retry-After` header — seconds until the **earliest usable account**, after all its applicable locks expire |
 | `503` | All providers exhausted | Every account in the fallback chain was tried in this request and failed. `detail` contains the last error |
 
 ### 503 — All Accounts Cooling Down
@@ -486,8 +486,10 @@ every candidate account already in cooldown:
 
 With header: `Retry-After: 42`
 
-The value is computed from the soonest cooldown expiry among the model's
-accounts, so clients can back off precisely instead of guessing.
+The value is computed from the earliest usable account among the model's
+accounts. Each account must wait for the later of its account-wide and
+model-specific cooldowns, so an overlapping shorter lock cannot understate the
+delay.
 
 ### Body-text rate-limit detection
 

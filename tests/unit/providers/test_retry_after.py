@@ -1,8 +1,60 @@
 import httpx
+import pytest
 import respx
 
 from janus.providers.base import parse_retry_after
 from janus.providers.openai_compat import OpenAICompatProvider
+
+
+@pytest.mark.parametrize("raw", ["NaN", "inf", "-inf", "1e999", "-5", 10**400])
+@pytest.mark.parametrize("header", ["retry-after", "x-ratelimit-reset-after", "x-ratelimit-reset"])
+def test_invalid_reset_hint_is_ignored(header, raw):
+    assert parse_retry_after({header: raw}) is None
+
+
+@pytest.mark.parametrize("raw", ["NaN", "inf", "-inf", "1e999", "-5", "garbage"])
+def test_invalid_retry_after_uses_alternate_reset(raw):
+    assert parse_retry_after({"retry-after": raw, "x-ratelimit-reset-after": "90"}) == 90.0
+
+
+def test_invalid_reset_after_uses_epoch_reset(monkeypatch):
+    monkeypatch.setattr("janus.providers.base.time.time", lambda: 1000.0)
+    assert (
+        parse_retry_after(
+            {
+                "retry-after": "NaN",
+                "x-ratelimit-reset-after": "inf",
+                "x-ratelimit-reset": "1120",
+            }
+        )
+        == 120.0
+    )
+
+
+@pytest.mark.parametrize("raw", ["0", "Wed, 21 Oct 2015 07:28:00 GMT"])
+def test_due_retry_after_takes_precedence_over_other_resets(raw):
+    assert parse_retry_after({"retry-after": raw, "x-ratelimit-reset-after": "90"}) == 0.0
+
+
+def test_google_overflow_duration_uses_valid_message_hint():
+    from janus.providers.base import parse_google_retry_info
+
+    assert (
+        parse_google_retry_info(
+            {
+                "error": {
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                            "retryDelay": "9" * 400 + "s",
+                        }
+                    ],
+                    "message": "retry in 12s",
+                }
+            }
+        )
+        == 12.0
+    )
 
 
 def test_parse_retry_after_seconds():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from collections.abc import AsyncIterator
@@ -36,7 +37,9 @@ def parse_retry_after(headers: Any) -> float | None:
     Checks Retry-After (delay-seconds or HTTP-date), then the common
     x-ratelimit-reset-after (delta seconds) and x-ratelimit-reset (epoch)
     variants some OAuth backends send instead. Returns the delay in seconds
-    (>= 0), or None when absent/unparseable.
+    (finite and >= 0), or None when absent/unparseable. Invalid hints fall
+    through to the next header. Explicit zero and past Retry-After dates
+    take precedence; nonpositive alternate resets are ignored.
     """
     if not hasattr(headers, "get"):
         return None
@@ -46,30 +49,34 @@ def parse_retry_after(headers: Any) -> float | None:
         return None
     if raw is not None:
         try:
-            return float(raw)
-        except (TypeError, ValueError):
+            delay = float(raw)
+            if math.isfinite(delay) and delay >= 0:
+                return delay
+        except (TypeError, ValueError, OverflowError):
             pass
         try:
-            dt = parsedate_to_datetime(raw)
-        except (TypeError, ValueError):
-            dt = None
-        if dt is not None:
-            return max(0.0, dt.timestamp() - time.time())
+            if isinstance(raw, str):
+                dt = parsedate_to_datetime(raw)
+                delay = dt.timestamp() - time.time()
+                if math.isfinite(delay):
+                    return max(0.0, delay)
+        except (TypeError, ValueError, OverflowError, OSError):
+            pass
     try:
         reset_after = headers.get("x-ratelimit-reset-after")
         if reset_after is not None:
             secs = float(reset_after)
-            if secs > 0:
+            if math.isfinite(secs) and secs > 0:
                 return secs
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         pass
     try:
         reset_at = headers.get("x-ratelimit-reset")
         if reset_at is not None:
             delay = float(reset_at) - time.time()
-            if delay > 0:
+            if math.isfinite(delay) and delay > 0:
                 return delay
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         pass
     return None
 
@@ -97,7 +104,7 @@ def _parse_duration(raw: Any) -> float | None:
         total += float(minutes) * 60
     if seconds:
         total += float(seconds)
-    return total if total > 0 else None
+    return total if math.isfinite(total) and total > 0 else None
 
 
 def parse_google_retry_info(body: Any | None) -> float | None:

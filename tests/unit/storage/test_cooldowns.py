@@ -41,6 +41,13 @@ async def test_default_model_is_all(db):
     assert "acct-b::__all__" in active
 
 
+async def test_out_of_order_save_preserves_later_expiry(db):
+    expires = time.time() + 600
+    await save_cooldown(db, "acct-a", expires, model="m", error_type="rate_limit")
+    await save_cooldown(db, "acct-a", expires - 570, model="m", error_type="server_error")
+    assert (await get_active_cooldowns(db))["acct-a::m"][0] == expires
+
+
 async def test_expired_pruned(db):
     await save_cooldown(db, "acct-c", time.time() - 5, model="m")
     active = await get_active_cooldowns(db)

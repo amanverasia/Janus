@@ -175,13 +175,29 @@ from the candidate pool for a fixed duration. Cooldowns are stored in SQLite and
 
 | Error type | Cooldown |
 |---|---|
-| Rate limit (429) | 60 seconds |
+| Rate limit (429) | Exponential backoff from 2 seconds, capped at 300 seconds |
 | Server error (5xx) | 30 seconds |
 | Auth error (401, 403) | 300 seconds |
+| Payment error (402) | 300 seconds |
 | Network error (timeout, connection) | 15 seconds |
 
 An account in cooldown is skipped during attempt resolution. Once the cooldown
 expires, the account is automatically available again.
+
+Upstream reset hints take precedence over the normal error cooldown and are
+capped at 1,800 seconds. Janus tries `Retry-After` (seconds or HTTP date), then
+`x-ratelimit-reset-after` (seconds), then `x-ratelimit-reset` (epoch seconds).
+Non-finite, overflowing, negative, or malformed hints are ignored so another
+usable hint or the normal cooldown can apply. Explicit zero and past HTTP dates
+in `Retry-After` mean the delay has elapsed and take precedence over alternate
+headers; nonpositive alternate resets are ignored. Google retry durations must
+also be finite and positive.
+
+A later failure can extend an active cooldown but cannot shorten it. An account
+with both account-wide and model-specific locks must wait for both. Model success
+clears only that model's lock; account-level success clears only the account-wide
+lock. Operators can clear all timers through **Routing → Health → Clear all
+cooldowns**.
 
 ## Fallback-eligible errors
 
