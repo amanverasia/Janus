@@ -194,3 +194,25 @@ describe('InventoryKeysPage row actions', () => {
     await waitFor(() => expect(test.disabled).toBe(false));
   });
 });
+
+describe('InventoryKeysPage routing health', () => {
+  it('marks an active credential failing at routing with reason and status', () => {
+    const page = renderPage([
+      {
+        ...keyA,
+        routing_health_status: 'unhealthy',
+        routing_health_reason: 'payment_error',
+        routing_health_status_code: 402,
+        routing_health_at: '2026-11-02 10:00:00'
+      },
+      keyB
+    ]);
+    expect(page.getAllByText('failing at routing')).toHaveLength(1);
+    expect(page.container.textContent).toContain('Payment required (HTTP 402)');
+  });
+
+  it('shows no routing-health marker for healthy credentials', () => {
+    const page = renderPage([keyA, keyB]);
+    expect(page.queryByText('failing at routing')).toBeNull();
+  });
+});

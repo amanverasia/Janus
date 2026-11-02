@@ -127,7 +127,9 @@
   <StatCard
     label="Needs attention"
     value={compact(summary.needs_attention)}
-    detail="Invalid, exhausted, or unhealthy credentials"
+    detail={number(summary.routing_unhealthy)
+      ? `${compact(summary.routing_unhealthy)} failing at routing · invalid, exhausted, or unhealthy`
+      : 'Invalid, exhausted, or unhealthy credentials'}
     tone="amber"
   />
 </div>

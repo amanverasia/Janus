@@ -10,6 +10,14 @@
   $: summary = object(data.summary);
   $: breakdown = firstList(data, 'breakdown', 'items');
   $: success = object(data.success);
+  $: attempts = object(data.attempts);
+  $: attemptTotal = number(attempts.total);
+  $: attemptRate =
+    attempts.success_rate === null || attempts.success_rate === undefined
+      ? null
+      : number(attempts.success_rate);
+  $: attemptDays = Math.max(1, Math.round(number(attempts.window_hours, 168) / 24));
+  $: terminalTotal = number(success.total);
   $: daily = firstList(summary, 'daily', 'series');
   $: days = text(data.days, '30');
   $: dimension = text(data.dimension, 'model');
@@ -73,10 +81,16 @@
     value={compact(number(summary.total_input_tokens) + number(summary.total_output_tokens))}
     tone="violet"
   /><StatCard
-    label="Success rate"
-    value={percent(
-      number(success.total) ? (number(success.success_2xx) / number(success.total)) * 100 : 0
-    )}
+    label="Client success rate"
+    value={terminalTotal ? percent((number(success.success_2xx) / terminalTotal) * 100) : '—'}
+    detail="Final response to the client (2xx), after retries"
+    tone="amber"
+  /><StatCard
+    label="Upstream attempt success"
+    value={attemptRate === null ? '—' : percent(attemptRate)}
+    detail={attemptTotal
+      ? `${compact(number(attempts.failed))} of ${compact(attemptTotal)} attempts failed · last ${attemptDays} days`
+      : `No upstream attempts recorded · last ${attemptDays} days`}
     tone="amber"
   />
 </div>

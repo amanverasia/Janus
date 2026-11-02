@@ -677,6 +677,7 @@ tbody tr:hover {
 }
 .status.pending,
 .status.warning,
+.status.routing_unhealthy,
 .status.cooldown {
   color: var(--warning);
   background: var(--warning-soft);

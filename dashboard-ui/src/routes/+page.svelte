@@ -328,7 +328,7 @@
     {:else if active.section === 'combos'}
       <CombosPage {data} {action} />
     {:else if active.section === 'routing'}
-      <RoutingPage {data} {action} {navigateQuery} />
+      <RoutingPage {data} {action} {navigateQuery} {navigate} />
     {:else if active.section === 'savers'}
       <SaversPage {data} {action} />
     {:else if active.section === 'budgets'}
