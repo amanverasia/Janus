@@ -59,6 +59,10 @@ _UPSTREAM_PUBLIC_COLUMNS = (
     "account_value_error",
     "account_value_fetched_at",
     "account_value_checked_at",
+    "routing_health_status",
+    "routing_health_reason",
+    "routing_health_status_code",
+    "routing_health_at",
     "priority",
     "metadata",
     "source_node",
@@ -331,6 +335,10 @@ def _list_filters(
     params: list[Any] = []
     if status == "archived":
         clauses.append("k.is_archived = 1")
+    elif status == "routing_unhealthy":
+        if not include_archived:
+            clauses.append("k.is_archived = 0")
+        clauses.append("k.routing_health_status = 'unhealthy'")
     else:
         if not include_archived:
             clauses.append("k.is_archived = 0")
@@ -561,6 +569,10 @@ async def update_upstream_key(
         "account_value_error",
         "account_value_fetched_at",
         "account_value_checked_at",
+        "routing_health_status",
+        "routing_health_reason",
+        "routing_health_status_code",
+        "routing_health_at",
         "priority",
         "metadata",
         "source_node",
@@ -753,7 +765,9 @@ async def list_routable_upstream_keys_for_providers(
     placeholders = ", ".join("?" for _ in inventory_provider_ids)
     async with get_connection(db_path) as db:
         async with db.execute(
-            f"""SELECT id, provider_id, key_label, key_masked, priority, credits_remaining
+            f"""SELECT id, provider_id, key_label, key_masked, priority, credits_remaining,
+                       routing_health_status, routing_health_reason,
+                       routing_health_status_code, routing_health_at
                 FROM upstream_keys
                 WHERE provider_id IN ({placeholders})
                   AND status = 'active'

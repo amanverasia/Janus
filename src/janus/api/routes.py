@@ -1518,6 +1518,7 @@ async def _handle_with_snapshot(
                             error_type,
                             model=target.model,
                             retry_after=getattr(result, "retry_after", None),
+                            status=result.status_code,
                         )
                         _note_attempt_failure(
                             target,
@@ -1812,6 +1813,7 @@ async def _handle_with_snapshot(
                             error_type,
                             model=target.model,
                             retry_after=getattr(native_result, "retry_after", None),
+                            status=native_result.status_code,
                         )
                         _note_attempt_failure(
                             target,
@@ -2111,6 +2113,7 @@ async def _handle_with_snapshot(
                             error_type,
                             model=target.model,
                             retry_after=result.retry_after,
+                            status=result.status_code,
                         )
                         _note_attempt_failure(
                             target,
@@ -2315,6 +2318,7 @@ async def _handle_with_snapshot(
                         error_type,
                         model=target.model,
                         retry_after=result.retry_after,
+                        status=result.status_code,
                     )
                     _note_attempt_failure(
                         target,

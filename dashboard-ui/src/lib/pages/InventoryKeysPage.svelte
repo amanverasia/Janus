@@ -228,6 +228,20 @@
     }
   }
 
+  function routingHealthDetail(row: JsonObject): string {
+    const reason = text(row.routing_health_reason, 'auth_error');
+    const label =
+      reason === 'payment_error'
+        ? 'Payment required'
+        : reason === 'auth_error'
+          ? 'Authentication failed'
+          : reason.replaceAll('_', ' ');
+    const code = row.routing_health_status_code;
+    const status = code === null || code === undefined ? '' : ` (HTTP ${text(code, '')})`;
+    const since = text(row.routing_health_at, '');
+    return `${label}${status}${since ? ` since ${dateTime(since)}` : ''}`;
+  }
+
   function accountWindowsOf(row: JsonObject): JsonObject[] {
     return list(object(row.account_value).windows);
   }
@@ -635,6 +649,13 @@
                 <span class="status {text(row.status, 'pending')}">
                   {text(row.status).replaceAll('_', ' ')}
                 </span>
+                {#if row.routing_health_status === 'unhealthy'}<span
+                    class="status routing_unhealthy"
+                    title={routingHealthDetail(row)}
+                  >
+                    failing at routing
+                  </span>
+                  <small class="cell-subtitle">{routingHealthDetail(row)}</small>{/if}
                 {#if row.usability_status && row.usability_status !== 'unknown'}<small
                     class="cell-subtitle"
                   >
@@ -832,6 +853,13 @@
         {text(detail.status).replaceAll('_', ' ')}
       </span>
     </div>
+    {#if detail.routing_health_status === 'unhealthy'}
+      <p class="detail-copy routing-health-note">
+        <span class="status routing_unhealthy">failing at routing</span>
+        {routingHealthDetail(detail)}. It is tried last until a recheck or a successful request
+        restores it.
+      </p>
+    {/if}
     <div class="detail-actions">
       <button class="button" disabled={revealBusy} on:click={revealDetail}>
         <Icon name="eye" size={15} />{revealedDetail

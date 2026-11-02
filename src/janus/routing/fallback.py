@@ -33,6 +33,12 @@ from janus.storage.cooldowns import (
     save_cooldown,
 )
 from janus.storage.quotas import window_id
+from janus.storage.routing_health import (
+    RoutingHealth,
+    clear_routing_unhealthy,
+    load_routing_health,
+    mark_routing_unhealthy,
+)
 from janus.storage.upstream_keys import get_upstream_keys_by_ids
 
 RPM_WINDOW_SECONDS = 60.0
@@ -41,6 +47,9 @@ MIN_RETRY_AFTER_S = 1.0
 PROBED_TTL_SECONDS = 600.0
 PROBED_DEMOTION_PERCENT = 90.0
 PROBED_EXHAUSTED_PERCENT = 100.0
+ROUTING_HEALTH_FAILURE_THRESHOLD = 3
+ROUTING_HEALTH_PENDING_GRACE_S = 30.0
+ROUTING_HEALTH_ERROR_TYPES = frozenset({"auth_error", "payment_error"})
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +139,8 @@ class FallbackHandler:
         self._quota_window_id: dict[str, str] = {}
         self._probed_used: dict[str, tuple[float, float]] = {}
         self.last_probe_demotions: list[tuple[str, float]] = []
+        self._credential_failures: dict[str, int] = {}
+        self._unhealthy: dict[str, RoutingHealth] = {}
 
     @staticmethod
     def _today() -> str:
@@ -307,13 +318,70 @@ class FallbackHandler:
         return fresh + near_limit + exhausted
 
     def _apply_headroom_ordering(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
-        """Compose soft headroom ordering: rate limits first, then probed windows.
+        """Compose soft ordering: routing-unhealthy last, then rate limits, then probes.
 
         Probed demotion is applied within each rate group so a rate-limited
         account never outranks a rate-ok account via probe data.
         """
+        if self._unhealthy and len(accounts) > 1:
+            healthy = [t for t in accounts if t.account_id not in self._unhealthy]
+            unhealthy = [t for t in accounts if t.account_id in self._unhealthy]
+            return self._order_by_headroom(healthy) + self._order_by_headroom(unhealthy)
+        return self._order_by_headroom(accounts)
+
+    def _order_by_headroom(self, accounts: list[ResolvedTarget]) -> list[ResolvedTarget]:
         headroom, limited = self._partition_rate_limited(accounts)
         return self._deprioritize_probed(headroom) + self._deprioritize_probed(limited)
+
+    def is_routing_unhealthy(self, account_id: str) -> bool:
+        return account_id in self._unhealthy
+
+    def routing_health(self, account_id: str) -> RoutingHealth | None:
+        return self._unhealthy.get(account_id)
+
+    def note_credential_failure(
+        self, account_id: str, error_type: str, status: int | None = None
+    ) -> None:
+        """Count consecutive auth/payment failures; flag the credential at the threshold.
+
+        Rate limits, 5xx, network and client errors never count. Only a success
+        (or a successful inventory recheck) clears the state.
+        """
+        if error_type not in ROUTING_HEALTH_ERROR_TYPES:
+            return
+        count = self._credential_failures.get(account_id, 0) + 1
+        self._credential_failures[account_id] = count
+        if count < ROUTING_HEALTH_FAILURE_THRESHOLD:
+            return
+        status_code = status
+        if status_code is None and error_type == "payment_error":
+            status_code = 402
+        existing = self._unhealthy.get(account_id)
+        if existing is not None and existing.reason == error_type:
+            return
+        entry = RoutingHealth(reason=error_type, status_code=status_code, at=time.time())
+        self._unhealthy[account_id] = entry
+        self._persist_routing_unhealthy(account_id, entry)
+
+    def _note_credential_success(self, account_id: str) -> None:
+        self._credential_failures.pop(account_id, None)
+        if self._unhealthy.pop(account_id, None) is not None:
+            self._persist_routing_cleared(account_id)
+
+    async def load_routing_health(self) -> None:
+        """Seed routing-health flags from the DB; DB wins except for unflushed writes."""
+        if self.db_path is None:
+            return
+        stored = await load_routing_health(self.db_path)
+        now = time.time()
+        merged = dict(stored)
+        for account_id, entry in self._unhealthy.items():
+            if account_id not in stored and now - entry.at < ROUTING_HEALTH_PENDING_GRACE_S:
+                merged[account_id] = entry
+        for account_id in self._unhealthy:
+            if account_id not in merged:
+                self._credential_failures.pop(account_id, None)
+        self._unhealthy = merged
 
     async def load_probed_headroom(self) -> None:
         """Seed probed window usage from the account-value cache (never secrets)."""
@@ -374,6 +442,8 @@ class FallbackHandler:
         # Cooldowns/backoff are also reloaded from DB; keep live values as a baseline.
         self._cooldowns = dict(other._cooldowns)
         self._backoff = dict(other._backoff)
+        self._credential_failures = dict(other._credential_failures)
+        self._unhealthy = dict(other._unhealthy)
         self.cooldowns_enabled = other.cooldowns_enabled
 
     @staticmethod
@@ -641,7 +711,9 @@ class FallbackHandler:
         model: str | None = None,
         retry_after: float | None = None,
         duration: float | None = None,
+        status: int | None = None,
     ) -> None:
+        self.note_credential_failure(account_id, error_type, status)
         if not self.cooldowns_enabled:
             return
         model_key = model or "__all__"
@@ -661,6 +733,7 @@ class FallbackHandler:
     def mark_success(self, account_id: str, model: str | None = None) -> None:
         # A model-scoped success clears only that (account, model) cooldown.
         # An account-level success (model=None) clears the account-wide __all__ lock.
+        self._note_credential_success(account_id)
         keys = {"__all__"} if model is None else {model}
         for mk in keys:
             self._cooldowns.pop((account_id, mk), None)
@@ -717,6 +790,36 @@ class FallbackHandler:
         task.add_done_callback(
             _persist_task_callback("cooldown save", f"account={account_id} model={model}")
         )
+
+    def _persist_routing_unhealthy(self, account_id: str, entry: RoutingHealth) -> None:
+        if self.db_path is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(
+            mark_routing_unhealthy(
+                self.db_path,
+                account_id,
+                reason=entry.reason,
+                status_code=entry.status_code,
+                at=entry.at,
+            )
+        )
+        self._track_persist_task(task)
+        task.add_done_callback(_persist_task_callback("routing health mark", account_id))
+
+    def _persist_routing_cleared(self, account_id: str) -> None:
+        if self.db_path is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(clear_routing_unhealthy(self.db_path, account_id))
+        self._track_persist_task(task)
+        task.add_done_callback(_persist_task_callback("routing health clear", account_id))
 
     def _delete_cooldown(self, account_id: str, model: str) -> None:
         assert self.db_path is not None

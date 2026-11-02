@@ -118,6 +118,16 @@ the next account; cooldowns apply only when `server_cooldowns_enabled` is true.
   keeps worst-window usage per account for 600s; `resolve_attempts` demotes ≥90% accounts to the
   end of the try-order (100% last) — never blocks, stale/absent data is neutral, and demotions are
   surfaced as `(probed window N% used)` markers in the 503 attempt trail.
+- Routing health (QA-1): `FallbackHandler.mark_cooldown(..., status=)` feeds `note_credential_failure`; 3
+  consecutive `auth_error`/`payment_error` failures (rate limits, 5xx, network, client 4xx never count; any
+  `mark_success` resets) flag the inventory credential `routing_health_status='unhealthy'` on `upstream_keys`
+  (reason/status code/timestamp, history `routing_unhealthy` only on transitions, fire-and-forget writes,
+  `load_routing_health()` on reload). `_apply_headroom_ordering` demotes flagged accounts to the end of the
+  try-order independent of `server_cooldowns_enabled`; never hard-blocked. A successful routed attempt or a
+  successful `key_checker` recheck clears it. Surfaced via inventory summary (`routing_unhealthy`,
+  `needs_attention`), the `?status=routing_unhealthy` keys filter, routing `unhealthy`/`unhealthy_accounts`,
+  overview `provider_health`, analytics `attempts` (`attempt_signals`, 7-day retention), and the
+  `inventory:routing_unhealthy` / `routing:attempt_failures` alerts.
 - Inventory rate limits (`rate_limit_rpm`/`rate_limit_rpd` on `upstream_keys`) feed routing: `expand_gateway_provider` copies them onto each `ProviderConfig`, `_handle()` calls `record_attempt()` per attempt, and `resolve_attempts` moves accounts without headroom to the end of the try-order (`_deprioritize_rate_limited`). Daily attempt counts are persisted to the `attempt_counters` table (`storage/attempt_counters.py`, fire-and-forget upserts) and seeded on startup/reload (`load_request_counts()`); success-only `usage` rows are never the attempt source of truth. The RPM window is in-memory only (60s sliding).
 - Subscription quotas (`quota_window`/`quota_limit`/`quota_metric` on the `providers` table) work the same way but per provider row (shared across expanded inventory accounts, keyed by `ProviderConfig.row_id`): `storage/quotas.py` defines UTC windows (5h buckets / daily / weekly / monthly), `FallbackHandler` tracks in-memory counters seeded via `load_quota_usage()` from the persisted attempt/token counters, requests-metric increments on attempt, tokens-metric via `record_quota_tokens()` post-response. Reloads merge adopted in-memory counts with the ledger (max per window) instead of replacing them. Soft enforcement only — exhausted providers are deprioritized, never blocked.
 - `model="auto"` (#183): `routing/auto.py::plan_auto` ranks priced, routable, allowlisted,

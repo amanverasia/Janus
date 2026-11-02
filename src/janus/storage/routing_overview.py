@@ -11,6 +11,26 @@ from janus.storage.quotas import describe_reset, get_window_usages, quota_status
 from janus.storage.upstream_keys import list_routable_upstream_keys_for_providers
 
 
+def _health_fields(key: dict[str, Any]) -> dict[str, Any]:
+    unhealthy = key.get("routing_health_status") == "unhealthy"
+    return {
+        "routing_unhealthy": unhealthy,
+        "routing_health_reason": key.get("routing_health_reason") if unhealthy else None,
+        "routing_health_status_code": (
+            key.get("routing_health_status_code") if unhealthy else None
+        ),
+        "routing_health_at": key.get("routing_health_at") if unhealthy else None,
+    }
+
+
+_NO_HEALTH: dict[str, Any] = {
+    "routing_unhealthy": False,
+    "routing_health_reason": None,
+    "routing_health_status_code": None,
+    "routing_health_at": None,
+}
+
+
 def _account_cooldown(
     cooldowns: dict[str, tuple[float, int]], account_id: str, now: float
 ) -> tuple[bool, float]:
@@ -83,6 +103,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
                         "cooldown_active": cooldown_active,
                         "cooldown_seconds": cooldown_seconds,
                         "quota_deprioritized": quota_exhausted,
+                        **_health_fields(key),
                     }
                 )
         elif row.get("api_key"):
@@ -102,6 +123,7 @@ async def get_routing_overview(db_path: str | Path) -> dict[str, Any]:
                     "cooldown_active": cooldown_active,
                     "cooldown_seconds": cooldown_seconds,
                     "quota_deprioritized": quota_exhausted,
+                    **_NO_HEALTH,
                 }
             )
 

@@ -23,7 +23,7 @@
     ? firstList(stats, 'daily', 'series')
     : firstList(data, 'daily', 'series');
   $: chart = daily.map((point) => number(point.requests ?? point.total_requests ?? point.value));
-  $: providers = firstList(data, 'providers', 'provider_health');
+  $: providers = firstList(data, 'providers');
   $: checklist = object(data.setup_checklist);
   // Once every step is done the panel is permanent noise on a working gateway.
   $: checklistComplete =
@@ -69,11 +69,47 @@
     copyTimer = setTimeout(() => (copied = ''), 1800);
   }
   onDestroy(() => clearTimeout(copyTimer));
+  const MIN_ATTEMPTS_JUDGED = 20;
   $: providerCount = number(data.provider_count ?? providers.length);
   $: cooldowns = number(data.cooldown_count);
-  $: providerHealthTone = providerCount === 0 ? 'pending' : cooldowns > 0 ? 'warning' : 'active';
+  $: health = object(data.provider_health);
+  $: attempts = object(health.attempts);
+  $: attemptTotal = number(attempts.total);
+  $: attemptFailed = number(attempts.failed);
+  $: attemptRate =
+    attempts.success_rate === null || attempts.success_rate === undefined
+      ? null
+      : number(attempts.success_rate);
+  $: attemptWindow = number(attempts.window_hours, 24);
+  $: credentialsTotal = number(health.credentials_total);
+  $: credentialsAttention = number(health.credentials_needing_attention);
+  $: credentialsFailing = number(health.credentials_routing_unhealthy);
+  $: attemptsJudged = attemptTotal >= MIN_ATTEMPTS_JUDGED && attemptRate !== null;
+  $: attemptsFailing = attemptsJudged && (attemptRate ?? 100) < 50;
+  $: attemptsDegraded = attemptsJudged && (attemptRate ?? 100) < 90;
+  $: providerHealthTone =
+    providerCount === 0
+      ? 'pending'
+      : credentialsFailing > 0 || attemptsFailing
+        ? 'error'
+        : cooldowns > 0 || credentialsAttention > 0 || attemptsDegraded
+          ? 'warning'
+          : 'active';
   $: providerHealthLabel =
-    providerCount === 0 ? 'No providers' : cooldowns > 0 ? 'Degraded' : 'Operational';
+    providerCount === 0
+      ? 'No providers'
+      : providerHealthTone === 'error'
+        ? 'Failing'
+        : providerHealthTone === 'warning'
+          ? 'Degraded'
+          : 'Operational';
+  $: attemptTone = !attemptsJudged
+    ? 'active'
+    : attemptsFailing
+      ? 'error'
+      : attemptsDegraded
+        ? 'warning'
+        : 'active';
 </script>
 
 <PageHeader title="Overview">
@@ -217,9 +253,64 @@
           <div class="metric-row">
             <div>
               <strong>Connected providers</strong>
-              <span class="status active">{compact(data.provider_count)} available</span>
+              <span class="status active">{compact(data.provider_count)} enabled</span>
             </div>
             <div class="progress"><span style="width:100%"></span></div>
+          </div>
+          <div class="metric-row">
+            <div>
+              <strong>Credentials failing at routing</strong>
+              <span class="status {credentialsFailing ? 'error' : 'active'}">
+                {credentialsFailing ? `${compact(credentialsFailing)} failing` : 'None'}
+              </span>
+            </div>
+            <div class="progress">
+              <span
+                style={`width:${credentialsFailing && credentialsTotal ? Math.max(4, Math.round((credentialsFailing * 100) / credentialsTotal)) : 100}%`}
+              ></span>
+            </div>
+            {#if credentialsFailing}<a
+                class="row-link"
+                href="/dashboard/ui/inventory/keys?status=routing_unhealthy"
+                on:click|preventDefault={() =>
+                  navigate('/dashboard/ui/inventory/keys?status=routing_unhealthy')}
+              >
+                Review failing credentials
+              </a>{/if}
+          </div>
+          <div class="metric-row">
+            <div>
+              <strong>Credentials needing attention</strong>
+              <span class="status {credentialsAttention ? 'warning' : 'active'}">
+                {credentialsAttention
+                  ? `${compact(credentialsAttention)} of ${compact(credentialsTotal)}`
+                  : 'None'}
+              </span>
+            </div>
+            <div class="progress">
+              <span
+                style={`width:${credentialsAttention && credentialsTotal ? Math.max(4, Math.round(100 - (credentialsAttention * 100) / credentialsTotal)) : 100}%`}
+              ></span>
+            </div>
+          </div>
+          <div class="metric-row">
+            <div>
+              <strong>Upstream attempts · last {attemptWindow} hours</strong>
+              <span class="status {attemptTone}">
+                {attemptTotal === 0 || attemptRate === null
+                  ? 'No attempts'
+                  : `${percent(attemptRate)} succeeded`}
+              </span>
+            </div>
+            <div class="progress">
+              <span
+                style={`width:${attemptRate === null ? 100 : Math.max(2, attemptRate)}%`}
+              ></span>
+            </div>
+            {#if attemptFailed > 0}<small class="row-note">
+                {compact(attemptFailed)} of {compact(attemptTotal)} attempts failed; requests may still
+                succeed after trying other accounts.
+              </small>{/if}
           </div>
           <div class="metric-row">
             <div>
@@ -243,6 +334,19 @@
 </div>
 
 <style>
+  .row-link {
+    display: inline-block;
+    margin-top: var(--space-1);
+    color: var(--accent-strong);
+    font-size: 12px;
+    font-weight: 620;
+  }
+  .row-note {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--muted);
+    font-size: 12px;
+  }
   .endpoint {
     margin-bottom: var(--space-5);
     border: 1px solid var(--line);

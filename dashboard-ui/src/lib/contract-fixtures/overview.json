@@ -13,6 +13,20 @@
       "period_days": 30,
       "reporting_timezone": "UTC"
     },
+    "provider_health": {
+      "credentials_total": 4,
+      "credentials_needing_attention": 0,
+      "credentials_routing_unhealthy": 0,
+      "attempts": {
+        "window_hours": 24,
+        "total": 0,
+        "ok": 0,
+        "failed": 0,
+        "aborted": 0,
+        "success_rate": null,
+        "failed_by_class": {}
+      }
+    },
     "provider_count": 2,
     "today_cost": 0.73,
     "savings_today": {

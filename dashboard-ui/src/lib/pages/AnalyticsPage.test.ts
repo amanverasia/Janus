@@ -113,3 +113,36 @@ describe('AnalyticsPage breakdown pagination', () => {
     expect(view.queryByRole('button', { name: 'Next' })).toBeNull();
   });
 });
+
+describe('AnalyticsPage success semantics', () => {
+  it('labels terminal client success separately from upstream attempt success', () => {
+    const view = setup({
+      ...baseData,
+      attempts: {
+        window_hours: 168,
+        total: 100,
+        ok: 10,
+        failed: 90,
+        aborted: 0,
+        success_rate: 10,
+        failed_by_class: { payment_error: 80, auth_error: 10 }
+      }
+    });
+    expect(view.getByText('Client success rate')).toBeTruthy();
+    expect(view.getByText('95%')).toBeTruthy();
+    expect(view.getByText('Upstream attempt success')).toBeTruthy();
+    expect(view.getByText('10%')).toBeTruthy();
+    expect(view.container.textContent).toContain('90 of 100 attempts failed');
+    expect(view.container.textContent).toContain('last 7 days');
+  });
+
+  it('shows a dash instead of 0% when nothing was recorded', () => {
+    const view = setup({
+      ...baseData,
+      success: { success_2xx: 0, client_4xx: 0, server_5xx: 0, total: 0 },
+      attempts: { window_hours: 168, total: 0, success_rate: null }
+    });
+    expect(view.container.textContent).toContain('No upstream attempts recorded');
+    expect(view.queryByText('0%')).toBeNull();
+  });
+});

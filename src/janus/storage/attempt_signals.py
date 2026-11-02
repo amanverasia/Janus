@@ -109,3 +109,41 @@ async def list_attempt_signals(db_path: str | Path, *, limit: int = 100) -> list
         ) as cur:
             rows = await cur.fetchall()
     return [dict(row) for row in rows]
+
+
+async def get_attempt_health(db_path: str | Path, *, hours: int) -> dict[str, Any]:
+    window_hours = max(1, min(int(hours), ATTEMPT_SIGNAL_RETENTION_DAYS * 24))
+    async with get_connection(db_path) as db:
+        async with db.execute(
+            """SELECT outcome, COALESCE(failure_class, '') AS failure_class, COUNT(*) AS n
+               FROM attempt_signals
+               WHERE timestamp >= datetime('now', ?)
+               GROUP BY outcome, COALESCE(failure_class, '')""",
+            (f"-{window_hours} hours",),
+        ) as cur:
+            rows = await cur.fetchall()
+    ok = 0
+    failed = 0
+    aborted = 0
+    by_class: dict[str, int] = {}
+    for row in rows:
+        count = int(row["n"])
+        outcome = str(row["outcome"])
+        if outcome == "ok":
+            ok += count
+        elif outcome == "aborted":
+            aborted += count
+        else:
+            failed += count
+            label = str(row["failure_class"]) or "unknown"
+            by_class[label] = by_class.get(label, 0) + count
+    judged = ok + failed
+    return {
+        "window_hours": window_hours,
+        "total": judged,
+        "ok": ok,
+        "failed": failed,
+        "aborted": aborted,
+        "success_rate": round(ok * 100 / judged, 1) if judged else None,
+        "failed_by_class": dict(sorted(by_class.items(), key=lambda item: -item[1])),
+    }
