@@ -103,6 +103,22 @@ async def test_adopted_cooldown_is_not_shortened_by_stale_database(tmp_path: Pat
         assert replacement._backoff[("alpha", "m1")] == 0
 
 
+async def test_later_persisted_cooldown_replaces_adopted_state_and_backoff(tmp_path: Path):
+    db = tmp_path / "cooldowns.db"
+    await init_db(db)
+    with patch("janus.routing.fallback.time.time", return_value=1000.0):
+        await save_cooldown(db, "alpha", 1600.0, model="m1", backoff_level=0)
+        old = FallbackHandler(ProviderRegistry())
+        for _ in range(3):
+            old.mark_cooldown("alpha", "rate_limit", model="m1")
+        replacement = FallbackHandler(ProviderRegistry(), db_path=db)
+        replacement.adopt_runtime_state(old)
+        assert replacement._backoff[("alpha", "m1")] == 3
+        await replacement.load_cooldowns()
+        assert replacement._cooldowns[("alpha", "m1")] == 1600.0
+        assert replacement._backoff[("alpha", "m1")] == 0
+
+
 async def test_cooldown_persists_reloads_and_clears_by_scope(tmp_path: Path):
     db = tmp_path / "cooldowns.db"
     await init_db(db)
