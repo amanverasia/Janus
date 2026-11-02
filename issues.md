@@ -1,3 +1,77 @@
+# Janus production QA — 2026-11-02
+
+Hands-on review of the production gateway and Cloudline dashboard at `8c119ce`: read-only
+aggregate DB/log metadata, every dashboard route (light, dark, 390 px mobile), and a few tiny
+chat requests. No credentials, hostnames, account identifiers, or credential counts are recorded
+here. Earlier audits follow below this section.
+
+**Verdict:** requests are answered and every page renders without errors, but most upstream
+attempts fail and the dashboard reports the system as healthy. Fix truthfulness first.
+
+## P1 — routing and health truthfulness
+
+- **QA-1 Routing failures never reach credential health.** Over seven days roughly 90% of upstream
+  attempts failed (mostly 402 payment-required, then 401/403), concentrated on one aggregator.
+  Every credential that repeatedly returned 402 was still `active` / `usable`, often with no credit
+  balance recorded. Routing outcomes are not fed back into inventory status or try-order.
+  *Acceptance:* repeated auth/payment failures from live routing mark the credential unhealthy
+  (distinct, reversible status with reason and timestamp), demote it in try-order independent of
+  `server_cooldowns_enabled`, show it in Inventory, Routing pool, and alerts, and a successful
+  recheck restores it. A rate-limit or 5xx must not mark a key unhealthy.
+- **QA-2 Dead credentials make requests slow or fail.** With cooldowns disabled, a single
+  request walked 19 consecutive 402 credentials (≈6.6 s) and succeeded on attempt 20 of the 20-attempt
+  cap; before the dispatch caps, requests made hundreds of attempts and took ≈120 s before 503.
+  Client cancellations cluster on the same model. QA-1's demotion should fix this.
+- **QA-3 Health surfaces contradict reality.** Home shows "Operational · N available · Cooldowns
+  clear" while hundreds of credentials need attention; Routing → Health reports every account
+  "Ready"; Analytics "Success rate 90%" counts only terminal client outcomes.
+  *Acceptance:* Home provider health and Routing reflect recent upstream attempt failure rate and
+  unhealthy credentials; Analytics labels terminal success separately from upstream attempt success.
+- **QA-4 Request Logs hide failed attempts.** A request that succeeded after 19 failures appears as
+  `200`, failure reason "—". *Acceptance:* each row shows the attempt count; the inspector lists
+  failed attempts (masked account, status, failure class, duration) for successful requests too.
+- **QA-5 Headroom saver enabled but unreachable.** The configured Headroom URL refuses connections
+  inside the container, yet Token savers says "Pipeline Ready" with 0 requests processed.
+  *Acceptance:* the saver state reports reachability (bounded, cached probe); the page shows an
+  error state with recovery guidance; an unreachable async saver is skipped quickly without
+  adding per-request latency.
+
+## P2 — auto routing
+
+- **QA-6 Auto preview duplicates one model across providers with identical stats.** The same model
+  under four prefixes shows identical error %, TPS, TTFT, and sample counts, so signals are not
+  attributed per provider; the preview lists 10 entries although the chain is documented as top-5.
+  Pills title-case model IDs (`Deepseek/Deepseek-Flash`) although IDs are case-sensitive.
+
+## P2 — data presentation
+
+- **QA-7 Inconsistent counts.** Inventory "Stored keys 1K" vs "1.4K need encryption" vs
+  "80 connected providers" while Routing lists 31 providers; Models "1051/2050 visible" vs the
+  public catalog and the Can't-reach page. Counts must state what they count and agree.
+- **QA-8 Credit pools.** A provider shows "102% remaining"; postpaid providers show "$0.00 available".
+- **QA-9 Number formatting.** Durations render as `1.1Kms` / `8.6K ms`; integer counts collapse to
+  `1K`. Durations ≥1 s should read `1.1 s`; small counts should be exact.
+
+## P3 — UI polish
+
+- **QA-10 Analytics** "Breakdown by model" renders ~350 rows without pagination (~17,600 px page).
+- **QA-11 Routing → Health auto card:** body content has no horizontal padding; the quality-override
+  inputs are unstyled native controls; "Cooling down"/"Strategy" stat cards lack subtitles; the
+  empty cooldown panel is mostly blank space.
+- **QA-12 Home:** a fifth stat card ("In flight") wraps alone onto a second row; "Across the selected
+  period" references a period selector that Home does not have.
+- **QA-13 Mobile/theme:** section tabs are clipped without an affordance; the mobile search icon
+  button has no accessible name; the login page is always dark while the app follows the system
+  theme.
+
+## Not defects
+
+- Dashboard settings saves pass the same-origin guard through the TLS proxy; the logged 403s were
+  deployment smoke tests of hostile origins.
+- Request Logs were current; the gap reflected real idle time.
+
+---
+
 # Janus full-stack audit — 2026-08-26
 
 This is the living report from a production-data audit of Janus 3.1.0. The audit used a private
