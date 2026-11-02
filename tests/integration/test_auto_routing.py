@@ -14,7 +14,7 @@ from janus.config.schema import JanusConfig, ProviderConfig, ServerSettings
 from janus.dashboard.reload import reload_providers
 from janus.routing.auto import AutoStrategy, plan_auto
 from janus.storage.database import get_connection
-from janus.storage.model_signals import get_model_signals
+from janus.storage.model_signals import get_model_signals, invalidate_model_signals_cache
 from janus.storage.request_logs import list_request_logs
 from janus.storage.settings import set_setting
 from tests.fixtures.dashboard_auth import DASHBOARD_TEST_API_KEY, with_dashboard_auth
@@ -354,3 +354,32 @@ async def test_auto_same_model_alternates_and_signals_refresh_on_reload(
     assert (await _post(app)).status_code == 200
     assert not alpha.called
     assert beta.call_count == 2
+
+
+@respx.mock
+async def test_auto_preview_attributes_signals_per_provider(same_model_app: FastAPI) -> None:
+    from janus.routing.auto import serialize_chain
+
+    app = same_model_app
+    db_path = app.state.db_path
+    async with get_connection(db_path) as db:
+        await db.executemany(
+            "INSERT INTO attempt_signals (model, provider_id, account_id, streamed, outcome,"
+            " ttft_ms, duration_ms, output_tokens, output_tps)"
+            " VALUES ('gpt-4o', ?, ?, 1, ?, ?, 900, 100, ?)",
+            [("alpha", "alpha", "error", 300, 100.0)] * 6 + [("beta", "beta", "ok", 250, 80.0)] * 6,
+        )
+        await db.commit()
+    invalidate_model_signals_cache(db_path)
+    plan = await plan_auto(
+        registry=app.state.provider_snapshot.registry,
+        db_path=db_path,
+        pricing_registry=app.state.pricing_registry,
+        strategy=AutoStrategy.QUALITY,
+    )
+    rows = {row["model"]: row for row in serialize_chain(plan)}
+    assert [row["model"] for row in serialize_chain(plan)] == plan.models
+    assert rows["alpha/gpt-4o"]["error_rate"] == 1.0
+    assert rows["beta/gpt-4o"]["error_rate"] == 0.0
+    assert rows["alpha/gpt-4o"]["signal_scope"] == "provider"
+    assert rows["beta/gpt-4o"]["samples"] == 6

@@ -137,6 +137,12 @@ Enable in Dashboard → Token Savers → Headroom. The URL is configurable
 response, Janus sends the original uncompressed request. Headroom can never
 break a request.
 
+**Reachability:** Janus probes the Headroom URL (`GET /health`, 2 s timeout) and caches the
+result for 30 s. Connection failures during real requests also mark it unreachable. While
+unreachable, Headroom is skipped without any per-request network call and re-probed in the
+background, so it recovers automatically. The Token savers page shows the failure reason
+and the Dashboard alerts list a warning; fix the URL or switch Headroom off to clear it.
+
 ## All savers together
 
 Savers stack — all enabled savers run in pipeline order. A full configuration:

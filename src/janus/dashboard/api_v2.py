@@ -35,7 +35,7 @@ from janus.models.catalog import (
     set_model_visibility,
 )
 from janus.pricing.registry import PricingRegistry
-from janus.routing.auto import AutoStrategy, plan_auto, serialize_trace
+from janus.routing.auto import TOP_N, AutoStrategy, plan_auto, serialize_chain
 from janus.routing.provider_snapshots import ensure_provider_snapshot
 from janus.routing.reachability import UnreachableReason, connect_target, cooled_down
 from janus.storage.analytics import (
@@ -750,7 +750,7 @@ async def _routing_data(
             overrides=await get_override_map(db_path),
         )
         auto_models = auto_plan.models
-        auto_preview = serialize_trace(auto_plan)
+        auto_preview = serialize_chain(auto_plan)
     except Exception:
         logger.warning("Auto routing preview failed", exc_info=True)
         auto_models = []
@@ -762,6 +762,8 @@ async def _routing_data(
             "models": auto_models,
             "top": auto_models[0] if auto_models else None,
             "preview": auto_preview,
+            "top_n": TOP_N,
+            "chain_length": len(auto_models),
             "overrides": await list_overrides(db_path),
         },
         "live": request.app.state.fallback_handler.routing_snapshot(),

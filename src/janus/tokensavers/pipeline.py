@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from janus.canonical.models import CanonicalRequest
 
-from .base import AsyncTokenSaver, TokenSaver
+from .base import AsyncTokenSaver, HealthCheckedSaver, TokenSaver
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,20 @@ class SaverPipeline:
                 except Exception as e:
                     logger.warning("Saver size probe failed for %s: %s", name, e)
         return req, applied
+
+    async def health(self) -> dict[str, dict[str, Any]]:
+        """Reachability for enabled async savers, from bounded cached probes."""
+        probes = [
+            (type(saver).__name__, saver.check_health())
+            for saver in self._async_savers
+            if isinstance(saver, HealthCheckedSaver)
+        ]
+        results = await asyncio.gather(*(probe for _, probe in probes), return_exceptions=True)
+        health: dict[str, dict[str, Any]] = {}
+        for (name, _), result in zip(probes, results, strict=True):
+            if isinstance(result, dict):
+                health[name] = result
+        return health
 
     def adopt_stats(self, other: SaverPipeline) -> None:
         """Carry cumulative in-memory savings counters across pipeline rebuilds."""

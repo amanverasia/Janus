@@ -55,6 +55,7 @@ from janus.storage.settings import (
     validate_reporting_timezone,
 )
 from janus.storage.usage import get_unpriced_models, get_usage_stats
+from janus.tokensavers.pipeline import SaverPipeline
 
 router = APIRouter(
     dependencies=[Depends(require_dashboard_access)],
@@ -1552,7 +1553,18 @@ async def _savers_context(request: Request, db_path: Path) -> dict[str, Any]:
     saver_pipeline = getattr(request.app.state, "saver_pipeline", None)
     raw_stats = getattr(saver_pipeline, "stats", {}) if saver_pipeline is not None else {}
     saver_stats = _saver_display_stats(raw_stats)
-    return {"request": request, "settings": settings, "saver_stats": saver_stats}
+    saver_health: dict[str, Any] = {}
+    if isinstance(saver_pipeline, SaverPipeline):
+        try:
+            saver_health = await saver_pipeline.health()
+        except Exception:
+            logger.warning("Saver health probe failed", exc_info=True)
+    return {
+        "request": request,
+        "settings": settings,
+        "saver_stats": saver_stats,
+        "saver_health": saver_health,
+    }
 
 
 VALID_ACCOUNT_STRATEGIES = frozenset({"fill_first", "round_robin", "sticky_rr"})

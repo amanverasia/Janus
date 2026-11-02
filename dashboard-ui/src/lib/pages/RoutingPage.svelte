@@ -25,6 +25,7 @@
   $: autoModels = Array.isArray(auto.models)
     ? auto.models.filter((model): model is string => typeof model === 'string' && !!model.trim())
     : [];
+  $: autoNote = `Top ${number(auto.top_n, 5)} model families with every eligible provider route (${autoModels.length} ${autoModels.length === 1 ? 'route' : 'routes'} in the chain). Signals are per provider route.`;
   $: autoPreview = firstList(auto, 'preview');
   $: autoOverrides = firstList(auto, 'overrides');
   let overrideModel = '';
@@ -160,7 +161,7 @@
   <StatCard label="Strategy" value={strategy} tone="violet" />
 </div>
 
-<section class="panel">
+<section class="panel auto-card">
   <div class="panel-header">
     <div>
       <h2>Auto routing</h2>
@@ -169,27 +170,34 @@
         try-order
       </p>
     </div>
-    <select
-      aria-label="Auto routing strategy"
-      disabled={autoSaving}
-      value={autoStrategy}
-      on:change={(event) => saveAutoStrategy((event.currentTarget as HTMLSelectElement).value)}
-    >
-      <option value="balanced">Balanced</option>
-      <option value="cheapest">Cheapest</option>
-      <option value="fastest">Fastest</option>
-      <option value="quality">Quality</option>
-    </select>
+    <div class="field auto-strategy">
+      <select
+        aria-label="Auto routing strategy"
+        disabled={autoSaving}
+        value={autoStrategy}
+        on:change={(event) => saveAutoStrategy((event.currentTarget as HTMLSelectElement).value)}
+      >
+        <option value="balanced">Balanced</option>
+        <option value="cheapest">Cheapest</option>
+        <option value="fastest">Fastest</option>
+        <option value="quality">Quality</option>
+      </select>
+    </div>
   </div>
-  {#if autoModels.length}
-    <p class="auto-chain">
-      <span class="mono">{text(auto.top, '')}</span>
-      <span class="muted">would pick now</span>
-      {#each autoModels as model, index}<span class="status mono">{index + 1}. {model}</span>{/each}
-    </p>
-  {:else}
-    <p class="muted">No priced, routable models for auto yet.</p>
-  {/if}
+  <div class="panel-body auto-chain-body">
+    {#if autoModels.length}
+      <p class="auto-chain">
+        <span class="mono">{text(auto.top, '')}</span>
+        <span class="muted">would pick now</span>
+        {#each autoModels as model, index}<span class="status mono">
+            {index + 1}. {model}
+          </span>{/each}
+      </p>
+      <p class="muted auto-note">{autoNote}</p>
+    {:else}
+      <p class="muted">No priced, routable models for auto yet.</p>
+    {/if}
+  </div>
   {#if autoPreview.length}
     <div class="table-wrap">
       <table>
@@ -220,57 +228,64 @@
               <td data-label="TTFT">
                 {row.ttft_p50_ms != null ? `${compact(row.ttft_p50_ms)}ms` : '—'}
               </td>
-              <td data-label="Samples">{compact(row.samples)}</td>
+              <td data-label="Samples">
+                {number(row.samples).toLocaleString()}
+                {#if row.signal_scope === 'model'}<small class="muted scope-note">
+                    model-wide
+                  </small>{/if}
+              </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
   {/if}
-  <div class="override-row">
-    <label>
-      <span>Quality override</span>
-      <input
-        placeholder="model id, e.g. deepseek-chat"
-        bind:value={overrideModel}
-        aria-label="Override model"
-      />
-    </label>
-    <label>
-      <span>Quality 0–1</span>
-      <input
-        type="number"
-        min="0"
-        max="1"
-        step="0.05"
-        bind:value={overrideQuality}
-        aria-label="Override quality"
-      />
-    </label>
-    <button
-      class="button"
-      disabled={!overrideModel.trim() || overrideSaving}
-      on:click={saveOverride}
-    >
-      Save override
-    </button>
-  </div>
-  {#if autoOverrides.length}
-    <div class="chips">
-      {#each autoOverrides as override (override.model)}
-        <span class="status mono">
-          {override.model} = {number(override.quality).toFixed(2)}
-          <button
-            class="link"
-            aria-label={`Remove override for ${override.model}`}
-            on:click={() => removeOverride(text(override.model))}
-          >
-            remove
-          </button>
-        </span>
-      {/each}
+  <div class="panel-body override-body">
+    <div class="override-row">
+      <label class="field override-model">
+        <span>Quality override</span>
+        <input
+          placeholder="model id, e.g. deepseek-chat"
+          bind:value={overrideModel}
+          aria-label="Override model"
+        />
+      </label>
+      <label class="field override-quality">
+        <span>Quality 0–1</span>
+        <input
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          bind:value={overrideQuality}
+          aria-label="Override quality"
+        />
+      </label>
+      <button
+        class="button primary"
+        disabled={!overrideModel.trim() || overrideSaving}
+        on:click={saveOverride}
+      >
+        Save override
+      </button>
     </div>
-  {/if}
+    {#if autoOverrides.length}
+      <div class="chips">
+        {#each autoOverrides as override (override.model)}
+          <span class="status mono">
+            {override.model} = {number(override.quality).toFixed(2)}
+            <button
+              class="link"
+              aria-label={`Remove override for ${override.model}`}
+              on:click={() => removeOverride(text(override.model))}
+            >
+              remove
+            </button>
+          </span>
+        {/each}
+      </div>
+    {/if}
+  </div>
 </section>
 <div class="panel-grid equal">
   <section class="panel">
@@ -352,26 +367,62 @@
 </div>
 
 <style>
+  .auto-card .status {
+    text-transform: none;
+  }
+
+  .auto-strategy select {
+    width: auto;
+    min-width: 140px;
+  }
+
+  .auto-chain-body {
+    display: grid;
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .auto-chain-body p {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+  }
+
+  .auto-note {
+    font-size: 12px;
+  }
+
+  .scope-note {
+    margin-left: 6px;
+    font-size: 11px;
+  }
+
+  .override-body {
+    border-top: 1px solid var(--line);
+  }
+
   .override-row {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: 8px;
-    margin-top: 12px;
+    gap: 12px;
   }
 
-  .override-row label {
-    display: grid;
-    gap: 4px;
-    font-size: 11px;
-    color: var(--muted);
+  .override-model {
+    flex: 1 1 240px;
+  }
+
+  .override-quality {
+    flex: 0 1 140px;
   }
 
   .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-top: 10px;
+    margin-top: 14px;
   }
 
   .account-list {

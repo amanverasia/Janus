@@ -16,6 +16,7 @@ from janus.storage.cooldowns import get_active_cooldowns
 from janus.storage.database import get_connection
 from janus.storage.providers_db import list_providers
 from janus.storage.usage import get_unpriced_models
+from janus.tokensavers.pipeline import SaverPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ async def _collect_dashboard_alerts_with_status(
         _inventory_alerts,
         _credential_alerts,
         _unpriced_alerts,
+        _saver_alerts,
         _setup_alerts,
     )
     results = await asyncio.gather(
@@ -453,6 +455,30 @@ async def _unpriced_alerts(db_path: Path, request: Request) -> list[DashboardAle
             href="/dashboard/ui/pricing",
         )
     ]
+
+
+async def _saver_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:
+    pipeline = getattr(request.app.state, "saver_pipeline", None)
+    if not isinstance(pipeline, SaverPipeline):
+        return []
+    health = await pipeline.health()
+    alerts: list[DashboardAlert] = []
+    for name, status in health.items():
+        if status.get("reachable") is False:
+            label = name.removesuffix("Saver")
+            alerts.append(
+                DashboardAlert(
+                    id=f"saver:{label.lower()}_unreachable",
+                    severity="warning",
+                    title=f"{label} token saver unreachable",
+                    detail=(
+                        f"{status.get('reason') or 'Not responding'}. Requests skip it until "
+                        "it recovers; fix the URL or disable it."
+                    ),
+                    href="/dashboard/ui/savers",
+                )
+            )
+    return alerts
 
 
 async def _setup_alerts(db_path: Path, request: Request) -> list[DashboardAlert]:

@@ -228,9 +228,16 @@ export interface KeysState extends JsonObject {
   counts: { active: number; revoked: number; all: number };
 }
 
+export interface SaverHealth extends JsonObject {
+  reachable: boolean | null;
+  reason: string | null;
+  checked_at: string | null;
+}
+
 export interface SaversState extends JsonObject {
   settings: Record<string, string>;
   saver_stats: JsonObject;
+  saver_health: Record<string, SaverHealth>;
 }
 
 export interface ToolsState extends JsonObject {
