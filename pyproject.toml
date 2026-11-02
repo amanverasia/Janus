@@ -87,6 +87,7 @@ exclude = [
   "/docs/superpowers/",
   "/docs/audits/",
   "/AGENTS.md",
+  "/CLAUDE.md",
   "/ISSUES.md",
   "/STRIX-AUDIT.md",
   "/todo.md",

@@ -156,6 +156,48 @@ async def test_enabled_records_exhausted_error(app):
     assert "exhausted" in logs[0]["error"]
 
 
+@pytest.mark.parametrize("logging_enabled", [True, False])
+@pytest.mark.parametrize("streamed", [True, False])
+@respx.mock
+async def test_cooldown_rejection_logging(app, logging_enabled, streamed):
+    from janus.storage.outcomes import list_request_outcomes
+
+    await set_setting(app.state.db_path, "server_request_logging", str(logging_enabled).lower())
+    upstream = respx.post("https://fake.local/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            429, json={"error": "rate limited"}, headers={"Retry-After": "120"}
+        )
+    )
+    payload = {
+        "model": "test/test-m1",
+        "messages": [{"role": "user", "content": "hi"}],
+        "stream": streamed,
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/v1/chat/completions", json=payload)
+        assert first.status_code == 503
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 503
+        assert 0 < int(response.headers["Retry-After"]) <= 120
+        assert upstream.call_count == 1
+        logs = await list_request_logs(app.state.db_path)
+        if logging_enabled:
+            assert len(logs) == 2
+            assert logs[0]["error"] == response.json()["detail"]
+            assert "cooling down" in logs[0]["error"]
+            assert logs[0]["model"] == payload["model"]
+            assert logs[0]["status"] == 503
+            assert logs[0]["streamed"] == int(streamed)
+            assert isinstance(logs[0]["duration_ms"], int)
+            state = await client.get("/dashboard/api/v2/state/request-logs")
+            assert state.json()["data"]["logs"][0]["error"] == logs[0]["error"]
+        else:
+            assert logs == []
+    outcomes = await list_request_outcomes(app.state.db_path)
+    assert len(outcomes) == 2
+    assert all(row["status"] == 503 for row in outcomes)
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_enabled_records_non_fallback_upstream_error(app):

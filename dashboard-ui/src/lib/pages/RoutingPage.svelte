@@ -22,7 +22,9 @@
   $: cooldowns = firstList(data, 'cooldowns');
   $: auto = object(data.auto);
   $: autoStrategy = text(auto.strategy, 'balanced');
-  $: autoModels = firstList(auto, 'models');
+  $: autoModels = Array.isArray(auto.models)
+    ? auto.models.filter((model): model is string => typeof model === 'string' && !!model.trim())
+    : [];
   $: autoPreview = firstList(auto, 'preview');
   $: autoOverrides = firstList(auto, 'overrides');
   let overrideModel = '';
@@ -126,6 +128,21 @@
     <Icon name="refresh" />{clearing ? 'Clearing…' : 'Clear cooldowns'}
   </button>
 </PageHeader>
+
+{#if !bool(settings.cooldowns_enabled ?? live.cooldowns_enabled, true)}
+  <div class="alert-strip warning" role="alert">
+    <Icon name="warning" size={17} />
+    <div>
+      <strong>Account cooldowns are disabled</strong>
+      <span>
+        Failing accounts stay in rotation. Repeated authentication, payment, or rate-limit errors
+        can make requests slow or exhaust every provider.
+        <a href="/dashboard/ui/settings">Enable account cooldowns in Settings</a>
+        .
+      </span>
+    </div>
+  </div>
+{/if}
 
 <div class="stats-grid">
   <StatCard label="Providers" value={compact(providers.length)} detail="Enabled routing groups" />
