@@ -1,10 +1,10 @@
 <script lang="ts">
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import StatCard from '$lib/components/StatCard.svelte';
-  import MiniChart from '$lib/components/MiniChart.svelte';
-  import DataTable from '$lib/components/DataTable.svelte';
-  import { compact, firstList, money, number, object, percent, text } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import StatCard from '#lib/components/StatCard.svelte';
+  import MiniChart from '#lib/components/MiniChart.svelte';
+  import DataTable from '#lib/components/DataTable.svelte';
+  import { compact, firstList, money, number, object, percent, text } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
   export let data: JsonObject;
   export let navigateQuery: (params: Record<string, string>) => void;
   $: summary = object(data.summary);

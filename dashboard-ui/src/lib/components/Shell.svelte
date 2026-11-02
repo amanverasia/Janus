@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { hubFor, navHubs, pageTitle, type NavItem } from '$lib/nav';
-  import type { HealthState } from '$lib/types';
+  import { hubFor, navHubs, pageTitle, type NavItem } from '#lib/nav.ts';
+  import type { HealthState } from '#lib/types.ts';
   import Icon from './Icon.svelte';
   import CommandPalette from './CommandPalette.svelte';
 

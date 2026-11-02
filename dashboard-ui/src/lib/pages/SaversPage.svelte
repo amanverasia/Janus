@@ -1,8 +1,8 @@
 <script lang="ts">
-  import Icon from '$lib/components/Icon.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import { bool, number, object, text } from '$lib/data';
-  import type { JsonObject, MutationOptions } from '$lib/types';
+  import Icon from '#lib/components/Icon.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import { bool, number, object, text } from '#lib/data.ts';
+  import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;

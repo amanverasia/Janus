@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import EmptyState from '$lib/components/EmptyState.svelte';
-  import { copyText } from '$lib/clipboard';
-  import Icon from '$lib/components/Icon.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import StatCard from '$lib/components/StatCard.svelte';
-  import { dashboardFetch } from '$lib/api';
-  import { compact, dateTime, firstList, idOf, money, number, object, text } from '$lib/data';
-  import type { JsonObject, MutationOptions } from '$lib/types';
+  import EmptyState from '#lib/components/EmptyState.svelte';
+  import { copyText } from '#lib/clipboard.ts';
+  import Icon from '#lib/components/Icon.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import StatCard from '#lib/components/StatCard.svelte';
+  import { dashboardFetch } from '#lib/api.ts';
+  import { compact, dateTime, firstList, idOf, money, number, object, text } from '#lib/data.ts';
+  import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let action: (url: string, options?: MutationOptions) => Promise<unknown>;

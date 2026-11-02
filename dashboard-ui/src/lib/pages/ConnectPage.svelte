@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { dashboardFetch, getState, mutate, responseError } from '$lib/api';
-  import type { ValidatedMutationOptions } from '$lib/api';
-  import Icon from '$lib/components/Icon.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import { firstList, list, number, object, text } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import { dashboardFetch, getState, mutate, responseError } from '#lib/api.ts';
+  import type { ValidatedMutationOptions } from '#lib/api.ts';
+  import Icon from '#lib/components/Icon.svelte';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import { firstList, list, number, object, text } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
 
   export let data: JsonObject;
   export let action: (url: string, options?: ValidatedMutationOptions) => Promise<unknown>;

@@ -1,0 +1,7 @@
+{
+  "name": "@janus/deepmerge",
+  "version": "4.3.1-janus.1",
+  "private": true,
+  "license": "MIT",
+  "main": "index.cjs"
+}

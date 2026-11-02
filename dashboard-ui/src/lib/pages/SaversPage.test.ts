@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import SaversPage from './SaversPage.svelte';
-import type { JsonObject, MutationOptions } from '$lib/types';
+import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;

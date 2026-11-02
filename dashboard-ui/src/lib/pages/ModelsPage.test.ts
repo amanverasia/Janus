@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import ModelsPage from './ModelsPage.svelte';
-import type { JsonObject, MutationOptions } from '$lib/types';
+import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
 const provider = (prefix: string, name: string, counts: Partial<Record<string, number>> = {}) => ({
   id: `prov-${prefix}`,

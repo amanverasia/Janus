@@ -1,5 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
+import { dashboardConfig } from './dashboard.config.ts';
 
 // Separate from vite.config.ts so the `resolve.conditions` + `test` block do
 // not leak into the production build (which would change the committed
@@ -7,7 +8,7 @@ import { defineConfig } from 'vitest/config';
 // vitest's node resolution the server build is selected (where `mount` is
 // unavailable), so component tests force the browser condition.
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [sveltekit(dashboardConfig)],
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],

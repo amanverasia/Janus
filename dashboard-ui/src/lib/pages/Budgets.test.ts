@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import BudgetsPage from './BudgetsPage.svelte';
 import KeysPage from './KeysPage.svelte';
-import type { JsonObject, MutationOptions } from '$lib/types';
+import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () {

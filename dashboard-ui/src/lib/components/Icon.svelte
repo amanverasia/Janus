@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { IconName } from '$lib/nav';
+  import type { IconName } from '#lib/nav.ts';
   export let name:
     | IconName
     | 'menu'

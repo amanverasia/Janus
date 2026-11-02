@@ -37,6 +37,7 @@ def _same_tree(left: Path, right: Path) -> bool:
 
 def _build() -> None:
     _run(["npm", "ci"])
+    _run(["npm", "audit", "--audit-level=low"])
     _run(["npm", "run", "format:check"])
     _run(["npm", "run", "check"])
     _run(["npm", "run", "test"])

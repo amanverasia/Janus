@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { ToastItem } from '$lib/types';
+  import type { ToastItem } from '#lib/types.ts';
   import Icon from './Icon.svelte';
   export let toasts: ToastItem[] = [];
   const dispatch = createEventDispatcher<{ dismiss: number }>();

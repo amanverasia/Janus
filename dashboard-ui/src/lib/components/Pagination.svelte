@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { compact, number } from '$lib/data';
-  import type { JsonObject } from '$lib/types';
+  import { compact, number } from '#lib/data.ts';
+  import type { JsonObject } from '#lib/types.ts';
 
   // Server-side pagination controls. The state route merges `meta.pagination`
   // ({ total, limit, offset, ... }) onto `data`, so a page passes its `data`

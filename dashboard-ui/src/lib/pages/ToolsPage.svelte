@@ -1,10 +1,10 @@
 <script lang="ts">
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import Icon from '$lib/components/Icon.svelte';
-  import { copyText } from '$lib/clipboard';
-  import { bool, text } from '$lib/data';
-  import { curlSnippet } from '$lib/snippets';
-  import type { JsonObject } from '$lib/types';
+  import PageHeader from '#lib/components/PageHeader.svelte';
+  import Icon from '#lib/components/Icon.svelte';
+  import { copyText } from '#lib/clipboard.ts';
+  import { bool, text } from '#lib/data.ts';
+  import { curlSnippet } from '#lib/snippets.ts';
+  import type { JsonObject } from '#lib/types.ts';
   export let data: JsonObject;
   let copied = '';
   $: base = text(data.base_url, `${location.origin}/v1`);

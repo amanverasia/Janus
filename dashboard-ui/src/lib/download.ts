@@ -1,4 +1,4 @@
-import { dashboardFetch } from '$lib/api';
+import { dashboardFetch } from '#lib/api.ts';
 
 export async function downloadAttachment(url: string, init: RequestInit, fallbackName: string) {
   const response = await dashboardFetch(url, {

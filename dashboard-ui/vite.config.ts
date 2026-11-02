@@ -1,8 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { dashboardConfig } from './dashboard.config.ts';
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [sveltekit(dashboardConfig)],
   server: {
     proxy: {
       '/dashboard/api': 'http://127.0.0.1:20128',

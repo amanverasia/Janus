@@ -129,16 +129,15 @@
         }
       }
     </style>
-    <link href="/dashboard/static/app/_app/immutable/entry/start.CqvrdWZw.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/Bc2rjM6g.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/C1_4ehl8.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/Btj7kkIW.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/entry/app.DRRsNs4m.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/RyD6gyQz.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/DUziKErp.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/aWcOS50a.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/chunks/BmHjsJ7Z.js" rel="modulepreload">
-		<link href="/dashboard/static/app/_app/immutable/nodes/0.DiEQEtkz.js" rel="modulepreload">
+    <link href="/dashboard/static/app/_app/immutable/entry/start.BsPqJovM.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/entry/payload.DSmR2FwN.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/chunks/CRzLMJPS.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/chunks/xW_cwaMM.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/chunks/CSzQ1wh6.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/chunks/DxV2UXIN.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/entry/app.hA1d5y2n.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/nodes/0.ix5Sz0Fz.js" rel="modulepreload">
+		<link href="/dashboard/static/app/_app/immutable/chunks/DK3Fl9T5.js" rel="modulepreload">
 		
   </head>
   <body data-sveltekit-preload-data="hover">
@@ -196,15 +195,15 @@
 				{
 					__sveltekit_1vzh8w = {
 						base: "/dashboard/ui",
+						version: "5.0.0",
 						assets: "/dashboard/static/app"
 					};
 
 					const element = document.currentScript.parentElement;
 
-					Promise.all([
-						import("/dashboard/static/app/_app/immutable/entry/start.CqvrdWZw.js"),
-						import("/dashboard/static/app/_app/immutable/entry/app.DRRsNs4m.js")
-					]).then(([kit, app]) => {
+					import("/dashboard/static/app/_app/immutable/entry/start.BsPqJovM.js").then(async (kit) => {
+						kit.init(__sveltekit_1vzh8w);
+						const app = await import("/dashboard/static/app/_app/immutable/entry/app.hA1d5y2n.js");
 						kit.start(app, element);
 					});
 				}
