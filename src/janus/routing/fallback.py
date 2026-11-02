@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from collections import deque
 from collections.abc import Callable
@@ -645,15 +646,14 @@ class FallbackHandler:
             return
         model_key = model or "__all__"
         key = (account_id, model_key)
-        if duration is not None:
-            # Explicit override: use the given duration and freeze the backoff level.
+        if duration is not None and math.isfinite(duration) and duration >= 0:
             cooldown, level = duration, self._backoff.get(key, 0)
-        elif retry_after is not None:
+        elif retry_after is not None and math.isfinite(retry_after) and retry_after >= 0:
             cooldown, level = min(retry_after, RETRY_AFTER_CAP_S), 0
         else:
             cooldown, level = get_cooldown(error_type, self._backoff.get(key, 0))
         self._backoff[key] = level
-        expires_at = time.time() + cooldown
+        expires_at = max(time.time() + cooldown, self._cooldowns.get(key, 0.0))
         self._cooldowns[key] = expires_at
         if self.db_path is not None:
             self._persist_cooldown(account_id, model_key, expires_at, error_type, level)
@@ -736,28 +736,35 @@ class FallbackHandler:
         active = await get_active_cooldowns(self.db_path)
         for combined, (expires_at, level) in active.items():
             account_id, _, model = combined.partition("::")
-            self._cooldowns[(account_id, model)] = expires_at
-            if level:
-                self._backoff[(account_id, model)] = level
+            key = (account_id, model)
+            if expires_at > self._cooldowns.get(key, 0.0):
+                self._cooldowns[key] = expires_at
+                self._backoff[key] = level
 
     def earliest_cooldown_expiry(
         self, account_ids: list[str], model: str | None = None
     ) -> float | None:
-        """Earliest cooldown expiry (unix epoch seconds) across the given accounts.
+        """Earliest usable account deadline (unix epoch seconds).
 
-        Considers both the account-wide `__all__` lock and a model-specific
-        lock (when `model` is given) for each account.
+        Each account must wait for both its account-wide and model locks.
         """
+        if not self.cooldowns_enabled:
+            return None
         now = time.time()
         expiries: list[float] = []
         for account_id in account_ids:
+            account_expiries: list[float] = []
             all_exp = self._cooldowns.get((account_id, "__all__"))
             if all_exp is not None and all_exp > now:
-                expiries.append(all_exp)
+                account_expiries.append(all_exp)
             if model is not None:
                 model_exp = self._cooldowns.get((account_id, model))
                 if model_exp is not None and model_exp > now:
-                    expiries.append(model_exp)
+                    account_expiries.append(model_exp)
+            if account_expiries:
+                expiries.append(max(account_expiries))
+            else:
+                return None
         if not expiries:
             return None
         return min(expiries)

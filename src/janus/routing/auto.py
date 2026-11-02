@@ -235,15 +235,19 @@ async def plan_auto(
     )
 
     deduped: list[ScoredCandidate] = []
-    seen_bases: set[str] = set()
+    seen_provider_bases: set[tuple[str, str]] = set()
     for candidate in scored:
-        if candidate.base in seen_bases:
+        provider_base = (candidate.model_str.split("/", 1)[0], candidate.base)
+        if provider_base in seen_provider_bases:
             excluded.append((candidate.model_str, "version sibling"))
             continue
-        seen_bases.add(candidate.base)
+        seen_provider_bases.add(provider_base)
         deduped.append(candidate)
 
-    chain = [candidate.model_str for candidate in deduped[: max(1, top_n)]]
+    selected_bases = set(
+        list(dict.fromkeys(candidate.base for candidate in deduped))[: max(1, top_n)]
+    )
+    chain = [candidate.model_str for candidate in deduped if candidate.base in selected_bases]
     return AutoPlan(
         strategy=strategy.value,
         requested=AUTO_MODEL,

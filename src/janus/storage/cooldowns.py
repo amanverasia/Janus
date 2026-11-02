@@ -46,7 +46,9 @@ async def save_cooldown(
             "INSERT INTO cooldowns (account_id, model, expires_at, error_type, backoff_level) "
             "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(account_id, model) DO UPDATE SET "
-            "expires_at = excluded.expires_at, error_type = excluded.error_type, "
+            "expires_at = MAX(cooldowns.expires_at, excluded.expires_at), "
+            "error_type = CASE WHEN excluded.expires_at >= cooldowns.expires_at "
+            "THEN excluded.error_type ELSE cooldowns.error_type END, "
             "backoff_level = excluded.backoff_level",
             (account_id, model, expires_at, error_type, backoff_level),
         )
