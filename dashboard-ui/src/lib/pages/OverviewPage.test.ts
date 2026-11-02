@@ -59,3 +59,24 @@ describe('OverviewPage savings tile', () => {
     expect(view.container.querySelector('img')).toBeNull();
   });
 });
+
+describe('OverviewPage stat grid', () => {
+  it('states the actual window behind Total requests', () => {
+    const view = setup({ ...baseData, stats: { ...baseData.stats, period_days: 30 } });
+    expect(view.getByText('Last 30 days')).toBeTruthy();
+    expect(view.container.textContent).not.toContain('selected period');
+  });
+
+  it('defaults the window to 30 days and names a 24-hour window', () => {
+    expect(setup().getByText('Last 30 days')).toBeTruthy();
+    const day = setup({ ...baseData, stats: { ...baseData.stats, period_days: 1 } });
+    expect(day.getByText('Last 24 hours')).toBeTruthy();
+  });
+
+  it('marks the five-card layout only when the savings tile is present', () => {
+    const five = setup();
+    expect(five.container.querySelector('.stats-grid.five')).not.toBeNull();
+    const four = setup({ ...baseData, savings_today: null });
+    expect(four.container.querySelector('.stats-grid.five')).toBeNull();
+  });
+});

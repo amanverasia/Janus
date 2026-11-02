@@ -17,6 +17,8 @@
       ? object(data.savings_today)
       : null;
   $: stats = object(data.stats ?? data.summary);
+  $: periodDays = number(stats.period_days ?? data.days, 30);
+  $: periodLabel = periodDays === 1 ? 'Last 24 hours' : `Last ${compact(periodDays)} days`;
   $: daily = firstList(stats, 'daily', 'series').length
     ? firstList(stats, 'daily', 'series')
     : firstList(data, 'daily', 'series');
@@ -129,11 +131,11 @@
     </ol>
   {/if}
 </section>
-<div class="stats-grid">
+<div class="stats-grid" class:five={savingsToday !== null}>
   <StatCard
     label="Total requests"
     value={compact(stats.total_requests ?? data.total_requests)}
-    detail="Across the selected period"
+    detail={periodLabel}
   />
   <StatCard
     label="Tokens routed"

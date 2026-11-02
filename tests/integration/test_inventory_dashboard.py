@@ -104,6 +104,29 @@ async def test_inventory_overview_counts_unhealthy_keys_as_needing_attention(cli
     assert archived.json()["data"]["summary"]["needs_attention"] == 0
 
 
+async def test_inventory_summary_labels_its_population(client, app):
+    from janus.storage.upstream_keys import archive_upstream_keys, create_upstream_key
+
+    await client.get("/dashboard/api/v2/state/inventory")
+    await create_upstream_key(
+        app.state.db_path, provider_id="openrouter", key_value="sk-or-v1-population-live"
+    )
+    stale = await create_upstream_key(
+        app.state.db_path, provider_id="openai", key_value="sk-population-archived"
+    )
+    await archive_upstream_keys(app.state.db_path, [str(stale["id"])])
+
+    data = (await client.get("/dashboard/api/v2/state/inventory")).json()["data"]
+
+    assert data["summary"]["total"] == 1
+    assert data["summary"]["archived"] == 1
+    assert data["summary"]["providers_with_keys"] == 1
+    assert data["summary"]["providers"] >= data["summary"]["providers_with_keys"]
+    assert [card["id"] for card in data["provider_cards"]] == ["openrouter"]
+    assert data["encryption"]["total"] == 2
+    assert data["encryption"]["archived_plaintext"] == 1
+
+
 async def test_inventory_keys_page(client):
     r = await client.get("/dashboard/api/v2/state/inventory-keys")
     assert r.status_code == 200

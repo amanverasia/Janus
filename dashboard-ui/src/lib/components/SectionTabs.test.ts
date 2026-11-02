@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import SectionTabs from './SectionTabs.svelte';
 import { hubFor, routeFor } from '#lib/nav.ts';
 
@@ -52,5 +52,29 @@ describe('SectionTabs', () => {
     expect(getByRole('link', { name: 'Keys and logins' }).getAttribute('aria-current')).toBe(
       'page'
     );
+  });
+
+  it('shows a fade only on the side with hidden tabs', async () => {
+    const view = renderFor('/dashboard/ui/routing');
+    const strip = view.getByRole('navigation', { name: 'Routing sections' });
+    const wrap = strip.parentElement as HTMLElement;
+    expect(wrap.classList.contains('section-tabs-wrap')).toBe(true);
+    Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 });
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 300 });
+    let offset = 0;
+    Object.defineProperty(strip, 'scrollLeft', {
+      configurable: true,
+      get: () => offset,
+      set: (value: number) => {
+        offset = value;
+      }
+    });
+    await fireEvent.scroll(strip);
+    expect(wrap.classList.contains('fade-end')).toBe(true);
+    expect(wrap.classList.contains('fade-start')).toBe(false);
+    offset = 300;
+    await fireEvent.scroll(strip);
+    await waitFor(() => expect(wrap.classList.contains('fade-start')).toBe(true));
+    expect(wrap.classList.contains('fade-end')).toBe(false);
   });
 });

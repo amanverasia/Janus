@@ -49,8 +49,22 @@ def test_login_is_the_only_server_rendered_dashboard_template() -> None:
 
     source = (TEMPLATES / "login.html").read_text()
     assert "/dashboard/static/css/login.css" in source
-    assert "<script" not in source
+    assert "<script>" not in source
+    assert source.count("<script") == 1
+    assert 'src="/dashboard/static/js/login-theme.js"' in source
     assert "cdn." not in source
+
+
+def test_login_follows_the_app_theme_preference() -> None:
+    script = (STATIC / "js" / "login-theme.js").read_text()
+    assert "janus-theme" in script
+    assert "data-theme" in script
+    assert "http" not in script
+    stylesheet = (STATIC / "css" / "login.css").read_text()
+    assert "prefers-color-scheme: dark" in stylesheet
+    assert ":root[data-theme='dark']" in stylesheet
+    package_root = files("janus.dashboard").joinpath("static")
+    assert package_root.joinpath("js", "login-theme.js").is_file()
 
 
 def test_login_stylesheet_is_a_package_resource() -> None:

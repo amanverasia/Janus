@@ -946,14 +946,21 @@ async def count_storage_encryption_state(db_path: str | Path) -> dict[str, int]:
     async with get_connection(db_path) as db:
         async with db.execute(
             "SELECT COUNT(*) AS total, "
-            "COALESCE(SUM(substr(key_value, 1, 7) = 'enc:v1:'), 0) AS encrypted "
+            "COALESCE(SUM(substr(key_value, 1, 7) = 'enc:v1:'), 0) AS encrypted, "
+            "COALESCE(SUM(is_archived = 1 AND substr(key_value, 1, 7) != 'enc:v1:'), 0) "
+            "AS archived_plaintext "
             "FROM upstream_keys WHERE status != 'revoked'"
         ) as cur:
             row = await cur.fetchone()
     assert row is not None
     total = int(row["total"])
     encrypted = int(row["encrypted"])
-    return {"encrypted": encrypted, "plaintext": total - encrypted, "total": total}
+    return {
+        "encrypted": encrypted,
+        "plaintext": total - encrypted,
+        "total": total,
+        "archived_plaintext": int(row["archived_plaintext"]),
+    }
 
 
 def _same_credential(a: str, b: str) -> bool:
