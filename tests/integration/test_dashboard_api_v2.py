@@ -177,6 +177,9 @@ async def test_lifespan_marks_dashboard_ready_before_first_request(
 
     monkeypatch.setattr(reload_module, "reload_providers", tracked_reload)
     monkeypatch.setattr("janus.app._pricing_catalog_needs_sync", no_pricing_sync)
+    monkeypatch.setattr(
+        "janus.inventory.provider_key_sync.schedule_upstream_recheck", lambda *_args: None
+    )
     monkeypatch.setattr("janus.inventory.scheduler.scheduler_enabled", lambda: False)
     monkeypatch.setattr("janus.pricing.scheduler.pricing_scheduler_enabled", lambda: False)
     monkeypatch.setenv("JANUS_ALLOW_INSECURE_DEV_KEY", "1")
