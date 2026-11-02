@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Document trusted HTTPS proxy metadata, Docker peer trust, authenticated rollout
-  checks, and rollback; reject malformed dashboard origins and label image revisions. (#272)
+  checks, and rollback; reject malformed dashboard origins, label image revisions,
+  and exclude the workspace coordination log from source archives. (#272)
 - Update dashboard dependencies within their existing major versions to clear high
   and moderate audit findings; document the remaining low-severity exposure. (#277)
 - Auto routing retains provider alternatives for each selected model family, while

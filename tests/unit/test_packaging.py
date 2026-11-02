@@ -9,6 +9,8 @@ PROJECT_ROOT = Path(__file__).parents[2]
 
 INTERNAL_ARTIFACTS = [
     "AGENTS.md",
+    "CLAUDE.md",
+    "MESSAGES.md",
     "ISSUES.md",
     "STRIX-AUDIT.md",
     "todo.md",
