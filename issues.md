@@ -8,6 +8,21 @@ here. Earlier audits follow below this section.
 **Verdict:** requests are answered and every page renders without errors, but most upstream
 attempts fail and the dashboard reports the system as healthy. Fix truthfulness first.
 
+## Fix status
+
+QA-1..13 have implementations on `fix/prod-qa-2026-11-02`, including the rebuilt runtime
+bundle. Local validation: 2,470 Python tests pass (86.38% coverage), 159 dashboard component
+tests pass, Svelte reports zero errors/warnings, and lint, formatting, strict types, docs,
+SQLite migration, distribution builds, and bundle parity pass. A fresh CI-equivalent synthetic
+browser run passes all routes, navigation, filters, masking and reversible pricing CRUD;
+pricing pagination was skipped because the fixture has fewer rows than one page.
+
+These results use local Python 3.14.6; supported Python 3.11/3.12 CI and production
+verification remain outstanding. Production has not been updated. Routing demotion improves
+try-order after repeated failures; it does not repair upstream credentials or guarantee that
+an exhausted pool can answer requests. Headroom diagnostics expose the unreachable service;
+the deployment still needs an available Headroom endpoint or an operator decision to disable it.
+
 ## P1 — routing and health truthfulness
 
 - **QA-1 Routing failures never reach credential health.** Over seven days roughly 90% of upstream
