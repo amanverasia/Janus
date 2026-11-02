@@ -56,7 +56,7 @@ async def record_request_outcome(
                     status,
                     duration_ms,
                     1 if streamed else 0,
-                    max(attempts, 1),
+                    max(attempts, 0),
                     client_key_id,
                     client_key_label,
                 ),

@@ -63,6 +63,8 @@
     server_account_strategy: 'round_robin',
     server_sticky_limit: '3',
     server_gateway_rate_limit_rpm: '0',
+    server_dispatch_timeout_s: '60',
+    server_dispatch_max_attempts: '20',
     server_prompt_cache_ttl_s: '3600',
     server_prompt_cache_max_entries: '128',
     combo_strategy: 'fallback',
@@ -287,6 +289,66 @@
           />
         </label>
       </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Dispatch limits</h2>
+        <p>Bound request duration and upstream attempts, even when cooldowns are disabled</p>
+      </div>
+    </div>
+    <div class="panel-body metric-list">
+      <label class="field">
+        <span>Dispatch timeout (seconds)</span>
+        <input
+          type="number"
+          min="1"
+          max="600"
+          step="1"
+          required
+          aria-describedby="dispatch-timeout-help"
+          value={text(values.server_dispatch_timeout_s ?? status.dispatch_timeout_s, '60')}
+          on:change={(event) => saveField(event, 'server_dispatch_timeout_s')}
+        />
+      </label>
+      <p id="dispatch-timeout-help" class="muted reset-copy">
+        From 1 to 600 seconds; default 60. Includes preprocessing, credential refresh, image
+        prefetch, and panel/judge dispatch until the first nonempty client-visible stream output.
+        The stream continues afterwards under the existing upstream transport timeouts.
+      </p>
+      <label class="field">
+        <span>Maximum dispatch attempts</span>
+        <input
+          type="number"
+          min="1"
+          max="100"
+          step="1"
+          required
+          aria-describedby="dispatch-attempts-help"
+          value={text(values.server_dispatch_max_attempts ?? status.dispatch_max_attempts, '20')}
+          on:change={(event) => saveField(event, 'server_dispatch_max_attempts')}
+        />
+      </label>
+      <p id="dispatch-attempts-help" class="muted reset-copy">
+        From 1 to 100 attempts per request; default 20. Includes panel and judge dispatch attempts.
+        Both limits apply even when account cooldowns are disabled.
+      </p>
+      <p class="muted reset-copy">
+        After a failure, inspect Request Logs for the stopping reason and attempt counts. Fix
+        credentials and cooldowns before increasing these limits.
+      </p>
+      <a
+        class="button"
+        href="/dashboard/ui/request-logs"
+        on:click={(event) => {
+          event.preventDefault();
+          navigate('/dashboard/ui/request-logs');
+        }}
+      >
+        <Icon name="logs" size={15} />Inspect Request Logs
+      </a>
     </div>
   </section>
 

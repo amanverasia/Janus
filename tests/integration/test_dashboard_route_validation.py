@@ -78,6 +78,68 @@ async def test_usage_retention_setting_is_validated(client, app):
         assert await get_setting(app.state.db_path, "server_usage_retention_days") == value
 
 
+@pytest.mark.parametrize(
+    ("key", "status_key", "default", "maximum"),
+    [
+        ("server_dispatch_timeout_s", "dispatch_timeout_s", 60, 600),
+        ("server_dispatch_max_attempts", "dispatch_max_attempts", 20, 100),
+    ],
+)
+async def test_dispatch_settings_validate_bounds_and_update_state(
+    client, app, key, status_key, default, maximum
+):
+    initial = (await client.get("/dashboard/api/v2/state/settings")).json()["data"]
+    assert initial["values"][key] == str(default)
+    assert initial["status"][status_key] == default
+
+    for invalid in ("", "invalid-secret", "NaN", "inf", "1.5", "-1", "0", str(maximum + 1)):
+        response = await client.post("/dashboard/api/settings", data={"key": key, "value": invalid})
+        assert response.status_code == 400
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json()["detail"].startswith(f"Invalid value for {key}:")
+        assert "invalid-secret" not in response.text
+        assert await get_setting(app.state.db_path, key) == str(default)
+
+    await client.post(
+        "/dashboard/api/settings", data={"key": "server_cooldowns_enabled", "value": "false"}
+    )
+    for valid in ("1", str(maximum)):
+        response = await client.post("/dashboard/api/settings", data={"key": key, "value": valid})
+        assert response.status_code == 200
+        assert response.json() == {"ok": True, "key": key}
+        assert await get_setting(app.state.db_path, key) == valid
+        state = (await client.get("/dashboard/api/v2/state/settings")).json()["data"]
+        assert state["values"][key] == valid
+        assert state["status"][status_key] == int(valid)
+        assert type(state["status"][status_key]) is int
+        assert state["status"]["cooldowns_enabled"] is False
+
+
+@pytest.mark.parametrize(
+    ("stored_timeout", "stored_attempts", "timeout", "attempts"),
+    [("invalid", "NaN", 60, 20), ("0", "-1", 1, 1), ("601", "101", 600, 100)],
+)
+async def test_dispatch_settings_state_exposes_effective_safe_limits(
+    client, app, stored_timeout, stored_attempts, timeout, attempts
+):
+    from janus.storage.settings import set_setting
+
+    await client.get("/dashboard/api/v2/state/settings")
+    await set_setting(app.state.db_path, "server_dispatch_timeout_s", stored_timeout)
+    await set_setting(app.state.db_path, "server_dispatch_max_attempts", stored_attempts)
+
+    response = await client.get("/dashboard/api/v2/state/settings")
+
+    assert response.status_code == 200
+    state = response.json()["data"]
+    assert state["values"]["server_dispatch_timeout_s"] == str(timeout)
+    assert state["values"]["server_dispatch_max_attempts"] == str(attempts)
+    assert state["status"]["dispatch_timeout_s"] == timeout
+    assert state["status"]["dispatch_max_attempts"] == attempts
+    assert await get_setting(app.state.db_path, "server_dispatch_timeout_s") == stored_timeout
+    assert await get_setting(app.state.db_path, "server_dispatch_max_attempts") == stored_attempts
+
+
 async def test_missing_dashboard_mutation_ids_return_404(client):
     responses = [
         await client.delete("/dashboard/api/keys/999"),

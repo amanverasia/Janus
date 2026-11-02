@@ -50,6 +50,8 @@ from janus.storage.settings import (
     SERVER_SETTING_DEFAULTS,
     VALID_COMBO_STRATEGIES,
     get_setting,
+    validate_dispatch_max_attempts,
+    validate_dispatch_timeout_s,
     validate_reporting_timezone,
 )
 from janus.storage.usage import get_unpriced_models, get_usage_stats
@@ -1563,6 +1565,8 @@ _SETTINGS_VALIDATORS: dict[str, Callable[[str], None]] = {
     "server_account_strategy": lambda v: _require_choice(v, VALID_ACCOUNT_STRATEGIES),
     "server_sticky_limit": lambda v: _require_int(v, min_value=1),
     "server_gateway_rate_limit_rpm": lambda v: _require_int(v, min_value=0, max_value=100_000),
+    "server_dispatch_timeout_s": validate_dispatch_timeout_s,
+    "server_dispatch_max_attempts": validate_dispatch_max_attempts,
     "server_request_log_retention": lambda v: _require_int(v, min_value=50, max_value=5000),
     "server_prompt_cache_ttl_s": lambda v: _require_int(v, min_value=1, max_value=604_800),
     "server_prompt_cache_max_entries": lambda v: _require_int(v, min_value=1, max_value=10_000),

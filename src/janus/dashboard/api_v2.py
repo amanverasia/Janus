@@ -84,6 +84,8 @@ from janus.storage.settings import (
     resolve_combo_fusion_straggler_grace_s,
     resolve_combo_sticky_limit,
     resolve_combo_strategy,
+    resolve_dispatch_max_attempts,
+    resolve_dispatch_timeout_s,
     resolve_gateway_rate_limit_rpm,
     resolve_prompt_cache_max_entries,
     resolve_prompt_cache_ttl_s,
@@ -904,6 +906,10 @@ async def _settings_data(db_path: Path) -> dict[str, Any]:
         await ensure_server_defaults(db_path)
         settings = await get_all_settings(db_path)
     safe_values = {key: settings[key] for key in _SAFE_SETTING_KEYS if key in settings}
+    dispatch_timeout_s = resolve_dispatch_timeout_s(settings)
+    dispatch_max_attempts = resolve_dispatch_max_attempts(settings)
+    safe_values["server_dispatch_timeout_s"] = str(dispatch_timeout_s)
+    safe_values["server_dispatch_max_attempts"] = str(dispatch_max_attempts)
     return {
         "values": safe_values,
         "dashboard_access": {
@@ -916,6 +922,8 @@ async def _settings_data(db_path: Path) -> dict[str, Any]:
             "cooldowns_enabled": cooldowns_enabled(settings),
             "sticky_client_key_routing_enabled": sticky_client_key_routing_enabled(settings),
             "request_logging_enabled": request_logging_enabled(settings),
+            "dispatch_timeout_s": dispatch_timeout_s,
+            "dispatch_max_attempts": dispatch_max_attempts,
             "request_log_retention": resolve_request_log_retention(settings),
             "account_strategy": resolve_account_strategy(settings),
             "sticky_limit": resolve_sticky_limit(settings),

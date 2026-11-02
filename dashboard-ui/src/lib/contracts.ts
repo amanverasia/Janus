@@ -234,8 +234,14 @@ export interface ToolsState extends JsonObject {
 }
 
 export interface SettingsState extends JsonObject {
-  values: Record<string, string>;
+  values: Record<string, string> & {
+    server_dispatch_timeout_s: string;
+    server_dispatch_max_attempts: string;
+  };
   dashboard_access: { mode: string; keys_url: string; localhost_requires_auth: boolean };
-  status: Record<string, string | number | boolean>;
+  status: Record<string, string | number | boolean> & {
+    dispatch_timeout_s: number;
+    dispatch_max_attempts: number;
+  };
   export: JsonObject;
 }

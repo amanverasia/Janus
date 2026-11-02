@@ -491,6 +491,31 @@ accounts. Each account must wait for the later of its account-wide and
 model-specific cooldowns, so an overlapping shorter lock cannot understate the
 delay.
 
+### Dispatch limits
+
+Runtime limits default to 60 seconds and 20 upstream sends per request. Operators
+can change them in dashboard **Settings → Dispatch limits**, with bounds of
+1–600 seconds and 1–100 attempts. Preprocessing, image prefetch, credential refresh,
+and fusion panels/judge calls share the budget. For a streamed response, the
+deadline covers startup until its first nonempty client-visible output; established
+streams continue under existing transport timeouts without fallback replay. Final
+accounting is outside the dispatch deadline.
+
+An attempt limit returns HTTP 503 with `error.type: dispatch_attempt_limit`; expiry
+returns HTTP 504 with `error.type: dispatch_deadline_exceeded`. The error includes
+`attempted` and `skipped`, also exposed through `x-janus-attempts` and
+`x-janus-skipped-attempts`. Skipped counts eligible resolved targets that were not
+sent; preprocessing expiry can have zero resolved targets and zero attempts.
+`x-janus-error-type` identifies the stopping reason. Request Logs retain these
+details when metadata logging is enabled, and terminal outcomes record the actual
+attempt count even when body logging is disabled. Client cancellation stops work
+and is recorded separately as 499.
+
+Limit errors do not advertise a guessed `Retry-After`. When resolution instead
+finds every account already cooling down, the usual 503 cooldown response retains
+its known `Retry-After`. Inspect account health and repair credentials or enable
+cooldowns before increasing limits.
+
 ### Body-text rate-limit detection
 
 Some upstream providers disguise a rate limit as a non-429 status — e.g. an

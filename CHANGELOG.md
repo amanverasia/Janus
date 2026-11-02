@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Request-wide dispatch limits, configured in dashboard Settings: default 60 seconds
+  and 20 upstream attempts. Includes preprocessing, credential refresh, fusion panels,
+  and streaming startup; stops pending work on expiry or client disconnect and logs
+  the stopping reason plus attempted/skipped counts. (#267)
+
 ### Fixed
 - Auto routing retains provider alternatives for each selected model family, while
   deduplicating version siblings within each provider. The top-five limit applies to
