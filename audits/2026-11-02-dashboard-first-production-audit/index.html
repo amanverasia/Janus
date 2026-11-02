@@ -1,0 +1,1387 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The two-faced AI routing gateway">
+      
+      
+      
+        <link rel="canonical" href="https://amanverasia.github.io/Janus/audits/2026-11-02-dashboard-first-production-audit/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>Dashboard-first reliability audit - Janus</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#dashboard-first-reliability-audit" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Janus" class="md-header__button md-logo" aria-label="Janus" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Janus
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Dashboard-first reliability audit
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/amanverasia/Janus" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    amanverasia/Janus
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../providers/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../configuration/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Janus" class="md-nav__button md-logo" aria-label="Janus" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Janus
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/amanverasia/Janus" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    amanverasia/Janus
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Client Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../combos/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Combos & Fallback
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../token-savers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Token Savers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Key Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../budgets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Budgets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#product-direction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Product direction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#evidence-and-priorities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Evidence and priorities
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Evidence and priorities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#routing-reliability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routing reliability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-reproduced-defects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional reproduced defects
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operator-and-deployment-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator and deployment gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opencodex-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenCodex references
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#issue-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Issue index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#initial-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Initial implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="dashboard-first-reliability-audit">Dashboard-first reliability audit<a class="headerlink" href="#dashboard-first-reliability-audit" title="Permanent link">&para;</a></h1>
+<p>Date: 2026-11-02. Baseline: <code>098523d</code> (Janus v5.0.0).</p>
+<p>This public report contains code findings, synthetic reproductions, and anonymized
+operational observations. Deployment addresses, machine identities, private patches,
+credentials, account identifiers, and raw request data are intentionally absent.
+The investigation did not modify any deployed service or run billable probes.</p>
+<h2 id="product-direction">Product direction<a class="headerlink" href="#product-direction" title="Permanent link">&para;</a></h2>
+<p>Cloudline is the primary operator interface. A new operator should be able to
+connect credentials, create client keys, test a model, inspect a failure, and find
+the right recovery action in the dashboard. The CLI remains useful for deployment
+bootstrap, headless servers, and automation.</p>
+<p>The current README already says dashboard-first, and much of the implementation
+supports it: six navigation hubs, shared section state, DB-backed mutations,
+provider hot reload, inventory, budgets, and auto-routing preview. Remaining gaps
+include terminal-based first-key creation, curl-only first-request guidance,
+CLI-only benchmarks, and missing request-to-attempt diagnostics.</p>
+<h2 id="evidence-and-priorities">Evidence and priorities<a class="headerlink" href="#evidence-and-priorities" title="Permanent link">&para;</a></h2>
+<h3 id="routing-reliability">Routing reliability<a class="headerlink" href="#routing-reliability" title="Permanent link">&para;</a></h3>
+<p>A large multi-account deployment can produce hundreds of attempts for one request
+and take minutes to exhaust a route. An anonymized audit observed a maximum above
+300 attempts and exhausted requests averaging about two minutes. Authentication,
+payment, and permission failures dominated the upstream failure sample. These are
+attempts, not distinct requests; cancellations must be counted separately.</p>
+<p>Janus allows cooldown protection to be disabled. In that mode,
+<code>FallbackHandler.mark_cooldown()</code> records nothing and <code>is_available()</code> bypasses
+cooldown filtering. The dashboard previously showed zero cooling accounts without
+explaining that protection was off. A healthy process and an empty cooldown list
+therefore do not prove successful upstream routing.</p>
+<p>Restore truthful diagnostics first; evaluate the cooldown setting through the
+existing dashboard control before changing routing strategy. Turning cooldowns on
+helps later requests, but a total dispatch deadline and attempt limit are still
+needed to bound the first pass through a large failing pool. Distinguish transient
+failures from credential recovery and confirmed quota/entitlement problems.</p>
+<h3 id="additional-reproduced-defects">Additional reproduced defects<a class="headerlink" href="#additional-reproduced-defects" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Auto preview loses model IDs.</strong> <code>RoutingPage.svelte</code> sends <code>auto.models</code>, a
+  string array, through the object-only <code>firstList()</code> helper. A non-empty backend
+  plan becomes the no-models empty state. A component test failed against the old
+  implementation and passes with the corrected mapping.</li>
+<li><strong>Auto drops a healthy alternate.</strong> Two providers serving <code>gpt-4o</code> are deduplicated
+  by bare model base. With alpha cooled and beta available, a cheapest auto plan
+  selects only alpha and fails with <code>AllAccountsCooledDown</code>; explicitly selecting
+  beta works. Reproduced against an empty synthetic DB without upstream calls.</li>
+<li><strong>Malformed Retry-After bypasses cooldown.</strong> <code>NaN</code> and negative numeric strings
+  are accepted by <code>parse_retry_after</code>; the resulting state is immediately available.
+  Ordinary invalid-string tests do not cover these float edge cases.</li>
+<li><strong>Cooldown deadlines are not monotonic.</strong> A short late failure overwrites an
+  existing longer delay. Overlapping account-wide and model locks also return the
+  minimum lock expiry, even though both must expire before that account is ready.
+  Both cases were reproduced with a frozen clock.</li>
+<li><strong>Dependency maintenance is due.</strong> <code>npm audit</code> reports affected entries including
+  devalue, source-map-js, undici, and Vite. Published advisories need an exposure
+  review distinguishing static browser runtime from Node build/dev/test tooling;
+  this is not evidence that each advisory affects the deployed Python server.</li>
+</ul>
+<h3 id="operator-and-deployment-gaps">Operator and deployment gaps<a class="headerlink" href="#operator-and-deployment-gaps" title="Permanent link">&para;</a></h3>
+<p><code>request_outcomes</code>, <code>request_logs</code>, and <code>attempt_signals</code> have no shared request ID.
+A reliable timeline needs explicit correlation rather than joins on timestamps.
+It must work with body logging disabled and keep credentials out of ordinary state.</p>
+<p>TLS-terminating proxies need documented trusted scheme/host handling. A browser
+Origin with HTTPS and a backend request URL with HTTP will fail strict same-origin
+checks when forwarding metadata is absent. Fix the deployment contract and tests;
+do not globally remove scheme validation to make mutations work.</p>
+<h2 id="architecture-constraints">Architecture constraints<a class="headerlink" href="#architecture-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Keep <code>formats/</code> and <code>providers/</code> separated through <code>canonical/</code>.</li>
+<li>Keep dashboard and CLI/API controls on the same SQLite settings and reload path.</li>
+<li>Preserve leased provider snapshots across active requests and streams.</li>
+<li>Never replay after client-visible streaming output.</li>
+<li>Treat absent/stale capacity probes as neutral and retain model allowlists/budgets.</li>
+<li>Auto routing's default quality axis is observed reliability (<code>1 - error_rate</code>),
+  not a benchmark of model intelligence. A preview without a concrete request is
+  not a guarantee of eventual upstream success.</li>
+</ul>
+<h2 id="opencodex-references">OpenCodex references<a class="headerlink" href="#opencodex-references" title="Permanent link">&para;</a></h2>
+<p>The user-selected reference is <a href="https://github.com/lidge-jun/opencodex">lidge-jun/opencodex</a>,
+inspected at <code>684ad75d254ae96a9971387d09ae428b96ada9c2</code> (MIT). No code was copied.</p>
+<ul>
+<li><a href="https://github.com/lidge-jun/opencodex/blob/684ad75d254ae96a9971387d09ae428b96ada9c2/src/codex/routing/cooldown-math.ts">Cooldown classification</a>
+  distinguishes credential, entitlement, quota, transient, and caller failures,
+  including stale credential generations and different reset signals.</li>
+<li><a href="https://github.com/lidge-jun/opencodex/blob/684ad75d254ae96a9971387d09ae428b96ada9c2/src/providers/api-key-cooldowns.ts">Key cooldown state</a>
+  preserves a later expiry when another failure arrives.</li>
+<li><a href="https://github.com/lidge-jun/opencodex/blob/684ad75d254ae96a9971387d09ae428b96ada9c2/src/server/request-log-account-rotation.ts">Attempt attribution</a>
+  keeps each send attached to the account actually used.</li>
+<li><a href="https://opencodex.me/guides/combos/">Combo behavior</a> describes failure classes,
+  tool-turn affinity, and explicit metered fallback policy.</li>
+<li><a href="https://opencodex.me/reference/architecture/">Streaming architecture</a> discusses
+  heartbeats and stall deadlines. Evaluate these with cancellation and bounded
+  time-to-first-output rather than adding unbounded retries.</li>
+</ul>
+<h2 id="issue-index">Issue index<a class="headerlink" href="#issue-index" title="Permanent link">&para;</a></h2>
+<p>The work is coordinated in <a href="https://github.com/amanverasia/Janus/issues/278">tracker #278</a>.</p>
+<p>Each issue includes evidence, scope, acceptance criteria, and related closed work.
+Prioritize diagnostic fixes, routing correctness, and bounded dispatch; then build
+request timelines, recovery actions, browser testing, and secure bootstrap.</p>
+<ul>
+<li><a href="https://github.com/amanverasia/Janus/issues/266">#266: fix(dashboard): expose disabled cooldown protection and log cooldown rejections</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/267">#267: feat(routing): bound total dispatch duration and fallback attempts</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/268">#268: feat(dashboard): correlate requests with upstream attempts and recovery actions</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/269">#269: feat(inventory): provide classified account recovery and safe re-entry into routing</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/270">#270: feat(dashboard): add a bounded authenticated model test workflow</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/271">#271: design(dashboard): secure first-administrator bootstrap without routine CLI setup</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/272">#272: fix(deployment): document trusted TLS proxy origins and test dashboard mutations</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/273">#273: fix(dashboard): preserve string model IDs in the auto-routing preview</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/274">#274: fix(routing): retain healthy provider alternatives during auto-model deduplication</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/275">#275: fix(routing): reject non-finite and negative Retry-After values</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/276">#276: fix(routing): preserve cooldown expiry and calculate retry time across overlapping scopes</a></li>
+<li><a href="https://github.com/amanverasia/Janus/issues/277">#277: chore(dashboard): triage and update dependencies flagged by npm audit</a></li>
+</ul>
+<h2 id="initial-implementation">Initial implementation<a class="headerlink" href="#initial-implementation" title="Permanent link">&para;</a></h2>
+<p>The accompanying changes record all-cooled 503s in Request Logs when logging is
+enabled; show bounded escaped failure reasons and correct stream/resolved-model
+details; warn when cooldown protection is disabled; and preserve string model IDs
+in the auto preview. The runtime dashboard bundle is rebuilt. Agent instructions
+are refreshed and synchronized; both files are excluded from the sdist.</p>
+<p>The other issues remain follow-up work. No live settings, credentials, deployment
+configuration, or routing retry limits are changed by this PR.</p>
+<h2 id="validation">Validation<a class="headerlink" href="#validation" title="Permanent link">&para;</a></h2>
+<ul>
+<li>147 focused Python API, logging, cooldown, storage, dashboard contract, and size
+  tests passed. Ruff, mypy (166 files), migration smoke, and strict docs passed.</li>
+<li>99 dashboard component tests passed after the preview fix, with zero Svelte
+  errors/warnings, formatting checks, and a rebuilt production bundle.</li>
+<li>The synthetic browser regression passed all 20 routes, navigation, redirects,
+  preview/export, filtering, and reversible CRUD before the final preview mapping
+  correction. Its pricing-pagination scenario skipped for insufficient fixture
+  rows; component pagination coverage ran. The final mapping has component coverage.</li>
+<li>Wheel and sdist packaging include the final dashboard bundle and exclude both
+  agent instruction files. Generated bundle parity and agent-file identity pass.</li>
+</ul>
+<p>Local Python checks used an existing 3.14.6 environment; the full Python suite and
+supported 3.11/3.12 matrix remain CI gates. No production-data fixture or deployment
+identifier is required to reproduce the code findings.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "search.suggest", "content.code.copy"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
