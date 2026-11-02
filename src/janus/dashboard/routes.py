@@ -382,21 +382,32 @@ async def _request_logs_context(
     limit: int = 100,
     offset: int = 0,
     settings: dict[str, str] | None = None,
+    failed_attempts_only: bool = False,
 ) -> dict[str, Any]:
-    from janus.storage.request_logs import count_request_logs, list_request_logs
+    from janus.storage.request_logs import (
+        attach_attempt_summaries,
+        count_request_logs,
+        list_request_logs,
+    )
     from janus.storage.settings import get_all_settings, resolve_request_log_retention
 
     limit = _clamp_page_size(limit)
-    total = await count_request_logs(db_path)
+    total = await count_request_logs(db_path, failed_attempts_only=failed_attempts_only)
     if offset < 0:
         offset = 0
     if total and offset >= total:
         offset = max(0, ((total - 1) // limit) * limit)
-    logs = await list_request_logs(db_path, limit=limit, offset=offset)
+    logs = await attach_attempt_summaries(
+        db_path,
+        await list_request_logs(
+            db_path, limit=limit, offset=offset, failed_attempts_only=failed_attempts_only
+        ),
+    )
     if settings is None:
         settings = await get_all_settings(db_path)
     return {
         "logs": logs,
+        "failed_attempts_only": failed_attempts_only,
         "total": total,
         "limit": limit,
         "offset": offset,
