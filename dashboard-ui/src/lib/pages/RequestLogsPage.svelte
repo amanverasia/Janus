@@ -4,7 +4,17 @@
   import Icon from '#lib/components/Icon.svelte';
   import Modal from '#lib/components/Modal.svelte';
   import PageHeader from '#lib/components/PageHeader.svelte';
-  import { compact, dateTime, firstList, idOf, list, number, object, text } from '#lib/data.ts';
+  import {
+    compact,
+    dateTime,
+    duration,
+    firstList,
+    idOf,
+    list,
+    number,
+    object,
+    text
+  } from '#lib/data.ts';
   import type { JsonObject, MutationOptions } from '#lib/types.ts';
 
   export let data: JsonObject;
@@ -86,7 +96,7 @@
     },
     { key: 'status', label: 'Status', format: (value: unknown) => text(value) },
     { key: 'attempt_count', label: 'Attempts', format: attemptsLabel },
-    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => `${compact(value)} ms` },
+    { key: 'duration_ms', label: 'Latency', format: (value: unknown) => duration(value) },
     {
       key: 'error',
       label: 'Failure reason',
@@ -177,10 +187,7 @@
         detailField('Status', detail.status),
         detailField('Final outcome', finalOutcome),
         detailField('Request ID', detail.request_id),
-        detailField(
-          'Latency',
-          detail.duration_ms != null ? `${compact(detail.duration_ms)} ms` : '—'
-        ),
+        detailField('Latency', detail.duration_ms != null ? duration(detail.duration_ms) : '—'),
         detailField('Stream', detail.streamed ?? detail.stream ?? detail.is_stream),
         detailField('Error', detail.error ?? detail.error_message)
       ]
@@ -318,7 +325,7 @@
               <div class="attempt-meta">
                 <span>{text(attempt.model)}</span>
                 <span>{text(attempt.account, 'Unknown account')}</span>
-                <span>{compact(attempt.duration_ms)} ms</span>
+                <span>{duration(attempt.duration_ms)}</span>
               </div>
               <div class="attempt-diagnostics">
                 {#if attempt.failure_class}<span>
